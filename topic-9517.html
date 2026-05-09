@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Clase TGET bKeyDown, bChange - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-9517">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Clase TGET bKeyDown, bChange</div>
+  <div class="post" id="p45691">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Clase TGET bKeyDown, bChange</span><br>
+        Posted: Tue Jan 08, 2008 12:22 PM
+      </div>
+      <div class="content">Estoy teniendo unos problemas tremendos con la clase TGET con Harbour.<br>
+Resulta que tenia una clase modificada para usar el tema de los colores de foco, he visto que en Fivewin se ha puesto lo mismo usando la funcion SetGetColorFocus( nColoR ), que realiza exactamente lo mismo.<br>
+<br>
+El problema , es que el código fuente que tengo, aparte de eso, uso un GET para buscar en un browse de esta manera:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> ::oGet:bChange    := {| nKey, nFlags | ::FastSeek( nKey, nFlags ) }
+ ::oGet:bGotFocus := {|| if(!Empty( ::oGet:VarGet ),::oGet:KeyDown( VK_END ),) }
+ ::oGet:bKeyDown   := {| nKey, nFlags | iif( nKey == VK_F3,   ::NextTabOption(),;
+                                              iif( nKey == VK_F2, ::PrevTabOption(), ) ), 0 }</code></pre></div><br>
+Por encima, la explicacion;<br>
+Si algo cambia en el GET, bChange, voy a saltar a FASTSEEK.<br>
+Si tomo el foco, me voy al final del GET; bGotFocus.<br>
+Si presiono, F2 o F3, ejecuta la accion del tab correspondiente.<br>
+<br>
+El method FastSeek()<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD FastSeek( nKey, nFlags ) CLASS TMANTI
+
+   local cType
+   local xCadena
+   local nRecNo
+   local nOrd
+   local oGet := ::oGet
+	 Local cKey := ( ::oDbf:cAlias()  )-&gt;( &amp;(IndexKey() ))   // Tipo de expresion en el indice
+   Local cExpIndex := ( ::oDbf:cAlias()  )-&gt;( IndexKey() )
+	 Local cTexto, cText, nPos := 0, nLen := 0, xText
+
+	 DEFAULT nKey   := 0
+
+	 oGet:Assign()
+   xCadena := SubStr( oGet:varGet(), 1, oGet:nPos - 1 ) + Chr( nKey )
+
+	 // Si esta dtos y la posicion que ocupa sea &lt; 3
+	 if upper("dtos") $ upper(cExpIndex) .AND. ( ( nPos := At( "dtos" , cExpIndex  ) ) &lt; 3 )
+	    if len(xCadena) &gt;= 8
+			    ::oDbf:Seek( DTOS( CTOD( xCadena ) ) , .T. )
+			endif
+	 elseif upper("str") $ upper( cExpIndex ) .AND. ( ( nPos := At( "str" , cExpIndex  ) ) &lt; 3 )
+	 	      nPos := At( "," , cExpIndex  )           // Busco la ,
+					if nPos != 0
+						 cTexto := SubStr( cExpIndex, nPos+1 ) // Cadena a partir de la ","
+						 nPos := At( ")", cTexto )              // Busco el ")"
+						 if nPos != 0
+						 	  cText := SubStr( cTexto, 1, nPos -1 ) // cText :=  'Str(cadena, nLen)'
+								nLen  := Val( cText )                // Longitud
+								xText := Val( xCadena  )             // valor
+								::oDbf:Seek(  str( xText, nLen ), .T. )
+						 endif
+					 endif
+	 elseif  Valtype( cKey ) == "D"
+	         if len(xCadena) &gt;= 8
+			        ::oDbf:Seek( CTOD( xCadena )  , .T. )
+			     endif
+	 else
+		  ::oDbf:Seek( if(Valtype(cKey) != "N",xCadena, VAL( xCadena ) ) , .T. )
+	 endif
+
+	 ::oBrw:refresh()
+
+	 IF ::lSplitter             // Evaluamos el bChange del master
+	    if ::oDbf:Eof()
+   	     ::oBrw:GoBottom()      // Pos en el ultimo, para que evalua posteriormente bien el bChange
+   	     ::oBrw:Refresh()
+				 SysRefresh()
+			endif
+		 	Eval( ::oBrw:bChange, Self )
+	 ENDIF
+
+   #ifdef _HARBOUR__
+	   ::cBusca := xCadena + SPACE( 50 ) // La suma es por un BUG en FHW/HArbour
+	 #else
+	   ::cBusca := xCadena
+	 #endif
+
+return .T.</code></pre></div><br>
+<br>
+El problema que xCadena SIEMPRE es la tecla pulsada, es más, NO FUNCIONA la tecla BackSpace, teclas derecha e izquierda en el GET, <br>
+¿ Porque ?<br>
+<br>
+Joder, esto funcionaba de pelotas, y ahora estoy teniendo una de problemas con Harbour/xHarbour, me desanimo bastante estos problemas, que costaron en su día y volver a pelearse con ello, pues la verdad es que desespera hasta el más pintado.<br>
+Llevo toda la mañana para esta tonteria, haber si alguien me algo que se me escapa.</div>
+    </div>
+  </div>
+  <div class="post" id="p45692">
+    <div class="poster">
+      <div class="name" style="color:#105289">FiveWiDi</div>
+      <div class="rank">Posts: 1444</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 02:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Clase TGET bKeyDown, bChange</span><br>
+        Posted: Tue Jan 08, 2008 12:35 PM
+      </div>
+      <div class="content"><blockquote><cite>thefull wrote:</cite>Estoy teniendo unos problemas tremendos con la clase TGET con Harbour.<br>
+Resulta que tenia una clase modificada para usar el tema de los colores de foco, he visto que en Fivewin se ha puesto lo mismo usando la funcion SetGetColorFocus( nColoR ), que realiza exactamente lo mismo.<br>
+<br>
+El problema , es que el código fuente que tengo, aparte de eso, uso un GET para buscar en un browse de esta manera:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> ::oGet:bChange    := {| nKey, nFlags | ::FastSeek( nKey, nFlags ) }
+ ::oGet:bGotFocus := {|| if(!Empty( ::oGet:VarGet ),::oGet:KeyDown( VK_END ),) }
+ ::oGet:bKeyDown   := {| nKey, nFlags | iif( nKey == VK_F3,   ::NextTabOption(),;
+                                              iif( nKey == VK_F2, ::PrevTabOption(), ) ), 0 }</code></pre></div><br>
+Por encima, la explicacion;<br>
+Si algo cambia en el GET, bChange, voy a saltar a FASTSEEK.<br>
+Si tomo el foco, me voy al final del GET; bGotFocus.<br>
+Si presiono, F2 o F3, ejecuta la accion del tab correspondiente.<br>
+<br>
+El method FastSeek()<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD FastSeek( nKey, nFlags ) CLASS TMANTI
+
+   local cType
+   local xCadena
+   local nRecNo
+   local nOrd
+   local oGet := ::oGet
+	 Local cKey := ( ::oDbf:cAlias()  )-&gt;( &amp;(IndexKey() ))   // Tipo de expresion en el indice
+   Local cExpIndex := ( ::oDbf:cAlias()  )-&gt;( IndexKey() )
+	 Local cTexto, cText, nPos := 0, nLen := 0, xText
+
+	 DEFAULT nKey   := 0
+
+	 oGet:Assign()
+   xCadena := SubStr( oGet:varGet(), 1, oGet:nPos - 1 ) + Chr( nKey )
+
+	 // Si esta dtos y la posicion que ocupa sea &lt; 3
+	 if upper("dtos") $ upper(cExpIndex) .AND. ( ( nPos := At( "dtos" , cExpIndex  ) ) &lt; 3 )
+	    if len(xCadena) &gt;= 8
+			    ::oDbf:Seek( DTOS( CTOD( xCadena ) ) , .T. )
+			endif
+	 elseif upper("str") $ upper( cExpIndex ) .AND. ( ( nPos := At( "str" , cExpIndex  ) ) &lt; 3 )
+	 	      nPos := At( "," , cExpIndex  )           // Busco la ,
+					if nPos != 0
+						 cTexto := SubStr( cExpIndex, nPos+1 ) // Cadena a partir de la ","
+						 nPos := At( ")", cTexto )              // Busco el ")"
+						 if nPos != 0
+						 	  cText := SubStr( cTexto, 1, nPos -1 ) // cText :=  'Str(cadena, nLen)'
+								nLen  := Val( cText )                // Longitud
+								xText := Val( xCadena  )             // valor
+								::oDbf:Seek(  str( xText, nLen ), .T. )
+						 endif
+					 endif
+	 elseif  Valtype( cKey ) == "D"
+	         if len(xCadena) &gt;= 8
+			        ::oDbf:Seek( CTOD( xCadena )  , .T. )
+			     endif
+	 else
+		  ::oDbf:Seek( if(Valtype(cKey) != "N",xCadena, VAL( xCadena ) ) , .T. )
+	 endif
+
+	 ::oBrw:refresh()
+
+	 IF ::lSplitter             // Evaluamos el bChange del master
+	    if ::oDbf:Eof()
+   	     ::oBrw:GoBottom()      // Pos en el ultimo, para que evalua posteriormente bien el bChange
+   	     ::oBrw:Refresh()
+				 SysRefresh()
+			endif
+		 	Eval( ::oBrw:bChange, Self )
+	 ENDIF
+
+   #ifdef _HARBOUR__
+	   ::cBusca := xCadena + SPACE( 50 ) // La suma es por un BUG en FHW/HArbour
+	 #else
+	   ::cBusca := xCadena
+	 #endif
+
+return .T.</code></pre></div><br>
+<br>
+El problema que xCadena SIEMPRE es la tecla pulsada, es más, NO FUNCIONA la tecla BackSpace, teclas derecha e izquierda en el GET, <br>
+¿ Porque ?<br>
+<br>
+Joder, esto funcionaba de pelotas, y ahora estoy teniendo una de problemas con Harbour/xHarbour, me desanimo bastante estos problemas, que costaron en su día y volver a pelearse con ello, pues la verdad es que desespera hasta el más pintado.<br>
+Llevo toda la mañana para esta tonteria, haber si alguien me algo que se me escapa.</blockquote><br>
+<br>
+Busca mensajes sobre bpostkey y bchange; si no me equivoco cambió/añadió comportamiento a TGet desdes versión 0704.<br>
+<br>
+Creo que te ahorrabas hacer oGet:Assign().<br>
+<br>
+Que versión de FWH tienes?<br>
+...<br>
+<br>
+He mirado mi código; intenta cambiar<br>
+ ::bChange    := {| nKey, nFlags | ::FastSeek( nKey, nFlags ) }<br>
+por:<br>
+ ::bPostKey    := {| nKey, nFlags | ::FastSeek( nKey, nFlags ) }<br>
+<br>
+y deja de usar oGet:Assign().<br>
+<br>
+<br>
+Saludos y suerte.<br>
+Carlos G.</div>
+    </div>
+  </div>
+  <div class="post" id="p45693">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Clase TGET bKeyDown, bChange</span><br>
+        Posted: Tue Jan 08, 2008 12:52 PM
+      </div>
+      <div class="content"><blockquote><cite>FiveWiDi wrote:</cite><blockquote><cite>thefull wrote:</cite>Estoy teniendo unos problemas tremendos con la clase TGET con Harbour.<br>
+Resulta que tenia una clase modificada para usar el tema de los colores de foco, he visto que en Fivewin se ha puesto lo mismo usando la funcion SetGetColorFocus( nColoR ), que realiza exactamente lo mismo.<br>
+<br>
+El problema , es que el código fuente que tengo, aparte de eso, uso un GET para buscar en un browse de esta manera:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> ::oGet:bChange    := {| nKey, nFlags | ::FastSeek( nKey, nFlags ) }
+ ::oGet:bGotFocus := {|| if(!Empty( ::oGet:VarGet ),::oGet:KeyDown( VK_END ),) }
+ ::oGet:bKeyDown   := {| nKey, nFlags | iif( nKey == VK_F3,   ::NextTabOption(),;
+                                              iif( nKey == VK_F2, ::PrevTabOption(), ) ), 0 }</code></pre></div><br>
+Por encima, la explicacion;<br>
+Si algo cambia en el GET, bChange, voy a saltar a FASTSEEK.<br>
+Si tomo el foco, me voy al final del GET; bGotFocus.<br>
+Si presiono, F2 o F3, ejecuta la accion del tab correspondiente.<br>
+<br>
+El method FastSeek()<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD FastSeek( nKey, nFlags ) CLASS TMANTI
+
+   local cType
+   local xCadena
+   local nRecNo
+   local nOrd
+   local oGet := ::oGet
+	 Local cKey := ( ::oDbf:cAlias()  )-&gt;( &amp;(IndexKey() ))   // Tipo de expresion en el indice
+   Local cExpIndex := ( ::oDbf:cAlias()  )-&gt;( IndexKey() )
+	 Local cTexto, cText, nPos := 0, nLen := 0, xText
+
+	 DEFAULT nKey   := 0
+
+	 oGet:Assign()
+   xCadena := SubStr( oGet:varGet(), 1, oGet:nPos - 1 ) + Chr( nKey )
+
+	 // Si esta dtos y la posicion que ocupa sea &lt; 3
+	 if upper("dtos") $ upper(cExpIndex) .AND. ( ( nPos := At( "dtos" , cExpIndex  ) ) &lt; 3 )
+	    if len(xCadena) &gt;= 8
+			    ::oDbf:Seek( DTOS( CTOD( xCadena ) ) , .T. )
+			endif
+	 elseif upper("str") $ upper( cExpIndex ) .AND. ( ( nPos := At( "str" , cExpIndex  ) ) &lt; 3 )
+	 	      nPos := At( "," , cExpIndex  )           // Busco la ,
+					if nPos != 0
+						 cTexto := SubStr( cExpIndex, nPos+1 ) // Cadena a partir de la ","
+						 nPos := At( ")", cTexto )              // Busco el ")"
+						 if nPos != 0
+						 	  cText := SubStr( cTexto, 1, nPos -1 ) // cText :=  'Str(cadena, nLen)'
+								nLen  := Val( cText )                // Longitud
+								xText := Val( xCadena  )             // valor
+								::oDbf:Seek(  str( xText, nLen ), .T. )
+						 endif
+					 endif
+	 elseif  Valtype( cKey ) == "D"
+	         if len(xCadena) &gt;= 8
+			        ::oDbf:Seek( CTOD( xCadena )  , .T. )
+			     endif
+	 else
+		  ::oDbf:Seek( if(Valtype(cKey) != "N",xCadena, VAL( xCadena ) ) , .T. )
+	 endif
+
+	 ::oBrw:refresh()
+
+	 IF ::lSplitter             // Evaluamos el bChange del master
+	    if ::oDbf:Eof()
+   	     ::oBrw:GoBottom()      // Pos en el ultimo, para que evalua posteriormente bien el bChange
+   	     ::oBrw:Refresh()
+				 SysRefresh()
+			endif
+		 	Eval( ::oBrw:bChange, Self )
+	 ENDIF
+
+   #ifdef _HARBOUR__
+	   ::cBusca := xCadena + SPACE( 50 ) // La suma es por un BUG en FHW/HArbour
+	 #else
+	   ::cBusca := xCadena
+	 #endif
+
+return .T.</code></pre></div><br>
+<br>
+El problema que xCadena SIEMPRE es la tecla pulsada, es más, NO FUNCIONA la tecla BackSpace, teclas derecha e izquierda en el GET, <br>
+¿ Porque ?<br>
+<br>
+Joder, esto funcionaba de pelotas, y ahora estoy teniendo una de problemas con Harbour/xHarbour, me desanimo bastante estos problemas, que costaron en su día y volver a pelearse con ello, pues la verdad es que desespera hasta el más pintado.<br>
+Llevo toda la mañana para esta tonteria, haber si alguien me algo que se me escapa.</blockquote><br>
+<br>
+Busca mensajes sobre bpostkey y bchange; si no me equivoco cambió/añadió comportamiento a TGet desdes versión 0704.<br>
+<br>
+Creo que te ahorrabas hacer oGet:Assign().<br>
+<br>
+Que versión de FWH tienes?<br>
+...<br>
+<br>
+He mirado mi código; intenta cambiar<br>
+ ::bChange    := {| nKey, nFlags | ::FastSeek( nKey, nFlags ) }<br>
+por:<br>
+ ::bPostKey    := {| nKey, nFlags | ::FastSeek( nKey, nFlags ) }<br>
+<br>
+y deja de usar oGet:Assign().<br>
+<br>
+<br>
+Saludos y suerte.<br>
+Carlos G.</blockquote><br>
+Gracias Carlos voy a ver lo que dices.<br>
+<br>
+Estoy intentado cambiar desde la 2.7 a la 7.12, pero bajo mi punto de vista, y no es la primera vez que me pasa, es que cuando intento usar una version nueva , ya sea de Fivewin / Harbour, empiezo precisamente con esto, Y LO ODIO! porque vuelvo a perder el tiempo en cosas que no deberia.<br>
+<br>
+Eso si, decir que Antonio me ha brindado un soporte EXCELENTE!, pero no voy a estar llamandole cada 5 minutos, que seguro que alguien le a pasado algo similar...<br>
+<br>
+Y ya puesto. ¿ Has probado si con xHarbour/FWH se te queda colgado según le parece... ? Con Harbour no tengo problemas, estoy pasandolo todo a Harbour, y mirar de usar los 2 a la vez, pero donde unas cosas me funcionan en uno, en el otro no funciona, por ejemplo;<br>
+   DATA   hHeap AS NUMERIC  INIT 0  // Own heap for @ ..., ... GET<br>
+Eso lo inicializa bien xHarbour, Harbour simplemete me casca en Runtime a la hora de usar la clase TGet hHeap.<br>
+<br>
+Y como eso , de tooooo.... aburrido toy, coño, jajaja.... </div>
+    </div>
+  </div>
+  <div class="post" id="p45697">
+    <div class="poster">
+      <div class="name" style="color:#105289">FiveWiDi</div>
+      <div class="rank">Posts: 1444</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 02:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Clase TGET bKeyDown, bChange</span><br>
+        Posted: Tue Jan 08, 2008 01:14 PM
+      </div>
+      <div class="content"><blockquote><cite>thefull wrote:</cite>Gracias Carlos voy a ver lo que dices.<br>
+<br>
+Estoy intentado cambiar desde la 2.7 a la 7.12, pero bajo mi punto de vista, y no es la primera vez que me pasa, es que cuando intento usar una version nueva , ya sea de Fivewin / Harbour, empiezo precisamente con esto, Y LO ODIO! porque vuelvo a perder el tiempo en cosas que no deberia.<br>
+<br>
+Eso si, decir que Antonio me ha brindado un soporte EXCELENTE!, pero no voy a estar llamandole cada 5 minutos, que seguro que alguien le a pasado algo similar...<br>
+<br>
+Y ya puesto. ¿ Has probado si con xHarbour/FWH se te queda colgado según le parece... ? Con Harbour no tengo problemas, estoy pasandolo todo a Harbour, y mirar de usar los 2 a la vez, pero donde unas cosas me funcionan en uno, en el otro no funciona, por ejemplo;<br>
+   DATA   hHeap AS NUMERIC  INIT 0  // Own heap for @ ..., ... GET<br>
+Eso lo inicializa bien xHarbour, Harbour simplemete me casca en Runtime a la hora de usar la clase TGet hHeap.<br>
+<br>
+Y como eso , de tooooo.... aburrido toy, coño, jajaja.... </blockquote><br>
+<br>
+No he usado nunca xHarbour y mi manera de trabajar es muy elemental/básica/estándar com pocos inventos; intento evitar problemas como los que comentas.<br>
+<br>
+Por cierto en declaraciones en las clases del tipo:<br>
+DATA  mivariable AS NUMERIC  INIT 0<br>
+había algún caso en que debí eliminar "AS ...", ahora no recuerdo que tipo de variable era. (cosas del desarrollo de Harbour).<br>
+<br>
+Saludos y suerte.<br>
+Y vete a comer que són las 2. A las 4 lo verás diferente.<br>
+Carlos G.</div>
+    </div>
+  </div>
+  <div class="post" id="p45713">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Clase TGET bKeyDown, bChange</span><br>
+        Posted: Tue Jan 08, 2008 03:48 PM
+      </div>
+      <div class="content">Bueno, despues de volver de comer, vemos que;<br>
+En bCHange, hay que cambiarlo por;<br>
+<br>
+ ::bPostKey  := {| This, cBuffer | ::FastSeek( This, cBuffer ) }<br>
+<br>
+Y he tenido que modifcar el METHOD FastSeek() para esta nueva implementación, por lo que ahora me funciona correctamente, las teclas BACK, LEFT, RIGTH en el GET...<br>
+<br>
+Pero el problema es que ahora las teclas F2, F3 si las conecto atraves del<br>
+codeblock bKeyDown, entonces no me funciona el BACK, LEFT, RIGTH del GET....<br>
+<br>
+¿ A cambio alguna cosa tambien en este ? Pues parece que si, antes tenia esto;<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">       ::oGet:bKeyDown  := {| nKey, nFlags | iif( nKey == VK_F3, ::NextTabOption(),;
+                                             iif( nKey == VK_F2, ::PrevTabOption(), ) ) ,0}</code></pre></div><br>
+Ahora, para que siga propagandose el evento en la clase, hay que devolver un númerico distinto de cero.<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">       ::oGet:bKeyDown  := {| nKey, nFlags | iif( nKey == VK_F3, ::NextTabOption(),;
+                                             iif( nKey == VK_F2, ::PrevTabOption(), ) ), 1 }</code></pre></div><br>
+<br>
+De esta manera, parece ser que vuelvo a tener la misma funcionalidad que anteriormente..<br>
+<br>
+Dios que cristo esto de cambiar de FWH , de Harbour, a Windows Vista, vamos, todo de golpe.... <br>
+Gracias por la ayuda.</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

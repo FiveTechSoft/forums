@@ -1,0 +1,1024 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>FWCallDll() and MingW + Harbour - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-22496">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> FWCallDll() and MingW + Harbour</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-22496-page-2.html">2</a> (17 posts)</div>  <div class="post" id="p119861">
+    <div class="poster">
+      <div class="name" style="color:#105289">hua</div>
+      <div class="rank">Posts: 1096</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 28, 2005 02:27 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">FWCallDll() and MingW + Harbour</span><br>
+        Posted: Wed Sep 28, 2011 04:46 PM
+      </div>
+      <div class="content"><p>I used outputdebugstring() and a dialog box appear saying &quot;FWCallDll() not available yet for MinGW gcc. Does this mean whatever's using DLL/DLL32 command can't be compiled using MingW yet? Any workaround for this?</p>
+<p>TIA</p></div>
+    </div>
+  </div>
+  <div class="post" id="p119868">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Wed Sep 28, 2011 07:08 PM
+      </div>
+      <div class="content">Hua, <br>
+<br>
+We already have a calldll.c for gcc version that we are testing. Changes are basically this way:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">              #ifdef __BORLANDC__
+                 asm push ax;
+              #elseif defined( _MSC_VER )
+                 _asm { push ax }
+              #elseif defined( __GNUC__ )   
+                 asm( "push ax" );
+              #endif</code></pre></div><br>
+<br>
+Here you have the new calldll.c version in case that you want to compile it yourself and test it:<br>
+<br>
+calldll.c<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#ifdef __BORLANDC__
+   #pragma inline                 // via assembler
+#endif
+
+#include &lt;Windows.h&gt;
+
+#ifndef UNICODE
+   #include &lt;dos.h&gt;
+#endif
+   
+#include &lt;hbapi.h&gt;
+
+// a workaround to use Borland and Clipper on doubles
+
+#ifdef __XPP__
+#define hb_parnd __parnd
+#define hb_retnd __retnd
+#endif
+
+#ifdef __C3__
+   #undef __CLIPPER__
+   void hb_retnd( double );
+   double hb_parnd( WORD );
+#endif
+
+#ifdef __CLIPPER__
+   LPWORD hb_parnd( WORD );
+   void hb_retnd( WORD, WORD, WORD, WORD );
+#endif
+
+typedef DWORD ( FAR PASCAL * _CALLPROC32 ) ( FARPROC, DWORD, DWORD );
+_CALLPROC32 GetCallProc32( void );
+
+DWORD pascal GetVDMP32( LPVOID, UINT );
+
+#define AS_PASCAL  1
+
+#define AS_VOID    0
+#define AS_BYTE    1
+#define AS_CHAR    2
+#define AS_WORD    3
+#define AS_INT     4
+#define AS_BOOL    5
+#define AS_HDC     6
+#define AS_LONG    7
+#define AS_STRING  8
+#define AS_LPSTR   9
+#define AS_PTR    10
+#define AS_DOUBLE 11
+#define AS_DWORD  12
+
+typedef struct
+{
+   FARPROC farProc;
+   BYTE bType;
+   BYTE bReturn;
+   BYTE bParams;
+   BYTE bParam[ 15 ];
+} STRFUNC;
+
+typedef void ( * FUNCPTR )( void );
+
+#ifdef __FLAT__
+#undef  PCLIPVAR
+#define PCLIPVAR char *
+#define REF_CLIPVAR char
+#define MK_FP(seg,ofs) (seg + ofs)
+#endif
+
+//----------------------------------------------------------------------------//
+// for numbers supplied by reference
+
+static LPWORD GetNumAddress( PCLIPVAR pVar )
+{
+   #ifndef __FLAT__
+   REF_CLIPVAR * pRef = MK_FP( _DS, pVar );
+   LPCLIPVAR pNum = MK_FP( _DS, pRef-&gt;pClipVar );
+
+   return ( LPWORD ) &amp;( pNum-&gt;pPointer1 );
+   #else
+   HB_SYMBOL_UNUSED( pVar );
+   return 0;
+   #endif
+}
+
+//----------------------------------------------------------------------------//
+
+static LPLONG GetLongAddress( LONG * paLongs, char b, LONG lValue )
+{
+   paLongs[ b ] = lValue;
+
+   return &amp;( paLongs[ b ] );
+}
+
+//----------------------------------------------------------------------------//
+
+#ifndef _WIN64
+
+HB_FUNC( FWCALLDLL )
+{
+   static STRFUNC * pStrFunc;
+   static char b;
+   static WORD wAX, wDX;
+   static double d;
+   static LPWORD pDouble;
+   static LONG lEAX;
+
+   #ifdef __FLAT__
+      static LONG aLongs[ 15 ];
+   #endif
+
+   #ifdef __FLAT__
+      static WORD bStack = 0;
+   #else
+      BYTE bStack = 0;
+   #endif
+   
+   pStrFunc = ( STRFUNC * ) hb_parc( 1 );
+
+   if( ! pStrFunc-&gt;farProc )
+      return;
+
+   #ifndef __FLAT__
+      asm pusha;
+   #endif
+
+   #ifndef __FLAT__
+      for( b = 0; b &lt; pStrFunc-&gt;bParams; b++ )
+   #else
+      for( b = pStrFunc-&gt;bParams - 1; b &gt;= 0; b-- )
+   #endif
+   {
+      switch( pStrFunc-&gt;bParam[ b ] )
+      {
+         case AS_BYTE:
+         case AS_CHAR:
+              hb_parni( b + 2 );
+              #ifdef __BORLANDC__
+                 asm push ax;
+              #elseif defined( _MSC_VER )
+                 _asm { push ax }
+              #elseif defined( __GNUC__ )   
+                 asm( "push ax" );
+              #endif
+              bStack += 2;
+              break;
+
+         case AS_WORD:
+         case AS_INT:
+         case AS_HDC:
+              hb_parni( b + 2 );
+              #ifndef __FLAT__
+                 asm push ax;
+                 bStack += 2;
+              #else
+                 #ifdef __BORLANDC__
+                    asm push eax;
+                 #elseif defined( _MSC_VER )
+                    _asm { push eax }
+                 #elseif defined( __GNUC__ )   
+                    asm( "push eax" );
+                 #endif
+                 bStack += 4;
+              #endif
+              break;
+
+         case AS_BOOL:
+              hb_parl( b + 2 );
+              #ifndef __FLAT__
+                 asm push ax;
+                 bStack += 2;
+              #else
+                 #ifdef __BORLANDC__
+                    asm push eax;
+                 #elseif defined( _MSC_VER )
+                    _asm { push eax }
+                 #elseif defined( __GNUC__ )   
+                    asm( "push eax" );
+                 #endif
+                 bStack += 4;
+              #endif
+              break;
+
+         case AS_LONG:
+         case AS_PTR:
+         case AS_DWORD:
+              if( HB_ISBYREF( b + 2 ) )
+                 #ifndef __FLAT__
+                    GetNumAddress( ( PCLIPVAR ) hb_param( b + 2, -1 ) );
+                 #else
+                    GetLongAddress( aLongs, b, hb_parnl( b + 2 ) );
+                 #endif
+              else
+                 hb_parnl( b + 2 );
+              #ifndef __FLAT__
+                 asm push dx;
+                 asm push ax;
+              #else
+                 #ifdef __BORLANDC__
+                    asm push eax;
+                 #elseif defined( _MSC_VER )
+                    _asm { push eax }
+                 #elseif defined( __GNUC__ )   
+                    asm( "push eax" );
+                 #endif
+              #endif
+              bStack += 4;
+              break;
+
+         case AS_LPSTR:
+         case AS_STRING:
+              hb_parc( b + 2 );
+              #ifndef __FLAT__
+                 asm push dx;
+                 asm push ax;
+              #else
+                 #ifdef __BORLANDC__
+                    asm push eax;
+                 #elseif defined( _MSC_VER )
+                    _asm { push eax }
+                 #elseif defined( __GNUC__ )   
+                    asm( "push eax" );
+                 #endif
+              #endif
+              bStack += 4;
+              break;
+
+         case AS_DOUBLE:
+              #ifndef __HARBOUR__
+                 pDouble = hb_parnd( b + 2 );
+              #else
+                 d = hb_parnd( b + 2 );
+                 pDouble = ( LPWORD ) &amp;d;
+              #endif
+              #ifdef __BORLANDC__
+                 _AX = pDouble[ 3 ];
+                 asm push ax;
+                 _AX = pDouble[ 2 ];
+                 asm push ax;
+                 _AX = pDouble[ 1 ];
+                 asm push ax;
+                 _AX = pDouble[ 0 ];
+                 asm push ax;
+              #elseif defined( _MSC_VER )
+                 wAX = pDouble[ 3 ];
+                 _asm { push wAX }
+                 wAX = pDouble[ 2 ];
+                 _asm { push wAX }
+                 wAX = pDouble[ 1 ];
+                 _asm { push wAX }
+                 wAX = pDouble[ 0 ];
+                 _asm { push wAX }
+              #elseif defined( __GNUC__ )   
+                 wAX = pDouble[ 3 ];
+                 asm( "push wAX" );
+                 wAX = pDouble[ 2 ];
+                 asm( "push wAX" );
+                 wAX = pDouble[ 1 ];
+                 asm( "push wAX" );
+                 wAX = pDouble[ 0 ];
+                 asm( "push wAX" );
+              #endif
+              bStack += 8;
+              break;
+      }
+   }
+
+   ( ( FUNCPTR ) pStrFunc-&gt;farProc )();
+   #ifndef __FLAT__
+      wAX = _AX;
+      wDX = _DX;
+   #else
+      #ifdef __BORLANDC__
+         lEAX = _EAX;
+      #elseif defined( _MSC_VER )
+         _asm { mov lEAX, eax }
+      #elseif defined( __GNUC__ )   
+         asm( "mov lEAX, eax" );
+      #endif
+   #endif
+
+   if( pStrFunc-&gt;bType != ( BYTE ) AS_PASCAL )
+      #ifdef __BORLANDC__
+         asm add sp, bStack;
+      #elseif defined( _MSC_VER )
+         _asm { add sp, bStack }
+      #elseif defined( __GNUC__ )   
+         asm( "add sp, bStack" );
+      #endif
+
+   #ifndef __FLAT__
+      asm popa;
+   #endif
+
+   #ifdef __FLAT__
+      if( pStrFunc-&gt;bParams )
+         for( b = pStrFunc-&gt;bParams - 1; b &gt;= 0; b-- )
+            if( HB_ISBYREF( b + 2 ) )
+            {
+               switch( pStrFunc-&gt;bParam[ b ] )
+               {
+                  case AS_LONG:
+                  case AS_PTR:
+                  case AS_DWORD:
+                       hb_stornl( aLongs[ b ], b + 2 );
+               }
+            }
+   #endif
+
+   switch( pStrFunc-&gt;bReturn )
+   {
+      case AS_BYTE:
+      case AS_CHAR:
+           #ifndef __FLAT__
+              hb_retni( wAX &amp; 0x00FF );
+           #else
+              hb_retni( lEAX );
+           #endif
+           break;
+
+      case AS_WORD:
+      case AS_INT:
+           #ifndef __FLAT__
+              hb_retni( wAX );
+           #else
+              hb_retnl( lEAX );
+           #endif
+           break;
+
+      case AS_BOOL:
+           #ifndef __FLAT__
+              hb_retl( wAX );
+           #else
+              hb_retl( lEAX );
+           #endif
+           break;
+
+      case AS_LONG:
+      case AS_PTR:
+      case AS_DWORD:
+           #ifndef __FLAT__
+              hb_retnl( MAKELONG( wAX, wDX ) );
+           #else
+              hb_retnl( lEAX );
+           #endif
+           break;
+
+      case AS_STRING:
+      case AS_LPSTR:
+           #ifndef __FLAT__
+              hb_retc( ( char * ) MK_FP( wDX, wAX ) );
+           #else
+              hb_retc( ( char * ) lEAX );
+           #endif
+           break;
+
+      case AS_DOUBLE:
+           #ifndef __FLAT__
+              pDouble = ( LPWORD ) MK_FP( wDX, wAX );
+           #else
+              pDouble = ( LPWORD ) lEAX;
+           #endif
+           #ifndef __HARBOUR__
+              hb_retnd( pDouble[ 0 ], pDouble[ 1 ], pDouble[ 2 ], pDouble[ 3 ] );
+           #else
+              d = * ( double * ) pDouble;
+              hb_retnd( d );
+           #endif
+           break;
+   }
+}
+
+#endif
+
+//----------------------------------------------------------------------------//
+
+static LONG power( LONG nPower )
+{
+   LONG n = 0, nResult = 1;
+
+   while( n++ &lt; nPower )
+     nResult *= 2;
+
+   return nResult;
+}
+
+//----------------------------------------------------------------------------//
+
+#ifdef __BORLANDC__
+
+HB_FUNC( FWCALLDLL32 )
+{
+   STRFUNC * pStrFunc = ( STRFUNC * ) hb_parc( 1 );
+   BYTE b, bStack = 0;
+   WORD wAX, wDX;
+   LPWORD pDouble;
+   double d;
+   _CALLPROC32 CallProc32 = ( _CALLPROC32 ) GetCallProc32();
+   DWORD dwParamConvert = 0;
+   DWORD p32;
+   UINT uSelector;
+
+   if( ! pStrFunc-&gt;farProc )
+      return;
+
+   asm pusha;
+
+   for( b = 0; b &lt; pStrFunc-&gt;bParams; b++ )
+   {
+      switch( pStrFunc-&gt;bParam[ b ] )
+      {
+         case AS_BYTE:
+         case AS_CHAR:
+              hb_parni( b + 2 );
+              #ifndef __FLAT__
+              asm push ax;
+              #endif
+              bStack += 2;
+              break;
+
+         case AS_WORD:
+         case AS_INT:
+         case AS_HDC:
+              hb_parni( b + 2 );
+              #ifndef __FLAT__
+              asm push ax;
+              #endif
+              bStack += 2;
+              break;
+
+         case AS_BOOL:
+              hb_parl( b + 2 );
+              #ifndef __FLAT__
+              asm push ax;
+              #endif
+              bStack += 2;
+              break;
+
+         case AS_LONG:
+         case AS_DWORD:
+              if( HB_ISBYREF( b + 2 ) )
+                 GetNumAddress( ( PCLIPVAR ) hb_param( b + 2, -1 ) );
+              else
+                 hb_parnl( b + 2 );
+              #ifndef __FLAT__
+              asm push dx;
+              asm push ax;
+              #endif
+              bStack += 4;
+              break;
+
+         case AS_PTR:
+              if( HB_ISBYREF( b + 2 ) )
+                 GetNumAddress( ( PCLIPVAR ) hb_param( b + 2, -1 ) );
+              else
+                 hb_parnl( b + 2 );
+              #ifndef __FLAT__
+              asm push dx;
+              asm push ax;
+              #endif
+              bStack += 4;
+              dwParamConvert |= power( ( pStrFunc-&gt;bParams - b - 1 ) );
+              break;
+
+         case AS_LPSTR:
+         case AS_STRING:
+              hb_parc( b + 2 );
+              #ifndef __FLAT__
+              asm push dx;
+              asm push ax;
+              #endif
+              bStack += 4;
+              #ifndef __FLAT__
+              if( _AX || _DX )
+                 dwParamConvert |= power( ( pStrFunc-&gt;bParams - b - 1 ) );
+              #endif
+              break;
+
+         case AS_DOUBLE:
+              #ifndef __HARBOUR__
+                 pDouble = hb_parnd( b + 2 );
+              #else
+                 d = hb_parnd( b + 2 );
+                 pDouble = ( LPWORD ) ( ( char * ) &amp;d );
+              #endif
+              #ifndef __FLAT__
+              _AX = pDouble[ 3 ];
+              asm push ax;
+              _AX = pDouble[ 2 ];
+              asm push ax;
+              _AX = pDouble[ 1 ];
+              asm push ax;
+              _AX = pDouble[ 0 ];
+              asm push ax;
+              #endif
+              bStack += 8;
+              break;
+      }
+   }
+
+   if( CallProc32 )
+   {
+      //    dwParamConvert:      000 &lt;--- 32 bits --&gt; 0 [ 110 ]
+      //                  three params and 1 and 2 request 16-32 conversion
+
+      CallProc32( pStrFunc-&gt;farProc, dwParamConvert, pStrFunc-&gt;bParams );
+
+
+      #ifndef __FLAT__
+      wAX = _AX;
+      wDX = _DX;
+      #endif
+   }
+
+   #ifndef __FLAT__
+   if( pStrFunc-&gt;bType != AS_PASCAL )
+      asm add sp, bStack;
+   #endif
+
+   asm popa;
+
+   switch( pStrFunc-&gt;bReturn )
+   {
+      case AS_BYTE:
+      case AS_CHAR:
+           hb_retni( wAX &amp; 0x00FF );
+           break;
+
+      case AS_WORD:
+      case AS_INT:
+           hb_retni( wAX );
+           break;
+
+      case AS_BOOL:
+           hb_retl( wAX );
+           break;
+
+      case AS_LONG:
+      case AS_PTR:
+      case AS_DWORD:
+           hb_retnl( MAKELONG( wAX, wDX ) );
+           break;
+
+      case AS_STRING:
+      case AS_LPSTR:
+           #ifndef __FLAT__
+           uSelector = AllocSelector( _DS );
+           SetSelectorBase( uSelector, ( DWORD ) MK_FP( wDX, wAX ) );
+           SetSelectorLimit( uSelector, 65535 );
+           hb_retc( ( char * ) MK_FP( uSelector, 0 ) );
+           FreeSelector( uSelector );
+           #endif
+           break;
+
+      case AS_DOUBLE:
+           pDouble = ( LPWORD ) MK_FP( wDX, wAX );
+           #ifndef __HARBOUR__
+              hb_retnd( pDouble[ 0 ], pDouble[ 1 ], pDouble[ 2 ], pDouble[ 3 ] );
+           #else
+              d = * ( double * ) pDouble;
+              hb_retnd( d );
+           #endif
+           break;
+   }
+}
+
+#else
+
+   HB_FUNC( CALLDLL32 )
+   {
+      #ifndef UNICODE
+         MessageBox( 0, "CallDll32", "CallDll.c", 0 );
+      #else   
+         MessageBox( 0, L"CallDll32", L"CallDll.c", 0 );
+      #endif   
+   }
+
+#endif
+
+//----------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p119870">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Wed Sep 28, 2011 07:35 PM
+      </div>
+      <div class="content"><p>Hua,</p>
+<p>There were some changes to implement and now it is working fine <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>We email you FiveHGC.lib</p>
+<p>Thanks!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p119885">
+    <div class="poster">
+      <div class="name" style="color:#105289">hua</div>
+      <div class="rank">Posts: 1096</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 28, 2005 02:27 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Thu Sep 29, 2011 01:20 AM
+      </div>
+      <div class="content"><p>Received and I can confirm it works <!-- s:) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":)" title="Smile" /><!-- s:) --> Thanks so much Antonio</p></div>
+    </div>
+  </div>
+  <div class="post" id="p119895">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Thu Sep 29, 2011 06:33 AM
+      </div>
+      <div class="content"><p>Hi Antonio,</p>
+<p>May I have it?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p119900">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Thu Sep 29, 2011 07:23 AM
+      </div>
+      <div class="content"><p>Already Sent <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p119902">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Thu Sep 29, 2011 07:49 AM
+      </div>
+      <div class="content"><p>Gracias!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p122392">
+    <div class="poster">
+      <div class="name" style="color:#105289">concentra</div>
+      <div class="rank">Posts: 124</div>
+      <img class="avatar avatar-img" src="avatars/284.jpg" alt="" loading="lazy">
+      Joined: Mon Nov 14, 2005 10:15 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Wed Nov 16, 2011 04:31 PM
+      </div>
+      <div class="content"><p>Antonio, could you send it to me please.<br>
+Thanks.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p122497">
+    <div class="poster">
+      <div class="name" style="color:#105289">concentra</div>
+      <div class="rank">Posts: 124</div>
+      <img class="avatar avatar-img" src="avatars/284.jpg" alt="" loading="lazy">
+      Joined: Mon Nov 14, 2005 10:15 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Fri Nov 18, 2011 03:27 PM
+      </div>
+      <div class="content"><p>Can anyone send this to me ?</p>
+<p>I have a stucked conversion proccess to MinGw here because this missing function...</p>
+<p>[[]] Maurício Ventura Faria</p></div>
+    </div>
+  </div>
+  <div class="post" id="p122501">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Fri Nov 18, 2011 05:46 PM
+      </div>
+      <div class="content"><p>Mauricio,</p>
+<p>What FWH version are you using ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p122502">
+    <div class="poster">
+      <div class="name" style="color:#105289">concentra</div>
+      <div class="rank">Posts: 124</div>
+      <img class="avatar avatar-img" src="avatars/284.jpg" alt="" loading="lazy">
+      Joined: Mon Nov 14, 2005 10:15 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Fri Nov 18, 2011 05:58 PM
+      </div>
+      <div class="content"><p>October 2011</p>
+<p>[[]] Maurício</p></div>
+    </div>
+  </div>
+  <div class="post" id="p122503">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Fri Nov 18, 2011 07:25 PM
+      </div>
+      <div class="content"><p>Mauricio,</p>
+<p>Libs already sent to your email <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p122573">
+    <div class="poster">
+      <div class="name" style="color:#105289">concentra</div>
+      <div class="rank">Posts: 124</div>
+      <img class="avatar avatar-img" src="avatars/284.jpg" alt="" loading="lazy">
+      Joined: Mon Nov 14, 2005 10:15 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Mon Nov 21, 2011 12:17 PM
+      </div>
+      <div class="content">Antonio, I updated the libs but I'm still getting a  <em>CallDll.c / CallDll32</em> MessageBox.<br>
+<br>
+<img src="http://farmacia.com.br/CallDll32.png" alt="" loading="lazy"><br>
+<br>
+I made a small self contained sample TESTE.PRG:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#INCLUDE "fivewin.ch"
+
+FUNCTION MAIN()
+
+   Local hHandle
+
+   hHandle  := LOADLIBRARY( "BWCC32.DLL" )
+   IF hHandle &lt; 1
+      ALERT( "BWCC32.DLL not found..." )
+   ELSE
+      CALLDLL32( "BWCCRegister", "BWCC32.DLL", GetResources() )
+   ENDIF
+
+   MessageBox( 0, "Teste...", "Teste", 0 );
+
+RETURN NIL</code></pre></div><br>
+Them called HBMK2 with the following .HBP:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">-incpath=F:\FWH\include
+
+-gui
+-m
+-n
+-w
+-a
+-q
+-p
+-es2
+
+-LF:\FWH\lib
+
+-lfivehg
+-lfivehgc
+
+-lhbwin
+-loledlg
+-lpsapi
+-lversion
+
+Teste.PRG</code></pre></div><br>
+The lib DIR listing is:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">F:\Work&gt;dir F:\FWH\lib\fivehg*.*
+ O volume na unidade F não tem nome.
+ O número de série do volume é 4877-2894
+
+ Pasta de F:\FWH\lib
+
+18/11/2011  20:20         2.874.900 FiveHG.lib
+14/11/2011  17:50           759.896 Fivehgc.lib
+               2 arquivo(s)      3.634.796 bytes
+               0 pasta(s) 15.836.467.200 bytes disponíveis</code></pre></div><br>
+ <br>
+Could you please review this ?<br>
+  <br>
+[[]] Maurício</div>
+    </div>
+  </div>
+  <div class="post" id="p122655">
+    <div class="poster">
+      <div class="name" style="color:#105289">concentra</div>
+      <div class="rank">Posts: 124</div>
+      <img class="avatar avatar-img" src="avatars/284.jpg" alt="" loading="lazy">
+      Joined: Mon Nov 14, 2005 10:15 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Wed Nov 23, 2011 06:13 PM
+      </div>
+      <div class="content"><p>Is this a real problem or am I doing something wrong ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p122658">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWCallDll() and MingW + Harbour</span><br>
+        Posted: Wed Nov 23, 2011 07:26 PM
+      </div>
+      <div class="content"><p>Mauricio,</p>
+<p>Thats not the right syntax to use. Please review samples\dllcall.prg example:</p>
+<p>And build it this way:</p>
+<p>buildg.bat dllcall</p>
+<p>Please notice that inside dll.ch we use FWCallDll() but you should not call it directly. Use our DLL FUNCTION ... command syntax.</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-22496-page-2.html">2</a> (17 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

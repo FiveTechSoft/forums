@@ -1,0 +1,1601 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>WSFE Afip Web Services - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-20837">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> WSFE Afip Web Services</div>
+  <div class="post" id="p110687">
+    <div class="poster">
+      <div class="name" style="color:#105289">diegopolverelli</div>
+      <div class="rank">Posts: 149</div>
+      <div class="avatar"></div>
+      Joined: Thu Jun 21, 2007 03:26 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">WSFE Afip Web Services</span><br>
+        Posted: Tue Feb 08, 2011 07:38 PM
+      </div>
+      <div class="content">Como me hay ayudado en numerosas oportunidades, subo una herramienta para conectarse a los WebServices de Afip.<br>
+No pude hacerlo solo con Fivewin, asi que recurrí a PHP. Básicamente tengo un PRG que lee un dbf donde estan los datos de la factura, y genero un .txt con datos como cuit, tipo de comprobante, importe total, importe exento... etc.<br>
+Luego con PHP levanto esa info y completo donde corresponde...<br>
+Para que funcione hay que tener un certificado que da el afip, cuyo path esta en los archivos .php, y luego el .wsdl; el path de este ultimo tambien esta en el .php. Luego es cuestion de probar la conexión. Si cambian el wsdl (que es el del sitio de pruebas de afip) por el de producción, debería funcionar sin problemas. Para obtener el certificado hay instructivos en internet... se usa el OpenSSL-Win32. Busquen...<br>
+Despues, apra que corra php, tiene que instalarlo... se corre por linea de comandos... yo baje una herramienta integrada que se llama xampp... con el php que trae esto anda de 10... hay que poner un path y un set y listo... <br>
+<br>
+Aviso... no es tan, tan fácil... pero... si yo lo pude hacer... lo puede hacer cualquiera... Abrazo a todos...!!!<br>
+<br>
+Aca pego el PHP:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;?php
+# Author: Gerardo Fisanotti - AFIP/SDGSIT/DiITEC/DeARIN - 4-oct-10
+# Function: Show a basic functionality WSFEV1 SOAP client
+#
+# This program is supposed to be executed from the CLI, not under Apache control
+# it should be invoked from the command line, like this:
+#
+#       $ php wsfev1-client.php
+#
+# Depending of the methods invoked (see main program at the end of this file), 
+# this program will generate varios files in your default directory with the
+# results obtained.
+# If LOG_XMLS is TRUE, then, this program will log various files in the default
+# directory, containing the request/response SOAP XML of each method invoked.
+# In order to use this program you need a Ticket de Acceso (TA.xml) as provided
+# by WSAA.
+# The main program is at the end of this source, check it an uncomment/comment
+# the lines that invoke the web methods.
+#==============================================================================
+# You may need to modify the following definitions to adjust to your local
+# requirements.
+define ("WSDL", "wsfev1.wsdl");          # The WSDL corresponding to WSFEX
+define ("URL", "https://wswhomo.afip.gov.ar/wsfev1/service.asmx");
+define ("TA", "TA.xml");                # Ticket de Acceso, from WSAA
+define ("CUIT", 20265612769);           # CUIT del emisor de las FC/NC/ND
+define ("PROXY_HOST", "10.20.152.112"); # Proxy IP, to reach the Internet
+define ("PROXY_PORT", "80");            # Proxy TCP port
+define ("LOG_XMLS", TRUE);              # For debugging purposes
+#==============================================================================
+function CheckErrors($results, $method, $client)
+{
+  $descriptor1=fopen("c:\\tempo\\errorcae.txt", "w");
+
+  if (LOG_XMLS)
+  {
+    file_put_contents("request-".$method.".xml",$client-&gt;__getLastRequest());
+    file_put_contents("response-".$method.".xml",$client-&gt;__getLastResponse());
+  }
+  if (is_soap_fault($results))
+  { fwrite($descriptor1,$results-&gt;faultcode."\n".$results-&gt;faultstring);
+    fclose($descriptor1);
+    printf("Fault: %s\nFaultString: %s\n",
+            $results-&gt;faultcode, $results-&gt;faultstring); 
+    exit (1);
+  }
+  $Y=$method.'Result';
+  $X=$results-&gt;$Y;
+  if (isset($X-&gt;Errors))
+    {
+      foreach ($X-&gt;Errors-&gt;Err as $E)
+        {
+          fwrite($descriptor1,$E-&gt;Code."\n".$E-&gt;Msg."\n");
+          fclose($descriptor1);
+          printf("Method=%s / Code=%s / Msg=%s\n",$method, $E-&gt;Code, $E-&gt;Msg);
+        }
+      exit (1);
+    }
+}
+#==============================================================================
+function FEDummy($client)
+{
+  $results=$client-&gt;FEDummy();
+  CheckErrors($results, 'FEDummy', $client);
+  printf("Appserver: %s\nDbserver: %s\nAuthserver: %s\n",
+    $results-&gt;FEDummyResult-&gt;AppServer,
+    $results-&gt;FEDummyResult-&gt;DbServer,
+    $results-&gt;FEDummyResult-&gt;AuthServer);
+}
+#==============================================================================
+function FEParamGetCotizacion ($client, $token, $sign, $CUIT, $MON)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $params-&gt;MonId = $MON;
+  $results=$client-&gt;FEParamGetCotizacion($params);
+  CheckErrors($results, 'FEParamGetCotizacion', $client);
+  $X=$results-&gt;FEParamGetCotizacionResult-&gt;ResultGet;
+  printf("Id=%s  /  Cotiz=%f  / Fecha=%s\n", $X-&gt;MonId, $X-&gt;MonCotiz, 
+         $X-&gt;FchCotiz);
+  return $X-&gt;MonCotiz;
+}
+#==============================================================================
+function FEParamGetTiposTributos ($client, $token, $sign, $CUIT)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $results=$client-&gt;FEParamGetTiposTributos($params);
+  CheckErrors($results, 'FEParamGetTiposTributos', $client);
+  $X=$results-&gt;FEParamGetTiposTributosResult;
+  $fh=fopen("TiposTributos.txt","w");
+  foreach ($X-&gt;ResultGet-&gt;TributoTipo as $Y)
+    {
+      fwrite($fh,sprintf("%5s  %-30s\n",$Y-&gt;Id, $Y-&gt;Desc));
+    }
+  fclose($fh);
+}
+#==============================================================================
+function FEParamGetTiposMonedas ($client, $token, $sign, $CUIT)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $results=$client-&gt;FEParamGetTiposMonedas($params);
+  CheckErrors($results, 'FEParamGetTiposMonedas', $client);
+  $X=$results-&gt;FEParamGetTiposMonedasResult;
+  $fh=fopen("TiposMonedas.txt","w");
+  foreach ($X-&gt;ResultGet-&gt;Moneda as $Y)
+    {
+      fwrite($fh,sprintf("%5s  %-30s\n",$Y-&gt;Id, $Y-&gt;Desc));
+    }
+  fclose($fh);
+}
+#==============================================================================
+function FEParamGetTiposIva ($client, $token, $sign, $CUIT)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $results=$client-&gt;FEParamGetTiposIva($params);
+  CheckErrors($results, 'FEParamGetTiposIva', $client);
+  $X=$results-&gt;FEParamGetTiposIvaResult;
+  $fh=fopen("TiposIva.txt","w");
+  foreach ($X-&gt;ResultGet-&gt;IvaTipo as $Y)
+    {
+      fwrite($fh,sprintf("%5s  %-30s\n",$Y-&gt;Id, $Y-&gt;Desc));
+    }
+  fclose($fh);
+}
+#==============================================================================
+function FEParamGetTiposOpcional ($client, $token, $sign, $CUIT)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $results=$client-&gt;FEParamGetTiposOpcional($params);
+  CheckErrors($results, 'FEParamGetTiposOpcional', $client);
+  $X=$results-&gt;FEParamGetTiposOpcionalResult;
+  $fh=fopen("TiposOpcional.txt","w");
+  foreach ($X-&gt;ResultGet-&gt;OpcionalTipo as $Y)
+    {
+      fwrite($fh,sprintf("%5s  %-30s\n",$Y-&gt;Id, $Y-&gt;Desc));
+    }
+  fclose($fh);
+}
+
+#==============================================================================
+function FECompConsultar1 ($client, $token, $sign, $CUIT, $PV, $TC, $NC)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+
+  $params-&gt;FeCompConsReq-&gt;CbteTipo = $TC;
+  $params-&gt;FeCompConsReq-&gt;CbteNro = $NC;
+  $params-&gt;FeCompConsReq-&gt;PtoVta = $PV;
+
+  $results=$client-&gt;FECompConsultar($params);
+  CheckErrors($results, 'FECompConsultar', $client);
+
+  echo "\n\nEl CAE de la factura ".$NC." es ".$results-&gt;FECompConsultarResult-&gt;ResultGet-&gt;CodAutorizacion."\n\n\n";
+
+}
+
+#==============================================================================
+function FECompConsultar ($client, $token, $sign, $CUIT, $PV, $TC)
+{
+  $ULT_CBTE=FECompUltimoAutorizado($client, $token, $sign, CUIT, $PV, $TC);
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $params-&gt;FeCompConsReq-&gt;CbteTipo=$TC;
+  $params-&gt;FeCompConsReq-&gt;CbteNro=$ULT_CBTE;
+  $params-&gt;FeCompConsReq-&gt;PtoVta=$PV;
+  $results=$client-&gt;FECompConsultar($params);
+  CheckErrors($results, 'FECompConsultar', $client);
+}
+
+#==============================================================================
+function FEParamGetTiposConcepto ($client, $token, $sign, $CUIT)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $results=$client-&gt;FEParamGetTiposConcepto($params);
+  CheckErrors($results, 'FEParamGetTiposConcepto', $client);
+  $X=$results-&gt;FEParamGetTiposConceptoResult;
+  $fh=fopen("TiposConcepto.txt","w");
+  foreach ($X-&gt;ResultGet-&gt;ConceptoTipo as $Y)
+    {
+      fwrite($fh,sprintf("%5s  %-30s\n",$Y-&gt;Id, $Y-&gt;Desc));
+    }
+  fclose($fh);
+}
+#==============================================================================
+function FEParamGetPtosVenta ($client, $token, $sign, $CUIT)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $results=$client-&gt;FEParamGetPtosVenta($params);
+  CheckErrors($results, 'FEParamGetPtosVenta', $client);
+  $X=$results-&gt;FEParamGetPtosVentaResult;
+  $fh=fopen("PtosVenta.txt","w");
+  foreach ($X-&gt;ResultGet-&gt;PtoVentaTipo as $Y)
+    {
+      fwrite($fh,sprintf("%5s  %-30s\n",$Y-&gt;Id, $Y-&gt;Desc));
+    }
+  fclose($fh);
+}
+#==============================================================================
+function FEParamGetTiposCbte ($client, $token, $sign, $CUIT)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $results=$client-&gt;FEParamGetTiposCbte($params);
+  CheckErrors($results, 'FEParamGetTiposCbte', $client);
+  $X=$results-&gt;FEParamGetTiposCbteResult;
+  $fh=fopen("TiposCbte.txt","w");
+  foreach ($X-&gt;ResultGet-&gt;CbteTipo as $Y)
+    {
+      fwrite($fh,sprintf("%5s  %-30s\n",$Y-&gt;Id, $Y-&gt;Desc));
+    }
+  fclose($fh);
+}
+#==============================================================================
+function FEParamGetTiposDoc ($client, $token, $sign, $CUIT)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $results=$client-&gt;FEParamGetTiposDoc($params);
+  CheckErrors($results, 'FEParamGetTiposDoc', $client);
+  $X=$results-&gt;FEParamGetTiposDocResult;
+  $fh=fopen("TiposDoc.txt","w");
+  foreach ($X-&gt;ResultGet-&gt;DocTipo as $Y)
+    {
+      fwrite($fh,sprintf("%5s  %-30s\n",$Y-&gt;Id, $Y-&gt;Desc));
+    }
+  fclose($fh);
+}
+#==============================================================================
+function FECompTotXRequest ($client, $token, $sign, $CUIT)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $results=$client-&gt;FECompTotXRequest($params);
+  CheckErrors($results, 'FECompTotXRequest', $client);
+  $X=$results-&gt;FECompTotXRequestResult;
+  return $X-&gt;RegXReq;
+}
+#==============================================================================
+function FECompUltimoAutorizado ($client, $token, $sign, $CUIT, $PV, $TC)
+{
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $params-&gt;PtoVta = $PV;
+  $params-&gt;CbteTipo = $TC;
+  $results=$client-&gt;FECompUltimoAutorizado($params);
+  CheckErrors($results, 'FECompUltimoAutorizado', $client);
+  $X=$results-&gt;FECompUltimoAutorizadoResult;
+  printf("PV=%s  / TC=%s  /  Ult.Cbte=%s\n",$PV, $TC,$X-&gt;CbteNro);
+  return $X-&gt;CbteNro;
+}
+#==============================================================================
+function FECAESolicitar ($client, $params)
+{
+  $descriptor=fopen("c:\\tempo\\cae.txt", "w");
+
+  $descriptor1=fopen("c:\\tempo\\errorcae.txt", "w");
+
+  $results=$client-&gt;FECAESolicitar($params);
+  CheckErrors($results, 'FECAESolicitar', $client);
+  $C=$results-&gt;FECAESolicitarResult-&gt;FeCabResp;
+  $D=$results-&gt;FECAESolicitarResult-&gt;FeDetResp;
+  printf("Resultado Cabecera=%s\n",$C-&gt;Resultado);
+  foreach ($D-&gt;FECAEDetResponse as $d)
+    {
+      fwrite($descriptor,$d-&gt;CAE);
+
+      fwrite($descriptor1,$d-&gt;Resultado."\n".$d-&gt;CAE."\n".$d-&gt;CAEFchVto."\n");
+
+      printf("Resultado Cbte#%s = %s  /  CAE=%s  /  vto=%s\n", 
+        $d-&gt;CbteDesde, $d-&gt;Resultado, $d-&gt;CAE, $d-&gt;CAEFchVto);
+      if (isset($d-&gt;Observaciones))
+        {
+          foreach ($d-&gt;Observaciones-&gt;Obs as $O)
+            {
+              fwrite($descriptor1,$O-&gt;Code." ***** ".$O-&gt;Msg."\n");
+
+              printf("Obs: Code=%s  /  Msg=%s\n",$O-&gt;Code, $O-&gt;Msg);
+            }
+        }
+    }
+
+    fclose($descriptor);
+    fclose($descriptor1);
+
+}
+#==============================================================================
+function EmitirFC ($client, $token, $sign, $CUIT, $PV, $CANT)
+{
+
+  $descriptor=fopen("c:\\tempo\\faelec.txt", "r");
+  $contenido=fread($descriptor,filesize("c:\\tempo\\faelec.txt"));
+  fclose($descriptor);
+
+
+  $nro_doc=0+substr($contenido,2,11);
+  $tipo_cbte=0+substr($contenido,13,1);
+  $punto_vta=0+substr($contenido,14,2);
+  $cbt_desde=0+substr($contenido,16,15);
+  $cbt_hasta=0+$cbt_desde;
+  $imp_total=0+substr($contenido,46,20);
+  $imp_tot_conc=0+substr($contenido,66,20);
+  $imp_neto=0+substr($contenido,86,20);
+  $impto_liq=0+substr($contenido,106,20);
+  $impto_liq_rni=0+substr($contenido,126,20);
+  $imp_op_ex=0+substr($contenido,146,20);
+  $fecha_cbte=substr($contenido,166,8);
+  $iva21=0+substr($contenido,182,20);
+  $iva105=0+substr($contenido,202,20);
+  $fecha_venc_pago=$fecha_cbte;
+
+        echo "Iva Total: ",$impto_liq."\n";
+        echo "Tipo de Iva 21: ",gettype($iva21)."\n";
+
+
+
+  $TC=1;
+  $ULT_CBTE=FECompUltimoAutorizado($client, $token, $sign, CUIT, $punto_vta, $tipo_cbte);
+  $params-&gt;Auth-&gt;Token = $token;
+  $params-&gt;Auth-&gt;Sign = $sign;
+  $params-&gt;Auth-&gt;Cuit = $CUIT;
+  $FeCabReq-&gt;CantReg = 1;
+  $FeCabReq-&gt;PtoVta = $punto_vta;
+  $FeCabReq-&gt;CbteTipo = $tipo_cbte;
+  $FeDetReq=array();
+  for ($i=0;$i&lt;$CANT;$i++)
+    {
+      $FEDetRequest='';
+      $FEDetRequest-&gt;Concepto=1;
+      $FEDetRequest-&gt;DocTipo=80;
+      $FEDetRequest-&gt;DocNro=$nro_doc;
+      $FEDetRequest-&gt;CbteDesde=$cbt_desde;
+      $FEDetRequest-&gt;CbteHasta=$cbt_desde;
+      $FEDetRequest-&gt;CbteFch=$fecha_cbte;
+      $FEDetRequest-&gt;ImpTotal=$imp_total;
+      $FEDetRequest-&gt;ImpTotConc=0;
+      $FEDetRequest-&gt;ImpNeto=$imp_neto;
+      $FEDetRequest-&gt;ImpOpEx=$imp_op_ex;
+      $FEDetRequest-&gt;ImpTrib=0;
+      $FEDetRequest-&gt;ImpIVA=$impto_liq;
+      $FEDetRequest-&gt;FchVtoPago="        ";
+      $FEDetRequest-&gt;MonId='PES';
+      $FEDetRequest-&gt;MonCotiz=1;
+      $FEDetRequest-&gt;FchServDesde="        ";
+      $FEDetRequest-&gt;FchServHasta="        ";
+
+        
+
+      if ($iva21 &gt; 0 &amp;&amp; $iva105 == 0) {
+
+#        echo "Iva 21: ",$iva21."\n";
+#        echo "Tipo de Iva 21: ",gettype($iva21)."\n";
+
+        $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;Id=5;
+        $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;BaseImp=$iva21*100/21;
+        $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;Importe=$iva21;
+
+        }
+
+      if ($iva21 == 0 &amp;&amp; $iva105 &gt; 0) {
+
+        $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;Id=4;
+        $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;BaseImp=$iva105*100/10.5;
+        $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;Importe=$iva105;
+
+        }
+
+      if ($iva105 == 0 &amp;&amp; $iva21 == 0) {
+
+        $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;Id=3;
+        $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;BaseImp=$imp_op_ex;
+        $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;Importe=0;
+
+        }
+
+      if ($iva21 &gt; 0 &amp;&amp; $iva105 &gt; 0) {
+
+        echo "2 alicuotas de IVA\n";
+
+        $aAlicIva=array();
+
+        $aAlicIva[0]-&gt;Id=5;
+        $aAlicIva[0]-&gt;BaseImp=$iva21*100/21;
+        $aAlicIva[0]-&gt;Importe=$iva21;
+
+        $aAlicIva[1]-&gt;Id=4;
+        $aAlicIva[1]-&gt;BaseImp=$iva105*100/10.5;
+        $aAlicIva[1]-&gt;Importe=$iva105;
+
+        $FEDetRequest-&gt;Iva-&gt;AlicIva=$aAlicIva;
+
+        echo  "\n\n\n".$FEDetRequest-&gt;Iva-&gt;AlicIva[1]-&gt;Id."\n\n\n";
+
+        }
+
+
+      $FeDetReq[$i]=$FEDetRequest;
+    }
+  $params-&gt;FeCAEReq-&gt;FeCabReq = $FeCabReq;
+  $params-&gt;FeCAEReq-&gt;FeDetReq = $FeDetReq;
+  $result=FECAESolicitar($client, $params);
+
+
+#      $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;Id=5;
+#      $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;BaseImp=$iva21*100/21;
+#      $FEDetRequest-&gt;Iva-&gt;AlicIva-&gt;Importe=$iva21;
+
+
+#      $FEDetRequest-&gt;FchVtoPago=date('Ymd',date('U'));
+
+#      $FEDetRequest-&gt;FchServDesde=date('Ymd',date('U'));
+#      $FEDetRequest-&gt;FchServHasta=date('Ymd',date('U'));
+
+
+}
+#==============================================================================
+ini_set("soap.wsdl_cache_enabled", "0");
+if (!file_exists(WSDL)) {exit("Failed to open ".WSDL."\n");}
+if (!file_exists(TA)) {exit("Failed to open ".TA."\n");}
+$client=new soapClient(WSDL,
+  array('soap_version' =&gt; SOAP_1_2,
+        'location'     =&gt; URL,
+#        'proxy_host'   =&gt; PROXY_HOST,
+#        'proxy_port'   =&gt; PROXY_PORT,
+        'exceptions'   =&gt; 0,
+        'encoding'     =&gt; 'ISO-8859-1',
+        'features'     =&gt; SOAP_USE_XSI_ARRAY_TYPE + SOAP_SINGLE_ELEMENT_ARRAYS,
+        'trace'        =&gt; 1)); # needed by getLastRequestHeaders and others
+$TA=simplexml_load_file(TA);
+$token=$TA-&gt;credentials-&gt;token;
+$sign=$TA-&gt;credentials-&gt;sign;
+file_put_contents("functions.txt",print_r($client-&gt;__getFunctions(),TRUE));
+file_put_contents("types.txt",print_r($client-&gt;__getTypes(),TRUE));
+#
+# Uncomment any of the following lines to invoke the corresponding web method.
+#
+#FEDummy($client);
+#FEParamGetTiposTributos($client, $token, $sign, CUIT);
+#FEParamGetTiposMonedas($client, $token, $sign, CUIT);
+#FEParamGetTiposIva($client, $token, $sign, CUIT);
+#FEParamGetTiposOpcional($client, $token, $sign, CUIT);
+#FEParamGetTiposConcepto($client, $token, $sign, CUIT);
+#FEParamGetPtosVenta($client, $token, $sign, CUIT);
+#FEParamGetTiposCbte($client, $token, $sign, CUIT);
+#FEParamGetTiposDoc($client, $token, $sign, CUIT);
+#FEParamGetCotizacion($client, $token, $sign, CUIT, "DOL");
+#FECompConsultar1($client, $token, $sign, CUIT, 1, 1, 19);
+
+$MAX_CBTE=FECompTotXRequest($client, $token, $sign, CUIT);
+printf("Max Cbte por request=%s\n",$MAX_CBTE);
+$PV=1;
+$CANT=1;
+EmitirFC($client, $token, $sign, CUIT, $PV, $CANT);
+FECompConsultar($client, $token, $sign, CUIT, $PV, 1);
+?&gt;
+
+
+pego el .bat con los sets y path... 
+
+CLS
+PATH=%PATH%;C:\XAMPP\PHP
+SET PHPRC=C:\XAMPP\PHP
+PHP WSAA-SAROS.PHP wsfe
+PHP WSFEV1-SAROS.PHP
+
+
+y finalmente el prg, que es medio complejo, pero traten de limpiarlo e interpretarlo un poco... cualquier cosa pregunten...
+Ah... hay que bajar la fuente BAR25i
+Si no la tienen me avisan y la subo por ahí... 
+
+//FACTURA SAROS, IMPRESORA LASER
+
+#include "FiveWin.ch"
+#include "Report.ch"
+
+MEMVAR EMPRE, NROCAE, VNCCAE
+
+function main
+
+SET DATE ITALIAN
+SET DELE ON
+SET CENT ON
+
+        impre()
+
+        CLOSE ALL
+        SET RESOURCES TO
+
+
+return nil
+
+
+// ----------------------------------------------------------------
+FUNCTION IMPRE()
+   LOCAL oPrn, oFont0, oFont, oFont1, oFontBold, oPen, oPen1,oFont2, OFONT3
+   LOCAL nRS, nCS, nRow, n
+   LOCAL NIMP, XATTE, XPAGO, XFECHA, XNUMERO, XIT, XOBSERV, XNOMBRE, XFIRMA, XREFERENCIA
+   LOCAL XITEMS, XPAGINA, XPAGINAS, XIT1, XTOTPAG, XDESCUENTO
+   LOCAL XTOTAL, XIVA, XPIVA, XTIPIVA, XREMITO, XLEYENDA, XCUIT, XDIRECCION, XCOPIAS, XCOPIA, XCODCOM1
+   LOCAL AMODELOS
+   LOCAL GTOTAL, XDES, XPRESINDES, XNITEMS, XITEM, XDTOGRAL, xnacional
+   LOCAL XLOCALIDAD, XPROVINCIA, XCLI_CODIG, XORDENCP, IVA_1, IVA_2
+//EL RECURSO COMPARTIDO ES COLOR
+
+        IF !FILE("C:\TEMPO\INI.DBF")
+                MSGSTOP("FALTA EL ARCHIVO INI DEL C:\TEMPO","ERROR")
+                CLOSE ALL
+                QUIT
+        ELSE
+                SELE 99
+                USE C:\TEMPO\INI SHARED
+                LOCA FOR INI-&gt;PARAMETRO="PHP"
+                IF !EOF() .AND. LEN(ALLTRIM(INI-&gt;VALOR))&lt;&gt;0
+                        XDIRPHP=ALLTRIM(INI-&gt;VALOR)
+
+                        SELE 99
+                        USE
+
+                        NOME_ARQ := FCREATE("C:\TEMPO\WS.BAT") 
+                        
+                        NREGISTRO := "CLS"
+                        FWRITE( NOME_ARQ, NREGISTRO+chr(13)+chr(10) )   
+                        NREGISTRO := "PATH=%PATH%;"+XDIRPHP
+                        FWRITE( NOME_ARQ, NREGISTRO+chr(13)+chr(10) )   
+                        NREGISTRO := "SET PHPRC="+XDIRPHP
+                        FWRITE( NOME_ARQ, NREGISTRO+chr(13)+chr(10) )   
+                        NREGISTRO := "PHP WSAA-SAROS.PHP wsfe"
+                        FWRITE( NOME_ARQ, NREGISTRO+chr(13)+chr(10) )   
+                        NREGISTRO := "PHP WSFEV1-SAROS.PHP"
+                        FWRITE( NOME_ARQ, NREGISTRO+chr(13)+chr(10) )   
+
+                        FCLOSE( NOME_ARQ ) 
+
+                ELSE
+                        MSGSTOP("FALTA DEFINIR EL DIRECTORIO DE PHP EN ARCHIVO INI","ERROR")
+                ENDIF
+        ENDIF
+
+        SELE 99
+        USE C:\TEMPO\FAC1CLI SHARED
+        COPY TO C:\TEMPO\IMPCOT
+        USE C:\TEMPO\IMPCOT ALIAS FAC1
+        EMPRE:=ALLTRIM(FAC1-&gt;CODEMP)
+
+        SELE 77
+        USE &amp;EMPRE\MOV_C_IV.SX SHARED
+        LOCA FOR MOV_C_IV-&gt;CODCOM=FAC1-&gt;CODCOM .AND. MOV_C_IV-&gt;NUMERO=FAC1-&gt;NUMERO
+        IF !EOF()
+                IF LEN(ALLTRIM(MOV_C_IV-&gt;CAE))=0
+
+                        SELE 77
+                        USE &amp;EMPRE\FAELEC.SX SHARED
+                        COPY STRU TO C:\TEMPO\FAELEC
+                
+                        SELE 78
+                        USE C:\TEMPO\FAELEC ALIAS ELEC
+                
+                        SELE 99
+                        GO TOP
+                        SUM (FAC1-&gt;TOTAL) TO XTOTAL 
+                        SUM (FAC1-&gt;XIVA_1+FAC1-&gt;XIVA_2+FAC1-&gt;XIVA_3) TO XIVA
+                        SUM FAC1-&gt;XIVA_1 TO XIVA21
+                        SUM FAC1-&gt;XIVA_2 TO XIVA105
+                        SUM (FAC1-&gt;TOTAL) TO XTOTALEXE FOR FAC1-&gt;XIVA_1=0 .AND. FAC1-&gt;XIVA_2=0 .AND. FAC1-&gt;XIVA_3=0
+
+                        go top
+                        if left(fac1-&gt;codcom,2)="CA"
+                                xtotal:=xtotal*-1
+                                xiva:=xiva*-1
+                                xiva21:=xiva21*-1
+                                xiva105:=xiva105*-1
+                                xtotalexe:=xtotalexe*-1
+                        endif
+
+                        GO TOP
+                        DO CASE
+                                CASE FAC1-&gt;CODCOM="FAELE"
+                                        SELE 78
+                                        APPE BLANK
+                                        REPL ELEC-&gt;TIPODOC WITH "80"
+                                        REPL ELEC-&gt;NRODOC WITH LEFT(FAC1-&gt;CUIT,2)+SUBSTR(FAC1-&gt;CUIT,4,8)+RIGHT(ALLTRIM(FAC1-&gt;CUIT),1)
+                                        REPL ELEC-&gt;TIPOCBTE WITH "1"
+                                        REPL ELEC-&gt;PUNTOVTA WITH ALLTRIM(STR(VAL(LEFT(FAC1-&gt;NRO_COMP,4))))
+                                        REPL ELEC-&gt;CBTDESDE WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;CBTHASTA WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;IMPTOTAL WITH ALLTRIM(STR(XTOTAL+XIVA,15,2))
+                                        REPL ELEC-&gt;IMPTOTCO WITH "0.00"
+                                        REPL ELEC-&gt;IMPNETO WITH ALLTRIM(STR(XTOTAL-XTOTALEXE,15,2))
+                                        REPL ELEC-&gt;IMPTOLIQ WITH ALLTRIM(STR(XIVA,15,2))
+                                        REPL ELEC-&gt;IVA21 WITH ALLTRIM(STR(XIVA21,15,2))
+                                        REPL ELEC-&gt;IVA105 WITH ALLTRIM(STR(XIVA105,15,2))
+                                        REPL ELEC-&gt;IMPTONRI WITH "0.00"
+                                        REPL ELEC-&gt;IMPOPEXE WITH ALLTRIM(STR(XTOTALEXE,15,2))
+                                        REPL ELEC-&gt;FECHACBT WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+                                        REPL ELEC-&gt;FECHAVTO WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+                
+                
+                                CASE FAC1-&gt;CODCOM="CAELE"
+                                        SELE 78
+                                        APPE BLANK
+                                        REPL ELEC-&gt;TIPODOC WITH "80"
+                                        REPL ELEC-&gt;NRODOC WITH LEFT(FAC1-&gt;CUIT,2)+SUBSTR(FAC1-&gt;CUIT,4,8)+RIGHT(ALLTRIM(FAC1-&gt;CUIT),1)
+                                        REPL ELEC-&gt;TIPOCBTE WITH "3"
+                                        REPL ELEC-&gt;PUNTOVTA WITH ALLTRIM(STR(VAL(LEFT(FAC1-&gt;NRO_COMP,4))))
+                                        REPL ELEC-&gt;CBTDESDE WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;CBTHASTA WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;IMPTOTAL WITH ALLTRIM(STR(XTOTAL+XIVA,15,2))
+                                        REPL ELEC-&gt;IMPTOTCO WITH "0.00"
+                                        REPL ELEC-&gt;IMPNETO WITH ALLTRIM(STR(XTOTAL,15,2))
+                                        REPL ELEC-&gt;IMPTOLIQ WITH ALLTRIM(STR(XIVA,15,2))
+                                        REPL ELEC-&gt;IVA21 WITH ALLTRIM(STR(XIVA21,15,2))
+                                        REPL ELEC-&gt;IVA105 WITH ALLTRIM(STR(XIVA105,15,2))
+                                        REPL ELEC-&gt;IMPTONRI WITH "0.00"
+                                        REPL ELEC-&gt;IMPOPEXE WITH ALLTRIM(STR(XTOTALEXE,15,2))
+                                        REPL ELEC-&gt;FECHACBT WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+                                        REPL ELEC-&gt;FECHAVTO WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+
+
+                                CASE FAC1-&gt;CODCOM="DAELE"
+                                        SELE 78
+                                        APPE BLANK
+                                        REPL ELEC-&gt;TIPODOC WITH "80"
+                                        REPL ELEC-&gt;NRODOC WITH LEFT(FAC1-&gt;CUIT,2)+SUBSTR(FAC1-&gt;CUIT,4,8)+RIGHT(ALLTRIM(FAC1-&gt;CUIT),1)
+                                        REPL ELEC-&gt;TIPOCBTE WITH "2"
+                                        REPL ELEC-&gt;PUNTOVTA WITH ALLTRIM(STR(VAL(LEFT(FAC1-&gt;NRO_COMP,4))))
+                                        REPL ELEC-&gt;CBTDESDE WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;CBTHASTA WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;IMPTOTAL WITH ALLTRIM(STR(XTOTAL+XIVA,15,2))
+                                        REPL ELEC-&gt;IMPTOTCO WITH "0.00"
+                                        REPL ELEC-&gt;IMPNETO WITH ALLTRIM(STR(XTOTAL,15,2))
+                                        REPL ELEC-&gt;IMPTOLIQ WITH ALLTRIM(STR(XIVA,15,2))
+                                        REPL ELEC-&gt;IVA21 WITH ALLTRIM(STR(XIVA21,15,2))
+                                        REPL ELEC-&gt;IVA105 WITH ALLTRIM(STR(XIVA105,15,2))
+                                        REPL ELEC-&gt;IMPTONRI WITH "0.00"
+                                        REPL ELEC-&gt;IMPOPEXE WITH ALLTRIM(STR(XTOTALEXE,15,2))
+                                        REPL ELEC-&gt;FECHACBT WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+                                        REPL ELEC-&gt;FECHAVTO WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+
+                                CASE FAC1-&gt;CODCOM="FBELE"
+                                        SELE 78
+                                        APPE BLANK
+                                        REPL ELEC-&gt;TIPODOC WITH "80"
+                                        REPL ELEC-&gt;NRODOC WITH LEFT(FAC1-&gt;CUIT,2)+SUBSTR(FAC1-&gt;CUIT,4,8)+RIGHT(ALLTRIM(FAC1-&gt;CUIT),1)
+                                        REPL ELEC-&gt;TIPOCBTE WITH "6"
+                                        REPL ELEC-&gt;PUNTOVTA WITH ALLTRIM(STR(VAL(LEFT(FAC1-&gt;NRO_COMP,4))))
+                                        REPL ELEC-&gt;CBTDESDE WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;CBTHASTA WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;IMPTOTAL WITH ALLTRIM(STR(XTOTAL+XIVA,15,2))
+                                        REPL ELEC-&gt;IMPTOTCO WITH "0.00"
+                                        REPL ELEC-&gt;IMPNETO WITH ALLTRIM(STR(XTOTAL,15,2))
+                                        REPL ELEC-&gt;IMPTOLIQ WITH ALLTRIM(STR(XIVA,15,2))
+                                        REPL ELEC-&gt;IVA21 WITH ALLTRIM(STR(XIVA21,15,2))
+                                        REPL ELEC-&gt;IVA105 WITH ALLTRIM(STR(XIVA105,15,2))
+                                        REPL ELEC-&gt;IMPTONRI WITH "0.00"
+                                        REPL ELEC-&gt;IMPOPEXE WITH ALLTRIM(STR(XTOTALEXE,15,2))
+                                        REPL ELEC-&gt;FECHACBT WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+                                        REPL ELEC-&gt;FECHAVTO WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+                
+                
+                                CASE FAC1-&gt;CODCOM="CBELE"
+                                        SELE 78
+                                        APPE BLANK
+                                        REPL ELEC-&gt;TIPODOC WITH "80"
+                                        REPL ELEC-&gt;NRODOC WITH LEFT(FAC1-&gt;CUIT,2)+SUBSTR(FAC1-&gt;CUIT,4,8)+RIGHT(ALLTRIM(FAC1-&gt;CUIT),1)
+                                        REPL ELEC-&gt;TIPOCBTE WITH "8"
+                                        REPL ELEC-&gt;PUNTOVTA WITH ALLTRIM(STR(VAL(LEFT(FAC1-&gt;NRO_COMP,4))))
+                                        REPL ELEC-&gt;CBTDESDE WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;CBTHASTA WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;IMPTOTAL WITH ALLTRIM(STR(XTOTAL+XIVA,15,2))
+                                        REPL ELEC-&gt;IMPTOTCO WITH "0.00"
+                                        REPL ELEC-&gt;IMPNETO WITH ALLTRIM(STR(XTOTAL,15,2))
+                                        REPL ELEC-&gt;IMPTOLIQ WITH ALLTRIM(STR(XIVA,15,2))
+                                        REPL ELEC-&gt;IVA21 WITH ALLTRIM(STR(XIVA21,15,2))
+                                        REPL ELEC-&gt;IVA105 WITH ALLTRIM(STR(XIVA105,15,2))
+                                        REPL ELEC-&gt;IMPTONRI WITH "0.00"
+                                        REPL ELEC-&gt;IMPOPEXE WITH ALLTRIM(STR(XTOTALEXE,15,2))
+                                        REPL ELEC-&gt;FECHACBT WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+                                        REPL ELEC-&gt;FECHAVTO WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+
+
+                                CASE FAC1-&gt;CODCOM="DBELE"
+                                        SELE 78
+                                        APPE BLANK
+                                        REPL ELEC-&gt;TIPODOC WITH "80"
+                                        REPL ELEC-&gt;NRODOC WITH LEFT(FAC1-&gt;CUIT,2)+SUBSTR(FAC1-&gt;CUIT,4,8)+RIGHT(ALLTRIM(FAC1-&gt;CUIT),1)
+                                        REPL ELEC-&gt;TIPOCBTE WITH "7"
+                                        REPL ELEC-&gt;PUNTOVTA WITH ALLTRIM(STR(VAL(LEFT(FAC1-&gt;NRO_COMP,4))))
+                                        REPL ELEC-&gt;CBTDESDE WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;CBTHASTA WITH ALLTRIM(STR(FAC1-&gt;NUMERO,15,0))
+                                        REPL ELEC-&gt;IMPTOTAL WITH ALLTRIM(STR(XTOTAL+XIVA,15,2))
+                                        REPL ELEC-&gt;IMPTOTCO WITH "0.00"
+                                        REPL ELEC-&gt;IMPNETO WITH ALLTRIM(STR(XTOTAL,15,2))
+                                        REPL ELEC-&gt;IMPTOLIQ WITH ALLTRIM(STR(XIVA,15,2))
+                                        REPL ELEC-&gt;IVA21 WITH ALLTRIM(STR(XIVA21,15,2))
+                                        REPL ELEC-&gt;IVA105 WITH ALLTRIM(STR(XIVA105,15,2))
+                                        REPL ELEC-&gt;IMPTONRI WITH "0.00"
+                                        REPL ELEC-&gt;IMPOPEXE WITH ALLTRIM(STR(XTOTALEXE,15,2))
+                                        REPL ELEC-&gt;FECHACBT WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+                                        REPL ELEC-&gt;FECHAVTO WITH PADL(YEAR(FAC1-&gt;FECHA),4,"0")+PADL(MONTH(FAC1-&gt;FECHA),2,"0")+PADL(DAY(FAC1-&gt;FECHA),2,"0")
+
+
+                                OTHERWISE
+                                        MSGSTOP("ERROR CON EL TIPO DE COMPROBANTE ELECTRONICO","ERROR")
+                                        CLOSE ALL
+                                        RETURN NIL
+                        ENDCASE
+
+                        SELE 78
+                        COPY TO C:\TEMPO\FAELEC.TXT SDF
+
+                        IF FILE("C:\TEMPO\CAE.TXT")
+                                RUN("DEL C:\TEMPO\CAE.TXT")
+                        ENDIF
+
+                        RUN("C:\TEMPO\WS.BAT")
+
+                        IF !FILE("C:\TEMPO\CAE.TXT")
+                                MSGSTOP("ERROR GENERACION DE CAE."+CRLF+"INGRESE AL SIMBOLO DE SISTEMA Y EJECUTE C:\TEMPO\WS.BAT"+CRLF+"PARA MAYOR DETALLE", "ERROR")
+                                CLOSE ALL
+                                QUIT
+                        ENDIF
+
+                        SELE 78
+                        APPE FROM C:\TEMPO\CAE.TXT SDF
+
+                        IF UPPER(ELEC-&gt;TIPODOC)="NU"
+                                MSGSTOP("PROBLEMAS CON EL NUMERO DE CAE","ERROR")
+                                CLOSE ALL
+                                QUIT
+                        ELSE
+                                NROCAE=ELEC-&gt;TIPODOC+ELEC-&gt;NRODOC+ELEC-&gt;TIPOCBTE
+                                VNCCAE=DATE()+10
+
+                                SELE 78
+                                USE
+
+                                SELE 78
+                                USE &amp;EMPRE\MOV_C_IV.SX SHARED
+                                LOCA FOR MOV_C_IV-&gt;CODCOM=FAC1-&gt;CODCOM .AND. MOV_C_IV-&gt;NUMERO=FAC1-&gt;NUMERO
+                                IF !EOF()
+                                        DO WHILE !RLOCK()
+
+                                        ENDDO
+
+                                        REPL MOV_C_IV-&gt;CAE WITH NROCAE
+                                        REPL MOV_C_IV-&gt;VNCCAE WITH VNCCAE
+
+                                        UNLOCK
+                                ENDIF
+
+                                SELE 78
+                                USE
+
+                                SELE 77
+                                APPE FROM C:\TEMPO\FAELEC
+
+                                SELE 77
+                                USE
+                        ENDIF
+
+
+                ELSE
+                        NROCAE=MOV_C_IV-&gt;CAE
+                        VNCCAE=MOV_C_IV-&gt;VNCCAE
+
+                        SELE 77
+                        USE
+                ENDIF
+        ELSE
+                MSGSTOP("NO SE ENCUENTRA EL COMPROBANTE EN LA BASE CABECERA VENTAS","ERROR")
+                CLOSE ALL
+                QUIT
+        ENDIF
+
+        SELE 99
+        COUNT TO XITEMS FOR fac1-&gt;art_codig&lt;&gt;space(16)
+        GO TOP
+
+        XCAE:=CAE(FAC1-&gt;NRO_COMP,NROCAE,VNCCAE,fac1-&gt;codcom)
+        XCODCOM1:=fac1-&gt;CODCOM
+        XTIPIVA:=ALLTRIM(FAC1-&gt;TIPIVA)
+        XCUIT:=FAC1-&gt;CUIT
+        if upper(alltrim(fac1-&gt;moneda))&lt;&gt;"PE"
+                xnacional:=.f.
+        else
+                xnacionaL:=.t.
+        endif
+
+        XATTE:=FAC1-&gt;ATTE
+        XPAGO:=FAC1-&gt;PAGO
+        XFECHA:=FAC1-&gt;FECHA
+        XDTOGRAL:=fac1-&gt;DESCTO
+        XORDENCP:=FAC1-&gt;ORDENCP
+        XCLI_CODIG:=FAC1-&gt;CLI_CODIG
+        XNUMERO:=FAC1-&gt;NUMERO
+        XOBSERV:=FAC1-&gt;OBSERV
+        XCOPIAS:=FAC1-&gt;COPIAS
+        XNOMBRE:=ansitooem(FAC1-&gt;NOMBRE)
+//        XDIRECCIONA:=ansitooem(UPPER(ALLTRIM(FAC1-&gt;DOMICI)))
+        XDIRECCION:=oemTOANSI(UPPER(ALLTRIM(FAC1-&gt;DOMICI)))
+//        XDIRECCION:=UPPER(ALLTRIM(FAC1-&gt;DOMICI))
+        XLOCALIDAD:=UPPER(ALLTRIM(FAC1-&gt;LOCALI))+" ("+UPPER(ALLTRIM(FAC1-&gt;CODPOS))+")"
+        XPROVINCIA:=UPPER(ALLTRIM(FAC1-&gt;PROVIN))+" ,"+UPPER(ALLTRIM(FAC1-&gt;PAIS))
+        XLEYENDA:=ALLTRIM(FAC1-&gt;LEYENDA) //COND. VENTA
+        XREFERENCIA:=ALLTRIM(FAC1-&gt;ORDENCP)
+        IF FAC1-&gt;NROREM&lt;&gt;0
+                XREMITO:=LEFT(FAC1-&gt;NRO_COMP,5)+PADL(FAC1-&gt;NROREM,8,"0")
+        ELSE
+                XREMITO:=" "
+        ENDIF
+        DO CASE
+                CASE FAC1-&gt;USR='HECORT'
+                        XFIRMA:="HECTOR PEREIRO"+SPACE(20)
+                CASE FAC1-&gt;USR='GABRIEL'
+                        XFIRMA:="GABRIEL DAMIANO"+SPACE(20)
+                OTHERWISE
+                        XFIRMA:="HECTOR PEREIRO"+SPACE(20)        
+        ENDCASE
+//        XFIRMA:=TITULO(XFIRMA)
+
+//IF XITEMS-20&lt;21
+
+IF FILE("C:\TEMPO\INI.DBF")
+        SELE 98
+        USE C:\TEMPO\INI SHARED
+        GO TOP
+        LOCA FOR INI-&gt;PARAMETRO="IMPFAC"
+        IF INI-&gt;VALOR&lt;&gt;SPACE(40) .and. !eof()
+                AMODELOS:= {ALLTRIM(INI-&gt;VALOR),'IMPRESORA'}
+        ELSE
+                USE &amp;EMPRE\COMPROB.SX SHARED
+                LOCA FOR COMPROB-&gt;CODCOM=XCODCOM1 .AND. COMPROB-&gt;MODULO="CL" .AND. LEN(XCODCOM1)=LEN(COMPROB-&gt;CODCOM)
+                IF !EOF()
+                        AMODELOS:= {ALLTRIM(COMPROB-&gt;IMPRESORA),'IMPRESORA'}
+                ELSE
+                        AMODELOS:= {'\\PCPOL1\HP Business Inkjet 1200 Series','IMPRESORA COLOR'}
+                ENDIF
+        ENDIF
+        USE
+ELSE
+        SELE 98
+        USE &amp;EMPRE\COMPROB.SX SHARED
+        LOCA FOR COMPROB-&gt;CODCOM=XCODCOM1 .AND. COMPROB-&gt;MODULO="CL" .AND. LEN(XCODCOM1)=LEN(COMPROB-&gt;CODCOM)
+        IF !EOF()
+                AMODELOS:= {ALLTRIM(COMPROB-&gt;IMPRESORA),'IMPRESORA'}
+        ELSE
+                AMODELOS:= {'\\PCPOL1\HP Business Inkjet 1200 Series','IMPRESORA COLOR'}
+        ENDIF
+        USE
+ENDIF
+
+iva_1:=0
+iva_2:=0
+gtotal:=0
+xnitems:=0
+
+xpresindes:=0
+xdes:=0
+SELE 99
+GO TOP
+do while !eof()
+        xnitems:=xnitems+1
+        gtotal:=gtotal+fac1-&gt;total
+        iva_1:=iva_1+fac1-&gt;xiva_1
+        iva_2:=iva_2+fac1-&gt;xiva_2
+
+        xpresindes:=FAC1-&gt;presindes-(FAC1-&gt;presindes*FAC1-&gt;deslin/100)
+        xpresindes:=round(FAC1-&gt;cantidadf*xpresindes,2)
+        xdes:=xdes+xpresindes
+
+        skip
+enddo
+
+xpresindes:=xdes
+xdes:=(gtotal-xpresindes)
+
+
+
+
+XCOPIA:=0
+XCOPIAS:=1
+GO TOP
+DO WHILE XCOPIA&lt;XCOPIAS
+        XCOPIA:=XCOPIA+1
+        DO CASE
+                CASE LEFT(XCODCOM1,1)="F"
+                           PRINT oPrn NAME "FACTURA" TO ALLTRIM(AMODELOS[1]) PREVIEW
+                CASE LEFT(XCODCOM1,1)="C"
+                           PRINT oPrn NAME "NOTA DE CREDITO" TO ALLTRIM(AMODELOS[1]) PREVIEW
+                CASE LEFT(XCODCOM1,1)="D"
+                           PRINT oPrn NAME "NOTA DE DEBITO" TO ALLTRIM(AMODELOS[1]) PREVIEW
+                OTHERWISE
+                           PRINT oPrn NAME "FACTURA" TO ALLTRIM(AMODELOS[1]) PREVIEW
+        ENDCASE
+           oPrn:Setup()
+        
+           DEFINE FONT oFontCae NAME "Bar 25i e HR" SIZE 0, -22 OF oPrn        
+           DEFINE FONT oFont NAME "Ms Sans Serif" SIZE 0, -10 OF oPrn
+           DEFINE FONT oFont0 NAME "Ms Sans Serif" SIZE 0, -9 OF oPrn 
+           DEFINE FONT oFontBold NAME "Ms Sans Serif" SIZE 0, -10 OF oPrn BOLD
+           DEFINE FONT oFont1 NAME "Ms Sans Serif" SIZE 0, -9 OF oPrn BOLD
+           DEFINE FONT oFont2 NAME "Ms Sans Serif" SIZE 0, -7 of oPrn
+           DEFINE FONT oFont3 NAME "Ms Sans Serif" SIZE 0, -16 OF oPrn BOLD
+           DEFINE PEN oPen1 WIDTH 5 OF oPRN
+           DEFINE PEN oPen WIDTH 4 OF oPRN
+        
+           nRS := oPrn:nVertRes() / 60         // We want 60 rows
+           nCS := oPrn:nHorzRes() / 80         // We want 80 cols
+        
+        
+             PAGE
+        
+        
+        
+        //oPrn : box(nRs*1,nCs*1,nRs*59,nCs*79,open1)
+//        oPrn : say(nRs*10.5,nCs*2,"Inclan 3281 Capital Federal - CP C1258AAT - Bs. As.",oFont0)
+
+        if xcodcom1="CA"
+                oPrn : say(nRs*1.7,nCs*45,"XXXXXXXXXXXXXXXXXXX Nota de Credito",oFont1)
+        endif
+
+        if xcodcom1="NA"
+                oPrn : say(nRs*1.7,nCs*45,"XXXXXXXXXXXXXXXXXXX Nota de Debito",oFont1)
+        endif
+
+        oPrn : say(nRs*5,nCs*53,DTOC(XFECHA),oFont1)
+
+//        oPrn : say(nRs*1,nCs*10,XDIRECCIONA,oFont0)
+//        oPrn : say(nRs*3,nCs*10,XDIRECCIONO,oFont0)
+//        oPrn : say(nRs*5,nCs*10,XDIRECCION,oFont0)
+
+        oPrn : say(nRs*11,nCs*10,XNOMBRE,oFont0)
+        oPrn : say(nRs*12.5,nCs*10,XDIRECCION,oFont0)
+        oPrn : say(nRs*12.5,nCs*43,XLOCALIDAD,oFont0)
+
+        DO CASE
+                CASE FAC1-&gt;TIPIVA="INSCR"
+                        oPrn : say(nRs*14,nCs*12.5,"RESPONSABLE INSCRIPTO",oFont0)
+                CASE FAC1-&gt;TIPIVA="MONOT"
+                        oPrn : say(nRs*14,nCs*12.5,"RESPONSABLE MONOTRIBUTO",oFont0)
+                CASE FAC1-&gt;TIPIVA="EXEN" .or. FAC1-&gt;TIPIVA="TFUEG"
+                        oPrn : say(nRs*14,nCs*12.5,"EXENTO",oFont0)
+                CASE FAC1-&gt;TIPIVA="CF"
+                        oPrn : say(nRs*14,nCs*12.5,"CONSUMIDOR FINAL",oFont0)
+                OTHERWISE
+                        oPrn : say(nRs*14,nCs*12.5,"CONSUMIDOR FINAL",oFont0)
+        ENDCASE
+
+
+
+        oPrn : say(nRs*16.7,nCs*50,XCUIT,oFont0)
+
+        oPrn : say(nRs*16.9,nCs*18,XLEYENDA,oFont0)
+
+
+
+        XITEM:=1
+        N:=21.3
+        XIT:=1
+        go top
+        do while fac1-&gt;art_codig&lt;&gt;space(16) .AND. XIT&lt;26
+
+                XDESCUENTO = 100 - (100*FAC1-&gt;DESLIN/100)
+                XDESCUENTO = XDESCUENTO - (XDESCUENTO*FAC1-&gt;DESCTO/100)
+                XDESCUENTO = 100 - XDESCUENTO
+
+
+                if FAC1-&gt;CANTIDAD=0
+                        oPrn : say(nRs*N,nCs*25,ansiTOOEM(LEFT(FAC1-&gt;ART_DESCR,48)),oFont1)
+                else
+                        //oPrn : say(nRs*N,nCs*3,STR(XITEM,5),oFont1)
+                        XITEM:=XITEM+1
+                        oPrn : say(nRs*N,nCs*3,STR(FAC1-&gt;CANTIDAD,10,2),oFont1)
+                        oPrn : say(nRs*N,nCs*10,LEFT(FAC1-&gt;ART_CODIG,16),oFont1)
+                        oPrn : say(nRs*N,nCs*25,ansiTOOEM(LEFT(FAC1-&gt;ART_DESCR,48)),oFont1)
+
+                        IF XCODCOM1='FB'
+                                oPrn : say(nRs*N,nCs*60,STR(FAC1-&gt;PRECIO+(FAC1-&gt;PRECIO*FAC1-&gt;ART_IVA/100),10,2),oFont1)
+                                if xnacional=.t.
+                                        oPrn : say(nRs*N,nCs*67,STR(FAC1-&gt;TOTAL+(FAC1-&gt;TOTAL*FAC1-&gt;ART_IVA/100),15,2),oFont1)
+                                else
+                                        oPrn : say(nRs*N,nCs*67,STR(FAC1-&gt;TOTALUSS+(FAC1-&gt;TOTALUSS*FAC1-&gt;ART_IVA/100),15,2),oFont1)
+                                endif
+                        ELSE
+                                oPrn : say(nRs*N,nCs*60,STR(FAC1-&gt;PRECIO,10,2),oFont1)
+                                IF XNACIONAL=.T.
+                                        oPrn : say(nRs*N,nCs*67,STR(FAC1-&gt;TOTAL,15,2),oFont1)
+                                ELSE
+                                        oPrn : say(nRs*N,nCs*67,STR(FAC1-&gt;TOTALUSS,15,2),oFont1)
+                                ENDIF
+                        ENDIF
+                endif
+
+
+                N:=N+1
+                XIT:=XIT+1
+        
+                skip
+        enddo
+
+
+
+
+
+        /*
+        SELE 99
+        GO TOP
+        XPIVA:=FAC1-&gt;ART_IVA
+        SUM (FAC1-&gt;TOTAL) TO XTOTAL
+        SUM (FAC1-&gt;XIVA_1+FAC1-&gt;XIVA_2+FAC1-&gt;XIVA_3) TO XIVA
+        oPrn : say(nRs*55,nCs*67,STR(XTOTAL+XIVA,15,2),oFont1)
+        */
+
+        SELE 99
+
+        GO TOP
+        XPIVA:=FAC1-&gt;ART_IVA
+        IF XNACIONAL=.T.
+                SUM (FAC1-&gt;TOTAL) TO XTOTAL
+                SUM (FAC1-&gt;XIVA_1+FAC1-&gt;XIVA_2+FAC1-&gt;XIVA_3) TO XIVA
+
+                if substr(xcodcom1,2,1)="A"
+                        oPrn : say(nRs*52,nCs*5,"$ "+STR(XTOTAL,15,2),oFont1)
+                        oPrn : say(nRs*52,nCs*52,"$ "+STR(XIVA,15,2),oFont1)
+                endif
+                oPrn : say(nRs*52,nCs*67,"$ "+STR(XTOTAL+XIVA,15,2),oFont1)
+
+        ELSE
+                SUM (FAC1-&gt;TOTALUSS) TO XTOTAL
+                SUM (FAC1-&gt;XIVA_1USS+FAC1-&gt;XIVA_2USS) TO XIVA
+
+                if substr(xcodcom1,2,1)="A"
+                        oPrn : say(nRs*52,nCs*5,"U$S "+STR(XTOTAL,15,2),oFont1)
+                        oPrn : say(nRs*52,nCs*52,"U$S "+STR(XIVA,15,2),oFont1)
+                endif
+                oPrn : say(nRs*52,nCs*67,"U$S "+STR(XTOTAL+XIVA,15,2),oFont1)
+
+        ENDIF
+
+
+        oPrn : say(nRs*53,nCs*3,LEFT(XOBSERV,40),oFont1)
+
+        oPrn : say(nRs*54,nCs*3,"Nro. CAE: "+ NROcae +". Fecha de vencimiento del CAE: "+dtoc(vnccae),oFont1)
+        oPrn : say(nRs*55,nCs*3,STOBARCODE(xcae),oFontCae)
+
+        
+                
+             ENDPAGE
+        
+             ENDPRINT
+        
+           oFont:end()
+           oFont0:end()
+           oFont1:end()
+           oFont2:end()
+           oPen  :end()
+           oPen1 :end()
+
+
+ENDDO
+
+
+CLOSE ALL
+
+Return nil
+
+// -------------------------------------------------
+FUNCTION TITULO(XTITULO)
+LOCAL OBT1, OTITULO, ODLG
+
+
+   DEFINE DIALOG oDlg RESOURCE "titulo" TITLE "FIRMA LA COTIZACION"
+
+        REDEFINE GET otitulo VAR xtitulo ID 101 of odlg
+
+
+        REDEFINE BUTTON oBt1 ACTION ( odlg:end() ) ID 1 of oDlg
+
+        ACTIVATE DIALOG oDlg centered
+
+
+
+RETURN XTITULO
+
+// -------------------------------------------------
+FUNCTION CAE(XNRO_COMP,XCAE,XVNC,xcodcom)
+LOCAL ODIAS, ODLG, OBTNEND
+//local xCAE:=SPACE(100)
+//LOCAL XVNC:=DATE()+10
+
+
+/*
+   DEFINE DIALOG oDlg FROM 3, 3 TO 15, 60 TITLE "INGRESE CAE"
+
+   @ 1, 1 SAY "CAE:" ;
+
+   @ 1, 5 GET ODIAS VAR XCAE ;
+   SIZE  80, 12  OF oDlg // PICTURE "9999" 
+
+   @ 3, 1 SAY "VENCIMIENTO:" ;
+
+   @ 3, 5 GET ODIAS VAR XVNC ;
+  SIZE  80, 12  OF oDlg // PICTURE "9999" 
+
+   @ 5, 10.9 BUTTON ObtnEnd    PROMPT "&amp;Aceptar"    OF oDlg SIZE 40, 12
+
+   ObtnEnd:bAction    = { || oDlg:End() }
+
+
+   ACTIVATE DIALOG oDlg
+*/
+
+   XFECHA:=PADL(YEAR(XVNC),4,"0")+PADL(MONTH(XVNC),2,"0")+PADL(DAY(XVNC),2,"0")
+   do case
+        case left(xcodcom,2)="FA"
+           XCAE:="2026561276901"+LEFT(XNRO_COMP,4)+ALLTRIM(XCAE)+XFECHA
+        case left(xcodcom,2)="FB"
+           XCAE:="2026561276906"+LEFT(XNRO_COMP,4)+ALLTRIM(XCAE)+XFECHA
+        case left(xcodcom,2)="CA"
+           XCAE:="2026561276903"+LEFT(XNRO_COMP,4)+ALLTRIM(XCAE)+XFECHA
+        case left(xcodcom,2)="CB"
+           XCAE:="2026561276908"+LEFT(XNRO_COMP,4)+ALLTRIM(XCAE)+XFECHA
+        case left(xcodcom,2)="DA"
+           XCAE:="2026561276902"+LEFT(XNRO_COMP,4)+ALLTRIM(XCAE)+XFECHA
+        case left(xcodcom,2)="DB"
+           XCAE:="2026561276907"+LEFT(XNRO_COMP,4)+ALLTRIM(XCAE)+XFECHA
+        otherwise
+           XCAE:="2026561276901"+LEFT(XNRO_COMP,4)+ALLTRIM(XCAE)+XFECHA
+   endcase     
+
+   XDV:=DV(XCAE)
+   XCAE:=XCAE+ALLTRIM(STR(XDV))
+        
+
+return XCAE
+
+
+
+// -----------------------------------------------------
+FUNCTION DV(SNUMERO)
+
+
+    If Len(sNumero) &lt;&gt; 39 
+
+        MsgSTOP ("El Numero debe contener 39 digitos", "ERROR")
+
+        ? SNUMERO
+
+        CLOSE ALL
+        QUIT
+
+    Else
+
+        Sum1 = 0
+
+        Sum2 = 0
+
+    X:=1
+
+        DO WHILE X&lt;=39
+
+            //k = Mid(sNumero, x, 1)
+            k = VAL(SUBSTR(sNumero, x, 1))
+
+            If x / 2 = Int(x / 2) 
+
+                Sum1 = Sum1 + k
+
+            Else
+
+                Sum2 = Sum2 + k
+
+            EndIf
+    
+        X:=X+1  
+
+        ENDDO
+
+        SumaTotal = (Sum2 * 3) + Sum1
+
+        
+        X:=0
+        WHILE X&lt;=9
+
+            sDigito = SumaTotal + x
+
+            If sDigito / 10 = Int(sDigito / 10) 
+
+                XDV = x
+
+                X:=190
+
+            EndIf
+
+            X:=X+1       
+
+        ENDDO
+
+    
+
+    EndIf
+
+
+
+
+
+
+
+RETURN XDV
+
+// -------------------------------------------------
+FUNCTION STOBARCODE(xcae)
+xrta:=""
+
+IF LEN(ALLTRIM(xcae))&lt;&gt;40
+        msgstop("Error al crear codigo de barras. Largo del cae incorrecto","Error")
+        quit
+else
+
+        SELE 15
+        use tabla.sx share
+
+        x:=1
+
+        do while x&lt;=40
+                xnumero:=val(substr(xcae,x,2))
+
+                sele 15
+                loca for tabla-&gt;numero=xnumero
+                if !eof()
+                        IF XNUMERO&gt;89
+                                xrta:=xrta+alltrim(OEMTOANSI(tabla-&gt;codigo))
+                        ELSE
+                                xrta:=xrta+alltrim(tabla-&gt;codigo)
+                        ENDIF
+                else
+                        msgstop("ERROR","ERROR")
+                        quit
+                endif
+
+                x:=x+2
+        enddo
+        
+        xrta:="{"+xrta+"}"
+        
+        SELE 15
+        USE
+
+endif
+
+return xrta</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p110697">
+    <div class="poster">
+      <div class="name" style="color:#105289">QAZWSX2K</div>
+      <div class="rank">Posts: 364</div>
+      <img class="avatar avatar-img" src="avatars/221.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 25, 2005 07:06 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: WSFE Afip Web Services</span><br>
+        Posted: Wed Feb 09, 2011 01:12 AM
+      </div>
+      <div class="content"><p>uff vaya que es largo...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p110719">
+    <div class="poster">
+      <div class="name" style="color:#105289">diegopolverelli</div>
+      <div class="rank">Posts: 149</div>
+      <div class="avatar"></div>
+      Joined: Thu Jun 21, 2007 03:26 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: WSFE Afip Web Services</span><br>
+        Posted: Wed Feb 09, 2011 11:52 AM
+      </div>
+      <div class="content"><p>Si, pero fijate las funciones, separá el prg en funciones y vas a ver que no es tan dificil... ademas tiene muchos comentarios que habría que sacarle, pero para que tengan una base los que estan en bolainas, creo que sirve. Abrazo...!!!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p175017">
+    <div class="poster">
+      <div class="name" style="color:#105289">vprogx</div>
+      <div class="rank">Posts: 2</div>
+      <div class="avatar"></div>
+      Joined: Mon Apr 06, 2015 02:06 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: WSFE Afip Web Services</span><br>
+        Posted: Mon Apr 06, 2015 05:09 PM
+      </div>
+      <div class="content"><p>Hola buenos días</p>
+<p>A pesar que es un post viejo, te consulto porque que no encuentro mucha información como la que vos compartiste sobre wsfe.</p>
+<p>Me gustaría saber donde se pueden conseguir códigos php oficiales de afip como el que vos posteaste, ya que en la página no los encuentro:</p>
+<p>Author: Gerardo Fisanotti - AFIP/SDGSIT/DiITEC/DeARIN - 4-oct-10</p>
+<h1>Function: Show a basic functionality WSFEV1 SOAP client</h1>
+<p>...<br>
+...</p>
+<p>O cualquier otra data que puedas aportar, los pasos a seguir para obtener los cae.</p>
+<p>Desde ya muchas gracias!</p>
+<p>Pablo</p></div>
+    </div>
+  </div>
+  <div class="post" id="p175028">
+    <div class="poster">
+      <div class="name" style="color:#105289">postinelli</div>
+      <div class="rank">Posts: 150</div>
+      <div class="avatar"></div>
+      Joined: Tue Jul 15, 2008 07:12 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: WSFE Afip Web Services</span><br>
+        Posted: Mon Apr 06, 2015 09:42 PM
+      </div>
+      <div class="content"><p>fijate con Ricardo</p>
+<!-- m -->
+<p><a class="postlink" href="http://www.any2fe.com.ar/">http://www.any2fe.com.ar/</a></p>
+<p>y no renegas<br>
+en julio a casi todos los RI los pasan a Factura Electronica</p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p175038">
+    <div class="poster">
+      <div class="name" style="color:#105289">vprogx</div>
+      <div class="rank">Posts: 2</div>
+      <div class="avatar"></div>
+      Joined: Mon Apr 06, 2015 02:06 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: WSFE Afip Web Services</span><br>
+        Posted: Tue Apr 07, 2015 03:59 AM
+      </div>
+      <div class="content"><p>Justamente hoy le mandé un correo a Ricardo porque estoy dando vueltas con esto de php y no llego a ningún resultado.<br>
+Pensaba que encontrando la manera de hacerlo no sería tan complicado, pero no sé por donde empezar.<br>
+Gracias por responder!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p175050">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ariel</div>
+      <div class="rank">Posts: 389</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 29, 2006 01:51 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: WSFE Afip Web Services</span><br>
+        Posted: Tue Apr 07, 2015 10:26 AM
+      </div>
+      <div class="content"><p>vprox,<br>
+contactame en skype como arielcagiao o x privado a <!-- e --><a href="mailto:arielcagiao@hotmail.com">arielcagiao@hotmail.com</a><!-- e --> y te puedo dar otra alternativa funcional para este tema.<br>
+NO COMERCIAMOS CON COLEGAS, sólo con clientes <!-- s:) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":)" title="Smile" /><!-- s:) --><br>
+Salu2, Ariel.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p175054">
+    <div class="poster">
+      <div class="name" style="color:#105289">horacio</div>
+      <div class="rank">Posts: 1364</div>
+      <div class="avatar"></div>
+      Joined: Wed Jun 21, 2006 12:39 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: WSFE Afip Web Services</span><br>
+        Posted: Tue Apr 07, 2015 12:06 PM
+      </div>
+      <div class="content"><p>Ariel, a mi también me interesaría alguna solución para facturas electrónicas por lotes. Para algún cliente utilicé la solución de Ricardo Sassy pero me gustaría programar una rutina propia para este propósito. Gracias</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p175064">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ariel</div>
+      <div class="rank">Posts: 389</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 29, 2006 01:51 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: WSFE Afip Web Services</span><br>
+        Posted: Tue Apr 07, 2015 02:11 PM
+      </div>
+      <div class="content"><p>Horacio,<br>
+idem anterior, contactame x privado.<br>
+Salu2, Ariel.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p175212">
+    <div class="poster">
+      <div class="name" style="color:#105289">postinelli</div>
+      <div class="rank">Posts: 150</div>
+      <div class="avatar"></div>
+      Joined: Tue Jul 15, 2008 07:12 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: WSFE Afip Web Services</span><br>
+        Posted: Thu Apr 09, 2015 11:22 AM
+      </div>
+      <div class="content"><p>te contacto por privado. Gracias Ariel</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

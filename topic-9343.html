@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Why Some Browses with ADS are slow? - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-9343">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Why Some Browses with ADS are slow?</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-9343-page-2.html">2</a> (23 posts)</div>  <div class="post" id="p44757">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Why Some Browses with ADS are slow?</span><br>
+        Posted: Mon Dec 24, 2007 04:29 AM
+      </div>
+      <div class="content">Many times our friends keep expressing that some of the advanced browses are extremely slow while browsing *LARGE* ADS tables. This phenomenon is observed with tsbrowse, txbrowse and even hernan's browse. In fact the problem is not with the browses. These advanced browses go a step forward in setting up the codeblocks appropriate for the RDD being used. For ADS, by default, these browses use AdsKeyCount() (or similar functions) for the bLogicLen / bKeyCount codeblocks.<br>
+<br>
+The real problem is in the AdsKeyCount ( also AdsGetRecordCount ) function of rdd_ads. The problem is not even the making of the author of the library. The function transparently passes on the efficiency or inefficiency of the original functions in the ACE32.DLL ( AdsGetRecordCount or AdsGetKeyCount. Both are twins with same functionality ).<br>
+<br>
+We do not perceive the problem with small tables but we do notice great sluggishness with large tables, To find a solution we need to understand the behaviour of these functions.<br>
+<br>
+We normally use SET DELETED ON. We are not interested in seeing the deleted records but interested in dealing with the live records only. The functions AdsGetRecordCount or AdsGetKeyCount return the count instataneously ( even with very complex AOF filters and scopes) IF AND ONLY IF SET DELETED IS OFF.  So if we use the browses with SET DELETED OFF they are blazing fast again. But we want them to work with SET DELETED ON.<br>
+<br>
+AdsGetRecordCount / AdsGetKeyCount functions of ACE32.DLL literally skip and count records if SET DELETED ON, even if there is no single deleted record. This is the doumented behaviour. Browses call this function several times during a single refresh. Now imagine the ADS Server literally traversing the entire table each time the function is called particulary if the table is large say with hundreds of thousands of records.<br>
+<br>
+SOLUTION:<br>
+<br>
+Let us continue with SET DELETED ON as usual.<br>
+<br>
+For every large table, create an index on deleted(). Example INDEX ON DELETED() TAG DELETED. ( Name of the tag is not important)<br>
+Then whenever we open a table the first thing to do is to set filter to .not. deleted().  Example: AdsSetAOF( '!DELETED()', ADS_RESOLVE_IMMEDIATE ).  Whenever we set any other filter, AdsSetAOF( 'DELETED() .AND.  &lt;OUR FILTER CONDITION&gt;', ADS_RESOLVE_IMMEDATE). Now traversal of the DBF by the ADS Server is optimised. Without this the traversal is still not optimized. ( I use my custom function for setting filters which does this automatically if the table is DBF. )<br>
+<br>
+Still the AdsRecordCount() is not optimized. We should create a wrapper function. Let us do this now:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function AdsRecCount()
+
+local nRecs
+
+SET DELETED OFF
+AdsSetDeleted(.f.)
+nRecs := AdsGetRecordCount()		// rdd_ads by default uses respect filters
+                                        // because our AOF filter is already set to !deleted()
+                                        // anyway we get nondeleted record count only
+AdsSetDeleted(.t.)
+SET DELETED ON
+RETURN nRecs</code></pre></div><br>
+Now use this function for blogilen<br>
+<br>
+oBrw:bLogiclen ( for xbrowse oBrw:bKeyCount ) := {||MyAlias-&gt;(AdsRecCount())}<br>
+<br>
+Now you find the browses even on large ADS table to be as fast as other tables.<br>
+<br>
+BETTER SOLUTION:<br>
+<br>
+Though the above solution is fast, we know the browse calls the reccount function manytimes during each refresh, with resulting increase in network traffic and unnecessary load on the server. Imagine hundreds of users browsing and thousands of calls to the server. We know this is not necessary and also is not a good prgramming behaviour.<br>
+<br>
+Better would be to ascertain the total records with the above function at the outset and store in a module wide static variable ( let us call it nRecCount. ).  Assgin the bLogicLen codeblock with {||nRecCount}.  Also choose the right value for AdsCacheRecords(nCatche), to reduce the round trips to the server.  Now the browse will go with blazing speed. We refresh the value of the variable nRecCount whenever our program perceives the need to refresh.<br>
+<br>
+<br>
+SPECIAL CASE WITH SBROWSE<br>
+<br>
+I now stopped using tsbrowse, but earlier i was using it extensively.  The problem was that tsbrowse not only assigns the codeblocks but also uses them even before returning control to my program, i.e., even before I could replace the assignment with my functions. So the initial display was taking ages. Only way I could solve the issue was the alter the source code of tsbrowse.prg.<br>
+<br>
+Authors of browses might have tested their product on small tables on local server versions. <br>
+<br>
+I thought my experiences might be useful for those who deal with large tables on ADS server.<br>
+<br>
+Note: All this is not necessary for ADT tables. Defaults work well because ADT tables do not have any deleted records.</div>
+    </div>
+  </div>
+  <div class="post" id="p44763">
+    <div class="poster">
+      <div class="name" style="color:#105289">kokookao2007</div>
+      <div class="rank">Posts: 59</div>
+      <img class="avatar avatar-img" src="avatars/1064.jpg" alt="" loading="lazy">
+      Joined: Thu May 17, 2007 08:27 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Why Some Browses with ADS are slow?</span><br>
+        Posted: Mon Dec 24, 2007 06:16 AM
+      </div>
+      <div class="content">hi nageswaragunupudi:<br>
+<br>
+<blockquote><br>
+<br>
+#define ADS_RESPECTFILTERS       1                                 <br>
+#define ADS_IGNOREFILTERS        2                                 <br>
+#define ADS_RESPECTSCOPES        3          <br>
+<br>
+ #xcommand SET FILTER TO &lt;xpr&gt;   ;    <br>
+       ; AdsSetAof( &lt;xpr&gt; )                                                  <br>
+                                                                               <br>
+ #xcommand SET FILTER TO &lt;x:&amp;&gt;    ;    <br>
+        =&gt; if ( Empty( &lt;(x)&gt;) )              ;    <br>
+         ;    dbClearFilter()                     ;    <br>
+         ; else                                       ;    <br>
+         ;    AdsSetAof( &lt;(x)&gt;  )             ;    <br>
+         ; endif                                                               <br>
+<br>
+AdsGetRecordCount() ==&gt; TRY  AdsKeyCount(,, ADS_RESPECTSCOPES)                      <br>
+                                                         <br>
+AdsKeyNo()==&gt;AdsKeyNo(,, ADS_RESPECTSCOPES)      <br>
+AdsKeyCount()==&gt;AdsKeyCount(,, ADS_RESPECTSCOPES)   <br>
+<br>
+<br>
+MY BROWSE() work as fast as rdd "DBFCDX".<br>
+<br>
+</blockquote><br>
+<br>
+Best Regards<br>
+kokoo</div>
+    </div>
+  </div>
+  <div class="post" id="p44819">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Where</span><br>
+        Posted: Mon Dec 24, 2007 07:44 PM
+      </div>
+      <div class="content"><p>Where do you include this code ?</p>
+<p>TIm</p></div>
+    </div>
+  </div>
+  <div class="post" id="p44929">
+    <div class="poster">
+      <div class="name" style="color:#105289">kokookao2007</div>
+      <div class="rank">Posts: 59</div>
+      <img class="avatar avatar-img" src="avatars/1064.jpg" alt="" loading="lazy">
+      Joined: Thu May 17, 2007 08:27 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Why Some Browses with ADS are slow?</span><br>
+        Posted: Wed Dec 26, 2007 12:55 PM
+      </div>
+      <div class="content"><p>my own ads.ch</p></div>
+    </div>
+  </div>
+  <div class="post" id="p79413">
+    <div class="poster">
+      <div class="name" style="color:#105289">Wanderson</div>
+      <div class="rank">Posts: 332</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 17, 2005 09:11 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re:</span><br>
+        Posted: Sat Apr 18, 2009 01:55 PM
+      </div>
+      <div class="content"><blockquote><cite>kokookao2007 wrote:</cite>my own ads.ch</blockquote><br>
+<br>
+Hi Kokookao2007 can you send me your ads.ch?<br>
+My personal address is <!-- e --><a href="mailto:w_peixoto@hotmail.com">w_peixoto@hotmail.com</a><!-- e --><br>
+<br>
+Thanks in advance.<br>
+Wanderson Artiaga</div>
+    </div>
+  </div>
+  <div class="post" id="p79429">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Why Some Browses with ADS are slow?</span><br>
+        Posted: Sat Apr 18, 2009 05:42 PM
+      </div>
+      <div class="content">ADS Documentation:<br>
+<blockquote><br>
+Using ADS_RESPECTSCOPES respects scopes only.<br>
+Using ADS_RESPECTFILTERS respects filters and scopes<br>
+.....<br>
+If usFilterOption contains ADS_RESPECTFILTERS, the Advantage Client Engine must skip through all records referenced by keys in the index that pass the filter and scope and count them. Thus, with large indexes where many records pass the filter and/or keys pass the scope, this function can be very slow.<br>
+<br>
+</blockquote><br>
+So if we set filter and use ADS_RESPECTSCOPES, the results are not correct.<br>
+<br>
+When SET DELETED IS ON, the situation is really worse. We start noticing the sluggishness with large tables on server with large number of deleted records. We can test this with a table of say around 600,000 records of which around 100,000 records are deleted.<br>
+<br>
+Speed of AdskeyCount or AdsRecordCount varies significantly when SET DELETED IS ON or SET DELETED IS OFF.  When SET DELETED IS OFF, the results are near instantaneous, When SET DELETED IS ON, the speed is very slow ( applies to very large tables with many deleted records ).<br>
+<br>
+One can create a table with such number of records and see the speed differences clearly. The difference is clearly perceptible.<br>
+<br>
+My suggestion ( not really my own. suggested since the days or origin of Comix/Clipmore) to create an index on DELETED() and to use a function like the one I suggested above is the fastest way.</div>
+    </div>
+  </div>
+  <div class="post" id="p85272">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Why Some Browses with ADS are slow?</span><br>
+        Posted: Wed Aug 26, 2009 08:22 AM
+      </div>
+      <div class="content">Hi,<br>
+<br>
+Interestingly your explanations and trying to add my two cents... <br>
+<br>
+As Rao says, many of us have to work with large tables of hundreds of thousands of records, includes sometimes millions. The use of ADS requires some concepts, to make our application to work really fast. By default, when we use small tables, practically do not apreciate these differences, but if they are noticed and very much, in large tables. There are many functions that are not operated using ADS and many ways to work that maybe should change to get the maximum performance of ADS. <br>
+<br>
+By default, people always use the SET DELETED ON, this option should know the deal correctly with ADS. I will expose how we work and TXBrowse using ADS, and the main problem is that the functions that have have record one by one unless we have AdsSetDeleted(.t.). <br>
+<br>
+My proposal (Environments Browses) <br>
+<br>
+1 .- Always use CDX index with the condition (no expression) in the tag ! Deleted(). If we need some conditions we can always add more, f.e. ! Deleted (). AND. other condition<br>
+<br>
+2 .- We will use AdsKeyCount (,, ADS_RESPECTSCOPES) in the browse for the computation of records. The access is virtually instantaneous. <br>
+<br>
+3 .- We use AdsKeyNo (,, ADS_RESPECTSCOPES) the index <br>
+<br>
+4 .- As rightly said Rao, the use of AdsCacheRecords() is very good, but not always the most accurate. We know that a configuration is not always the most optimal and that fits all. The use of the cache access increase dramatically, but for example, keep in mind that if you edit a record, this what we have in the cache and will force the writing. We recommend the edition after the use of AdsRefreshRecord() <br>
+<br>
+Then there are other functions for the management of data, which can increase a little more access, but what we will see. <br>
+<br>
+Other interesting perfomance and had also experienced Rao is the idea of using a static variable for the number of records and update them to the process, but according to that case, gave us some problems. <br>
+<br>
+And the last one, Rao please can you experiment with filters, using this way ?<br>
+<br>
+Here I leave a small sample for testing with large tables.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Autor     : Carles
+// Descripcio: Test de velocitat de acces a ADS amb taules grans
+// Data      : 09/04/2008
+
+#include "FiveWin.ch"
+#include "xbrowse.ch"
+#include 'ads.ch'
+
+#define NAME_DBF     "\\BSD001\TEMP\Test.dbf"
+#define NAME_CDX     "\\BSD001\TEMP\Test.cdx"
+
+
+REQUEST ADS
+REQUEST ADSKeyNo
+REQUEST AdsKeyCount
+REQUEST AdsGetRelKeyPos
+REQUEST AdsSetRelKeyPos
+
+REQUEST HB_Lang_ES
+REQUEST HB_CODEPAGE_ESWIN
+
+STATIC oWnd
+
+*--------------
+FUNCTION MAIN()
+*--------------
+    LOCAL oBar
+    LOCAL cAlias
+
+    Config()
+
+//  For testing in ADS, we created a table with 10.000.000 of registers,
+//    using Dbcre8.exe tool.
+
+    USE (NAME_DBF) SHARED NEW
+    SET INDEX TO NAME_CDX
+
+    cAlias := Alias()
+
+//  For Tessting is import to create a index cdx with:
+//    Name tag 'FIRST'
+//    Expresion 'FIRST'
+//    Condition !Deleted()
+
+    (cAlias)-&gt;( OrdSetFocus( 'FIRST' ) )
+
+
+    DEFINE WINDOW oWnd MDI TITLE "Test speed ADS with big tables..."
+
+       DEFINE BUTTONBAR  oBar 3D SIZE 24, 26 OF oWnd
+       DEFINE BUTTON  OF oBar ACTION TestScope( cAlias, .f. )
+       DEFINE BUTTON  OF oBar ACTION TestScope( cAlias, .t. )
+       DEFINE BUTTON  OF oBar ACTION TestFilter( cAlias )
+
+    ACTIVATE WINDOW oWnd MAXIMIZED
+
+RETU NIL
+
+*------------------------------------------
+STATIC FUNCTION TestScope( cAlias, lScope )
+*------------------------------------------
+
+
+    IF lScope
+       (cAlias)-&gt;( OrdScope( 0, 'B' ) )
+       (cAlias)-&gt;( OrdScope( 1, Replicate('B',21) ) )
+      ELSE
+       (cAlias)-&gt;( OrdScope( 0, NIL ) )
+       (cAlias)-&gt;( OrdScope( 1, NIL ) )
+    ENDIF
+
+    (cAlias)-&gt;( DbGoTop() )
+
+    Browse( cAlias, IF( lScope, 'Test with Scope', 'Test without scope' ) )
+
+RETU NIL
+
+*---------------------------------------
+STATIC FUNCTION Browse( cAlias, cTitle )
+*---------------------------------------
+    LOCAL oChild, oBrw, oFont, oBar
+
+    DEFINE FONT oFont NAME 'TAHOMA' SIZE 0,-11
+
+    DEFINE WINDOW oChild MDICHILD OF oWnd TITLE cTitle
+
+      DEFINE BUTTONBAR  oBar 3D SIZE 24, 26 OF oChild
+      DEFINE BUTTON  OF oBar ACTION TestSpeed( cAlias )
+
+      @ 10,10 XBROWSE oBrw ;
+         COLUMNS "First", "Last", "Salary" ;
+         SIZE 1,1 PIXEL OF oChild FONT oFont;
+         ALIAS cAlias ;
+         FASTEDIT FOOTERS LINES CELL
+
+         // IMPORTANT !!! Always we need config parameters of browse
+         // before call method ::CreateFormCode()
+
+         SetRddAds( oBrw )
+
+         oBrw:CreateFromCode()
+
+         oChild:SetControl( oBrw )
+
+    ACTIVATE WINDOW oChild
+
+    RELEASE FONT oFont
+
+RETU NIL
+
+
+*-----------------------
+STATIC FUNCTION Config()
+*-----------------------
+
+    SET DATE TO ITALIAN
+    SET DELETE ON
+    SET EXCLUSIVE OFF
+    SET CENTURY ON
+    SET EPOCH TO YEAR(DATE())-50
+
+    HB_LANGSELECT( 'ES' )
+    HB_SetCodePage("ESWIN")
+
+    RddRegister("ADS",1)
+    RddSetDefault("ADS")
+    AdsSetServerType ( 2 )   // SERVER
+    AdsLocking( .t. )
+    AdsRightsCheck(.F.)
+
+    SET FILETYPE TO CDX
+    SET AUTOPEN ON
+
+RETU NIL
+
+/*
+#define ADS_RESPECTFILTERS 1
+#define ADS_IGNOREFILTERS  2
+#define ADS_RESPECTSCOPES  3
+*/
+
+*--------------------------------
+STATIC FUNCTION SetRddAds( oBrw )
+*--------------------------------
+
+    LOCAL cAlias  := oBrw:cAlias
+    LOCAL cError  := ''
+    LOCAL lUpdate := .F.
+
+    WITH OBJECT oBrw
+         :bGoTop    := {|| ( cAlias )-&gt;( DbGoTop() ) }
+         :bGoBottom := {|| ( cAlias )-&gt;( DbGoBottom() ) }
+         :bSkip     := {| n | iif( n == nil, n := 1, ), ( cAlias )-&gt;( DbSkipper( n ) ) }
+         :bBof      := {|| ( cAlias )-&gt;( Bof() ) }
+         :bEof      := {|| ( cAlias )-&gt;( Eof() ) }
+         :bBookMark := {| n | if( n == nil,;
+                                  ( cAlias )-&gt;( RecNo() )    ,;
+                                  ( cAlias )-&gt;( DbGoto( n ) ) ;
+                                )}
+         :bKeyCount := {|| ( cAlias )-&gt;( AdsKeyCount( ,, ADS_RESPECTSCOPES ) ) }
+         :bKeyNo    := {| n | if( n == nil,;
+                                  ( cAlias )-&gt;( AdsKeyNo   ( ,, ADS_RESPECTSCOPES ) ),;
+                                  ( cAlias )-&gt;( OrdKeyGoto(n) ) ) }
+    END
+
+    AdsCacheRecords(50)
+
+
+RETU NIL
+
+*-----------------------------------
+STATIC FUNCTION TestFilter( cAlias )
+*-----------------------------------
+    STATIC cFilter := ''
+
+    cFilter := cFilter + Space( 200 - Len( cFilter ) )
+
+    MsgGet( 'Filtro', 'Condicion', @cFilter )
+
+    cFilter := Alltrim( cFilter )
+
+    IF Empty( cFilter )
+      (cAlias)-&gt;( dbClearFilter() )
+     ELSE
+      (cAlias)-&gt;( AdsSetAOF( cFilter ) )
+    ENDIF
+
+    (cAlias)-&gt;( DbGoTop() )
+
+    Browse( cAlias, cFilter )
+
+RETU NIL
+
+*----------------------------------
+STATIC FUNCTION TestSpeed( cAlias )
+*----------------------------------
+    LOCAL nStart, nTimeIgnore, nTimeScopes, nTimeCount
+    LOCAL nIgnore, nScopes, nCount
+    LOCAL cInfo := ''
+
+    nStart      := Seconds()
+    nIgnore     := (cAlias)-&gt;( AdsKeyCount( ,, ADS_IGNOREFILTERS ) )
+    nTimeIgnore := Seconds() - nStart
+
+    nStart      := Seconds()
+    nScopes     := (cAlias)-&gt;( AdsKeyCount( ,, ADS_RESPECTSCOPES ) )
+    nTimeScopes := Seconds() - nStart
+
+    nStart      := Seconds()
+    nCount      := (cAlias)-&gt;( RecCount() )
+    nTimeCount  := Seconds() - nStart
+
+    cInfo += 'Tag  '       + Chr(VK_TAB) + Chr(VK_TAB) + (cAlias)-&gt;( OrdName() )     + CRLF
+    cInfo += 'Key  '       + Chr(VK_TAB) + Chr(VK_TAB) + (cAlias)-&gt;( OrdKey()  )     + CRLF
+    cInfo += 'Condition  ' + Chr(VK_TAB)               + (cAlias)-&gt;( OrdFor()  )     + CRLF
+    cInfo += 'Scope Ini  ' + Chr(VK_TAB)               + cValToChar((cAlias)-&gt;( OrdScope( 0 ) )) + CRLF
+    cInfo += 'Scope End  ' + Chr(VK_TAB)               + cValToChar((cAlias)-&gt;( OrdScope( 1 ) )) + CRLF
+    cInfo += 'Filter     ' + Chr(VK_TAB) + Chr(VK_TAB) + (cAlias)-&gt;( AdsGetAof() )   + CRLF + CRLF
+    cInfo += 'Total Reg ( ! Deleted() ) '+ Chr(VK_TAB) + ltrim(Str(nIgnore)) + ' reg., ' + ltrim(str(nTimeIgnore)) + ' sec.' + CRLF
+    cInfo += 'Total Reg ( with Scope  ) '+ Chr(VK_TAB) + ltrim(Str(nScopes)) + ' reg., ' + ltrim(str(nTimeScopes)) + ' sec.' + CRLF
+    cInfo += 'Total Reg ( Table )       '+ Chr(VK_TAB) + ltrim(Str(nCount )) + ' reg., ' + ltrim(str(nTimeCount )) + ' sec.'
+
+    MsgInfo( cInfo, 'Check time...'  )
+
+RETU NIL</code></pre></div><br>
+<br>
+Any modification or clarification will be welcome. </div>
+    </div>
+  </div>
+  <div class="post" id="p85341">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Why Some Browses with ADS are slow?</span><br>
+        Posted: Thu Aug 27, 2009 03:22 AM
+      </div>
+      <div class="content">Mr Carles<br>
+<br>
+When we use ADS_RESPECTSCOPES, AdsKeyCount and AdsKeyNo do not respect FILTERS. Therefore we do not get the correct count if we use any filters. This code works well if we do NOT use any filters at all in this module.<br>
+<br>
+If you propose to filter for !DELETED(), this code does not give  the correct count. The count includes deleted records also. If you insist on using this code and do not use use any other filters except DELETED(), one way is to set order on deleted TAG and set top and bottom scope to .F.<br>
+<br>
+But we do use filters in normal course including filter to !DELETED(). So we have no other go but to use ADS_RESPECTFILTERS.  And this brings us back to my first proposed solution.<br>
+<br>
+Another important issue.<br>
+AdsKeyNo() is the slowest function. Please read the Advantage Documentation:<br>
+<blockquote>If usFilterOption contains ADS_IGNOREFILTERS or ADS_RESPECTSCOPES, this function should return fairly quickly and provide good performance if the index is not large. If the index is large, this function could take some time to complete because index keys are literally counted until the current key is reached. <br>
+If usFilterOption contains ADS_RESPECTFILTERS, the Advantage Client Engine must skip through all records referenced by keys in the index that pass the filter and/or scope and count them until the current key is reached. Thus, with large indexes where many records pass the filter and/or keys pass the scope, this function can be very slow.</blockquote><br>
+<br>
+Therefore AVOID AdsKeyNo() ( ACE32.DLL AdsGetKeyNum() ) if the table is large. Instead use AdsGetRelKeyPos() function. This is included in the default codeblock of xbrowse.  ( I think TSBrowse also, but I am not sure )<br>
+<br>
+I suggest we better go by the default codeblocks of XBrowse except bKeyCount. For bKeyCount() better we use  the methods I described above.<br>
+<br>
+For smaller tables anything goes well. <br>
+<br>
+Another suggestion:  If we have decided to use Advantage Server only, why should we still cling to CDX? It is better to convert the tables to ADT. Particularly the deleted records do not pose any problem.  KeyNumber issues still remains ofcourse.</div>
+    </div>
+  </div>
+  <div class="post" id="p85379">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Why Some Browses with ADS are slow?</span><br>
+        Posted: Thu Aug 27, 2009 11:18 AM
+      </div>
+      <div class="content">Mr. G.N. Rao, <br>
+<br>
+Well, this is true, maybe he was having shown that the techniques described above, not intended for use filters, and it is a code that is optimized for normal use with or without scopes <br>
+<br>
+Us the use of filters, through the execution of SQL simply because we felt that the system was faster. It's just another kind of technique and situation. Remember that versatiliti of ADS and its power lies in the joint use of its functionality. And another reason was to get the Browse as perfect, which is fast with scopes, no scopes, filters, filters most scopes, nothing ... <br>
+<br>
+On the use of AdsKeyNo() i know the documentation, but I insist you check the result using the technique described above. Access is immediate. <br>
+<br>
+Finally, ADT. If you are right, the use of ADT avoids many problems with the deleted registers, but the situation described is if you need to continue using Dbf for some reason.<br>
+<br>
+If not appreciated in the picture, but I did a test and give curious results. It is for this reason that we work well. If you want that let us add new cases, i will be happy for test.<br>
+<br>
+<a href="http://img381.imageshack.us/i/testc.jpg/" rel="noopener"><img src="http://img381.imageshack.us/img381/6661/testc.jpg" alt="" loading="lazy"></a><a href="http://g.imageshack.us/img381/testc.jpg/1/" rel="noopener"><img src="http://img381.imageshack.us/img381/testc.jpg/1/w737.png" alt="" loading="lazy"></a><br>
+<br>
+Finally, say to you that any suggestion of yours is WELCOME and always add more knowledge about the forum and get power to all the best. I will try browse + ads with all kinds of situations.   <br>
+<br>
+Thanks for your comments.</div>
+    </div>
+  </div>
+  <div class="post" id="p85391">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Why Some Browses with ADS are slow?</span><br>
+        Posted: Thu Aug 27, 2009 01:44 PM
+      </div>
+      <div class="content"><p>Wow</p>
+<p>Excellent research done by you.<br>
+Your results are very valuable to our community and these results will be of great standard reference.</p>
+<p>Thanks for your efforts</p></div>
+    </div>
+  </div>
+  <div class="post" id="p85394">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Why Some Browses with ADS are slow?</span><br>
+        Posted: Thu Aug 27, 2009 02:00 PM
+      </div>
+      <div class="content"><p>N,</p>
+<p>The ethernal question =&gt; What's the best configuration for browser ? <br>
+I think =&gt; It depends on what you do  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --> , i donn't believe exist the perfect browse for all situations (is my humbly reply)  <!-- s:wink: --><img src="{SMILIES_PATH}/icon_wink.gif" alt=":wink:" title="Wink" /><!-- s:wink: --> <br>
+next week to play around with filters, which conclusions can be inferred ...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p85395">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Why Some Browses with ADS are slow?</span><br>
+        Posted: Thu Aug 27, 2009 02:09 PM
+      </div>
+      <div class="content"><blockquote><cite>Carles wrote:</cite>N,<br>
+<br>
+The ethernal question =&gt; What's the best configuration for browser ? <br>
+I think =&gt; It depends on what you do   , i donn't believe exist the perfect browse for all situations (is my humbly reply)   <br>
+next week to play around with filters, which conclusions can be inferred ...</blockquote><br>
+<br>
+I fully agree with you</div>
+    </div>
+  </div>
+  <div class="post" id="p113235">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Why Some Browses with ADS are slow?</span><br>
+        Posted: Mon Apr 11, 2011 07:42 PM
+      </div>
+      <div class="content">Hi, everyone.<br>
+<br>
+I'm trying to draw alternate colors when browsing tables.  All my tables are .adt/adi, i.e. (NO DBFs).   My code to achieve alternate colors for each line is this:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   ::oGrid:bClrStd := {|| If( (::cAlias)-&gt;( AdsKeyNo(,,ADS_RESPECTSCOPES) ) % 2 == 0, { CLR_BLUE, CLR_WHITE }, { CLR_BLUE, RGB(242,242,255) } ) }</code></pre></div><br>
+<br>
+But this turns out to be WAY to slow.  If I remove this line from the xbrowse code, then my xbrowses are really fast.  I have tried using AdsGetRelKeyPos() as well as OrdKeyNo() at no avail.<br>
+<br>
+Any advise?<br>
+<br>
+<br>
+Reinaldo.</div>
+    </div>
+  </div>
+  <div class="post" id="p113239">
+    <div class="poster">
+      <div class="name" style="color:#105289">Gale FORd</div>
+      <div class="rank">Posts: 663</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 05, 2005 11:22 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Why Some Browses with ADS are slow?</span><br>
+        Posted: Mon Apr 11, 2011 10:03 PM
+      </div>
+      <div class="content">Can you use the position of the browse object instead?<br>
+Something like<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">::oGrid:bClrStd :=  {|| if( ::oGrid:nAt % 2 == 0, { CLR_BLUE, CLR_WHITE }, { CLR_BLUE, RGB(242,242,255) } ) }</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p113270">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Why Some Browses with ADS are slow?</span><br>
+        Posted: Tue Apr 12, 2011 03:29 PM
+      </div>
+      <div class="content"><p>Gale;</p>
+<p>Hi.  The problem here is that ::oGrid:nAt returns the cursor position in the grid and not as it is painting.  Thus not achieving the pijama effect.  I tried it.  Thank you, but it doesn't work.</p>
+<p>I realize that not being able to use OrdKeyNo() (as well as ::oGrid:KeyNo()) is an exclusive problem with ADSRDD which in turn is inherited from ACE.  But it is also a GUI problem.  Notice how the delphi folks don't have this problem while browsing the very same .adt tables.  </p>
+<p>There must be a way inside the control (xbrowse) to alter coloring that does not depend on record positioning or having to execute an external code block.  The idea of having a code block to determine line colors is good when you want to allow for exceptions.</p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-9343-page-2.html">2</a> (23 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

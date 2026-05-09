@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>bDropOver - nRow, nCol - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-9912">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> bDropOver - nRow, nCol</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-9912-page-2.html">2</a> (16 posts)</div>  <div class="post" id="p47960">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Mon Feb 11, 2008 08:30 AM
+      </div>
+      <div class="content">Mr Antonio<br>
+<br>
+I am trying to use the nRow, nCol parameters of bDropOver block when drop occurs on a window.<br>
+<br>
+Naturally I expected that the nRow,nCol refer to the destination window. It is not the case. I found that they are not even Screen Coordinates. On studying the Control.Prg, I observed that the nRow, nCol refer to the position with respect to originating control ( i.e, the Control where the drag began ).<br>
+<br>
+The relevant code from Control.Prg is extracted below:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TControl
+
+   local aPoint := { nRow, nCol }
+
+   ::lMouseDown = .f.
+
+   if lDragging
+      lDragging = .f.
+      ReleaseCapture()
+
+      aPoint = ClientToScreen( ::hWnd, aPoint )
+      if aPoint[ 1 ] &gt; 32768
+         aPoint[ 1 ] -= 65535
+      endif
+      if aPoint[ 2 ] &gt; 32768
+         aPoint[ 2 ] -= 65535
+      endif
+      SendMessage( WindowFromPoint( aPoint[ 2 ], aPoint[ 1 ] ),;
+                   FM_DROPOVER, nKeyFlags, nMakeLong( nRow, nCol ) )
+
+      return nil
+   endif</code></pre></div><br>
+The destination (dropped) window can not use these nRow,nCol coordinates directly. We have to know the originating window ( the bdropdown does not contain the information, unless we stuff it in the udropinfo). So we have to ascertain the originating window, conver the coordinates to screen from orginating window and then convert again from screen to the destination window.<br>
+<br>
+Kindly confirm if my understanding is correct.<br>
+<br>
+I checked the drag drop programs in the samples folder. They do not contain any sample using the nRow,nCol coordnates in the bDropOver block.<br>
+<br>
+I suggest it would be convenient for us, if the bDropOver is called with nRow,nCol relative to the destination window ( or at least the screen coordinates).<br>
+<br>
+I suggest the following modified code.<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TControl
+
+   local aPoint := { nRow, nCol }
+   local hDropWnd
+
+   ::lMouseDown = .f.
+
+   if lDragging
+      lDragging = .f.
+      ReleaseCapture()
+
+      aPoint = ClientToScreen( ::hWnd, aPoint )
+      if aPoint[ 1 ] &gt; 32768
+         aPoint[ 1 ] -= 65535
+      endif
+      if aPoint[ 2 ] &gt; 32768
+         aPoint[ 2 ] -= 65535
+      endif
+
+      hDropWnd  = WindowFromPoint( aPoint[ 2 ], aPoint[ 1 ] )
+      aPoint    = ScreenToClient( hDropWnd, aPoint )
+
+      // do we need to make again any correction for 65535 here also ?
+
+      SendMessage( hDropWnd, FM_DROPOVER, nKeyFlags, nMakeLong( aPoint[ 1 ], aPoint[ 2 ] ) )
+
+      return nil
+   endif</code></pre></div><br>
+With this correction I expect when the drop occurs, the nRow, nCol parameters that the window receives on evaluation of bDropOver block are relative to itself and can straight away use the coordinates.<br>
+<br>
+Is my understanding right ?<br>
+<br>
+With this modification, dropover function can be written something like this<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oWnd:bDropOver := { |u,r,c,f| mousedropover( u,r,c,f ) }
+//---
+func mousedropover( u, nRow, nCol, nFlags )
+
+   oWnd:Say ( nRow, nCol, 'Dropped here' )
+
+ /*
+   INSTEAD OF :
+
+   LOCAL aPoint
+   aPoint := ClientToScreen( OrginatingWnd:hWnd, { nRow, nCol } )
+   // apply 65535 correction
+   aPoint := ScreenToClient( oThisWnd:hWnd, aPoint )
+   // i don't know if we again have to apply 65535 correction and if so what it is
+   nRow := aPoint[ 1 ]
+   nCol  := aPoint[ 2 ]
+  // now use nRow,nCol
+*/</code></pre></div><br>
+<br>
+<br>
+Do other programmers agree with the suggestion?<br>
+<br>
+Request Mr Antonio and other colleagues to advise.</div>
+    </div>
+  </div>
+  <div class="post" id="p47970">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Mon Feb 11, 2008 09:29 AM
+      </div>
+      <div class="content"><p>Nageswararao,</p>
+<p>&gt; Is my understanding right ? </p>
+<p>Yes. Actually the coordinates are absolute and are not relative to the destination window. </p>
+<p>We should use ScreenToClient() as you describe to turn them local to the window where the drop is done</p></div>
+    </div>
+  </div>
+  <div class="post" id="p47973">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Mon Feb 11, 2008 09:32 AM
+      </div>
+      <div class="content"><p>Mr Antonio</p>
+<p>I do not think they are even absolute. I think they are relative to the control originating the drag. Can you kindly verify again please?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p47976">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Mon Feb 11, 2008 09:35 AM
+      </div>
+      <div class="content">If the coordinates have to be absolute, the control.prg should have been like this :<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+    INSTEAD OF 
+
+     SendMessage( WindowFromPoint( aPoint[ 2 ], aPoint[ 1 ] ),;
+                   FM_DROPOVER, nKeyFlags, nMakeLong( nRow, nCol ) )
+*/
+      SendMessage( WindowFromPoint( aPoint[ 2 ], aPoint[ 1 ] ),;
+                   FM_DROPOVER, nKeyFlags, ;
+                   nMakeLong( aPoint[ 1 ], aPoint[ 2 ] ) )</code></pre></div><br>
+Can you please confirm ?</div>
+    </div>
+  </div>
+  <div class="post" id="p47978">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Mon Feb 11, 2008 10:48 AM
+      </div>
+      <div class="content"><p>Yes, you are right</p>
+<p>Thanks,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p47979">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Mon Feb 11, 2008 10:56 AM
+      </div>
+      <div class="content"><p>Mr Antonio</p>
+<p>1) Do you think we should modify ? So that the dropped window need now know the originating window. If you agree, I shall do it in my copy.</p>
+<p>--- I still prefer if the coordinates provided are relative the dropped window avoiding the programmer to do the complex calculations.</p>
+<p>2) Please advise me if we need to apply the 65535 correction after ScreenToClient also? If so what is that correction?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p47980">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Mon Feb 11, 2008 11:30 AM
+      </div>
+      <div class="content"><p>Nageswararao,</p>
+<p>&gt;<br>
+1) Do you think we should modify ? So that the dropped window need now know the originating window. If you agree, I shall do it in my copy. <br>
+&gt;</p>
+<p>Yes, I guess the best choice is to use local window coordinates</p>
+<p>&gt;<br>
+2) Please advise me if we need to apply the 65535 correction after ScreenToClient also? If so what is that correction?<br>
+&gt;</p>
+<p>We have to check it in case that we get negative values</p></div>
+    </div>
+  </div>
+  <div class="post" id="p47988">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Mon Feb 11, 2008 12:43 PM
+      </div>
+      <div class="content">Mr Antonio<br>
+<br>
+In that case, can you please comment on this code, if it looks okay?<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TControl
+
+   local aPoint := { nRow, nCol }
+   local hDropWnd
+
+   ::lMouseDown = .f.
+
+   if lDragging
+      lDragging = .f.
+      ReleaseCapture()
+
+      aPoint = ClientToScreen( ::hWnd, aPoint )
+      if aPoint[ 1 ] &gt; 32768
+         aPoint[ 1 ] -= 65535
+      endif
+      if aPoint[ 2 ] &gt; 32768
+         aPoint[ 2 ] -= 65535
+      endif
+
+      hDropWnd  = WindowFromPoint( aPoint[ 2 ], aPoint[ 1 ] )
+      aPoint    = ScreenToClient( hDropWnd, aPoint )
+
+      if aPoint[ 1 ] &lt; 0
+         aPoint[ 1 ] += 65535
+      endif
+      if aPoint[ 2 ] &lt; 0
+         aPoint[ 2 ] += 65535
+      endif
+
+      SendMessage( hDropWnd, FM_DROPOVER, nKeyFlags, nMakeLong( aPoint[ 1 ], aPoint[ 2 ] ) )
+
+      return nil
+   endif</code></pre></div><br>
+<br>
+If this code looks to be logically correct, I shall incorporate in my copy and test it. If I encounter any problems, I shall seek your guidance again.<br>
+<br>
+Another point:<br>
+<br>
+Why can't the 65535 issue be handled in the ScreenToClient and ClientToScreen functions and return the fully rectified values?  Why should the programmer apply the correction everytime in his code? In normal course I would never know that these two functions would need  a correction like this. New programmers who use these functions may not know till they face problems and approach the forum.</div>
+    </div>
+  </div>
+  <div class="post" id="p47990">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Mon Feb 11, 2008 12:47 PM
+      </div>
+      <div class="content">Nageswararao,<br>
+<br>
+Your changes look fine, though I am not totally sure about this:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">      if aPoint[ 1 ] &lt; 0 
+         aPoint[ 1 ] += 65535 
+      endif 
+      if aPoint[ 2 ] &lt; 0 
+         aPoint[ 2 ] += 65535 
+      endif</code></pre></div><br>
+Those changes are due to a sign problem that it is not properly managed</div>
+    </div>
+  </div>
+  <div class="post" id="p47992">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Mon Feb 11, 2008 12:50 PM
+      </div>
+      <div class="content"><p>&gt;<br>
+Your changes look fine, though I am not totally sure about this:<br>
+&gt;<br>
+This is my doubt too about the post-screentoclient call.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p48080">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Tue Feb 12, 2008 12:11 PM
+      </div>
+      <div class="content"><p>Mr Antonio</p>
+<p>Sorry to bother you again. I read the source code of the library functions again and again. I do not see any logical reason why we do not get the correct coordinates from the windows api. If this is a problem with windows api, even programmers working in other development platforms should have complained about it. </p>
+<p>Has any FWH developer faced the problem of inaccuracy without applying the  correction? Or are we carrying the correction from an old legacy which may not be required now.  In any case how can the screen coordinates be negative?</p>
+<p>In any case, I do not think we should correct if coordinates returned by ScreenToClient are negative, because they can be negative if the point is ouside the client.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p48093">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Tue Feb 12, 2008 01:34 PM
+      </div>
+      <div class="content"><p>&gt;In any case how can the screen coordinates be negative? </p>
+<p>If you draw or move items off the visible screen screen coordinates can be negative. </p>
+<p>James</p></div>
+    </div>
+  </div>
+  <div class="post" id="p48094">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Tue Feb 12, 2008 01:39 PM
+      </div>
+      <div class="content"><p>&gt;<br>
+f you draw or move items off the visible screen screen coordinates can be negative. <br>
+&gt;<br>
+Yes</p></div>
+    </div>
+  </div>
+  <div class="post" id="p48095">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Tue Feb 12, 2008 01:44 PM
+      </div>
+      <div class="content"><p>NageswaraRao,</p>
+<p>I am not sure if you were confirming that you read my statement, or if you thought my statement was a question, and you were answering it?</p>
+<p>James</p></div>
+    </div>
+  </div>
+  <div class="post" id="p48096">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">bDropOver - nRow, nCol</span><br>
+        Posted: Tue Feb 12, 2008 01:46 PM
+      </div>
+      <div class="content"><p>I accepted and confirmed your statement Mr James. How could Mr James be wrong ?   <!-- s:) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":)" title="Smile" /><!-- s:) --></p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-9912-page-2.html">2</a> (16 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

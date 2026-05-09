@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Manual de HDBC RDD - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46397">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Manual de HDBC RDD</div>
+  <div class="post" id="p284344">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Manual de HDBC RDD</span><br>
+        Posted: Thu Mar 12, 2026 11:17 PM
+      </div>
+      <div class="content"><p><r><H1 slug="manual-de-referencia-de-hdbc-rdd-replaceable-database-driver"><s># </s>Manual de Referencia de HDBC RDD (Replaceable Database Driver)</H1></p>
+<p>El <STRONG><s>**</s>RDD de HDBC (<C><s>`</s>RDDHDBC<e>`</e></C>)<e>**</e></STRONG> es un motor que permite a los programadores de Harbour interactuar con cualquier base de datos SQL conectada mediante HDBC utilizando los <STRONG><s>**</s>comandos clásicos de xBase<e>**</e></STRONG> (<C><s>`</s>USE<e>`</e></C>, <C><s>`</s>APPEND BLANK<e>`</e></C>, <C><s>`</s>REPLACE<e>`</e></C>, <C><s>`</s>SKIP<e>`</e></C>, <C><s>`</s>SEEK<e>`</e></C>, <C><s>`</s>SET FILTER<e>`</e></C>, etc.).</p>
+
+<p>Esta capa traduce en tiempo real las operaciones procedurales al dialecto SQL del motor configurado (SQLite, MySQL, PostgreSQL, etc.), lo que es ideal para portar aplicaciones "Legacy" o para desarrolladores que prefieran evitar el uso de objetos y sentencias SQL manuales.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="1-configuraci-n-inicial-e-inyecci-n-del-rdd"><s>## </s>1. Configuración Inicial e Inyección del RDD</H2>
+
+<p>Para comenzar, debe enlazar el núcleo de conexión <C><s>`</s>THDbc<e>`</e></C> global al sistema de RDDs de Harbour.</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>#include "hdbc_conn.ch"</p>
+<h1>include "hdbc.ch"</h1>
+<h1>include "rddsys.ch"</h1>
+<p>PROCEDURE Main()<br>
+   LOCAL oDbc := THDbc():new( HDBC_DRIVER_SQLITE )</p>
+<p>oDbc:connect( "database=test_rdd.db" )</p>
+<p>// 1. Registrar el driver en el subsistema RDD<br>
+   rddRegister( "RDDHDBC", RDT_FULL )</p>
+<p>// 2. Transmitir la conexión activa al ámbito RDD<br>
+   HDbcRdd_Init( oDbc )</p>
+<p>// 3. (Opcional) Hacerlo el RDD por defecto<br>
+   RddSetDefault( "RDDHDBC" )<i><br>
+</i><e>```</e></CODE></p>
+<p><QUOTE><i>&gt; </i><p>[!TIP]<br/><br>
+<i>&gt; </i>Al finalizar la aplicación, libere la memoria asociada llamando a <C><s><code>&lt;/s&gt;HDbcRdd_End()&lt;e&gt;</code></e></C> antes de cerrar la conexión de <C><s><code>&lt;/s&gt;THDbc&lt;e&gt;</code></e></C>.</p></QUOTE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="2-operaciones-b-sicas-xbase-crud"><s>## </s>2. Operaciones Básicas xBase (CRUD)</H2>
+
+<H3 slug="2-1-creaci-n-de-tablas-dbcreate"><s>### </s>2.1 Creación de Tablas (<C><s>`</s>dbCreate<e>`</e></C>)</H3>
+<p>Puede crear tablas remotas usando diccionarios de arrays estándar de Harbour o el tipo especializado <C><s>`</s>TIMESTAMP<e>`</e></C>.</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>LOCAL aStruct := { ;<br>
+   { "ID",      "N", 10, 0 }, ;<br>
+   { "NOMBRE",  "C", 50, 0 }, ;<br>
+   { "SALARIO", "N", 12, 2 }, ;<br>
+   { "FECHA",   "D",  8, 0 }, ;<br>
+   { "ACTIVO",  "L",  1, 0 }  ;<br>
+} </p>
+<p>dbCreate( "empleados", aStruct, "RDDHDBC" )<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="2-2-apertura-use"><s>### </s>2.2 Apertura (<C><s>`</s>USE<e>`</e></C>)</H3>
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>USE empleados ALIAS EMP VIA "RDDHDBC" NEW</p>
+<p>IF NetErr()<br>
+   ? "Error abriendo tabla remota"<br>
+ENDIF<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="2-3-altas-append-blank-y-replace"><s>### </s>2.3 Altas (<C><s>`</s>APPEND BLANK<e>`</e></C> y <C><s>`</s>REPLACE<e>`</e></C>)</H3>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;SELECT EMP
+APPEND BLANK
+REPLACE FIELD-&amp;gt;ID      WITH 1, ;
+        FIELD-&amp;gt;NOMBRE  WITH "Juan Pérez", ;
+        FIELD-&amp;gt;SALARIO WITH 2500.50, ;
+        FIELD-&amp;gt;ACTIVO  WITH .T.&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<H3 slug="2-4-navegaci-n-dbskip-eof-bof"><s>### </s>2.4 Navegación (<C><s>`</s>dbSkip<e>`</e></C>, <C><s>`</s>EOF<e>`</e></C>, <C><s>`</s>BOF<e>`</e></C>)</H3>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;EMP-&amp;gt;( dbGoTop() )
+DO WHILE ! EMP-&amp;gt;( Eof() )
+   ? "ID:", EMP-&amp;gt;ID, "Nombre:", EMP-&amp;gt;NOMBRE
+   EMP-&amp;gt;( dbSkip() )
+ENDDO&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<H3 slug="2-5-bajas-l-gicas-y-f-sicas"><s>### </s>2.5 Bajas Lógicas y Físicas</H3>
+<p>Si su motor detecta una columna interna para eliminaciones lógicas (SoftDeletes), el comando <C><s>`</s>DELETE<e>`</e></C> realizará un <C><s>`</s>UPDATE<e>`</e></C> subyacente. Para borrados físicos convencionales (si no hay tabla soft-delete configurada), emitirá <C><s>`</s>DELETE FROM<e>`</e></C>.</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;GOTO 2
+DELETE
+? "Registro 2 marcado como borrado. Deleted():", Deleted()&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="3-funciones-avanzadas-del-rdd"><s>## </s>3. Funciones Avanzadas del RDD</H2>
+
+<H3 slug="3-1-ndices-y-b-squedas-index-on-y-dbseek"><s>### </s>3.1 Índices y Búsquedas (<C><s>`</s>INDEX ON<e>`</e></C> y <C><s>`</s>dbSeek<e>`</e></C>)</H3>
+<p>El RDD permite indexación dinámica local en memoria / servidor permitiendo búsquedas rápidas.</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>USE clientes ALIAS CLI NEW VIA "RDDHDBC"<br>
+INDEX ON FIELD-&gt;nombre TAG por_nombre</p>
+<p>SEEK "Maria García"<br>
+IF Found()<br>
+   ? "ENCONTRADA! ID:", CLI-&gt;id, "Ciudad:", CLI-&gt;ciudad<br>
+ENDIF<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="3-2-filtrado-y-contenci-n-set-filter-y-scopes"><s>### </s>3.2 Filtrado y Contención (<C><s>`</s>SET FILTER<e>`</e></C> y <C><s>`</s>SCOPES<e>`</e></C>)</H3>
+<p>Mientras que el filtro evalúa registro a registro, HDBC también soporta los <STRONG><s>**</s>SCOPES<e>**</e></STRONG> (Acotaciones de Índice), los cuales son extremadamente más rápidos porque limitan la consulta nativa en su pre-generación inyectando sentencias lógicas.</p>
+
+<p><STRONG><s>**</s>Uso de SET FILTER:<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;SET FILTER TO CLI-&amp;gt;ciudad == "Madrid"
+GO TOP
+DO WHILE ! Eof()
+   ? "Encontrado en Madrid:", CLI-&amp;gt;nombre
+   SKIP
+ENDDO
+SET FILTER TO // Limpiar Filtro&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>Uso de SCOPES (Filtro Inteligente Indexado):<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>// Asumiendo un tag 'idx_ciudad' creado...<br>
+ORDSETFOCUS( "idx_ciudad" )<br>
+// Acota tanto por arriba (0) como por abajo (1)<br>
+ORDSCOPE( 0, "Madrid" )<br>
+ORDSCOPE( 1, "Madrid" )</p>
+<p>GO TOP<br>
+// El bucle ahora sólo navega clientes de Madrid de modo relámpago<br>
+ORDSCOPE( 0, NIL ) // Limpiar scope<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="3-3-relaciones-entidad-referencia-set-relation"><s>### </s>3.3 Relaciones Entidad-Referencia (<C><s>`</s>SET RELATION<e>`</e></C>)</H3>
+<p>Vincule cursores mediante apuntadores síncronos xBase para avanzar múltiples WorkAreas en paralelo:</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>USE facturas ALIAS FAC NEW VIA "RDDHDBC"</p>
+<p>SELECT CLI<br>
+INDEX ON FIELD-&gt;id TAG id_cli</p>
+<p>SELECT FAC<br>
+SET RELATION TO FAC-&gt;cliente_id INTO CLI</p>
+<p>GO TOP<br>
+DO WHILE ! Eof()<br>
+   // Por debajo, el driver localizará concurrentemente en el puntero de CLI<br>
+   ? "Factura:", FAC-&gt;id, "-&gt; Cliente:", CLI-&gt;nombre<br>
+   SKIP<br>
+ENDDO<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="3-4-inyecci-n-de-vistas-sql-complejas-sql-as-table"><s>### </s>3.4 Inyección de Vistas SQL Complejas ("SQL-as-Table")</H3>
+<p>Este es uno de los recursos más potentes del <C><s>`</s>RDDHDBC<e>`</e></C>. Puede inyectar cualquier string puramente DML (<C><s>`</s>SELECT ... JOIN ... GROUP BY<e>`</e></C>) y montarlo como un WorkArea que puede ser escaneado unidireccionalmente.</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>USE "SELECT c.nombre, COALESCE(SUM(f.total), 0) as total FROM clientes c LEFT JOIN facturas f ON c.id = f.cliente_id GROUP BY c.id, c.nombre" ALIAS RESUMEN NEW VIA "RDDHDBC"</p>
+<p>IF Used()<br>
+   DO WHILE ! Eof()<br>
+      ? "Resumen:", RESUMEN-&gt;nombre, "Total:", RESUMEN-&gt;total<br>
+      SKIP<br>
+   ENDDO<br>
+   CLOSE RESUMEN<br>
+ENDIF<i><br>
+</i><e>```</e></CODE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="4-transacciones-y-bloqueos"><s>## </s>4. Transacciones y Bloqueos</H2>
+
+<p>El RDD soporta mecanismos híbridos valiéndose en el control de su objeto padre <C><s>`</s>oDbc<e>`</e></C>.</p>
+
+<H3 slug="transacciones"><s>### </s>Transacciones</H3>
+<p>Emplee directamente el nivel <C><s>`</s>oDbc<e>`</e></C> para encapsular y revertir de acuerdo a las capacidades <C><s>`</s>ACID<e>`</e></C> del servidor:</p>
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>oDbc:beginTrans()</p>
+<p>REPLACE SEC-&gt;saldo WITH SEC-&gt;saldo + 500</p>
+<p>IF lTodoCorrecto<br>
+   oDbc:commit() <br>
+ELSE<br>
+   oDbc:rollback()<br>
+ENDIF<i><br>
+</i><e>```</e></CODE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="5-mantenimiento-f-sico-pack-y-zap"><s>## </s>5. Mantenimiento Físico (PACK y ZAP)</H2>
+
+<p>El RDDHDBC integra utilidades físicas nativas para el mantenimiento del modelo de datos tradicional xBase.</p>
+
+<H3 slug="zap-vaciado-completo"><s>### </s>ZAP (Vaciado Completo)</H3>
+<p>Al invocar <C><s>`</s>ZAP<e>`</e></C>, el motor del RDD ignorará cualquier cláusula SQL <C><s>`</s>DELETE FROM<e>`</e></C> tradicional, e intentará ejecutar el comando nativo <C><s>`</s>TRUNCATE TABLE<e>`</e></C> en el servidor, reseteando la tabla sin castigar el log de transacciones (mucho más rápido).</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;USE auditorias ALIAS AUD VIA "RDDHDBC" EXCLUSIVE
+ZAP
+? "Tabla de auditoría truncada radicalmente."&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<H3 slug="pack-purga-de-bajas-l-gicas-softdeletes"><s>### </s>PACK (Purga de Bajas Lógicas SoftDeletes)</H3>
+<p>En las tablas tradicionales DBF <C><s>`</s>PACK<e>`</e></C> compactaba el archivo físico. En HDBC, si su tabla emplea "Bajas Lógicas" (una columna <C><s>`</s>deleted_at<e>`</e></C>), el comando genérico <C><s>`</s>DELETE<e>`</e></C> sólo hace <EM><s>*</s>Soft-Deletes<e>*</e></EM> rellenando la fecha, dejando las filas en base de datos. <br/>
+Ejecutar el comando <C><s>`</s>PACK<e>`</e></C> mandará la instrucción SQL definitiva que <STRONG><s>**</s>extermina físicamente de la base de datos<e>**</e></STRONG> aquellos registros previamente marcados con la baja lógica, replicando el comportamiento xBase exacto.</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;USE clientes ALIAS CLI VIA "RDDHDBC" EXCLUSIVE
+PACK 
+? "Base de datos saneada permanentemente de tuplas borradas."&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<H3 slug="bloqueos-de-registros-optimistas"><s>### </s>Bloqueos de Registros Optimistas</H3>
+<p>Puede emitir instrucciones <C><s>`</s>RLock()<e>`</e></C> para reservar temporalmente los estados del cursor mientras se mutan datos atómicamente si el driver del RDMS lo permite.</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;GO TOP
+IF RLock()
+   REPLACE SEC-&amp;gt;saldo WITH 2000
+   UNLOCK
+ELSE
+   ? "Alguien más tiene bloqueada esta fila."
+ENDIF&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p>Y esto funciona con:<br/>
+MySQL, MariaDb, SQLite y clónicos, Postgres, Oracle, SQLServer, Interbase, Firebird y ODBC</p>
+
+<p>Ya es una realidad escribir un PRG para cualquier base de datos!!!</p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284348">
+    <div class="poster">
+      <div class="name" style="color:#105289">quim</div>
+      <div class="rank">Posts: 56</div>
+      <div class="avatar"></div>
+      Joined: Mon Apr 11, 2011 06:22 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Fri Mar 13, 2026 09:05 AM
+      </div>
+      <div class="content"><p><r><p>Impresionante trabajo. Enhorabuena !</p></p>
+<p>Graciosa la frase : 'Base de datos saneada permanentemente de tuplas borradas'</p>
+
+<p>Hasta ahora creia que una DBF quedaba 'compactada' no 'saneada' <E>:)</E></p>
+
+<p>Nada, un poco de humor que no desmerece para nada tu magnífico trabajo !</p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284349">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Fri Mar 13, 2026 12:29 PM
+      </div>
+      <div class="content"><p><r><p>Manu,</p></p>
+<p>Un gran trabajo, sin duda la mejor opción para trabajar con bases de datos !  <E>:D</E></p>
+
+<p>C.</p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284350">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Fri Mar 13, 2026 07:52 PM
+      </div>
+      <div class="content"><p><r><p>Página web donde poder comprarlo ya !!!  <E>:idea:</E>  <E>:D</E></p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284356">
+    <div class="poster">
+      <div class="name" style="color:#105289">wilsongamboa</div>
+      <div class="rank">Posts: 669</div>
+      <img class="avatar avatar-img" src="avatars/179.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 06:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Sat Mar 14, 2026 02:33 AM
+      </div>
+      <div class="content"><p><t><p>Que felicidad ya veo mas cerca mi migracion gracias Manu, precios por favor para ir al ahorro gracias<br/><br>
+Wilson</p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284368">
+    <div class="poster">
+      <div class="name" style="color:#105289">russimicro</div>
+      <div class="rank">Posts: 409</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 31, 2010 03:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Sat Mar 14, 2026 12:21 PM
+      </div>
+      <div class="content"><p><r><p>Buen dia...</p></p>
+<p><LIST type="decimal"><LI><s>1. </s>Es aplicable a xharbour.org ?</LI></p>
+<LI><s>2. </s>Rendimiento frente a : Eagle1, mariaDb(fw), dolphin , SQLRDD ... ?</LI>
+<LI><s>3. </s>Comados xbase que no aplican ?</LI>
+<LI><s>4. </s>Soporte : Tiempos de respuesta, FORO ... ?</LI>
+<p></LIST></p>
+<p>JONSSON RUSSI</p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284369">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Sat Mar 14, 2026 01:54 PM
+      </div>
+      <div class="content"><r><p>Hola Wilson, seguro que el precio de HDBC no va a ser el problema <EMOJI seq="1f604" tseq="1f604">&#128516;</EMOJI><EMOJI seq="1f604" tseq="1f604">&#128516;</EMOJI><EMOJI seq="1f604" tseq="1f604">&#128516;</EMOJI></p><br>
+<br>
+<p>Hola Jonsson...</p><br>
+<br>
+<p><SIZE size="150"><s><span style="font-size:150%"></s>¿Es aplicable a xHarbour?<e></span></e></SIZE></p><br>
+<br>
+<p>Todavía no he hecho pruebas, pero partiendo de que la API C y el sistema extendido de Harbour y xHarbour difieren en algunos puntos, y que HDBC está escrito al 100% en C++, hay bastantes posibilidades de que no sean compatibles de entrada.</p><br>
+<br>
+<p><SIZE size="150"><s><span style="font-size:150%"></s>Rendimiento frente a Eagle1, MariaDB (FW), Dolphin, SQLRDD…?<e></span></e></SIZE></p><br>
+<br>
+<p>¡Uf, mi querido Eagle1! Desarrollarlo fue una experiencia increíble, igual que lo está siendo HDBC. Lo que te puedo decir es que los tiempos usando HDBC Direct son espectaculares.</p><br>
+<br>
+<p><SIZE size="150"><s><span style="font-size:150%"></s>¿Qué comandos xBase no aplican?<e></span></e></SIZE></p><br>
+<br>
+<p>La parte de HDBC RDD la he diseñado para que sea 100% compatible como cualquier RDD estándar. Aun así, será el grupo de beta testers quien me vaya reportando posibles mejoras.</p><br>
+<br>
+<p><SIZE size="150"><s><span style="font-size:150%"></s>Soporte: tiempos de respuesta, foro…?<e></span></e></SIZE></p><br>
+<br>
+<p>Tengo una idea en mente que anunciaré cuando esté decidido. Pero quienes apuesten por el proyecto desde el principio serán unos "privilegiados" — para mí es muy importante la confianza que cada uno deposite en HDBC.</p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p284372">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">carlos vargas</div>
+      <div class="rank">Posts: 1789</div>
+      <img class="avatar avatar-img" src="avatars/110.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 11, 2005 05:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Sat Mar 14, 2026 06:38 PM
+      </div>
+      <div class="content"><p><t><p>Hola Manuel.</p></p>
+<p>Dos preguntas, con sqlrdd existen dos problemillas que deseo saber si lo has solventado en HDBC:<br/>
+1.- soporte de ordkeyno.<br/>
+2.-soporte de bloqueo de registro, registros y tablas.<br/>
+En sqlrdd en postgree y mssql solo funciona el punto 2, en los restantes no.<br/>
+Por lo que le pregunta va a qué se soporta, y con que dbengine.</p>
+
+<p>Salu2</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284376">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Mon Mar 16, 2026 10:01 AM
+      </div>
+      <div class="content"><r><p>Hola Carlos, espero que estés bien!!!</p><br>
+<br>
+<p>1.- soporte de ordkeyno.<br/><br>
+<I><s><em></s>Las funciones ordxxxx() son wrapper de la funcion estandar de las RDD OrdInfo() y DbInfo().<br/><br>
+Pero en HDBC no está hecho. No obstante las implementaré todas.<e></em></e></I></p><br>
+<br>
+<p>2.-soporte de bloqueo de registro, registros y tablas.<br/><br>
+<I><s><em></s>Sí están pero basadas en las propias de la base de datos.<e></em></e></I></p><br>
+<br>
+<p>Como siempre, muchas gracias por la recomendación que siempre son muy buenas!!!</p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p284378">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Mon Mar 16, 2026 01:22 PM
+      </div>
+      <div class="content"><p><t><p>Buenos días, xManuel, ¿habrá una versión de prueba para quienes no puedan permitirse comprarla?</p></p>
+<p>Gracis, tks.</p>
+
+<p>Regards, saludos.</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284381">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Mon Mar 16, 2026 11:42 PM
+      </div>
+      <div class="content"><p><t><p>Algo tendré que hacer y seguro que pondré una demo.</p></p>
+<p>Saludos y gracias por tu interés!!!</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284396">
+    <div class="poster">
+      <div class="name" style="color:#105289">ramirezosvaldo2</div>
+      <div class="rank">Posts: 82</div>
+      <div class="avatar"></div>
+      Joined: Mon Jan 19, 2009 04:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Wed Mar 18, 2026 02:54 PM
+      </div>
+      <div class="content"><p><t><p>Estimado,</p> </p>
+<p>1.- Trabaja el linux ?<br/>
+2.- El uso de parametros en un SQL Statement, por ejemplo :</p>
+
+<p>oStmt := oConnection:prepare( "update table set field = ? where id = ?")<br/>
+   do while  ...<br/>
+      ....<br/>
+      oStmt:execute( { val1 , val2 } )<br/>
+     ....<br/>
+   enddo</p>
+
+<p>Saludos<br/>
+Osvaldo Ramirez</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284397">
+    <div class="poster">
+      <div class="name" style="color:#105289">surGom</div>
+      <div class="rank">Posts: 652</div>
+      <div class="avatar"></div>
+      Joined: Wed Oct 19, 2005 12:03 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Wed Mar 18, 2026 04:13 PM
+      </div>
+      <div class="content"><p><t><p>Disculpen mi ignorancia de dónde se puede ingresar a la página de Manuel</p></p>
+<p>Luis</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284451">
+    <div class="poster">
+      <div class="name" style="color:#105289">toninhofwi</div>
+      <div class="rank">Posts: 182</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 18, 2005 10:01 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Sun Mar 22, 2026 07:01 PM
+      </div>
+      <div class="content"><p><t><p>Un trabajo profesional como siempre Manu. Sinceramente, es el primer "RDDSQL" que me motivó. Felicidades.</p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284463">
+    <div class="poster">
+      <div class="name" style="color:#105289">lubin</div>
+      <div class="rank">Posts: 467</div>
+      <img class="avatar avatar-img" src="avatars/348.jpg" alt="" loading="lazy">
+      Joined: Fri Dec 09, 2005 12:41 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de HDBC RDD</span><br>
+        Posted: Mon Mar 23, 2026 04:59 PM
+      </div>
+      <div class="content"><p><t><p>Estimado Manu</p></p>
+<p>Muy interesante el Manual felicitaciones,  Aprovechare este medio para solicitarte recibir tu apoyo y/o soporte en nuestro tema pendiente de HDO  y eagle1, del cual me encuentro estancado sin poder avanzar desde el año pasado no puedo aplicarlo,  espero tu pronta respuesta para que esto valga la pena</p>
+
+<p>Te lo agradecere <br/>
+Lubin Azahuanche</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

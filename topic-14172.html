@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Corrupcion Indices CDX - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-14172">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Corrupcion Indices CDX</div>
+  <div class="post" id="p73009">
+    <div class="poster">
+      <div class="name" style="color:#105289">derpipu</div>
+      <div class="rank">Posts: 94</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 28, 2006 04:09 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Corrupcion Indices CDX</span><br>
+        Posted: Tue Jan 06, 2009 04:27 PM
+      </div>
+      <div class="content">Hola a todos, este post es para ver si no le pasa a alguien mas lo que me pasa a mi, tengo un sistema que esta enorme, es un sistema que maneja modulos de Control de nominas, Bancos, Facturas, etc, y tengo los siguientes problemas:<br>
+<br>
+<strong>1</strong> - Los indices se corrompen, aunque integre una rutina que todos los dias al primer acceso al sistema regenera todos los indices del sistema.<br>
+<strong>2</strong> - existen ocasiones en que los registros se duplican completamente, o sea lineas completas de la base de datos se repiten, y en el sistema no existe ningun proceso que haga algo parecido.<br>
+<strong>3</strong> - existen ocasiones en que los registros de los catalogos se eliminan, aunque tengo validaciones que impiden que un cliente que tenga movimientos pueda ser eliminado, de repente los registros desaparecen.<br>
+<strong>4</strong> - continuamente existe corrupcion de indices y me arroja los mensajes de CDX Corruption Detected, pero lo peor es que a diario se actualizan los indices en las mañanas.<br>
+<br>
+Actualmente uso el Build de xHarbour de Fivetech, el cual dice &quot;<strong>xHarbour Compiler build 1.1.0 (Simplex) (Rev. 6195)</strong>&quot;<br>
+<br>
+<strong>Anexo el codigo del proceso de regeneracion de indices</strong>:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function f_Indexar( pcBaseDatos, paDatos, plCatalogo, pcRuta )
+  local x := 0
+  local bSentencia := { | oMeter, oText, oDlg, lEnd | BuildIndex( oMeter, oText, oDlg, @lEnd, paDatos[x,1], paDatos[x,2] ) }
+  local cAlias     := cFileNoExt(pcBaseDatos)
+
+  default plCatalogo := .F., pcRuta := ".\"
+
+  if ! plCatalogo
+    FErase( pcruta + cFileNoExt(pcBaseDatos) + ".cdx" )
+
+    if ! net_use( pcBaseDatos, .T., cAlias, pcRuta )
+      dbCloseAll(); return(nil)
+    endif
+
+    if (cAlias)-&gt;(fLock())
+      MsgRun("Compactando: " + upper(alltrim(pcRuta + pcBaseDatos)) + if( empty( cFileExt( pcBaseDatos ) ), ".DBF", "" ), oApp:cEmpresa, { || (cAlias)-&gt;(dbPack()) } )
+      (cAlias)-&gt;(dbUnlock())
+    endif
+  endif
+
+  for x := 1 to len(paDatos)
+    MsgProgress( bSentencia, "INDEXANDO: " + upper(alltrim(pcRuta + pcBaseDatos)) + if( empty( cFileExt( pcBaseDatos ) ), ".DBF", "" ) + " EN: " + alltrim(paDatos[x,2]) + " CON LLAVE: " + alltrim(paDatos[x,1])  )
+  next
+
+  if ! plCatalogo
+    (cAlias)-&gt;(dbCloseArea())
+  else
+    MsgAlert( "El mantenimiento a: " + NomCatalogos(upper(pcBaseDatos)) + CRLF + " En: " + lower(pcRuta + pcBaseDatos) + if( empty( cFileExt( pcBaseDatos ) ), ".dbf", "" ) + ", se finalizo satisfactoriamente...", oApp:cEmpresa )
+  endif
+return(nil)
+
+function MsgProgress( bAction, cMsg, cTitle )
+   local oDlg, oMeter, oText, oBtn, oFont
+   local lEnd := .f., lCancel := .f.
+   local nVal := 0
+
+   DEFAULT bAction := { || nil },;
+           cMsg := "Procesando...", cTitle := "Espere por favor..."
+
+   DEFINE DIALOG oDlg FROM 5, 5 TO 14, 45 TITLE oApp:cEmpresa FONT oApp:fNormal
+    @ 0.2, 0.5  SAY oText VAR cMsg SIZE 130, 30 OF oDlg
+    oMeter = TProgress():New( 02.00, 01.00,,,,,,,150 )
+
+    @  03.00,  10.4  BUTTON oBtn PROMPT "&amp;Cancelar" OF oDlg ACTION ( lEnd:= .t., lCancel:= .t. ) SIZE 32, 11
+    oBtn:cToolTip := "Presione para Cancelar"
+
+    // This block gets evaluated only the first time the DialogBox is painted !!!
+    oDlg:bStart = { || Eval( bAction, oMeter, oText, oDlg, @lEnd, oBtn ), lEnd := .t., oDlg:End() }
+   ACTIVATE DIALOG oDlg CENTERED VALID lEnd
+return lCancel
+
+// es parte escencial de reord
+function BuildIndex( poMeter, poText, poDlg, plEnd , pcCampo, pcBolsa)
+  Local nContador := 0, nTotal := 0
+  Local cBaseDatos := alias()
+
+  nTotal := (cBaseDatos)-&gt;(LastRec())
+
+  poMeter:SetRange(0, nTotal)
+  (cBaseDatos)-&gt;(OrdSetFocus(0))
+  INDEX ON &amp;(pcCampo)  ;
+        TAG &amp;(pcBolsa) ;
+        EVAL ( poMeter:SetPos( (cBaseDatos)-&gt;(recno()) ), SysRefresh(), ! plEnd )
+  poMeter:SetPos( nTotal )
+return ( nil )</code></pre></div><br>
+<br>
+<strong>el codigo para abrir mis bases de datos es el siguiente:</strong><br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function net_use( pcBaseDatos, plExclusivo, pcAlias, pcRuta, plOkDbf )
+  Local lContinuar := .F.
+  local oError
+
+  local nInicio := seconds()
+
+  default pcAlias := cFileNoExt(pcBaseDatos), plExclusivo := .F., pcRuta := "", plOkDbf := .F.//, pcBaseDatos := cFileNoExt(pcBaseDatos)
+
+  if plOkDbf
+    if ! lOkDbf( pcRuta + pcBaseDatos ); return(lContinuar); endif
+  endif
+
+  if plExclusivo
+      use (pcRuta + pcBaseDatos) alias (pcAlias) exclusive new
+  else
+      use (pcRuta + pcBaseDatos) alias (pcAlias) shared new
+  endif
+
+  if ! netErr()
+    lContinuar := .T.
+    (pcAlias)-&gt;(ordSetFocus(1))
+  else
+    MsgStop("La base de datos: " + Upper(pcBaseDatos) + ".DBF, no puede ser procesada" + CRLF +;
+            "llame a su asesor de Informatica..." , oApp:cEmpresa)
+  endif
+
+return(lContinuar)</code></pre></div><br>
+<br>
+Espero que alguien me pueda dar un norte acerca de que esta pasando con los indices CDX, como comentario adicional los usuarios me increpan diciendo que cuando habian archivitos NTX en el sistema, nunca les pasaba nada de eso, asi que ya comprenderan como me traen..<br>
+<br>
+Bueno no los interrumpo mas, espero sus amables aportaciones...<br>
+<br>
+Luis Fernando Rubio Rubio</div>
+    </div>
+  </div>
+  <div class="post" id="p73021">
+    <div class="poster">
+      <div class="name" style="color:#105289">ADBLANCO</div>
+      <div class="rank">Posts: 299</div>
+      <img class="avatar avatar-img" src="avatars/1201.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 22, 2007 03:03 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Corrupcion Indices CDX</span><br>
+        Posted: Tue Jan 06, 2009 06:17 PM
+      </div>
+      <div class="content"><p>1) Es recomendable borrar el .cdx antes de generarlo.<br>
+2) Es recomendable que los archivos indices se llamen igual a los .dbf<br>
+3) Si tienes varias claves de busqueda utiliza los 'tags' de forma que al abrir una tabla   también lo hagas con su respectivo indice (y todas las claves)<br>
+4) Prueba referirte a los campos como _field-&gt;campo</p>
+<p>Pejm.<br>
+  Si el indice es codedo+Codciu:<br>
+   index on _field-&gt;codedo+_field-&gt;codciu tag codigo to Ciudades</p>
+<p>Yo tengo Varios sistemas que manejan una cantidad de registros Gigantescos y no están perdiendo el indice tan facilmente <br>
+Espero que te sirva.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p73025">
+    <div class="poster">
+      <div class="name" style="color:#105289">ADBLANCO</div>
+      <div class="rank">Posts: 299</div>
+      <img class="avatar avatar-img" src="avatars/1201.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 22, 2007 03:03 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Corrupcion Indices CDX</span><br>
+        Posted: Tue Jan 06, 2009 06:31 PM
+      </div>
+      <div class="content"><p>Además de definir la 'via'<br>
+ use ciudades index ciudades via 'dbfcdx' new shared</p>
+<p>es solo un ejemplo</p>
+<p>también no debes olvidarte de las sentencias:</p>
+<p>Request   DBFCDX, DBFFPT<br>
+RddSetDefault( &quot;DBFCDX&quot; )<br>
+al inicio del prg principal</p></div>
+    </div>
+  </div>
+  <div class="post" id="p73031">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Corrupcion Indices CDX</span><br>
+        Posted: Tue Jan 06, 2009 07:29 PM
+      </div>
+      <div class="content"><p>Luis Fernando:<br>
+Me parece que deberías asegurarte primero, el uso exclusivo de la dbf, y luego borrar sus indices.<br>
+El siguiente es tu codigo, y si por algún motivo no puedes abrir la dbf, retornas, pero ya sin sus indices:</p>
+<p>if ! plCatalogo<br>
+    FErase( pcruta + cFileNoExt(pcBaseDatos) + &quot;.cdx&quot; )</p>
+<pre><code>if ! net_use( pcBaseDatos, .T., cAlias, pcRuta )
+  dbCloseAll(); return(nil)
+endif
+</code></pre>
+<p>...<br>
+...</p>
+<p>Dime si me equivoco.</p>
+<p>Saludos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p73034">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Corrupcion Indices CDX</span><br>
+        Posted: Tue Jan 06, 2009 07:47 PM
+      </div>
+      <div class="content"><p>Luis Fenando,</p>
+<p>Cuantos usuarios usan tu aplicacion simultaneamente ?<br>
+Si son muchos, es muy recomendable que uses ADS, pues al ser cliente-servidor solucionara la mayoria de errores que comentas.</p>
+<p>En aplicaciones con pocos usuarios, estos errores no suelen aparecer. Un error de esos puede generarse por apagar un ordenador indebidamente, por un pico de tension en la corriente electrica, por un fallo de transmision en la red, etc. A mas usuarios, la probabilidad de que ocurran esas situaciones aumentan. Al usar ADS los datos solo los modifica el servidor, por lo que aumenta mucho la seguridad y la integridad de los datos.</p>
+<p>Todos los usuarios usan la misma version de Windows ? Que version ? Que Windows usas como servidor ? Estan todos los service packs instalados ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p73050">
+    <div class="poster">
+      <div class="name" style="color:#105289">derpipu</div>
+      <div class="rank">Posts: 94</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 28, 2006 04:09 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Corrupcion Indices CDX</span><br>
+        Posted: Tue Jan 06, 2009 09:32 PM
+      </div>
+      <div class="content"><p>Hola a todos, les agradezco mucho sus comentarios, en el caso de cuando hago Net_use si me regresa un .f., entonces no dejo continuar el proceso, cierro las bases de datos que haya dejado abiertas y me regreso a la ventana principal, obviamente previo mensaje que indica que hubo algun detalle en X base de datos, ahora en referencia a las preguntas de Antonio, todos usan Windows XP SP2, no creo que todos tengan aun SP3, pero bueno, y fijate que cayendo en conclusion, hay plazas en que tengo a 15 usuarios concurrentes en diferentes procesos y ahora que lo comentas el detalle no pasa en todas mis oficinas, solo en dos o tres de ellas de 15 que utilizan el sistema, y seria interesante ver los detalles que las hacen diferentes a las demas...</p>
+<p>dejenme hacer unas verificaciones y ya les estare diciendo, incluso una de las oficinas que son los que me decian que antes con los NTX no tenian ese tipo de problemas fueron cambiados a unas instalaciones nuevas y podria haber algun problema electrico o con la red, pero eso seria cosa de verificarlo..</p>
+<p>De antemano agradezco sus atenciones a mi post..</p>
+<p>Luis Fernando</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

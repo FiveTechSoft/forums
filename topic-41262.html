@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Convert INI files to DBF - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-41262">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Convert INI files to DBF</div>
+  <div class="post" id="p247139">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Convert INI files to DBF</span><br>
+        Posted: Mon Jan 03, 2022 08:25 AM
+      </div>
+      <div class="content">Hello firends,<br>
+A few years ago, I wanted to change my program from INI files to DBF.<br>
+<br>
+At that time, we developed a function to convert INI files to dbf and then to access the keys.<br>
+Now I think this program can be useful for mod harbour. <br>
+I think it will be easiest if you continue to use the DESKTOP program INI files online. You are used to so many entries. <br>
+I am not yet sure whether you should load all INI entries into a hash at program start or if you need an entry/key then simply access the database. <br>
+How do you solve the problem with the INI settings in Mod Harbour?<br>
+<br>
+Best regards,<br>
+Otto<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+/*
+GetDBProfString( cSection, cEntry, uDefault, cIniFile )
+- Syntax similar to GetPvProfString() function
+- If file extention of cIniFile is "ini", then the call is forwarded to GetPvProgString().
+  So, in - your application you can use this function in the place of GetPvProgString at all places.
+- Otherwise this function reads from cIniFile, forcing extention "dbf".
+- If the dbf does not exist, returns the default value
+- If the dbf exists, then opens the dbf and chceks for the keys
+- If the keys exist, returns value from dbf
+- Otherwise returns default
+
+WriteDBProfString( cSection, cEntry, uValue, cIniFile )
+- Syntax similar to WritePProfString() function
+- If file extention of cIniFile is "ini", then the call is forwarded to WritePProfString().
+  So, in - your application you can use this function in the place of WritePProfString at all places.
+- Otherwise this function writes cIniFile, forcing extention "dbf".
+- If the dbf does not exist, dbf is created
+- Opens the dbf and chceks for the keys
+- If the keys exist, updates the value in the dbf
+- Otherwise appends a new entry with the values.
+
+EditIniDBF( cDbf )
+- If the dbf does not exist and user wants to create, then the dbf is created
+- User can edit values and/or append new values.
+*/
+
+ #define TEST
+
+REQUEST DBFCDX
+
+static hIni    := {=&gt;}
+
+//----------------------------------------------------------------------------//
+
+#ifdef TEST
+
+function Main()
+
+local cDbf := "c:\fwh\samples\xplan_ini.dbf"
+
+
+EditIniDBF( cDbf )
+  /* ? "test"
+
+   ? GetDBProfString( "files", "fields", 23, "rama.dbf" )
+
+   WriteDBProfString( "files", "fields", 77, "rama.dbf" )
+   WriteDBProfString( "files", "fields", 99, "ini\ranga.dbf" )
+
+   ? GetDBProfString( "files", "fields", 23, "ini\ranga.dbf" )
+*/
+return nil
+
+#endif
+
+//----------------------------------------------------------------------------//
+
+function GetDBProfString( cSection, cEntry, uDefault, cIniFile )
+
+   local uRet, cAlias
+
+   cIniFile    := AllTrim( cIniFile )
+   if Lower( cFileExt( cIniFile ) ) == "ini"
+      return GetPvProfString( cSection, cEntry, uDefault, cIniFile )
+   endif
+   uRet        := uDefault
+   cIniFile    := TrueName( cFileSetExt( cIniFile, "dbf" ) )
+   cAlias      := GetIniAlias( cIniFile )
+
+   if .not. Empty( cAlias )
+
+      cSection := LTrim( cSection )
+      cEntry   := LTrim( cEntry )
+
+      if ( cAlias )-&gt;( DBSEEK( MakeKey( cSection, cEntry ) ) )
+         uRet  := ( cAlias )-&gt;X_VALUE
+         if ValType( uDefault ) == 'N'
+            uRet  := Val( uRet )
+         endif
+      endif
+   endif
+
+return uRet
+
+//----------------------------------------------------------------------------//
+
+function WriteDBProfString( cSection, cEntry, uValue, cIniFile )
+
+   local cAlias
+
+   cIniFile    := AllTrim( cIniFile )
+   if Lower( cFileExt( cIniFile ) ) == "ini"
+      return WritePProString( cSection, cEntry, uValue, cIniFile )
+   endif
+   cIniFile    := TrueName( cFileSetExt( cIniFile, "dbf" ) )
+   cAlias      := OpenIniDBF( cIniFile )
+
+   if ( cAlias )-&gt;( DBSEEK( MakeKey( cSection, cEntry ) ) )
+      do while !( cAlias )-&gt;( DBRLOCK() )
+      enddo
+      ( cAlias )-&gt;X_VALUE  := LTrim( cValToChar( uValue ) )
+      DBRUNLOCK()
+   else
+      do while .t.
+         ( cAlias )-&gt;( DBAPPEND() )
+         if .not. NetErr()
+            EXIT
+         endif
+      enddo
+      ( cAlias )-&gt;X_SECTION   := LTrim( cSection )
+      ( cAlias )-&gt;X_KEY       := LTrim( cEntry )
+      ( cAlias )-&gt;X_VALUE     := LTrim( cValToChar( uValue ) )
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function EditIniDBF( cDbf )
+
+   local cAlias
+
+   cDbf  := TrueName( cFileSetExt( cDbf, "dbf" ) )
+   if .not. File( cDbf )
+      if .not. MsgNoYes( cDbf + " does not exist" + CRLF + ;
+                   "Create new DBF?" )
+         return nil
+      endif
+   endif
+
+   cAlias := OpenIniDBF( cDbf )
+
+   XBROWSER cAlias TITLE cDBF FASTEDIT
+
+   // DO NOT CLOSE THE DBF. IT SHOULD REMAIN OPEN
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function GetIniAlias( cIniDbf )
+
+   local cAlias
+
+   cIniDBF     := UPPER( cIniDBF )
+   if HHasKey( hIni, cIniDbf )
+      cAlias   := hIni[ cIniDBF ]
+   endif
+
+   if Empty( cAlias ) .and. File( cIniDBF )
+      cAlias   := OpenIniDbf( cIniDBF )
+   endif
+
+return cAlias
+
+//----------------------------------------------------------------------------//
+
+static function OpenIniDBF( cIniDbf )
+
+   local cAlias
+
+   if .not. ( PROCNAME( 1 ) == "GETINIALIAS" )
+      cAlias   := GetIniAlias( @cIniDBF )
+   endif
+   if Empty( cAlias )
+      if .not. File( cIniDBF )
+         CreateIniDBF( cIniDBF )
+      elseif .not. File( cFileSetExt( cIniDBF, "cdx" ) )
+         CreateIniIndex( cIniDBF )
+      endif
+      cAlias   := cGetNewAlias( "INI" )
+      USE ( cIniDBF ) NEW SHARED ALIAS ( cAlias ) VIA "DBFCDX"
+      SET ORDER TO TAG SECKEY
+      SET FILTER TO !DELETED()
+      GO TOP
+      hIni[ Upper( cIniDBF ) ] := cAlias
+   endif
+
+return cAlias
+
+//----------------------------------------------------------------------------//
+
+static function CreateIniDBF( cDbf )
+
+   field X_SECTION, X_KEY
+
+   local cPath    := cFilePath( cDbf )
+
+   if .not. lIsDir( cPath )
+      lMkFullPath( cPath )
+   endif
+
+   DBCREATE( cDbf, ;
+      {  {  "X_SECTION",   "C",  30,   0  } ,;
+         {  "X_KEY",       "C",  30,   0  } ,;
+         {  "X_VALUE",     "C", 100,   0  } ,;
+         {  "X_COMMENTS",  "C", 200,   0  }  }, ;
+      "DBFCDX", .T., "DBINI" )
+
+   INDEX ON UPPER(X_SECTION)+UPPER(X_KEY) TAG SECKEY
+   INDEX ON DELETED() TAG DELETED
+   CLOSE DBINI
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function CreateIniIndex( cDbf )
+
+   field X_SECTION, X_KEY
+
+   USE ( cDBF ) NEW ALIAS "INICDX" EXCLUSIVE VIA "DBINI"
+   if .not. USED()
+      ? "Can not open " + cDBF + "Exclusively"
+      QUIT
+   endif
+   INDEX ON UPPER(X_SECTION)+UPPER(X_KEY) TAG SECKEY
+   INDEX ON DELETED() TAG DELETED
+   CLOSE DBINI
+
+return .t.
+
+//----------------------------------------------------------------------------//
+
+static function MakeKey( cSection, cKey )
+return PADR( UPPER( LTRIM( cSection ) ), 30 ) + ;
+       PADR( UPPER( LTRIM( cKey     ) ), 30 )
+
+//----------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p247141">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Convert INI files to DBF</span><br>
+        Posted: Mon Jan 03, 2022 09:28 AM
+      </div>
+      <div class="content">This version includes ConvertIniToDBF( cIni ).<br>
+<br>
+<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> 
+#include "fivewin.ch"
+
+/*
+GetDBProfString( cSection, cEntry, uDefault, cIniFile )
+- Syntax similar to GetPvProfString() function
+- If file extention of cIniFile is "ini", then the call is forwarded to GetPvProgString().
+  So, in - your application you can use this function in the place of GetPvProgString at all places.
+- Otherwise this function reads from cIniFile, forcing extention "dbf".
+- If the dbf does not exist, returns the default value
+- If the dbf exists, then opens the dbf and chceks for the keys
+- If the keys exist, returns value from dbf
+- Otherwise returns default
+
+WriteDBProfString( cSection, cEntry, uValue, cIniFile )
+- Syntax similar to WritePProfString() function
+- If file extention of cIniFile is "ini", then the call is forwarded to WritePProfString().
+  So, in - your application you can use this function in the place of WritePProfString at all places.
+- Otherwise this function writes cIniFile, forcing extention "dbf".
+- If the dbf does not exist, dbf is created
+- Opens the dbf and chceks for the keys
+- If the keys exist, updates the value in the dbf
+- Otherwise appends a new entry with the values.
+
+EditIniDBF( cDbf )
+- If the dbf does not exist and user wants to create, then the dbf is created
+- User can edit values and/or append new values.
+
+ConvertIniToDBF( cIni )
+- Reads ini file, converts to DBF and opens the DBF for edit.
+- If the ini file name is "myinifile.ini", dbf name is "myinifile_ini.dbf"
+- If successful, returns the name of the dbf file
+- On failure returns nil
+
+*/
+
+/*
+
+// TRANSLATES TO INCLUDE IN PRG FILES OF THE PROJECT
+
+#xtranslate WritePProString(   &lt;s&gt;, &lt;e&gt;, &lt;v&gt;, &lt;i&gt; ) =&gt; ;
+            WriteDBProfString( &lt;s&gt;, &lt;e&gt;, &lt;v&gt;, &lt;i&gt; )
+
+#xtranslate GetPvProfString( &lt;s&gt;, &lt;e&gt;, [&lt;d&gt;], &lt;i&gt; ) =&gt; ;
+            GetDBProfString( &lt;s&gt;, &lt;e&gt;, [&lt;d&gt;], &lt;i&gt; )
+
+*/
+
+#define TEST
+
+REQUEST DBFCDX
+
+static hIni    := {=&gt;}
+
+//----------------------------------------------------------------------------//
+
+#ifdef TEST
+
+function Main()
+
+   local cIni, cDbf
+
+   ? "Start"
+
+   cIni  := cGetFile( "Ini file(*.ini)|*.ini|", "Select INI file to convert" )
+   if !Empty( cIni )
+      cDbf := ConvertIniToDbf( cIni )
+   endif
+ 
+return nil
+
+#endif
+
+//----------------------------------------------------------------------------//
+
+function ConvertIniToDbf( cIni )
+
+   local cPath, cDbf, cAlias
+   local aLines
+
+   cIni     := TrueName( cIni )
+   
+   
+   if !File( cIni )
+      ? "File -&gt;" + cIni + "&lt;- not found"
+      return nil
+   endif
+
+   cPath    := cFilePath( cIni )
+   cDbf     := cFileNoExt( cIni )
+   cDbf     := cPath + cDbf + "_ini.dbf"
+
+   if File( cDbf )
+      if .not. MsgNoYes( cDbf + " already exists" + CRLF + ;
+                         "OverWrite?" )
+         return nil
+      endif
+      if FErase( cDbf ) != 0
+         ? cDbf + " is in use. Can not be overwritten"
+         return nil
+      endif
+   endif
+
+   aLines   := IniTextAsArray( MEMOREAD( cIni ) )
+
+   CreateIniDBF( cDBF, aLines )
+? "DBF Ini wurde erstellt:  " + cDBF
+   XBROWSER cDBF TITLE cDbf FASTEDIT
+    
+    cAlias      := OpenIniDBF( cDbf )
+    
+    ( cAlias )-&gt;( DbGotop() )
+    do while .not. ( cAlias )-&gt;( eof() )
+   
+        
+          
+    WritePProString(  ALLTrim( ( cAlias )-&gt;X_SECTION ), ALLTrim( ( cAlias )-&gt;X_KEY), ALLTrim( ( cAlias )-&gt;X_VALUE ), cIni  )
+   
+      ( cAlias )-&gt;( dbskip() )
+
+   enddo
+return cDbf
+
+//----------------------------------------------------------------------------//
+
+function GetDBProfString( cSection, cEntry, uDefault, cIniFile )
+
+   local uRet, cAlias
+
+   cIniFile    := AllTrim( cIniFile )
+   if Lower( cFileExt( cIniFile ) ) == "ini"
+      return GetPvProfString( cSection, cEntry, uDefault, cIniFile )
+   endif
+   uRet        := uDefault
+   cIniFile    := TrueName( cFileSetExt( cIniFile, "dbf" ) )
+   cAlias      := GetIniAlias( cIniFile )
+
+   if .not. Empty( cAlias )
+
+      cSection := LTrim( cSection )
+      cEntry   := LTrim( cEntry )
+
+      if ( cAlias )-&gt;( DBSEEK( MakeKey( cSection, cEntry ) ) )
+         uRet  := ( cAlias )-&gt;X_VALUE
+         if ValType( uDefault ) == 'N'
+            uRet  := Val( uRet )
+         endif
+      endif
+   endif
+
+return uRet
+
+//----------------------------------------------------------------------------//
+
+function WriteDBProfString( cSection, cEntry, uValue, cIniFile )
+
+   local cAlias
+
+   cIniFile    := AllTrim( cIniFile )
+   if Lower( cFileExt( cIniFile ) ) == "ini"
+      return WritePProString( cSection, cEntry, uValue, cIniFile )
+   endif
+   cIniFile    := TrueName( cFileSetExt( cIniFile, "dbf" ) )
+   cAlias      := OpenIniDBF( cIniFile )
+
+   if ( cAlias )-&gt;( DBSEEK( MakeKey( cSection, cEntry ) ) )
+      do while !( cAlias )-&gt;( DBRLOCK() )
+      enddo
+      ( cAlias )-&gt;X_VALUE  := LTrim( cValToChar( uValue ) )
+      DBRUNLOCK()
+   else
+      do while .t.
+         ( cAlias )-&gt;( DBAPPEND() )
+         if .not. NetErr()
+            EXIT
+         endif
+      enddo
+      ( cAlias )-&gt;X_SECTION   := LTrim( cSection )
+      ( cAlias )-&gt;X_KEY       := LTrim( cEntry )
+      ( cAlias )-&gt;X_VALUE     := LTrim( cValToChar( uValue ) )
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function EditIniDBF( cDbf )
+
+   local cAlias
+
+   cDbf  := TrueName( cFileSetExt( cDbf, "dbf" ) )
+   if .not. File( cDbf )
+      if .not. MsgNoYes( cDbf + " does not exist" + CRLF + ;
+                   "Create new DBF?" )
+         return nil
+      endif
+   endif
+
+   cAlias := OpenIniDBF( cDbf )
+
+   XBROWSER cAlias TITLE cDBF FASTEDIT
+    
+   // DO NOT CLOSE THE DBF. IT SHOULD REMAIN OPEN
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function GetIniAlias( cIniDbf )
+
+   local cAlias
+
+   cIniDBF     := UPPER( cIniDBF )
+   if HHasKey( hIni, cIniDbf )
+      cAlias   := hIni[ cIniDBF ]
+   endif
+
+   if Empty( cAlias ) .and. File( cIniDBF )
+      cAlias   := OpenIniDbf( cIniDBF )
+   endif
+
+return cAlias
+
+//----------------------------------------------------------------------------//
+
+static function OpenIniDBF( cIniDbf )
+
+   local cAlias
+
+   if .not. ( PROCNAME( 1 ) == "GETINIALIAS" )
+      cAlias   := GetIniAlias( @cIniDBF )
+   endif
+   if Empty( cAlias )
+      if .not. File( cIniDBF )
+         CreateIniDBF( cIniDBF )
+      elseif .not. File( cFileSetExt( cIniDBF, "cdx" ) )
+         CreateIniIndex( cIniDBF )
+      endif
+      cAlias   := cGetNewAlias( "INI" )
+      USE ( cIniDBF ) NEW SHARED ALIAS ( cAlias ) VIA "DBFCDX"
+      SET ORDER TO TAG SECKEY
+      SET FILTER TO !DELETED()
+      GO TOP
+      hIni[ Upper( cIniDBF ) ] := cAlias
+   endif
+
+return cAlias
+
+//----------------------------------------------------------------------------//
+
+static function CreateIniDBF( cDbf, aData )
+
+   field X_SECTION, X_KEY
+
+   local cPath    := cFilePath( cDbf )
+
+   if .not. lIsDir( cPath )
+      lMkFullPath( cPath )
+   endif
+
+   DBCREATE( cDbf, ;
+      {  {  "X_SECTION",   "C",  100,   0  } ,;
+         {  "X_KEY",       "C",  100,   0  } ,;
+         {  "X_VALUE",     "C", 200,   0  } ,;
+         {  "X_COMMENTS",  "C", 200,   0  }  }, ;
+      "DBFCDX", .T., "DBINI" )
+
+   INDEX ON UPPER(X_SECTION)+UPPER(X_KEY) TAG SECKEY
+   INDEX ON DELETED() TAG DELETED
+   if !Empty( aData )
+      DBINI-&gt;( FW_ArrayToDBF( aData ) )
+   endif
+   CLOSE DBINI
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function CreateIniIndex( cDbf )
+
+   field X_SECTION, X_KEY
+
+   USE ( cDBF ) NEW ALIAS "INICDX" EXCLUSIVE VIA "DBINI"
+
+   if .not. USED()
+      ? "Can not open " + cDBF + "Exclusively"
+      QUIT
+   endif
+   INDEX ON UPPER(X_SECTION)+UPPER(X_KEY) TAG SECKEY
+   INDEX ON DELETED() TAG DELETED
+   CLOSE DBINI
+
+return .t.
+
+//----------------------------------------------------------------------------//
+
+static function MakeKey( cSection, cKey )
+return PADR( UPPER( LTRIM( cSection ) ), 30 ) + ;
+       PADR( UPPER( LTRIM( cKey     ) ), 30 )
+
+//----------------------------------------------------------------------------//
+
+static function IniTextAsArray( cText )
+
+   local aLines, tmp, n, cLine
+   local cSection, aLine, c1, c2
+
+   cText    := StrTran( cText, CRLF, Chr( 10 ) )
+   aLines   := HB_ATokens( cText, Chr( 10 ) )
+   AEval( aLines, { |c,i| aLines[ i ] := AllTrim( c ) } )
+   tmp      := {}
+   AEval( aLines, { |c| If( Empty( c ), nil, AAdd( tmp, c ) ) } )
+
+   aLines   := {}
+   for each cLine in tmp
+      if left( cLine, 1 )  == "[" .and. ;
+         Right( cLine, 1 ) == "]"
+
+         cSection := CharRem( "[]", cLine )
+      else
+         if "=" $ cLine
+            c1    := Trim(  BeforAtNum( "=", cLine, 1 ) )
+            c2    := LTrim( AfterAtNum( "=", cLine, 1 ) )
+         else
+            c1    := cLine
+            c2    := ""
+         endif
+         AAdd( aLines, { cSection, c1, c2, "" } )
+      endif
+   next
+
+return aLines
+
+//----------------------------------------------------------------------------//
+
+/*
+#xtranslate WritePProString(   &lt;s&gt;, &lt;e&gt;, &lt;v&gt;, &lt;i&gt; ) =&gt; ;
+            WriteDBProfString( &lt;s&gt;, &lt;e&gt;, &lt;v&gt;, &lt;i&gt; )
+
+#xtranslate GetPvProfString( &lt;s&gt;, &lt;e&gt;, [&lt;d&gt;], &lt;i&gt; ) =&gt; ;
+            GetDBProfString( &lt;s&gt;, &lt;e&gt;, [&lt;d&gt;], &lt;i&gt; )
+*/</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

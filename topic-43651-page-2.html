@@ -1,0 +1,1176 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>not ISOEM(), ISANSI() or IsUTF8() - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-43651">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> not ISOEM(), ISANSI() or IsUTF8()</div>
+<div class="pagination">Page: <a href="topic-43651.html">1</a> <strong>2</strong> <a href="topic-43651-page-3.html">3</a> (35 posts)</div>  <div class="post" id="p263244">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Wed Aug 30, 2023 10:15 AM
+      </div>
+      <div class="content"><r>hi,<br/><br>
+<br/><br>
+try this CODE and use your "UMLOEM.DBF"<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "fivewin.ch"
+#include "DBSTRUCT.CH"
+#include "DrXlsx.ch"
+
+* #define Use_OEM
+#define Use_UTF8_Sign
+
+REQUEST DBFCDX
+
+*+--------------------------------------------------------------------
+*+
+*+    Function Main()
+*+
+*+--------------------------------------------------------------------
+*+
+FUNCTION Main( cDBF, cCodepage, cXLS )
+
+LOCAL cLangCode := "DE"
+
+   DEFAULT cDBF := "TESTTYPE.DBF"
+   * DEFAULT cCodepage := "DE850"
+   DEFAULT cCodepage := "DEWIN"
+   DEFAULT cXLS := "DBF2EX.XLSX"
+
+   SET DATE GERMAN
+   SET EPOCH TO YEAR( DATE() ) - 50
+   SET CENTURY ON
+   SET DECIMALS TO 2
+
+*   hb_LangSelect( cLangCode )
+*   hb_cdpSelect( cCodepage )
+*   FW_SetUnicode( .T. )
+
+    UseDbf2Excel( cDBF, cCodepage, cXLS )
+
+RETURN NIL
+
+*+--------------------------------------------------------------------
+*+
+*+    Function UseDbf2Excel()
+*+
+*+    Called from ( xlswrite.prg )   1 - function main()
+*+
+*+--------------------------------------------------------------------
+*+
+FUNCTION UseDbf2Excel( cDBF, cCodepage, cXLS )
+LOCAL oXlsx := TDrXlsx() :New()
+LOCAL aStruct, ii, iMax, nRow, nCol, nReccount, cText1, cText2
+LOCAL xValue, cType, nStart, nStop, nRecSec, nTime, cName, nLen
+LOCAL nOEM       := 0
+LOCAL nANSI      := 0
+LOCAL nELSE      := 0
+LOCAL nCount     := 0
+LOCAL lDiverse   := .F.
+LOCAL cFieldKDNR := ""
+LOCAL nMemory
+LOCAL nEvery
+LOCAL nRecLast
+
+   IF !FILE( cDBF )
+      MsgInfo( "need DBF" )
+   ENDIF
+
+   IF FILE( "DBF2EX.XLSX" )
+      FERASE( "DBF2EX.XLSX" )
+   ENDIF
+
+   USE (cDBF)                        // CODEPAGE cCodepage EXCLUSIVE
+   aStruct := DBSTRUCT()
+   iMax := LEN( aStruct )
+   nReccount := RECCOUNT()
+   nEvery := INT( nReccount / 100 )
+
+fwlog cDBF, nReccount, iMax
+
+   oXlsx:CreateFile( cXLS )
+
+   nRow := 0
+   FOR ii := 1 TO iMax
+      nCol := ii - 1
+      cName := aStruct[ ii ] [ DBS_NAME ]
+      nLen  := aStruct[ ii ] [ DBS_LEN ] * 2
+      cType := aStruct[ ii ] [ DBS_TYPE ]
+
+      oXlsx:SetColumnSize( nRow, nCol, nLen )
+      oXlsx:Say( nRow, nCol, cName )
+fwlog nCol, cType, nLen, cName
+   NEXT
+
+   nCol := 0
+   nRow := 1
+   nStart := SECONDS()
+   DO WHILE !EOF()
+
+      MEMORY( - 1 )
+      SysRefresh()
+
+      nMemory := MEMORY( 3 )
+      IF nMemory &lt; 32000                                              // 32 kb
+         fwlog "Memory(3)", RECNO(), MEMORY( 3 )
+         EXIT
+      ENDIF
+
+      IF ( RECNO() % nEvery ) = 0
+         nCount ++
+         fwlog nCount, RECNO(), MEMORY( 3 )
+      ENDIF
+
+      ii := 1
+      FOR ii := 1 TO iMax
+         xValue := FIELDGET( ii )
+         cName := TRIM( aStruct[ ii ] [ DBS_NAME ] )
+         cType := TRIM( aStruct[ ii ] [ DBS_TYPE ] )
+         nCol := ii - 1
+
+         DO CASE
+            CASE cType = "C"
+
+               DO CASE
+                  CASE ISOEM( xValue )
+                     nOEM ++
+                     // fwlog "ISOEM"
+                     cText1 := Umlaute( xValue )
+                     cText2 := CheckValue( cText1 )
+                     IF !EMPTY( cText1 ) .AND. !EMPTY( cText2 )
+                        oXlsx:Say( nRow, nCol, cText2 )
+                     ENDIF
+
+                  CASE ISANSI( xValue )
+                     nANSI ++
+                     // fwlog "ISANSI"
+                     cText1 := Umlaute( xValue )
+                     cText2 := CheckValue( cText1 )
+                     IF !EMPTY( cText1 ) .AND. !EMPTY( cText2 )
+                        oXlsx:Say( nRow, nCol, cText2 )
+                     ENDIF
+
+                  CASE IsUTF8( xValue )
+                     fwlog "IsUTF8"
+                     oXlsx:Say( nRow, nCol, xValue )
+                  OTHERWISE
+                     //  fwlog "ELSE", xValue
+                     nELSE ++
+                     oXlsx:Say( nRow, nCol, xValue )
+               ENDCASE
+
+            CASE cType = "M"
+#ifdef Use_Memo
+               cText1 := Umlaute( xValue )
+               cText2 := CheckValue( cText1 )
+               IF !EMPTY( cText2 )
+                  oXlsx:WriteString( nRow, nCol, cText2 )
+               ENDIF
+#endif
+            CASE cType = "N"
+               oXlsx:WriteNumber( nRow, nCol, xValue )
+
+            CASE cType = "D"
+               oXlsx:WriteDate( nRow, nCol, xValue, DRXLSX_ALIGN_CENTER, "dd.mm.yyyy" )
+
+            CASE cType = "L"
+               oXlsx:WriteLogical( nRow, nCol, xValue, DRXLSX_ALIGN_CENTER )
+
+               // CASE cType = "DT"
+               //     oXlsx:Say(nRow,nCol,"Datetime format" )
+               // CASE cType = "D+"
+               //     oXlsx:Say(nRow,nCol,"Datetime" )
+         ENDCASE
+
+      NEXT
+      SKIP
+      nRow ++
+   ENDDO
+
+   oXlsx:Close()
+   nStop := SECONDS()
+   nTime := ( nStop - nStart )
+
+   nRecLast := RECNO()
+   nRecSec := nRecLast / nTime
+
+fwlog nReccount, nRecLast, nCount, nTime, nRecSec, nOEM, nANSI, nELSE
+
+   IF USED()
+      CLOSE
+   ENDIF
+
+   MEMORY( - 1 )
+   SysRefresh()
+
+RETURN NIL
+
+*+--------------------------------------------------------------------
+*+
+*+    Function Umlaute()
+*+
+*+    Called from ( xlswrite.prg )   4 - function usedbf2excel()
+*+
+*+--------------------------------------------------------------------
+*+
+FUNCTION Umlaute( cIn, nNo )
+LOCAL cText := TRIM( cIn )
+LOCAL cTest1, cTest2
+
+   cTest1 := UTF16toUTF8( strToWide( UML_OEMTOANSI( cText ) ) )
+
+#ifdef Use_UTF8_Sign
+   cText := STRTRAN( cText, CHR( 228 ), "ä" )
+   cText := STRTRAN( cText, CHR( 246 ), "ö" )
+   cText := STRTRAN( cText, CHR( 252 ), "ü" )
+
+   cText := STRTRAN( cText, CHR( 196 ), "Ä" )
+   cText := STRTRAN( cText, CHR( 214 ), "Ö" )
+   cText := STRTRAN( cText, CHR( 220 ), "Ü" )
+
+   cText := STRTRAN( cText, CHR( 223 ), "ß" )
+#endif
+
+cTest2 := cText
+
+#ifdef Use_OEM
+   // OEM
+   cText := STRTRAN( cText, CHR( 132 ), "ä" )
+   cText := STRTRAN( cText, CHR( 148 ), "ö" )
+   cText := STRTRAN( cText, CHR( 129 ), "ü" )
+
+   cText := STRTRAN( cText, CHR( 142 ), "Ä" )
+   cText := STRTRAN( cText, CHR( 153 ), "Ö" )
+   cText := STRTRAN( cText, CHR( 154 ), "Ü" )
+
+   cText := STRTRAN( cText, CHR( 225 ), "ß" )
+#endif
+
+fwlog cText, cTest1, cTest2, cTest1 == cTest2
+
+RETURN cText
+
+*+--------------------------------------------------------------------
+*+
+*+    Function CheckValue()
+*+
+*+    Called from ( xlswrite.prg )   4 - function usedbf2excel()
+*+
+*+--------------------------------------------------------------------
+*+
+FUNCTION CheckValue( xValue )
+LOCAL lNoCheck := .F.
+LOCAL cRet     := ""
+LOCAL aSign    := "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-+/.,:;!$%&amp;/()=?#"
+LOCAL cSign, ii, iMax, cLine := TRIM( xValue )
+
+#ifdef Use_UTF8_Sign
+   aSign += "äöüÄÖÜß"
+#endif
+   aSign += CHR( 34 )
+
+   IF lNoCheck = .T.
+      cRet := cLine
+   ELSE
+      iMax := LEN( cLine )
+      FOR ii := 1 TO iMax
+         cSign := SUBSTR( cLine, ii, 1 )
+         //       IF AT(cSign,cLine) &gt; 0
+         IF cSign $ aSign
+            cRet += cSign
+         ELSE
+fwlog cSign, ASC( cSign ), cRet
+            cRet := ""
+            EXIT
+         ENDIF
+      NEXT
+   ENDIF
+
+RETURN cRet
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+save as UTF8 Format</r></div>
+    </div>
+  </div>
+  <div class="post" id="p263247">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Wed Aug 30, 2023 02:23 PM
+      </div>
+      <div class="content"><r><QUOTE><s><blockquote></s>YES this "seems" to work, no Error in LOG <E>:D</E><br/><br>
+<br/><br>
+but when try to open Excel Sheet i got Warning and all Type "C" are empty ... <E>:</E><br/><br>
+<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+This is the test I made.<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "fivewin.ch"
+
+function Main()
+
+   local cOemHex  := "8494818E999AE1"
+   local cOemText, c, oXlsx
+   local cFileXls := "UMLDRXL.XLSX"
+
+   cOemText    := HEXTOSTR( cOemHex )
+
+   oXlsx := TDrXlsx():New()
+   WITH OBJECT oXlsx
+      :CreateFile( cFileXls )
+      :SetColumnSize( 0, 0, 80 )
+      :WriteString( 0, 0, Utf16toUtf8( strToWide( UML_OemToAnsi( cOemText ) ) ) )
+      c  := "abcd" + Left( cOemText, 4 ) + "pqr" + Right( cOemText, 3 ) + "xyz"
+      :WriteString( 1, 0, Utf16toUtf8( strToWide( UML_OemToAnsi( c ) ) ) )
+
+      :Close()
+   END
+
+   ShellExecute( 0, "Open", cFileXls )
+
+return nil
+
+#pragma BEGINDUMP
+
+#include &lt;hbapi.h&gt;
+
+HB_FUNC( UML_OEMTOANSI )
+{
+unsigned char achar[] = {
+0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,
+29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,
+54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,
+79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,
+103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,
+122,123,124,125,126,127,128,252,130,131,228,133,134,135,136,137,138,139,140,
+141,196,143,144,145,146,147,246,149,150,151,152,214,220,155,156,157,158,159,
+160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,
+179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,
+198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,
+217,218,219,220,221,222,223,224,223,226,227,228,229,230,231,232,233,234,235,
+236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,
+255 };
+
+   char * pText = ( char * ) hb_parc( 1 );
+   int iLen = hb_parclen( 1 );
+   int i;
+   unsigned char c;
+
+   for ( i = 0; i &lt; iLen; i++ )
+   {
+      c = pText[ i ];
+      pText[ i ] = achar[ c ];
+   }
+
+   hb_retc( pText );
+}
+#pragma ENDDUMP
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<URL url="https://imageshack.com/i/pmHEVmrJp"><s><a href="https://imageshack.com/i/pmHEVmrJp" rel="noopener"></s><IMG src="https://imagizer.imageshack.com/v2/xq70/922/HEVmrJ.png"><s><img src="</s>https://imagizer.imageshack.com/v2/xq70/922/HEVmrJ.png<e>" alt="" loading="lazy"></e></IMG><e></a></e></URL><br/><br>
+<br/><br>
+If you run this test as it is you will also see that these conversions work well with Drxlsx as well as Excel.<br/><br>
+<br/><br>
+When you use these functions directly on your DBF, it fails. That should be expected.<br/><br>
+Reason:<br/><br>
+As I said earlier, converting only the 7 umlaut characters is NOT enough at all.<br/><br>
+This kind of conversion, we need to do for all accented characters of German language.<br/><br>
+That is the reason I requested you to prepare a list of all such characters and provide us and then we will work out a correct conversion function.<br/><br>
+<br/><br>
+The only foreign language I know is English whose characters are the same in OEM, ANSI and UTF8.<br/><br>
+Because I do not know German, we need your help.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p263254">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Wed Aug 30, 2023 03:17 PM
+      </div>
+      <div class="content"><r>hi,<br>
+<QUOTE author="nageswaragunupudi"><s><blockquote><cite>nageswaragunupudi wrote:</cite></s>When you use these functions directly on your DBF, it fails. That should be expected.<br/><br>
+Reason:<br/><br>
+As I said earlier, converting only the 7 umlaut characters is NOT enough at all.<br/><br>
+This kind of conversion, we need to do for all accented characters of German language.<br/><br>
+That is the reason I requested you to prepare a list of all such characters and provide us and then we will work out a correct conversion function.<br/><br>
+<br/><br>
+The only foreign language I know is English whose characters are the same in OEM, ANSI and UTF8.<br/><br>
+Because I do not know German, we need your help.<e></blockquote></e></QUOTE><br>
+i do not understand which Sign you mean with Accent  <E>:?:</E>  do you mean Sign &gt; CHR(128)  <E>:?:</E> <br/><br>
+<br/><br>
+---<br/><br>
+<br/><br>
+when look at last Sample i do compare both Sting where Test1 == Test2<br/><br>
+but <br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;   Test1 := Utf16toUtf8( strToWide( UML_OemToAnsi( cOemText ) ) ) )&lt;e&gt;</code></pre></div></e></CODE><br>
+fail while <br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;    cText := STRTRAN( cText, CHR( 228 ), "ä" )
+   cText := STRTRAN( cText, CHR( 246 ), "ö" )
+   cText := STRTRAN( cText, CHR( 252 ), "ü" )
+   cText := STRTRAN( cText, CHR( 196 ), "Ä" )
+   cText := STRTRAN( cText, CHR( 214 ), "Ö" )
+   cText := STRTRAN( cText, CHR( 220 ), "Ü" )
+   cText := STRTRAN( cText, CHR( 223 ), "ß" )
+
+   cTest2 := cText&lt;e&gt;</code></pre></div></e></CODE><br>
+WORK<br/><br>
+<br>
+<QUOTE><s><blockquote></s>cText = "ääääääääää"	cTest1 = "ääääääääää"	cTest2 = "ääääääääää"	cTest1 == cTest2 = .T.	<br/><br>
+cText = "öööööööööö"	cTest1 = "öööööööööö"	cTest2 = "öööööööööö"	cTest1 == cTest2 = .T.	<br/><br>
+cText = "üüüüüüüüüü"	cTest1 = "üüüüüüüüüü"	cTest2 = "üüüüüüüüüü"	cTest1 == cTest2 = .T.	<br/><br>
+cText = "ÄÄÄÄÄÄÄÄÄ"	cTest1 = "ÄÄÄÄÄÄÄÄÄ"	cTest2 = "ÄÄÄÄÄÄÄÄÄ"	cTest1 == cTest2 = .T.	<br/><br>
+cText = "ÖÖÖÖÖÖÖÖÖÖ"	cTest1 = "ÖÖÖÖÖÖÖÖÖÖ"	cTest2 = "ÖÖÖÖÖÖÖÖÖÖ"	cTest1 == cTest2 = .T.	<br/><br>
+cText = "ÜÜÜÜÜÜÜÜÜÜ"	cTest1 = "ÜÜÜÜÜÜÜÜÜÜ"	cTest2 = "ÜÜÜÜÜÜÜÜÜÜ"	cTest1 == cTest2 = .T.	<br/><br>
+cText = "ßßßßßßßßßß"	cTest1 = "ßßßßßßßßßß"	cTest2 = "ßßßßßßßßßß"	cTest1 == cTest2 = .T.<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p263255">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Wed Aug 30, 2023 03:46 PM
+      </div>
+      <div class="content"><r>hi,<br/><br>
+<br/><br>
+here are German Sign from 32 to 255<br>
+<QUOTE><s><blockquote></s>STRTOHEX( cSign ) = "20"	ASC( cSign ) = 32	<br/><br>
+STRTOHEX( cSign ) = "21"	ASC( cSign ) = 33	<br/><br>
+STRTOHEX( cSign ) = "22"	ASC( cSign ) = 34	<br/><br>
+STRTOHEX( cSign ) = "23"	ASC( cSign ) = 35	<br/><br>
+STRTOHEX( cSign ) = "24"	ASC( cSign ) = 36	<br/><br>
+STRTOHEX( cSign ) = "25"	ASC( cSign ) = 37	<br/><br>
+STRTOHEX( cSign ) = "26"	ASC( cSign ) = 38	<br/><br>
+STRTOHEX( cSign ) = "27"	ASC( cSign ) = 39	<br/><br>
+STRTOHEX( cSign ) = "28"	ASC( cSign ) = 40	<br/><br>
+STRTOHEX( cSign ) = "29"	ASC( cSign ) = 41	<br/><br>
+STRTOHEX( cSign ) = "2A"	ASC( cSign ) = 42	<br/><br>
+STRTOHEX( cSign ) = "2B"	ASC( cSign ) = 43	<br/><br>
+STRTOHEX( cSign ) = "2C"	ASC( cSign ) = 44	<br/><br>
+STRTOHEX( cSign ) = "2D"	ASC( cSign ) = 45	<br/><br>
+STRTOHEX( cSign ) = "2E"	ASC( cSign ) = 46	<br/><br>
+STRTOHEX( cSign ) = "2F"	ASC( cSign ) = 47	<br/><br>
+STRTOHEX( cSign ) = "30"	ASC( cSign ) = 48	<br/><br>
+STRTOHEX( cSign ) = "31"	ASC( cSign ) = 49	<br/><br>
+STRTOHEX( cSign ) = "32"	ASC( cSign ) = 50	<br/><br>
+STRTOHEX( cSign ) = "33"	ASC( cSign ) = 51	<br/><br>
+STRTOHEX( cSign ) = "34"	ASC( cSign ) = 52	<br/><br>
+STRTOHEX( cSign ) = "35"	ASC( cSign ) = 53	<br/><br>
+STRTOHEX( cSign ) = "36"	ASC( cSign ) = 54	<br/><br>
+STRTOHEX( cSign ) = "37"	ASC( cSign ) = 55	<br/><br>
+STRTOHEX( cSign ) = "38"	ASC( cSign ) = 56	<br/><br>
+STRTOHEX( cSign ) = "39"	ASC( cSign ) = 57	<br/><br>
+STRTOHEX( cSign ) = "3A"	ASC( cSign ) = 58	<br/><br>
+STRTOHEX( cSign ) = "3B"	ASC( cSign ) = 59	<br/><br>
+STRTOHEX( cSign ) = "3C"	ASC( cSign ) = 60	<br/><br>
+STRTOHEX( cSign ) = "3D"	ASC( cSign ) = 61	<br/><br>
+STRTOHEX( cSign ) = "3E"	ASC( cSign ) = 62	<br/><br>
+STRTOHEX( cSign ) = "3F"	ASC( cSign ) = 63	<br/><br>
+STRTOHEX( cSign ) = "40"	ASC( cSign ) = 64	<br/><br>
+STRTOHEX( cSign ) = "41"	ASC( cSign ) = 65	<br/><br>
+STRTOHEX( cSign ) = "42"	ASC( cSign ) = 66	<br/><br>
+STRTOHEX( cSign ) = "43"	ASC( cSign ) = 67	<br/><br>
+STRTOHEX( cSign ) = "44"	ASC( cSign ) = 68	<br/><br>
+STRTOHEX( cSign ) = "45"	ASC( cSign ) = 69	<br/><br>
+STRTOHEX( cSign ) = "46"	ASC( cSign ) = 70	<br/><br>
+STRTOHEX( cSign ) = "47"	ASC( cSign ) = 71	<br/><br>
+STRTOHEX( cSign ) = "48"	ASC( cSign ) = 72	<br/><br>
+STRTOHEX( cSign ) = "49"	ASC( cSign ) = 73	<br/><br>
+STRTOHEX( cSign ) = "4A"	ASC( cSign ) = 74	<br/><br>
+STRTOHEX( cSign ) = "4B"	ASC( cSign ) = 75	<br/><br>
+STRTOHEX( cSign ) = "4C"	ASC( cSign ) = 76	<br/><br>
+STRTOHEX( cSign ) = "4D"	ASC( cSign ) = 77	<br/><br>
+STRTOHEX( cSign ) = "4E"	ASC( cSign ) = 78	<br/><br>
+STRTOHEX( cSign ) = "4F"	ASC( cSign ) = 79	<br/><br>
+STRTOHEX( cSign ) = "50"	ASC( cSign ) = 80	<br/><br>
+STRTOHEX( cSign ) = "51"	ASC( cSign ) = 81	<br/><br>
+STRTOHEX( cSign ) = "52"	ASC( cSign ) = 82	<br/><br>
+STRTOHEX( cSign ) = "53"	ASC( cSign ) = 83	<br/><br>
+STRTOHEX( cSign ) = "54"	ASC( cSign ) = 84	<br/><br>
+STRTOHEX( cSign ) = "55"	ASC( cSign ) = 85	<br/><br>
+STRTOHEX( cSign ) = "56"	ASC( cSign ) = 86	<br/><br>
+STRTOHEX( cSign ) = "57"	ASC( cSign ) = 87	<br/><br>
+STRTOHEX( cSign ) = "58"	ASC( cSign ) = 88	<br/><br>
+STRTOHEX( cSign ) = "59"	ASC( cSign ) = 89	<br/><br>
+STRTOHEX( cSign ) = "5A"	ASC( cSign ) = 90	<br/><br>
+STRTOHEX( cSign ) = "5B"	ASC( cSign ) = 91	<br/><br>
+STRTOHEX( cSign ) = "5C"	ASC( cSign ) = 92	<br/><br>
+STRTOHEX( cSign ) = "5D"	ASC( cSign ) = 93	<br/><br>
+STRTOHEX( cSign ) = "5E"	ASC( cSign ) = 94	<br/><br>
+STRTOHEX( cSign ) = "5F"	ASC( cSign ) = 95	<br/><br>
+STRTOHEX( cSign ) = "60"	ASC( cSign ) = 96	<br/><br>
+STRTOHEX( cSign ) = "61"	ASC( cSign ) = 97	<br/><br>
+STRTOHEX( cSign ) = "62"	ASC( cSign ) = 98	<br/><br>
+STRTOHEX( cSign ) = "63"	ASC( cSign ) = 99	<br/><br>
+STRTOHEX( cSign ) = "64"	ASC( cSign ) = 100	<br/><br>
+STRTOHEX( cSign ) = "65"	ASC( cSign ) = 101	<br/><br>
+STRTOHEX( cSign ) = "66"	ASC( cSign ) = 102	<br/><br>
+STRTOHEX( cSign ) = "67"	ASC( cSign ) = 103	<br/><br>
+STRTOHEX( cSign ) = "68"	ASC( cSign ) = 104	<br/><br>
+STRTOHEX( cSign ) = "69"	ASC( cSign ) = 105	<br/><br>
+STRTOHEX( cSign ) = "6A"	ASC( cSign ) = 106	<br/><br>
+STRTOHEX( cSign ) = "6B"	ASC( cSign ) = 107	<br/><br>
+STRTOHEX( cSign ) = "6C"	ASC( cSign ) = 108	<br/><br>
+STRTOHEX( cSign ) = "6D"	ASC( cSign ) = 109	<br/><br>
+STRTOHEX( cSign ) = "6E"	ASC( cSign ) = 110	<br/><br>
+STRTOHEX( cSign ) = "6F"	ASC( cSign ) = 111	<br/><br>
+STRTOHEX( cSign ) = "70"	ASC( cSign ) = 112	<br/><br>
+STRTOHEX( cSign ) = "71"	ASC( cSign ) = 113	<br/><br>
+STRTOHEX( cSign ) = "72"	ASC( cSign ) = 114	<br/><br>
+STRTOHEX( cSign ) = "73"	ASC( cSign ) = 115	<br/><br>
+STRTOHEX( cSign ) = "74"	ASC( cSign ) = 116	<br/><br>
+STRTOHEX( cSign ) = "75"	ASC( cSign ) = 117	<br/><br>
+STRTOHEX( cSign ) = "76"	ASC( cSign ) = 118	<br/><br>
+STRTOHEX( cSign ) = "77"	ASC( cSign ) = 119	<br/><br>
+STRTOHEX( cSign ) = "78"	ASC( cSign ) = 120	<br/><br>
+STRTOHEX( cSign ) = "79"	ASC( cSign ) = 121	<br/><br>
+STRTOHEX( cSign ) = "7A"	ASC( cSign ) = 122	<br/><br>
+STRTOHEX( cSign ) = "7B"	ASC( cSign ) = 123	<br/><br>
+STRTOHEX( cSign ) = "7C"	ASC( cSign ) = 124	<br/><br>
+STRTOHEX( cSign ) = "7D"	ASC( cSign ) = 125	<br/><br>
+STRTOHEX( cSign ) = "7E"	ASC( cSign ) = 126	<br/><br>
+STRTOHEX( cSign ) = "7F"	ASC( cSign ) = 127	<br/><br>
+STRTOHEX( cSign ) = "80"	ASC( cSign ) = 128	<br/><br>
+STRTOHEX( cSign ) = "81"	ASC( cSign ) = 129	<br/><br>
+STRTOHEX( cSign ) = "82"	ASC( cSign ) = 130	<br/><br>
+STRTOHEX( cSign ) = "83"	ASC( cSign ) = 131	<br/><br>
+STRTOHEX( cSign ) = "84"	ASC( cSign ) = 132	<br/><br>
+STRTOHEX( cSign ) = "85"	ASC( cSign ) = 133	<br/><br>
+STRTOHEX( cSign ) = "86"	ASC( cSign ) = 134	<br/><br>
+STRTOHEX( cSign ) = "87"	ASC( cSign ) = 135	<br/><br>
+STRTOHEX( cSign ) = "88"	ASC( cSign ) = 136	<br/><br>
+STRTOHEX( cSign ) = "89"	ASC( cSign ) = 137	<br/><br>
+STRTOHEX( cSign ) = "8A"	ASC( cSign ) = 138	<br/><br>
+STRTOHEX( cSign ) = "8B"	ASC( cSign ) = 139	<br/><br>
+STRTOHEX( cSign ) = "8C"	ASC( cSign ) = 140	<br/><br>
+STRTOHEX( cSign ) = "8D"	ASC( cSign ) = 141	<br/><br>
+STRTOHEX( cSign ) = "8E"	ASC( cSign ) = 142	<br/><br>
+STRTOHEX( cSign ) = "8F"	ASC( cSign ) = 143	<br/><br>
+STRTOHEX( cSign ) = "90"	ASC( cSign ) = 144	<br/><br>
+STRTOHEX( cSign ) = "91"	ASC( cSign ) = 145	<br/><br>
+STRTOHEX( cSign ) = "92"	ASC( cSign ) = 146	<br/><br>
+STRTOHEX( cSign ) = "93"	ASC( cSign ) = 147	<br/><br>
+STRTOHEX( cSign ) = "94"	ASC( cSign ) = 148	<br/><br>
+STRTOHEX( cSign ) = "95"	ASC( cSign ) = 149	<br/><br>
+STRTOHEX( cSign ) = "96"	ASC( cSign ) = 150	<br/><br>
+STRTOHEX( cSign ) = "97"	ASC( cSign ) = 151	<br/><br>
+STRTOHEX( cSign ) = "98"	ASC( cSign ) = 152	<br/><br>
+STRTOHEX( cSign ) = "99"	ASC( cSign ) = 153	<br/><br>
+STRTOHEX( cSign ) = "9A"	ASC( cSign ) = 154	<br/><br>
+STRTOHEX( cSign ) = "9B"	ASC( cSign ) = 155	<br/><br>
+STRTOHEX( cSign ) = "9C"	ASC( cSign ) = 156	<br/><br>
+STRTOHEX( cSign ) = "9D"	ASC( cSign ) = 157	<br/><br>
+STRTOHEX( cSign ) = "9E"	ASC( cSign ) = 158	<br/><br>
+STRTOHEX( cSign ) = "9F"	ASC( cSign ) = 159	<br/><br>
+STRTOHEX( cSign ) = "A0"	ASC( cSign ) = 160	<br/><br>
+STRTOHEX( cSign ) = "A1"	ASC( cSign ) = 161	<br/><br>
+STRTOHEX( cSign ) = "A2"	ASC( cSign ) = 162	<br/><br>
+STRTOHEX( cSign ) = "A3"	ASC( cSign ) = 163	<br/><br>
+STRTOHEX( cSign ) = "A4"	ASC( cSign ) = 164	<br/><br>
+STRTOHEX( cSign ) = "A5"	ASC( cSign ) = 165	<br/><br>
+STRTOHEX( cSign ) = "A6"	ASC( cSign ) = 166	<br/><br>
+STRTOHEX( cSign ) = "A7"	ASC( cSign ) = 167	<br/><br>
+STRTOHEX( cSign ) = "A8"	ASC( cSign ) = 168	<br/><br>
+STRTOHEX( cSign ) = "A9"	ASC( cSign ) = 169	<br/><br>
+STRTOHEX( cSign ) = "AA"	ASC( cSign ) = 170	<br/><br>
+STRTOHEX( cSign ) = "AB"	ASC( cSign ) = 171	<br/><br>
+STRTOHEX( cSign ) = "AC"	ASC( cSign ) = 172	<br/><br>
+STRTOHEX( cSign ) = "AD"	ASC( cSign ) = 173	<br/><br>
+STRTOHEX( cSign ) = "AE"	ASC( cSign ) = 174	<br/><br>
+STRTOHEX( cSign ) = "AF"	ASC( cSign ) = 175	<br/><br>
+STRTOHEX( cSign ) = "B0"	ASC( cSign ) = 176	<br/><br>
+STRTOHEX( cSign ) = "B1"	ASC( cSign ) = 177	<br/><br>
+STRTOHEX( cSign ) = "B2"	ASC( cSign ) = 178	<br/><br>
+STRTOHEX( cSign ) = "B3"	ASC( cSign ) = 179	<br/><br>
+STRTOHEX( cSign ) = "B4"	ASC( cSign ) = 180	<br/><br>
+STRTOHEX( cSign ) = "B5"	ASC( cSign ) = 181	<br/><br>
+STRTOHEX( cSign ) = "B6"	ASC( cSign ) = 182	<br/><br>
+STRTOHEX( cSign ) = "B7"	ASC( cSign ) = 183	<br/><br>
+STRTOHEX( cSign ) = "B8"	ASC( cSign ) = 184	<br/><br>
+STRTOHEX( cSign ) = "B9"	ASC( cSign ) = 185	<br/><br>
+STRTOHEX( cSign ) = "BA"	ASC( cSign ) = 186	<br/><br>
+STRTOHEX( cSign ) = "BB"	ASC( cSign ) = 187	<br/><br>
+STRTOHEX( cSign ) = "BC"	ASC( cSign ) = 188	<br/><br>
+STRTOHEX( cSign ) = "BD"	ASC( cSign ) = 189	<br/><br>
+STRTOHEX( cSign ) = "BE"	ASC( cSign ) = 190	<br/><br>
+STRTOHEX( cSign ) = "BF"	ASC( cSign ) = 191	<br/><br>
+STRTOHEX( cSign ) = "C0"	ASC( cSign ) = 192	<br/><br>
+STRTOHEX( cSign ) = "C1"	ASC( cSign ) = 193	<br/><br>
+STRTOHEX( cSign ) = "C2"	ASC( cSign ) = 194	<br/><br>
+STRTOHEX( cSign ) = "C3"	ASC( cSign ) = 195	<br/><br>
+STRTOHEX( cSign ) = "C4"	ASC( cSign ) = 196	<br/><br>
+STRTOHEX( cSign ) = "C5"	ASC( cSign ) = 197	<br/><br>
+STRTOHEX( cSign ) = "C6"	ASC( cSign ) = 198	<br/><br>
+STRTOHEX( cSign ) = "C7"	ASC( cSign ) = 199	<br/><br>
+STRTOHEX( cSign ) = "C8"	ASC( cSign ) = 200	<br/><br>
+STRTOHEX( cSign ) = "C9"	ASC( cSign ) = 201	<br/><br>
+STRTOHEX( cSign ) = "CA"	ASC( cSign ) = 202	<br/><br>
+STRTOHEX( cSign ) = "CB"	ASC( cSign ) = 203	<br/><br>
+STRTOHEX( cSign ) = "CC"	ASC( cSign ) = 204	<br/><br>
+STRTOHEX( cSign ) = "CD"	ASC( cSign ) = 205	<br/><br>
+STRTOHEX( cSign ) = "CE"	ASC( cSign ) = 206	<br/><br>
+STRTOHEX( cSign ) = "CF"	ASC( cSign ) = 207	<br/><br>
+STRTOHEX( cSign ) = "D0"	ASC( cSign ) = 208	<br/><br>
+STRTOHEX( cSign ) = "D1"	ASC( cSign ) = 209	<br/><br>
+STRTOHEX( cSign ) = "D2"	ASC( cSign ) = 210	<br/><br>
+STRTOHEX( cSign ) = "D3"	ASC( cSign ) = 211	<br/><br>
+STRTOHEX( cSign ) = "D4"	ASC( cSign ) = 212	<br/><br>
+STRTOHEX( cSign ) = "D5"	ASC( cSign ) = 213	<br/><br>
+STRTOHEX( cSign ) = "D6"	ASC( cSign ) = 214	<br/><br>
+STRTOHEX( cSign ) = "D7"	ASC( cSign ) = 215	<br/><br>
+STRTOHEX( cSign ) = "D8"	ASC( cSign ) = 216	<br/><br>
+STRTOHEX( cSign ) = "D9"	ASC( cSign ) = 217	<br/><br>
+STRTOHEX( cSign ) = "DA"	ASC( cSign ) = 218	<br/><br>
+STRTOHEX( cSign ) = "DB"	ASC( cSign ) = 219	<br/><br>
+STRTOHEX( cSign ) = "DC"	ASC( cSign ) = 220	<br/><br>
+STRTOHEX( cSign ) = "DD"	ASC( cSign ) = 221	<br/><br>
+STRTOHEX( cSign ) = "DE"	ASC( cSign ) = 222	<br/><br>
+STRTOHEX( cSign ) = "DF"	ASC( cSign ) = 223	<br/><br>
+STRTOHEX( cSign ) = "E0"	ASC( cSign ) = 224	<br/><br>
+STRTOHEX( cSign ) = "E1"	ASC( cSign ) = 225	<br/><br>
+STRTOHEX( cSign ) = "E2"	ASC( cSign ) = 226	<br/><br>
+STRTOHEX( cSign ) = "E3"	ASC( cSign ) = 227	<br/><br>
+STRTOHEX( cSign ) = "E4"	ASC( cSign ) = 228	<br/><br>
+STRTOHEX( cSign ) = "E5"	ASC( cSign ) = 229	<br/><br>
+STRTOHEX( cSign ) = "E6"	ASC( cSign ) = 230	<br/><br>
+STRTOHEX( cSign ) = "E7"	ASC( cSign ) = 231	<br/><br>
+STRTOHEX( cSign ) = "E8"	ASC( cSign ) = 232	<br/><br>
+STRTOHEX( cSign ) = "E9"	ASC( cSign ) = 233	<br/><br>
+STRTOHEX( cSign ) = "EA"	ASC( cSign ) = 234	<br/><br>
+STRTOHEX( cSign ) = "EB"	ASC( cSign ) = 235	<br/><br>
+STRTOHEX( cSign ) = "EC"	ASC( cSign ) = 236	<br/><br>
+STRTOHEX( cSign ) = "ED"	ASC( cSign ) = 237	<br/><br>
+STRTOHEX( cSign ) = "EE"	ASC( cSign ) = 238	<br/><br>
+STRTOHEX( cSign ) = "EF"	ASC( cSign ) = 239	<br/><br>
+STRTOHEX( cSign ) = "F0"	ASC( cSign ) = 240	<br/><br>
+STRTOHEX( cSign ) = "F1"	ASC( cSign ) = 241	<br/><br>
+STRTOHEX( cSign ) = "F2"	ASC( cSign ) = 242	<br/><br>
+STRTOHEX( cSign ) = "F3"	ASC( cSign ) = 243	<br/><br>
+STRTOHEX( cSign ) = "F4"	ASC( cSign ) = 244	<br/><br>
+STRTOHEX( cSign ) = "F5"	ASC( cSign ) = 245	<br/><br>
+STRTOHEX( cSign ) = "F6"	ASC( cSign ) = 246	<br/><br>
+STRTOHEX( cSign ) = "F7"	ASC( cSign ) = 247	<br/><br>
+STRTOHEX( cSign ) = "F8"	ASC( cSign ) = 248	<br/><br>
+STRTOHEX( cSign ) = "F9"	ASC( cSign ) = 249	<br/><br>
+STRTOHEX( cSign ) = "FA"	ASC( cSign ) = 250	<br/><br>
+STRTOHEX( cSign ) = "FB"	ASC( cSign ) = 251	<br/><br>
+STRTOHEX( cSign ) = "FC"	ASC( cSign ) = 252	<br/><br>
+STRTOHEX( cSign ) = "FD"	ASC( cSign ) = 253	<br/><br>
+STRTOHEX( cSign ) = "FE"	ASC( cSign ) = 254	<br/><br>
+STRTOHEX( cSign ) = "FF"	ASC( cSign ) = 255	<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p263259">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Wed Aug 30, 2023 05:26 PM
+      </div>
+      <div class="content"><p><t>That is just a list from 33 to 255.<br/><br>
+I am looking for German OEM character codes, of "characters having accent"<br/><br>
+Its ok. Please leave it.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p263263">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Wed Aug 30, 2023 07:02 PM
+      </div>
+      <div class="content"><r>May I ask about your oem.dbf?<br/><br>
+<br/><br>
+1. Does this code display the text correctly or correctly in most of the cases?<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;XBROWSER "name.dbf" SETUP ( oBrw:lOemAnsi := .t. )&lt;e&gt;</code></pre></div></e></CODE><br>
+or<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;USE &lt;name.dbf&gt;
+XBROWSER ALIAS() SETUP ( oBrw:lOemAnsi := .t.  )&lt;e&gt;</code></pre></div></e></CODE><br>
+Does changing Codepages make much difference?<br/><br>
+<br/><br>
+2. How large is the dbf? Number of records and number of fields?</r></div>
+    </div>
+  </div>
+  <div class="post" id="p263274">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Thu Aug 31, 2023 04:11 AM
+      </div>
+      <div class="content"><p><t>After doing several tests, I came to the opinion that it is not a good idea to make our functions. It is better to depend on the standard Harbour function OemToAnsi() and then later convert to Utf8 if necessary.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p263275">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Thu Aug 31, 2023 06:13 AM
+      </div>
+      <div class="content"><r>hi,<br>
+<QUOTE author="nageswaragunupudi"><s><blockquote><cite>nageswaragunupudi wrote:</cite></s>May I ask about your oem.dbf?<e></blockquote></e></QUOTE><br>
+have send you a Email with Link to my Online-Web-Space where i have upload "DE_OEM.ZIP"<br/><br>
+<br>
+<QUOTE author="nageswaragunupudi"><s><blockquote><cite>nageswaragunupudi wrote:</cite></s>1. Does this code display the text correctly or correctly in most of the cases?<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;XBROWSER "name.dbf" SETUP ( oBrw:lOemAnsi := .t. )&lt;e&gt;</code></pre></div></e></CODE><br>
+or<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;USE &lt;name.dbf&gt;
+XBROWSER ALIAS() SETUP ( oBrw:lOemAnsi := .t.  )&lt;e&gt;</code></pre></div></e></CODE><e></blockquote></e></QUOTE><br>
+will test it<br/><br>
+<br>
+<QUOTE author="nageswaragunupudi"><s><blockquote><cite>nageswaragunupudi wrote:</cite></s>Does changing Codepages make much difference?<e></blockquote></e></QUOTE><br>
+when Codepage is wrong German "Umlaute" does not Display / Print<br/><br>
+it are those  7 "Umlaute" only ( German does not use "accent" Sign )<br/><br>
+<br>
+<QUOTE author="nageswaragunupudi"><s><blockquote><cite>nageswaragunupudi wrote:</cite></s>2. How large is the dbf? Number of records and number of fields?<e></blockquote></e></QUOTE><br>
+Size &lt; 1 Kb, 255-32 Records, 1 x FIELD <br/><br>
+RECNO() -&gt; CHR(x)</r></div>
+    </div>
+  </div>
+  <div class="post" id="p263278">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Thu Aug 31, 2023 06:57 AM
+      </div>
+      <div class="content"><r><QUOTE><s><blockquote></s>have send you a Email with Link to my Online-Web-Space where i have upload "DE_OEM.ZIP"<br>
+<e></blockquote></e></QUOTE><br>
+I did not receive it yet.<br/><br>
+<br/><br>
+email:<br/><br>
+nageswaragunupudi [@] gmail [dot] com</r></div>
+    </div>
+  </div>
+  <div class="post" id="p263287">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Thu Aug 31, 2023 05:34 PM
+      </div>
+      <div class="content"><r><QUOTE><s><blockquote></s>German does not use "accent" Sign<e></blockquote></e></QUOTE><br>
+<br>
+I am asking out of ignorance.<br/><br>
+Are these not German characters?<br/><br>
+<br/><br>
+<SIZE size="150"><s><span style="font-size:150%"></s>õòóôûúùâáàãêéèÃÁÀ<e></span></e></SIZE><br/><br>
+<br/><br>
+I typed these characters using Google Virtual Keyboard for German Language</r></div>
+    </div>
+  </div>
+  <div class="post" id="p263290">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Thu Aug 31, 2023 06:43 PM
+      </div>
+      <div class="content"><r><QUOTE><s><blockquote></s>Size &lt; 1 Kb, 255-32 Records, 1 x FIELD<br/><br>
+RECNO() -&gt; CHR(x)<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+This is the code for 255-32 records<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;function Chars33to255()
+
+   local oXlsx
+   local cFile := "chars33to255.xlsx"
+   local n,na, c, cx
+
+   ? "Start"
+   oXlsx := TDrXlsx():New()
+   oXlsx:CreateFile( cFile )
+   oXlsx:SetColumnSize( 0, 3, 8 )
+
+   for n := 33 to 255
+      oXlsx:WriteNumber( n - 33, 0, n )
+      c  := Chr( n )
+      if IsOem( c )
+         c  := OemToAnsi( c )
+      endif
+      oXlsx:WriteNumber( n - 33, 1, ASC( c ) )
+      c  := HB_UTF8CHR( ASC( c ) )
+      oXlsx:WriteString( n - 33, 2, STRTOHEX( c ) )
+      oXlsx:WriteString( n - 33, 3, c )
+   next
+
+   oXlsx:Close()
+   ? "Done"
+
+   ShellExecute( 0, "Open", cFile )
+
+return nil
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+No errors.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p263310">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Fri Sep 01, 2023 02:47 PM
+      </div>
+      <div class="content"><r>hi,<br>
+<QUOTE author="nageswaragunupudi"><s><blockquote><cite>nageswaragunupudi wrote:</cite></s>This is the code for 255-32 records<e></blockquote></e></QUOTE><br>
+as long Sign come not from DBF, made in OEM Environment , it is not the Problem that i mean<br/><br>
+<br/><br>
+as i say these OEM DBF was made by Cl*pper App, using NTX, where i have OEM Sign with German "Umlaute"<br/><br>
+<br/><br>
+as Xbase++ default use OEM it is a Problem of all Xbase++ User when want to change to Fivewin (and still use Xbase++ OEM App)<br/><br>
+i can change CODEPAGE to DE850 for OEM-DBF to display "right" under Fivewin but it does not "change" it to UFT8 which DrXlsx need<br/><br>
+<br/><br>
+i will try to send you OEM-DBF again<br/><br>
+<br/><br>
+---<br/><br>
+<br/><br>
+i have found this OT4XB CODE<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;XPPRET XPPENTRY COEMTOUTF8(XppParamList pl )
+{
+   ContainerHandle conr = _conNew(NULLCONTAINER);
+   BOOL bByRef = FALSE;
+   ContainerHandle conc = _conTParam( pl,1,&amp;bByRef,XPP_CHARACTER);
+   if( conc )
+   {
+      ULONG nOemLen = 0;
+      LPSTR pOem    = 0;
+      if( ot4xb_conRLockC(conc,&amp;pOem,&amp;nOemLen) == 0 )
+      {
+         LPWSTR pWide    = (LPWSTR) _xgrab( (nOemLen * 2) + 2 );
+         int    nWideLen = MultiByteToWideChar(CP_OEMCP,0,pOem,(int)nOemLen,pWide,(int)(nOemLen+1));
+         int    nUtf8Len = WideCharToMultiByte(CP_UTF8,0,pWide,nWideLen,NULL,0,0,0);
+         LPSTR  pUtf8    = (LPSTR) _xgrab((UINT) (nUtf8Len + 1));
+         nUtf8Len = WideCharToMultiByte(CP_UTF8,0,pWide,nWideLen,pUtf8,nUtf8Len+1,0,0);
+         _conPutCL(conr,pUtf8,(ULONG)nUtf8Len);
+         ot4xb_conUnlockC(conc);
+         _xfree( (void*) pWide ); _xfree( (void*) pUtf8 );
+      }
+      if(!bByRef ) _conRelease(conc);
+      conc = 0;
+   }
+   _conReturn(pl,conr); _conRelease(conr);
+}
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;OT4XB_API WCHAR * pAnsi2WStr( LPSTR pAnsi , int cb , int* pcc )
+{
+   if( pAnsi )
+   {
+      if( (cb == -1 ) &amp;&amp; pAnsi ) cb = (int) _xstrlen(pAnsi);
+      if( pAnsi &amp;&amp; cb )
+      {
+         LPWSTR pWide = (LPWSTR) _xgrab( (ULONG) ((cb + 1) * 2) );
+         int    cc    = MultiByteToWideChar(CP_ACP,MB_PRECOMPOSED,pAnsi,cb,pWide,cb);
+         if( pcc ) pcc[0] = cc;
+         return pWide;
+      }
+   }
+   return 0;
+}
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;OT4XB_API LPSTR pWStr2Ansi( WCHAR* pWide  , int cc, int* pcc)
+{
+   if( pWide )
+   {
+      if( (cc == -1 ) &amp;&amp; pWide ) cc = (int) _xstrlenW(pWide);
+      if( pWide &amp;&amp; cc )
+      {
+         LPSTR  pAnsi = (LPSTR) _xgrab( (ULONG) (cc + 1) );
+         cc = WideCharToMultiByte(CP_ACP,WC_COMPOSITECHECK,pWide,cc,pAnsi,cc,0,0);
+         if( pcc ) pcc[0] = cc;
+         return pAnsi;
+      }
+   }
+   return 0;
+}
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+and reverse<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;XPPRET XPPENTRY CUTF8TOOEM(XppParamList pl )
+{
+   ContainerHandle conr = _conNew(NULLCONTAINER);
+   BOOL bByRef = FALSE;
+   ContainerHandle conc = _conTParam( pl,1,&amp;bByRef,XPP_CHARACTER);
+   if( conc )
+   {
+      ULONG nUtf8Len = 0;
+      LPSTR pUtf8    = 0;
+      if( ot4xb_conRLockC(conc,&amp;pUtf8,&amp;nUtf8Len) == 0 )
+      {
+         LPWSTR pWide    = (LPWSTR) _xgrab( (nUtf8Len * 2) + 2 );
+         int    nWideLen = MultiByteToWideChar(CP_UTF8,0,pUtf8,(int)nUtf8Len,pWide,(int)(nUtf8Len+1));
+         int    nOemLen = WideCharToMultiByte(CP_OEMCP,0,pWide,nWideLen,NULL,0,0,0);
+         LPSTR  pOem    = (LPSTR) _xgrab((UINT) (nOemLen + 1));
+         nOemLen = WideCharToMultiByte(CP_OEMCP,0,pWide,nWideLen,pOem,nOemLen+1,0,0);
+         _conPutCL(conr,pOem,(ULONG)nOemLen);
+         ot4xb_conUnlockC(conc);
+         _xfree( (void*) pWide ); _xfree( (void*) pOem );
+      }
+      if(!bByRef ) _conRelease(conc);
+      conc = 0;
+   }
+   _conReturn(pl,conr); _conRelease(conr);
+}&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p263315">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Fri Sep 01, 2023 05:33 PM
+      </div>
+      <div class="content"><r><QUOTE><s><blockquote></s>as i say these OEM DBF was made by Cl*pper App, using NTX, where i have OEM Sign with German "Umlaute"<br/><br>
+<br/><br>
+as Xbase++ default use OEM it is a Problem of all Xbase++ User when want to change to Fivewin (and still use Xbase++ OEM App)<br>
+<e></blockquote></e></QUOTE><br>
+If you can share such a real life OEM dbf with a few thousand records, we will try to see if we can find a way to make things easier for you.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p263316">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Fri Sep 01, 2023 05:35 PM
+      </div>
+      <div class="content"><r><QUOTE><s><blockquote></s>as long Sign come not from DBF, made in OEM Environment , it is not the Problem that i mean<br>
+<e></blockquote></e></QUOTE><br>
+It works the same way even if is from oem dbf.<br/><br>
+If you see my earlier samples, I created OEM dbf with Umlauts and showed exporting them</r></div>
+    </div>
+  </div>
+  <div class="post" id="p263326">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: not ISOEM(), ISANSI() or IsUTF8()</span><br>
+        Posted: Fri Sep 01, 2023 08:49 PM
+      </div>
+      <div class="content"><r>hi,<br>
+<QUOTE author="nageswaragunupudi"><s><blockquote><cite>nageswaragunupudi wrote:</cite></s>If you see my earlier samples, I created OEM dbf with Umlauts and showed exporting them<e></blockquote></e></QUOTE><br>
+to say it again : i need "read" from <SIZE size="150"><s><span style="font-size:150%"></s>existing <e></span></e></SIZE>DBF, NOT "made" it from CODE<br/><br>
+<br/><br>
+i talk about DBF made under Cl*pper OEM / DOS which many Xbase++ User have as OEM is default<br/><br>
+<br/><br>
+this Way Xbase++ User have used there old Cl*pper / DOS App and Xbase++ / Windows / GUI with "same" DBF<br/><br>
+Xbase++ does "translate" OEM &lt;-&gt; ANSI "automatic" ( not all Language )<br/><br>
+<br/><br>
+---<br/><br>
+<br/><br>
+"normal" i just need to change CODEPAGE from "DEWIN" to "DE850" to display German "Umlaute" under harbour<br/><br>
+than also "input" under harbour is right when look using Xbase++ App<br/><br>
+<br/><br>
+"only" DrXlsx LIB need UTF8 where German "Umlaute" fail WHEN it come from German OEM DBF<br/><br>
+<br/><br>
+---<br/><br>
+<br/><br>
+Sample which i used have &gt; 350000 Records but only 0,02 % have "Umlaute"<br/><br>
+so i have to "test" every Record / FIELD Type "C" if it have "Umlaute"<br/><br>
+<br/><br>
+Question : did you get Email with Link to "my" DBF  <E>:?:</E></r></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-43651.html">1</a> <strong>2</strong> <a href="topic-43651-page-3.html">3</a> (35 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

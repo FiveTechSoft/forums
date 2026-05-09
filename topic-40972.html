@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ayuda en FOLDEREX - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-40972">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Ayuda en FOLDEREX</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-40972-page-2.html">2</a> (17 posts)</div>  <div class="post" id="p245386">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ramón J.</div>
+      <div class="rank">Posts: 152</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 13, 2006 08:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Ayuda en FOLDEREX</span><br>
+        Posted: Mon Oct 25, 2021 10:01 AM
+      </div>
+      <div class="content">Buenos días a todos<br>
+<br>
+Estoy retomando un ejemplo que hice con FOLDEREX en el que uso dos bases de relacionados: PROVEEDORES Y PRODUCTOS.. Si bien está funcionando perfectamente el ejemplo, la cuestión es que me gustaría que la función de productos estuviera en otro prg y no en el mismo y sin que rompa la relación, ya que me gustaría que el desarrollo de cada pestaña estaviera en prg diferentes y sin que se rompa la relación de las bases.<br>
+<br>
+En el ejemplo siguiente pretendo que al pulsar la pestaña &quot;Proveedores&quot; se activara esa función pero desarrollado en otro prg.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include 'fivewin.ch'
+#include 'ord.ch'
+#include 'xbrowse.ch'
+#include 'hbcompat.ch'
+
+REQUEST DBFCDX
+
+ 
+FUNCTION TELEM()
+
+   LOCAL oDlg, obrw, nWild:=2, cList, aHdrs, aFlds
+    
+   SET DATE ITALIAN
+   SET CENTURY ON
+   RDDSETDEFAULT( "DBFCDX" )
+   
+   USE PROVEEDOR NEW SHARED ALIAS "PROVE"
+   INDEX ON PROVE-&gt;CODIGO_PRO TO CODPROVE
+   SET INDEX TO CODPROVE
+   
+   USE PRODUCTOS NEW SHARED ALIAS "PRODU"
+   INDEX ON PRODU-&gt;CODIGO_PRO TO CODPRODU
+   SET INDEX TO CODPRODU
+   
+   SELE PROVE
+   SET RELATION TO PROVE-&gt;CODIGO_PRO INTO PRODU
+    
+   cList := "NOMBRE, PROVINCIA"
+   aFlds := HB_ATokens( cList, ',' )
+   
+   DEFINE DIALOG oDlg FROM 3, 3 TO 33, 100 TITLE "Búsqueda incremental"
+   
+   @ 30,10 XBROWSE oBrw SIZE 360,150 PIXEL OF oDlg ;
+      COLUMNS aFlds HEADERS "Nombre", "Provincia" ;
+      ALIAS "PROVE"  COLSIZES 200, 200 AUTOSORT CELL LINES NOBORDER
+     
+   oBrw:lHScroll:= .F.   
+   
+     WITH OBJECT oBrw
+      :lIncrFilter   := .t.
+      :lSeekWild     := ( nWild == 2 )
+      :cFilterFld    := "Nombre"
+      :nStretchCol   := STRETCHCOL_WIDEST
+      END
+
+  
+  @ 10, 10 COMBOBOX oBrw:cFilterFld ;
+      ITEMS  { "Nombre", "Provincia" };
+      ON CHANGE ( oBrw:Seek( "" ), oBrw:SetFocus() ) ;
+      SIZE 50,400 PIXEL OF oDlg
+ 
+ @ 10, 70 COMBOBOX nWild ITEMS { "Empieza con", "Contiene" };
+    ON CHANGE ( oBrw:lSeekWild := ( nWild == 2 ), ;
+                  oBrw:Seek( If( oBrw:lSeekWild, oBrw:cSeek, "" ) ), ;
+                  oBrw:SetFocus() );
+  SIZE 70,400 PIXEL OF oDlg
+
+      
+@ 11,150 SAY oBrw:oSeek PROMPT oBrw:cSeek SIZE 200,10 PIXEL OF oDlg COLOR CLR_BLACK,CLR_YELLOW PICTURE '@!'
+
+   oBrw:CreateFromCode()
+     
+   @ 11, 10 BUTTON "Nuevo   " OF oDlg  ACTION oBrw:EditSource( .T. )
+   @ 11, 20 BUTTON "Editar  " OF oDlg  ACTION EditPro( oBrw )
+   @ 11, 30 BUTTON "Eliminar" OF oDlg  ACTION oBrw:Delete()
+   @ 11, 40 BUTTON "&amp;Imprimir"  OF oDlg ;
+      ACTION oBrw:Report( "Listado de SAT", .T. ) ;  // .t. --&gt; wants preview
+      SIZE 40, 12
+   @ 11, 50 BUTTON "&amp;Terminar" OF oDlg ACTION oDlg:End() SIZE 40, 12
+
+   ACTIVATE DIALOG oDlg CENTERED ON INIT ( oBrw:SetFocus(), .f. )
+
+
+RETURN nil
+
+
+//***************** EDICION CON FOLDER---------------
+
+FUNCTION editPro( oBrw, oDlg )
+
+   LOCAL oDlg1, oFld, oLbx, Lsalir:=.f.
+   LOCAL nProve, oProve, cNombre, oNombre, cProvincia, oProvincia
+
+   NProve    := PROVE-&gt;CODIGO_PRO
+   cNombre   := PROVE-&gt;NOMBRE
+   cProvincia := PROVE-&gt;PROVINCIA
+
+   DEFINE DIALOG oDlg1 FROM 3, 3 TO 20, 70 TITLE "Mantenimiento"
+
+
+   @ 10, 5 FOLDEREX oFld PIXEL PROMPT "&amp;Proveedor", "&amp;Datos mercancías"[/color] SIZE 250, 100
+   @ 20, 5 SAY "Código:" OF oFld:aDialogs[ 1 ]  SIZE 60, 10 PIXEL
+   @ 20, 100 SAY oProve var nProve OF oFld:aDialogs[ 1 ]  SIZE 60, 10 PIXEL
+   @ 30, 5 SAY "Razón social" OF oFld:aDialogs[ 1 ] SIZE 60, 10 PIXEL
+   @ 30, 100 GET oNombre VAR cNombre OF oFld:aDialogs[ 1 ]  SIZE 100, 10 PIXEL
+   @ 40, 5 SAY "Provincia" OF oFld:aDialogs[ 1 ] SIZE 60, 10 PIXEL
+   @ 40, 100 GET oProvincia VAR cProvincia OF oFld:aDialogs[ 1 ]  SIZE 100, 10 PIXEL
+   @ 60, 50 BUTTON "Grabar" OF oFld:aDialogs[1] SIZE 40, 10 PIXEL action oDlg1:end()
+   @ 60, 150 BUTTON "Salir" OF oFld:aDialogs[1] SIZE 40, 10 PIXEL ACTION (lSalir:=.t., oDlg1:End())
+
+[color=#FF0000]
+[color=#FF8000]//-------------   DATOS DE MERCANCÍAS. ESTO QUIERO PONERLO EN OTRO PRG SIN QUE SE ROMPA LA RELACIÓN ----------
+   SELE produ
+
+   produ-&gt;( ordscope( 0, nProve ) )
+   produ-&gt;( ordscope( 1, nProve ) )
+   produ-&gt;( DBSKIP( 0 ) )
+
+   IF produ-&gt;( ordKeyCount() ) == 0
+   MsgInfo( "No se encontraron productos" )
+   ENDIF
+ 
+   @ 1, 1 XBROWSE oLbx SIZE 250, 65 PIXEL;
+      COLUMNS "CODIGO_PRO", "PRODUCTO", "PRECIO" OF oFld:aDialogs[ 2 ] ALIAS "PRODU";
+      HEADERS "Código proveedor", "Produto", "Precio";
+      COLSIZES 70, 300, 140;
+      JUSTIFY AL_RIGHT, AL_LEFT, AL_RIGHT;
+      PICTURES , , "@E 9,999,999.99" LINES NOBORDER FASTEDIT
+
+   oLbx:CreateFromCode()
+ 
+   ACTIVATE DIALOG oDlg1 CENTERED valid lSalir
+   
+
+if lsalir
+SELE PROVE
+oBrw:Seek( "" )
+oBrw:refresh()
+PROVE-&gt;(DBGOTOP())
+oBrw:SetFocus()
+endif[/color]
+
+RETURN nil</code></pre></div><br>
+<br>
+¿En este caso concreto cómo se llamaría a la función, por ejemplo proveedores()?<br>
+<br>
+Gracias</div>
+    </div>
+  </div>
+  <div class="post" id="p245391">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cmsoft</div>
+      <div class="rank">Posts: 1344</div>
+      <img class="avatar avatar-img" src="avatars/294.jpg" alt="" loading="lazy">
+      Joined: Wed Nov 16, 2005 09:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Mon Oct 25, 2021 01:16 PM
+      </div>
+      <div class="content">Prueba con:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oFld:bAction := { || IF(oFld:nOption=1,Proveedores(parametros_necesarios), nil) }</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p245396">
+    <div class="poster">
+      <div class="name" style="color:#105289">JoseAlvarez</div>
+      <div class="rank">Posts: 851</div>
+      <img class="avatar avatar-img" src="avatars/3176.jpg" alt="" loading="lazy">
+      Joined: Sun Nov 09, 2014 05:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Mon Oct 25, 2021 07:51 PM
+      </div>
+      <div class="content"><p>Saludos,</p>
+<p>Yo lo hago declarando las variables necesarias como PRIVATE, asi puedo continuar en otro prg como si se trarara ddel mismo llamandolo como a una funcion normal.</p>
+<p>Es una idea que a mi me funciona sin problemas.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p245427">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ramón J.</div>
+      <div class="rank">Posts: 152</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 13, 2006 08:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Tue Oct 26, 2021 08:08 PM
+      </div>
+      <div class="content">Gracías, César y José.<br>
+<br>
+He optado por la opción de César, He creado tres prg: uno de xbrowse de proveedores, otro de la ficha del proveedor con un FOLDEREX que contiene dos pestañas  -datps de proveedor y otra de productos-, y otro prg para el xbrowse de productos. <br>
+<br>
+Pues bien, la pestaña de &quot;Productos&quot; no muestra nada. Los tres prg son los siguientes:<br>
+<br>
+PRINCIPAL.PRG<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include 'fivewin.ch'
+#include 'ord.ch'
+#include 'xbrowse.ch'
+#include 'hbcompat.ch'
+
+REQUEST DBFCDX
+
+ 
+FUNCTION Main()
+
+   LOCAL oDlg, obrw, nWild:=2, cList, aHdrs, aFlds
+    
+   SET DATE ITALIAN
+   SET CENTURY ON
+   RDDSETDEFAULT( "DBFCDX" )
+   
+   USE PROVEEDOR NEW SHARED ALIAS "PROVE"
+   INDEX ON PROVE-&gt;CODIGO_PRO TO CODPROVE
+   SET INDEX TO CODPROVE
+   
+   USE PRODUCTOS NEW SHARED ALIAS "PRODU"
+   INDEX ON PRODU-&gt;CODIGO_PRO TO CODPRODU
+   SET INDEX TO CODPRODU
+   
+   SELE PROVE
+   SET RELATION TO PROVE-&gt;CODIGO_PRO INTO PRODU
+    
+   cList := "NOMBRE, PROVINCIA"
+   aFlds := HB_ATokens( cList, ',' )
+   
+   DEFINE DIALOG oDlg FROM 3, 3 TO 33, 100 TITLE "Búsqueda incremental"
+   
+   @ 30,10 XBROWSE oBrw SIZE 360,150 PIXEL OF oDlg ;
+      COLUMNS aFlds HEADERS "Nombre", "Provincia" ;
+      ALIAS "PROVE"  COLSIZES 200, 200 AUTOSORT CELL LINES NOBORDER
+     
+   oBrw:lHScroll:= .F.   
+   
+     WITH OBJECT oBrw
+      :lIncrFilter   := .t.
+      :lSeekWild     := ( nWild == 2 )
+      :cFilterFld    := "Nombre"
+      :nStretchCol   := STRETCHCOL_WIDEST
+      END
+
+  
+  @ 10, 10 COMBOBOX oBrw:cFilterFld ;
+      ITEMS  { "Nombre", "Provincia" };
+      ON CHANGE ( oBrw:Seek( "" ), oBrw:SetFocus() ) ;
+      SIZE 50,400 PIXEL OF oDlg
+ 
+ @ 10, 70 COMBOBOX nWild ITEMS { "Empieza con", "Contiene" };
+    ON CHANGE ( oBrw:lSeekWild := ( nWild == 2 ), ;
+                  oBrw:Seek( If( oBrw:lSeekWild, oBrw:cSeek, "" ) ), ;
+                  oBrw:SetFocus() );
+  SIZE 70,400 PIXEL OF oDlg
+
+      
+@ 11,150 SAY oBrw:oSeek PROMPT oBrw:cSeek SIZE 200,10 PIXEL OF oDlg COLOR CLR_BLACK,CLR_YELLOW PICTURE '@!'
+
+   oBrw:CreateFromCode()
+     
+   @ 11, 10 BUTTON "Nuevo   " OF oDlg  ACTION oBrw:EditSource( .T. )
+   @ 11, 20 BUTTON "Editar  " OF oDlg  ACTION EditPro( oBrw )
+   @ 11, 30 BUTTON "Eliminar" OF oDlg  ACTION oBrw:Delete()
+   @ 11, 40 BUTTON "&amp;Imprimir"  OF oDlg ;
+      ACTION oBrw:Report( "Listado", .T. ) ;  // .t. --&gt; wants preview
+      SIZE 40, 12
+   @ 11, 50 BUTTON "&amp;Terminar" OF oDlg ACTION oDlg:End() SIZE 40, 12
+
+   ACTIVATE DIALOG oDlg CENTERED ON INIT ( oBrw:SetFocus(), .f. )
+
+RETURN nil</code></pre></div><br>
+<br>
+PROVEEDORES.PRG<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+FUNCTION editpro(obrw )
+
+   LOCAL oDlg, oFld, oLbx, Lsalir:=.f.
+   LOCAL nProve, oProve, cNombre, oNombre, cProvincia, oProvincia
+
+   NProve    := PROVE-&gt;CODIGO_PRO
+   cNombre   := PROVE-&gt;NOMBRE
+   cProvincia := PROVE-&gt;PROVINCIA
+   
+   DEFINE DIALOG oDlg FROM 3, 3 TO 40, 70 TITLE "Mantenimiento"
+
+   @ 10, 5 FOLDEREX oFld PIXEL PROMPT "&amp;Proveedor", "&amp;Productos" SIZE 250, 100
+   @ 20, 5 SAY "Código:" OF oFld:aDialogs[ 1 ]  SIZE 60, 10 PIXEL
+   @ 20, 100 SAY oProve var nProve OF oFld:aDialogs[ 1 ]  SIZE 60, 10 PIXEL
+   @ 30, 5 SAY "Razón social" OF oFld:aDialogs[ 1 ] SIZE 60, 10 PIXEL
+   @ 30, 100 GET oNombre VAR cNombre OF oFld:aDialogs[ 1 ]  SIZE 100, 10 PIXEL
+   @ 40, 5 SAY "Provincia" OF oFld:aDialogs[ 1 ] SIZE 60, 10 PIXEL
+   @ 40, 100 GET oProvincia VAR cProvincia OF oFld:aDialogs[ 1 ]  SIZE 100, 10 PIXEL
+   @ 60, 50 BUTTON "Grabar" OF oFld:aDialogs[1] SIZE 40, 10 PIXEL action oDlg:end()
+   @ 60, 150 BUTTON "Salir" OF oFld:aDialogs[1] SIZE 40, 10 PIXEL ACTION (lSalir:=.t., oDlg:End())
+
+     ACTIVATE DIALOG oDlg CENTERED
+     
+oFld:bAction := { || IF(oFld:nOption=2,Productos(nprove, cnombre, cprovincia, ofld), nil) } 
+                             
+if lsalir
+SELE PROVE
+oBrw:Seek( "" )
+oBrw:refresh()
+PROVE-&gt;(DBGOTOP())
+oBrw:SetFocus()
+endif
+
+retur nil</code></pre></div><br>
+<br>
+PRODUCTOS.PRG<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+FUNCTION Productos(nprove, cnombre, cprovincia, oFld)
+
+   LOCAL oDlg, oLbx, Lsalir:=.f.                                                       
+
+   SELE produ
+ 
+   produ-&gt;( ordscope( 0, nProve ) )
+   produ-&gt;( ordscope( 1, nProve ) )
+   produ-&gt;( DBSKIP( 0 ) )
+  
+   IF produ-&gt;( ordKeyCount() ) == 0
+   MsgInfo( "No se encontraron productos" )
+   ENDIF
+   
+   DEFINE DIALOG oDlg FROM 3, 3 TO 40, 70 TITLE "Productos"
+ 
+ @ 1, 1 XBROWSE oLbx SIZE 250, 65 PIXEL;
+      COLUMNS "CODIGO_PRO", "PRODUCTO", "PRECIO" OF oFld:aDialogs[ 2 ] ALIAS "PRODU";
+      HEADERS "Código proveedor", "Produto", "Precio";
+      COLSIZES 70, 300, 140;
+      JUSTIFY AL_RIGHT, AL_LEFT, AL_RIGHT;
+      PICTURES , , "@E 9,999,999.99" LINES NOBORDER FASTEDIT
+
+   oLbx:CreateFromCode()
+
+   ACTIVATE DIALOG oDlg CENTERED valid lSalir
+   
+if lsalir
+SELE PROVE
+endif
+
+retur nil</code></pre></div><br>
+<br>
+¿Qué es lo que falta para que me muestre los productos?<br>
+<br>
+Saludos</div>
+    </div>
+  </div>
+  <div class="post" id="p245431">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Tue Oct 26, 2021 10:19 PM
+      </div>
+      <div class="content">Buenas noches Ramon, no és mejor, que tú haga un *.ZIP con *.DBFS y *.PRGS e ponga en el MegaUpload?<br>
+<br>
+<a href="https://mega.nz/" rel="noopener">https&#58;//mega&#46;nz/</a><br>
+<br>
+Refards, saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p245434">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ramón J.</div>
+      <div class="rank">Posts: 152</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 13, 2006 08:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Wed Oct 27, 2021 04:56 AM
+      </div>
+      <div class="content">Gracias, João, por tu interés en mi consulta.<br>
+<br>
+Aquí tienes el ejemplo sencillo sobre el que estoy trabajando para luego trasladarlo a la aplicación.<br>
+<br>
+<a href="https://mega.nz/file/F0ogAYpb#E-xdvF8sebinL7G3aPDKCM0lVrPIi7ofWxyCcsSdhfw" rel="noopener">https&#58;//mega&#46;nz/file/F0ogAYpb#E-xdvF8sebinL7G3aPDKCM0lVrPIi7ofWxyCcsSdhfw</a><br>
+<br>
+Muchas gracias<br>
+Saludos</div>
+    </div>
+  </div>
+  <div class="post" id="p245441">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cmsoft</div>
+      <div class="rank">Posts: 1344</div>
+      <img class="avatar avatar-img" src="avatars/294.jpg" alt="" loading="lazy">
+      Joined: Wed Nov 16, 2005 09:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Wed Oct 27, 2021 10:41 AM
+      </div>
+      <div class="content">El dialogo esta creado en el folder, por lo tanto tendrías que hacer referencia a el en lugar de crear otro dialogo.<br>
+Pero el dialogo tiene que estar creado antes.<br>
+El problema es que cada vez que hagas click en la pestaña de productos te va a intentar cargar todo del dialogo 2 del folder.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+FUNCTION Productos(nprove, cnombre, cprovincia, oFld)
+
+   LOCAL oDlg, oLbx, Lsalir:=.f.                                                      
+
+   SELE produ
+ 
+   produ-&gt;( ordscope( 0, nProve ) )
+   produ-&gt;( ordscope( 1, nProve ) )
+   produ-&gt;( DBSKIP( 0 ) )
+ 
+   IF produ-&gt;( ordKeyCount() ) == 0
+   MsgInfo( "No se encontraron productos" )
+   ENDIF
+   
+   //DEFINE DIALOG oDlg FROM 3, 3 TO 40, 70 TITLE "Productos"  Esto no tendria que estar, porque estaría dentro de la segunda pestaña
+ 
+ @ 1, 1 XBROWSE oLbx SIZE 250, 65 PIXEL;
+      COLUMNS "CODIGO_PRO", "PRODUCTO", "PRECIO" OF oFld:aDialogs[ 2 ] ALIAS "PRODU";
+      HEADERS "Código proveedor", "Produto", "Precio";
+      COLSIZES 70, 300, 140;
+      JUSTIFY AL_RIGHT, AL_LEFT, AL_RIGHT;
+      PICTURES , , "@E 9,999,999.99" LINES NOBORDER FASTEDIT
+
+   oLbx:CreateFromCode()
+
+   // Esto tampoco devería ir ACTIVATE DIALOG oDlg CENTERED valid lSalir</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p245442">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Wed Oct 27, 2021 11:05 AM
+      </div>
+      <div class="content">Que debria hacer y no hace?<br>
+<br>
+<a href="https://imgur.com/4tcaVvn" rel="noopener">https&#58;//imgur&#46;com/4tcaVvn</a><br>
+<br>
+<img src="https://i.imgur.com/4tcaVvn.png" alt="" loading="lazy"><br>
+<br>
+Regards, saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p245444">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Wed Oct 27, 2021 04:55 PM
+      </div>
+      <div class="content">Ramon, algo asi?<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+FUNCTION Editpro( obrw )
+
+   LOCAL oDlg, oFld, oLbx, Lsalir:=.f.
+   LOCAL nProve, oProve, cNombre, oNombre, cProvincia, oProvincia
+   // Folder 2
+   LOCAL oCodProd, nCodProd, oProdu, cProdNom
+
+   NProve     := PROVE-&gt;CODIGO_PRO
+   cNombre    := PROVE-&gt;NOMBRE
+   cProvincia := PROVE-&gt;PROVINCIA
+
+   // Folder 2
+   nCodProd   := PRODU-&gt;CODIGO_PRO
+   cProdNom   := PRODU-&gt;PRODUCTO
+   
+   DEFINE DIALOG oDlg FROM 3, 3 TO 40, 70 TITLE "Mantenimiento"
+
+   @ 10, 5 FOLDEREX oFld PIXEL PROMPT "&amp;Proveedor", "&amp;Productos" SIZE 250, 100
+
+   @ 20, 5 SAY "Código:" OF oFld:aDialogs[ 1 ]  SIZE 60, 10 PIXEL
+
+   @ 20, 100 SAY oProve var nProve OF oFld:aDialogs[ 1 ]  SIZE 60, 10 PIXEL
+
+   @ 30, 5 SAY "Razón social" OF oFld:aDialogs[ 1 ] SIZE 60, 10 PIXEL
+
+   @ 30, 100 GET oNombre VAR cNombre OF oFld:aDialogs[ 1 ]  SIZE 100, 10 PIXEL
+
+   @ 40, 5 SAY "Provincia" OF oFld:aDialogs[ 1 ] SIZE 60, 10 PIXEL
+
+   @ 40, 100 GET oProvincia VAR cProvincia OF oFld:aDialogs[ 1 ]  SIZE 100, 10 PIXEL
+
+   // folder 2
+
+   @ 20, 005 SAY "Código:" OF oFld:aDialogs[ 2 ]  SIZE 60, 10 PIXEL
+
+   @ 20, 030 SAY oCodProd var nCodProd  OF oFld:aDialogs[ 2 ]  SIZE 60, 10 PIXEL
+
+   @ 20, 060 SAY oProdu var cProdNom OF oFld:aDialogs[ 2 ]  SIZE 200, 10 PIXEL
+
+   @ 60, 50 BUTTON "Grabar" OF oFld:aDialogs[1] SIZE 40, 10 PIXEL action oDlg:end()
+
+   @ 60, 150 BUTTON "Salir" OF oFld:aDialogs[1] SIZE 40, 10 PIXEL ACTION (lSalir:=.t., oDlg:End())
+
+
+   ACTIVATE DIALOG oDlg CENTERED
+     
+   // oFld:bAction := { || IF(oFld:nOption=2,Productos(nprove, cnombre, cprovincia, ofld), nil) }
+                             
+   if lsalir
+
+      SELE PROVE
+
+      oBrw:Seek( "" )
+      oBrw:refresh()
+
+      PROVE-&gt;(DBGOTOP())
+
+      oBrw:SetFocus()
+
+   endif
+
+return nil</code></pre></div><br>
+<br>
+Regards, saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p245461">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ramón J.</div>
+      <div class="rank">Posts: 152</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 13, 2006 08:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Thu Oct 28, 2021 07:03 AM
+      </div>
+      <div class="content">Gracias, César y João por vuestro interés. César, he probado eliminado el diálogo, como dices,  pero sigue sin mostrar nada. <br>
+João, lo que pones en tu ejemplo es lo que quiero, pero lo del folder 2 lo quiero en otro prg. En mi aplicación lo tengo todo en un prg, como tú lo has hecho, pero en mi aplicación el prg se ha hecho muy grande y por eso quiero hacer un prg por cada pestaña del folder<br>
+<br>
+Mira las imágenes de los tres prg:<br>
+principal.prg<br>
+<img src="https://imgur.com/a/yK1MX66" alt="" loading="lazy"><br>
+<br>
+proveedores.prg<br>
+<img src="https://imgur.com/a/jipyi6A" alt="" loading="lazy"><br>
+<br>
+productos.prg<br>
+<img src="https://imgur.com/a/1ToAqQh" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p245468">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Thu Oct 28, 2021 11:34 AM
+      </div>
+      <div class="content">El problema es que a veces no entiendo el idioma. jajajaja<br>
+<br>
+Mira que simples:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+FUNCTION Editpro( obrw )
+
+   LOCAL oDlg, oFld, oLbx, Lsalir:=.f.
+
+   /*
+   LOCAL nProve, oProve, cNombre, oNombre, cProvincia, oProvincia
+   // Folder 2
+   LOCAL oCodProd, nCodProd, oProdu, cProdNom
+   */
+
+   MEMVAR nProve, oProve, cNombre, oNombre, cProvincia, oProvincia
+   MEMVAR oCodProd, nCodProd, oProdu, cProdNom
+
+   NProve     := PROVE-&gt;CODIGO_PRO
+   cNombre    := PROVE-&gt;NOMBRE
+   cProvincia := PROVE-&gt;PROVINCIA
+
+   // Folder 2
+   nCodProd   := PRODU-&gt;CODIGO_PRO
+   cProdNom   := PRODU-&gt;PRODUCTO
+   
+   DEFINE DIALOG oDlg FROM 3, 3 TO 40, 70 TITLE "Mantenimiento"
+
+   @ 10, 5 FOLDEREX oFld PIXEL PROMPT "&amp;Proveedor", "&amp;Productos" SIZE 250, 100
+
+   // DATOS DE LA EMPRESA, ETC.
+   RAZON( oFld )
+
+   // PRODUCTOS
+   INVENTARIO( oFld )
+
+   // Continue.. Facil... Pero no mucho... jajajaja.
+
+   // FOLDER 3: ... 3.PRG
+
+   // FOLDER 4: ... 4.PRG
+
+
+   // BUTTONS...
+
+   ACTIVATE DIALOG oDlg CENTERED
+     
+                             
+   if lsalir
+
+      SELE PROVE
+
+      oBrw:Seek( "" )
+      oBrw:refresh()
+
+      PROVE-&gt;(DBGOTOP())
+
+      oBrw:SetFocus()
+
+   endif
+
+return nil
+
+// FOLDER 1: RAZON.prg
+FUNCTION RAZON( oFld )
+
+   MEMVAR nProve, oProve, cNombre, oNombre, cProvincia, oProvincia
+
+   @ 20, 5 SAY "Código:" OF oFld:aDialogs[ 1 ]  SIZE 60, 10 PIXEL
+
+   @ 20, 100 SAY oProve var nProve OF oFld:aDialogs[ 1 ]  SIZE 60, 10 PIXEL
+
+   @ 30, 5 SAY "Razón social" OF oFld:aDialogs[ 1 ] SIZE 60, 10 PIXEL
+
+   @ 30, 100 GET oNombre VAR cNombre OF oFld:aDialogs[ 1 ]  SIZE 100, 10 PIXEL
+
+   @ 40, 5 SAY "Provincia" OF oFld:aDialogs[ 1 ] SIZE 60, 10 PIXEL
+
+   @ 40, 100 GET oProvincia VAR cProvincia OF oFld:aDialogs[ 1 ]  SIZE 100, 10 PIXEL
+
+RETURN NIL
+
+// FOLDER 2:  INVENTAR.PRG
+FUNCTION INVENTARIO( oFld )
+
+   MEMVAR oCodProd, nCodProd, oProdu, cProdNom
+
+   @ 20, 005 SAY "Código:" OF oFld:aDialogs[ 2 ]  SIZE 60, 10 PIXEL
+
+   @ 20, 030 SAY oCodProd var nCodProd  OF oFld:aDialogs[ 2 ]  SIZE 60, 10 PIXEL
+
+   @ 20, 060 SAY oProdu var cProdNom OF oFld:aDialogs[ 2 ]  SIZE 200, 10 PIXEL
+
+   @ 60, 50 BUTTON "Grabar" OF oFld:aDialogs[1] SIZE 40, 10 PIXEL action oDlg:end()
+
+   @ 60, 150 BUTTON "Salir" OF oFld:aDialogs[1] SIZE 40, 10 PIXEL ACTION (lSalir:=.t., oDlg:End())
+
+RETURN NIL</code></pre></div><br>
+<br>
+Regards, saludos</div>
+    </div>
+  </div>
+  <div class="post" id="p245469">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ramón J.</div>
+      <div class="rank">Posts: 152</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 13, 2006 08:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Thu Oct 28, 2021 12:43 PM
+      </div>
+      <div class="content"><p>Muchas gracias, João. Siempre tan amable y dispuesto a ayudar.</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p247977">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ramón J.</div>
+      <div class="rank">Posts: 152</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 13, 2006 08:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Wed Feb 09, 2022 04:38 PM
+      </div>
+      <div class="content">Hola a todos<br>
+<br>
+Después de un tiempo -por cuestiones de enfernedad-  he vuelto a retomar el tema del folderex con un prg por cada pestaña y con bbdd relacionales. He construido el ejemplo poniendo un prg separado por cada pestaña. El ejemplo es muy sencillo:proveedores-&gt;proveedor y productos y quesos de este proveedor.<br>
+<br>
+A la hora de crear los índices, que es donde tengo el problema, hago lo siguiente:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">  
+   USE PROVEEDOR NEW SHARED ALIAS "PROVE"
+   INDEX ON PROVE-&gt;CODIGO_PRO TO CODPROVE
+   SET INDEX TO CODPROVE
+   
+   USE PRODUCTOS NEW SHARED ALIAS "PRODU"
+   INDEX ON PRODU-&gt;CODIGO_PRO TO CODPRODU
+   SET INDEX TO CODPRODU
+   
+   INDEX ON PRODU-&gt;CODIGO_PRO TO TIPO_PRO FOR PRODU-&gt;PRODUCTO="QUESO"
+   SET INDEX TO TIPO_PRO</code></pre></div><br>
+<br>
+Pues bien, cuando selecciono el proveedor, sale un FOLDEREX con tres pestañas: &quot;Proveedor&quot;, &quot;Productos&quot; y &quot;Quesos&quot;, y en las pestañas &quot;Productos&quot; y &quot;Quesos&quot;, siempre me trabaja con el último índice, es decir, el de &quot;Quesos&quot; aun cuando selecciono la pestaña &quot;Productos&quot; y con ordsetfocus(&quot;productos&quot;) siguen saliendo los datos del índice &quot;Quesos&quot;, que es justamente el último creado. <br>
+<br>
+He probado con set order to pero tampoco me lo cambia. ¿Alguna idea? Os adjunto el zip con todos los archivos del ejemplo.<br>
+<br>
+<a href="https://mega.nz/file/004WSRRY#McLEhvdkqNP1LR8BiVxzSQZ9-kKxz6xmaEFtLQEVW3A" rel="noopener">https&#58;//mega&#46;nz/file/004WSRRY#McLEhvdkqNP1LR8BiVxzSQZ9-kKxz6xmaEFtLQEVW3A</a><br>
+<br>
+Un saludo</div>
+    </div>
+  </div>
+  <div class="post" id="p247982">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Wed Feb 09, 2022 10:44 PM
+      </div>
+      <div class="content"><p>Ramón, en este caso, no use FOLDEREX, use un DIALOGO de Botones para llamar xBrowses() diferentes.</p>
+<p>Regards, saludos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p247986">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ramón J.</div>
+      <div class="rank">Posts: 152</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 13, 2006 08:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda en FOLDEREX</span><br>
+        Posted: Thu Feb 10, 2022 11:11 AM
+      </div>
+      <div class="content"><p>Gracias, João, lo voy a probar.</p>
+<p>Un saludo</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-40972-page-2.html">2</a> (17 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1841 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Experiment: MapControl - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-35535">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Experiment: MapControl</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-35535-page-2.html">2</a> (24 posts)</div>  <div class="post" id="p211560">
+    <div class="poster">
+      <div class="name" style="color:#105289">AntoninoP</div>
+      <div class="rank">Posts: 375</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 10, 2015 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Experiment: MapControl</span><br>
+        Posted: Thu Apr 19, 2018 01:42 PM
+      </div>
+      <div class="content">Hello,<br>
+some time ago I navigated on this page <a href="https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames" rel="noopener">https&#58;//wiki&#46;openstreetmap&#46;org/wiki/Slippy_map_tilenames</a> where are present all information how to access to OpenStreetMap from any application/language.<br>
+So during some lunch pauses I created a fiveWin Control, it is only an rough version:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include &lt;fivewin.ch&gt;
+
+********** TEST CODE **********
+proc main
+    LOCAL oWnd, oMap
+    DEFINE WINDOW oWnd TITLE "3D objects"
+   SetWndDefault(oWnd)
+    oMap := TMapControl():New()
+   oMap:SetCenter(-4.806640,36.505522)
+   oMap:AddMarker(-4.806640,36.505522)
+   oWnd:oClient := oMap   
+    ACTIVATE WINDOW oWnd
+*******************************
+
+/// &lt;!-- m --&gt;&lt;a class="postlink" href="https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames"&gt;https://wiki.openstreetmap.org/wiki/Sli ... _tilenames&lt;/a&gt;&lt;!-- m --&gt;
+class TMapControl FROM TControl
+    CLASSDATA lRegistered AS LOGICAL
+   CLASSDATA aServers AS ARRAY INIT {'https://a.tile.openstreetmap.org/{zoom}/{x}/{y}.png', ;
+                                     'https://b.tile.openstreetmap.org/{zoom}/{x}/{y}.png', ;
+                                     'https://c.tile.openstreetmap.org/{zoom}/{x}/{y}.png'}
+   CLASSDATA nMaxZoom AS NUMERIC INIT 19
+   DATA aHttps, oTimer
+   DATA nZoom, nLat, nLon
+   DATA nServer
+   DATA aMarkers AS ARRAY INIT {}
+   DATA aImages AS ARRAY INIT {}
+   DATA aTopLeftTileInfo
+   DATA lastMousePos
+
+    METHOD New( nRow, nCol, oWnd, nWidth, nHeight ) CONSTRUCTOR
+   METHOD End()
+    METHOD Display() INLINE ::BeginPaint(),::Paint(),::EndPaint(),0
+    METHOD Paint()
+   
+   Method SetCenter(nLon,nLat)
+   Method AddMarker(nLon,nLat)
+
+   METHOD RButtonDown()   
+   METHOD LButtonDown()
+   METHOD MouseMove()
+   METHOD MouseWheel( ) 
+
+   METHOD TimerEvent()
+   
+   METHOD GetImage(x,y,zoom) HIDDEN
+   METHOD GetTileNumber(lon,lat,zoom)
+   METHOD GetCoordsFromTile(x,y,zoom)   
+   METHOD GetCoordsFromPixel(x,y)
+   
+endclass
+
+
+METHOD New( nRow, nCol, oWnd, nWidth, nHeight ) CLASS TMapControl
+    DEFAULT nRow := 10, nCol := 10, oWnd := GetWndDefault()
+    DEFAULT nWidth := 500
+    DEFAULT nHeight := 300
+   ::nZoom := 15
+   ::nLon := 0
+   ::nLat := 0
+   ::nServer := 1
+   ::aMarkers := {}
+
+    ::oWnd      := oWnd
+    ::nId          := ::GetNewId()
+    ::nStyle       := nOR( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER )
+    ::nTop      := nRow
+    ::nLeft     := nCol
+    ::nBottom   := ::nTop + nHeight - 1
+    ::nRight       := ::nLeft + nWidth
+   
+   ::aHttps := {}
+   
+    ::Register( nOR( CS_VREDRAW, CS_HREDRAW ) )
+
+   if ! Empty( oWnd:hWnd )
+      ::Create( )
+      oWnd:AddControl( Self )
+   else
+      oWnd:DefControl( Self )
+   endif
+   
+   DEFINE TIMER ::oTimer OF SELF INTERVAL 0.1 ACTION ::TimerEvent()
+   ::oTimer:Activate()
+   
+   
+return Self
+
+METHOD End() class TMapControl
+   if .not. empty(::oTimer)
+      ::oTimer:Deactivate()
+      ::oTimer:End()
+   endif
+return ::Super:End()
+
+Method SetCenter(nLon,nLat) class TMapControl
+   local r := {::nLon,::nLat}
+   ::nLon := nLon
+   ::nLat := nLat
+return r
+
+Method AddMarker(nLon,nLat) class TMapControl
+return aAdd(::aMarkers, {nLon,nLat})
+   
+
+
+METHOD Paint() class TMapControl
+   LOCAL x,y, img, ix,iy, top, left, t,l, sx, sy
+   LOCAL w := ::nWidth,  h := ::nHeight
+   // get tile of center
+   x := ::GetTileNumber(::nLon,::nLat)
+   y := x[2]
+   x := x[1]
+   // move the desired pixel in the centre of canvas
+   sx := floor(x)
+   sy := floor(y)
+   top  := h/2 - int((y-sy)*256)
+   left := w/2 - int((x-sx)*256)
+   // check for fill all area
+   do while top&gt;0
+      sy-=1
+      top-=256
+   enddo
+   do while left&gt;0
+      sx-=1
+      left-=256
+   enddo
+   // draw the map
+   for iy:=0 to ceiling(h/256)
+      for ix:=0 to ceiling(w/256)
+         img := ::GetImage(sx+ix,sy+iy)
+         if valtype(img)="A" .and. .not. empty(img[1])
+            t := top+iy*256 
+            l := left+ix*256
+            FW_DrawImage(::hDC, img, {t,l,t+256,l+256})
+         endif
+      next
+   next
+   // draw the markers
+   for ix:=1 to len(::aMarkers) 
+      x := ::GetTileNumber(::aMarkers[ix,1],::aMarkers[ix,2])
+      y := (x[2] - sy) * 256 + top
+      x := (x[1] - sx) * 256 + left
+      MoveTo(::hDC,x-5,y-5)
+      LineTo(::hDC,x+5,y+5)
+      MoveTo(::hDC,x-5,y+5)
+      LineTo(::hDC,x+5,y-5)
+   next
+   // save these infos
+   ::aTopLeftTileInfo := {top,left,sx,sy}
+      
+return nil
+
+METHOD TimerEvent() class TMapControl
+   LOCAL lRedraw := .F., oHttp, img, idx
+   
+   for idx:=1 to len(::aHttps)
+      oHttp := ::aHttps[idx]
+      if oHttp[1]:readyState = 4
+         img := FW_ReadImage(Self, oHttp[1]:ResponseBody())
+         if .not. empty(img) .and. .not. empty(img)
+            lRedraw := .T.
+            aAdd(::aImages, { img, oHttp[2], oHttp[3], oHttp[4] })
+         endif
+         hb_ADel(::aHttps,idx,.t.)
+      endif
+   next
+   
+   if lRedraw
+      ::Refresh(.F.)
+   endif
+return nil
+
+// directly from OpenStreetMap wiki
+METHOD GetTileNumber(lon,lat,zoom) class TMapControl
+   LOCAL x,y,n, latRad
+   DEFAULT zoom := ::nZoom
+   n := hb_bitShift(1, zoom)
+   latRad := lat * PI() / 180
+   x := n * (lon + 180) / 360
+   y := n * (1-(log(tan(latRad) + 1/cos(latRad)) / PI())) / 2
+   do while(x&lt;0) 
+      x+=n
+   enddo
+   do while(x&gt;=n) 
+      x-=n
+   enddo
+   if y&lt;0
+      y:=0
+   endif
+   if y&gt;=n
+      y:=n-1
+   endif
+return {x,y}
+
+// directly from OpenStreetMap wiki
+METHOD GetCoordsFromTile(x,y,zoom) class TMapControl
+   LOCAL lon, lat, n, lat_rad
+   DEFAULT zoom := ::nZoom
+   n := hb_bitShift(1, zoom)
+   lon = x / n * 360.0 - 180.0
+   lat_rad = atan(sinh(PI() * (1 - 2 * y / n)))
+   lat = lat_rad * 180.0 / PI()
+return {lon,lat}
+
+// screen
+METHOD GetCoordsFromPixel(x,y)  class TMapControl
+   LOCAL top  := ::aTopLeftTileInfo[1]
+   LOCAL left := ::aTopLeftTileInfo[2]
+   LOCAL sx   := ::aTopLeftTileInfo[3]
+   LOCAL sy   := ::aTopLeftTileInfo[4]
+return ::GetCoordsFromTile(sx+(x-left)/256,sy+(y-top)/256)
+
+METHOD LButtonDown(nRow, nCol, nKeyFlags, lTouch) class TMapControl
+   ::lastMousePos := {nRow,nCol}
+return ::Super:LButtonDown( nRow, nCol, nKeyFlags, lTouch )
+
+METHOD RButtonDown(nRow, nCol, nKeyFlags, lTouch) class TMapControl
+   ::lastMousePos := {nRow,nCol}
+return ::Super:RButtonDown( nRow, nCol, nKeyFlags, lTouch )
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) class TMapControl
+   LOCAL oldMouseCoords,newMouseCoords
+   if nKeyFlags&lt;&gt;1 .and. nKeyFlags&lt;&gt;2
+      return 0
+   endif
+   oldMouseCoords := ::GetCoordsFromPixel(::lastMousePos[2],::lastMousePos[1])
+   newMouseCoords := ::GetCoordsFromPixel(nCol,nRow)
+   ::nLon += oldMouseCoords[1] - newMouseCoords[1]
+   ::nLat += oldMouseCoords[2] - newMouseCoords[2]
+   ::lastMousePos := {nRow,nCol}
+   ::Refresh(.F.)
+return ::Super:MouseMove( nRow, nCol, nKeyFlags )
+
+METHOD MouseWheel( nKey, nDelta, nXPos, nYPos )  class TMapControl
+   if nDelta&gt;0 .and. ::nZoom&lt;::nMaxZoom 
+      ::nZoom+=1
+   endif
+   if nDelta&lt;0 .and. ::nZoom&gt;0
+      ::nZoom-=1
+   endif
+   ::Refresh(.T.)
+return ::Super:MouseWheel( nKey, nDelta, nXPos, nYPos )
+
+
+METHOD GetImage(x,y,zoom) class TMapControl
+   local n, cUrl, img
+   LOCAL oHttp
+   DEFAULT zoom := ::nZoom
+   
+   x:=int(x)
+   y:=int(y)
+   // looking for the image in the "cache"
+   n:= aScan(::aImages, {|v| v[2]=zoom .and. v[3]=x .and. v[4]=y })
+   if n&gt;0
+      // TODO: move the last returned image on top of cache
+      return ::aImages[n][1]
+   endif
+   // TODO: Limit cache size
+   cUrl := ::aServers[::nServer]
+   ::nServer++
+   if ::nServer&gt;len(::aServers)
+      ::nServer:=1
+   endif
+   cUrl := StrTran(cUrl,"{zoom}", allTrim(str(zoom)))
+   cUrl := StrTran(cUrl,"{x}", allTrim(str(x)))
+   cUrl := StrTran(cUrl,"{y}", allTrim(str(y)))
+   if aScan(::aHttps, {|x| x[5] = cUrl}) &gt; 0
+      return nil
+   endif
+   begin sequence
+      oHttp := win_oleCreateObject( "Msxml2.XMLHTTP.6.0" )
+      oHttp:Open("GET", cUrl, .T. )
+      oHttp:Send()
+      if oHttp:readyState &lt;&gt; 4
+         if oHttp:readyState=1 .or. oHttp:readyState=3
+            aAdd(::aHttps,{ oHttp, zoom, x, y, cUrl })
+         endif
+      else
+         img := FW_ReadImage(Self, oHttp:ResponseBody())
+         if .not. empty(img) .and. .not. empty(img)
+            aAdd(::aImages, { img, zoom, x, y })
+         endif
+      endif
+   end sequence
+return img</code></pre></div><br>
+<br>
+I think it is pretty cool  </div>
+    </div>
+  </div>
+  <div class="post" id="p211562">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Thu Apr 19, 2018 01:51 PM
+      </div>
+      <div class="content"><p>Antonino, great work<br>
+Congratulations, I think it's a very good contribution</p></div>
+    </div>
+  </div>
+  <div class="post" id="p211572">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Thu Apr 19, 2018 06:26 PM
+      </div>
+      <div class="content"><p>Hello Antonino,<br>
+thank you. This is a great control.<br>
+Best regards,<br>
+Otto</p>
+<p>PS: I had to change win_oleCreateObject to TOLEAuto():New.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p211581">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Fri Apr 20, 2018 07:17 AM
+      </div>
+      <div class="content"><p>the zoom (wheel mouse)  is bad</p></div>
+    </div>
+  </div>
+  <div class="post" id="p211586">
+    <div class="poster">
+      <div class="name" style="color:#105289">Uwe.Diemer</div>
+      <div class="rank">Posts: 99</div>
+      <img class="avatar avatar-img" src="avatars/1984.jpg" alt="" loading="lazy">
+      Joined: Mon Aug 09, 2010 11:00 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Fri Apr 20, 2018 12:34 PM
+      </div>
+      <div class="content"><p>Read the Title</p>
+<p>Experiment: MapControl  !!!!!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p211587">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Fri Apr 20, 2018 01:36 PM
+      </div>
+      <div class="content"><blockquote><cite>Uwe.Diemer wrote:</cite>Read the Title<br>
+<br>
+Experiment: MapControl  !!!!!</blockquote><br>
+I meant that the zoom was too slow but this is probably not due to the class of antonino but to the protocol.<br>
+I read carefully that it is an experiment I unlike many others I can still read well in fact at my venerable age of 53 years I still do not use glasses while others are covering their eyes with slices of ham!<br>
+           </div>
+    </div>
+  </div>
+  <div class="post" id="p211590">
+    <div class="poster">
+      <div class="name" style="color:#105289">rhlawek</div>
+      <div class="rank">Posts: 195</div>
+      <img class="avatar avatar-img" src="avatars/2532.jpg" alt="" loading="lazy">
+      Joined: Sun Jul 22, 2012 07:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Fri Apr 20, 2018 02:05 PM
+      </div>
+      <div class="content"><p>What library contains FW_DrawImage() and FW_ReadImage()? I get unresolved externals for both of these building with 18.02 and haven't been able to find them in the source code.</p>
+<p>Robb</p></div>
+    </div>
+  </div>
+  <div class="post" id="p211596">
+    <div class="poster">
+      <div class="name" style="color:#105289">AntoninoP</div>
+      <div class="rank">Posts: 375</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 10, 2015 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Fri Apr 20, 2018 06:40 PM
+      </div>
+      <div class="content"><p>it is very strange, they are included in fivewin since 18.01...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p211599">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Sat Apr 21, 2018 06:51 AM
+      </div>
+      <div class="content"><img src="https://s17.postimg.cc/nq3hygcxb/image.jpg" alt="" loading="lazy"><br>
+<br>
+Windows 10 <br>
+Connection  Fiber Optical  Telecom Italia Business</div>
+    </div>
+  </div>
+  <div class="post" id="p211612">
+    <div class="poster">
+      <div class="name" style="color:#105289">AntoninoP</div>
+      <div class="rank">Posts: 375</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 10, 2015 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Mon Apr 23, 2018 12:09 PM
+      </div>
+      <div class="content">Here a new version.<br>
+<ul><br>
+<li> Double buffer during paint[/*:m]<br>
+</li><li> Use images of other zoom if the current zoom is not loaded[/*:m]<br>
+</li><li> Abort download of image if they are no more necessary[/*:m][/list:u]<br>
+<br>
+Looks like the principal problem is the performance of Msxml2.XMLHTTP.6.0, does somebody know an alternative? I can do the download with socket, but because it is https I need to use ssl...I already have the code to do it, maybe I will add it...<br>
+<br>
+Here the current code:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include &lt;fivewin.ch&gt;
+
+********** TEST CODE **********
+proc main
+    LOCAL oWnd, oMap
+    DEFINE WINDOW oWnd TITLE "3D objects"
+    SetWndDefault(oWnd)
+    oMap := TMapControl():New()
+    oMap:SetCenter(-4.806640,36.505522)
+    oMap:AddMarker(-4.806640,36.505522)
+    oWnd:oClient := oMap    
+    ACTIVATE WINDOW oWnd
+*******************************
+
+/// &lt;!-- m --&gt;&lt;a class="postlink" href="https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames"&gt;https://wiki.openstreetmap.org/wiki/Sli ... _tilenames&lt;/a&gt;&lt;!-- m --&gt;
+class TMapControl FROM TControl
+    CLASSDATA lRegistered AS LOGICAL
+    CLASSDATA aServers AS ARRAY INIT {'https://a.tile.openstreetmap.org/{zoom}/{x}/{y}.png', ;
+                                                 'https://b.tile.openstreetmap.org/{zoom}/{x}/{y}.png', ;
+                                                 'https://c.tile.openstreetmap.org/{zoom}/{x}/{y}.png'}
+    CLASSDATA nMaxZoom AS NUMERIC INIT 19
+    DATA aHttps, oTimer
+    DATA nZoom, nLat, nLon
+    DATA nServer
+    DATA aMarkers AS ARRAY INIT {}
+    DATA aImages AS ARRAY INIT {}
+    DATA aTopLeftTileInfo
+    DATA lastMousePos, lastRenderTime
+
+    METHOD New( nRow, nCol, oWnd, nWidth, nHeight ) CONSTRUCTOR
+    METHOD End()
+    METHOD Display() INLINE ::BeginPaint(),::Paint(),::EndPaint(),0
+   METHOD EraseBkGnd( hDC ) INLINE 1
+    METHOD Paint()
+    
+    Method SetCenter(nLon,nLat)
+    Method AddMarker(nLon,nLat)
+
+    METHOD RButtonDown()    
+    METHOD LButtonDown()
+    METHOD MouseMove()
+    METHOD MouseWheel( ) 
+
+    METHOD TimerEvent()
+    
+    METHOD GetImage(x,y,zoom) HIDDEN
+    METHOD GetTileNumber(lon,lat,zoom)
+    METHOD GetCoordsFromTile(x,y,zoom)  
+    METHOD GetCoordsFromPixel(x,y)
+       
+endclass
+
+
+METHOD New( nRow, nCol, oWnd, nWidth, nHeight ) CLASS TMapControl
+    DEFAULT nRow := 10, nCol := 10, oWnd := GetWndDefault()
+    DEFAULT nWidth := 500
+    DEFAULT nHeight := 300
+    ::nZoom := 15
+    ::nLon := 0
+    ::nLat := 0
+    ::nServer := 1
+    ::aMarkers := {}
+
+    ::oWnd      := oWnd
+    ::nId           := ::GetNewId()
+    ::nStyle        := nOR( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER )
+    ::nTop      := nRow
+    ::nLeft     := nCol
+    ::nBottom   := ::nTop + nHeight - 1
+    ::nRight        := ::nLeft + nWidth
+    
+    ::aHttps := {}
+    
+    ::Register( nOR( CS_VREDRAW, CS_HREDRAW ) )
+
+    if ! Empty( oWnd:hWnd )
+        ::Create( )
+        oWnd:AddControl( Self )
+    else
+        oWnd:DefControl( Self )
+    endif
+    
+    DEFINE TIMER ::oTimer OF SELF INTERVAL 0.1 ACTION ::TimerEvent()
+    ::oTimer:Activate()
+    
+return Self
+
+METHOD End() class TMapControl
+    if .not. empty(::oTimer)
+        ::oTimer:Deactivate()
+        ::oTimer:End()
+    endif
+return ::Super:End()
+
+Method SetCenter(nLon,nLat) class TMapControl
+    local r := {::nLon,::nLat}
+    ::nLon := nLon
+    ::nLat := nLat
+return r
+
+Method AddMarker(nLon,nLat) class TMapControl
+return aAdd(::aMarkers, {nLon,nLat})
+
+#define SRCCOPY 13369376
+
+METHOD Paint() class TMapControl
+    LOCAL x,y, img, ix,iy, top, left, t,l, sx,sy,  hBmpMem
+    LOCAL w := ::nWidth,  h := ::nHeight, hDCMem, hBmpDB, hDCBmp
+   hDCMem  = CreateCompatibleDC( ::hDC )
+   hBmpMem = CreateCompatibleBitmap( ::hDC, w, h )
+   SelectObject( hDCMem, hBmpMem )
+   FillRect( hDCMem, {0,0,h,w}, ::oBrush:hBrush )
+    // get tile of center
+    x := ::GetTileNumber(::nLon,::nLat)
+    y := x[2]
+    x := x[1]
+    // move the desired pixel in the centre of canvas
+    sx := floor(x)
+    sy := floor(y)
+    top  := h/2 - int((y-sy)*256)
+    left := w/2 - int((x-sx)*256)
+    // check for fill all area
+    do while top&gt;0
+        sy-=1
+        top-=256
+    enddo
+    do while left&gt;0
+        sx-=1
+        left-=256
+    enddo
+    // draw the map
+   ::lastRenderTime := Seconds()
+   hDCBmp := CreateCompatibleDC( ::hDC )
+    for iy:=0 to ceiling(h/256)
+        for ix:=0 to ceiling(w/256)
+         t := top+iy*256 
+         l := left+ix*256
+            img := ::GetImage(sx+ix,sy+iy)
+            if valtype(img)="A" .and. .not. empty(img[1])
+            SelectObject(hDCBmp, img[1])
+            BitBlt( hDCMem, l,t, 256, 256, hDCBmp, 0,0, SRCCOPY )
+                //FW_DrawImage(hDCMem, img, {t,l,t+256,l+256})
+         else
+            // try less zoomed images (if they are not in cache it are not downloaded)
+            img := ::GetImage(hb_bitShift((sx+ix),-1),hb_bitShift((sy+iy),-1),::nZoom-1,.F.)
+            if valtype(img)="A" .and. .not. empty(img[1])
+               SelectObject(hDCBmp, img[1])
+               StretchBlt( hDCMem, l,t, 256, 256, hDCBmp, hb_bitAnd((sx+ix),1)*128,hb_bitAnd((sy+iy),1)*128,128,128, SRCCOPY )
+            else
+               // try more zoomed images (if they are not in cache it are not downloaded)
+               img := ::GetImage(hb_bitShift((sx+ix),1),hb_bitShift((sy+iy),1),::nZoom+1,.F.)
+               if valtype(img)="A" .and. .not. empty(img[1])
+                  SelectObject(hDCBmp, img[1])
+                  StretchBlt( hDCMem, l,t, 128, 128, hDCBmp, 0,0,255,255, SRCCOPY )
+               endif            
+               img := ::GetImage(hb_bitShift((sx+ix),1)+1,hb_bitShift((sy+iy),1),::nZoom+1,.F.)
+               if valtype(img)="A" .and. .not. empty(img[1])
+                  SelectObject(hDCBmp, img[1])
+                  StretchBlt( hDCMem, l+128,t, 128, 128, hDCBmp, 0,0,255,255, SRCCOPY )
+               endif            
+               img := ::GetImage(hb_bitShift((sx+ix),1),hb_bitShift((sy+iy),1)+1,::nZoom+1,.F.)
+               if valtype(img)="A" .and. .not. empty(img[1])
+                  SelectObject(hDCBmp, img[1])
+                  StretchBlt( hDCMem, l,t+128, 128, 128, hDCBmp, 0,0,255,255, SRCCOPY )
+               endif            
+               img := ::GetImage(hb_bitShift((sx+ix),1)+1,hb_bitShift((sy+iy),1)+1,::nZoom+1,.F.)
+               if valtype(img)="A" .and. .not. empty(img[1])
+                  SelectObject(hDCBmp, img[1])
+                  StretchBlt( hDCMem, l+128,t+128, 128, 128, hDCBmp, 0,0,255,255, SRCCOPY )
+               endif            
+             endif
+            endif
+        next
+    next
+   DeleteDC( hDCBmp )
+    // draw the markers
+    for ix:=1 to len(::aMarkers) 
+        x := ::GetTileNumber(::aMarkers[ix,1],::aMarkers[ix,2])
+        y := (x[2] - sy) * 256 + top
+        x := (x[1] - sx) * 256 + left
+        MoveTo(hDCMem,x-5,y-5)
+        LineTo(hDCMem,x+5,y+5)
+        MoveTo(hDCMem,x-5,y+5)
+        LineTo(hDCMem,x+5,y-5)
+    next
+    // save these infos
+    ::aTopLeftTileInfo := {top,left,sx,sy}
+   
+   img := "Queue len: " + alltrim(str(len(::aHttps)))
+   TextOut( hDCMem, 4, 4, img, Len( img ) )
+   BitBlt( ::hDC, 0,0, w, h, hDCMem, 0,0, SRCCOPY )
+   DeleteDC(hDCMem)
+return nil
+
+METHOD TimerEvent() class TMapControl
+    LOCAL lRedraw := .F., oHttp, img, idx
+    
+    for idx:=1 to len(::aHttps)
+        oHttp := ::aHttps[idx]
+        if oHttp[1]:readyState = 4
+            img := FW_ReadImage(Self, oHttp[1]:ResponseBody())
+            if .not. empty(img) .and. .not. empty(img)
+                lRedraw := .T.
+                aAdd(::aImages, { img, oHttp[2], oHttp[3], oHttp[4] })
+            endif
+            hb_ADel(::aHttps,idx,.t.)
+      else 
+         if oHttp[5]&lt;::lastRenderTime
+            oHttp[1]:abort()
+            hb_ADel(::aHttps,idx,.t.)
+         endif
+        endif
+    next
+    
+    if lRedraw
+        ::Refresh()
+    endif
+return nil
+
+// directly from OpenStreetMap wiki
+METHOD GetTileNumber(lon,lat,zoom) class TMapControl
+    LOCAL x,y,n, latRad
+    DEFAULT zoom := ::nZoom
+    n := hb_bitShift(1, zoom)
+    latRad := lat * PI() / 180
+    x := n * (lon + 180) / 360
+    y := n * (1-(log(tan(latRad) + 1/cos(latRad)) / PI())) / 2
+    do while(x&lt;0) 
+        x+=n
+    enddo
+    do while(x&gt;=n) 
+        x-=n
+    enddo
+    if y&lt;0
+        y:=0
+    endif
+    if y&gt;=n
+        y:=n-1
+    endif
+return {x,y}
+
+// directly from OpenStreetMap wiki
+METHOD GetCoordsFromTile(x,y,zoom) class TMapControl
+    LOCAL lon, lat, n, lat_rad
+    DEFAULT zoom := ::nZoom
+    n := hb_bitShift(1, zoom)
+    lon = x / n * 360.0 - 180.0
+    lat_rad = atan(sinh(PI() * (1 - 2 * y / n)))
+    lat = lat_rad * 180.0 / PI()
+return {lon,lat}
+
+// screen
+METHOD GetCoordsFromPixel(x,y)  class TMapControl
+    LOCAL top  := ::aTopLeftTileInfo[1]
+    LOCAL left := ::aTopLeftTileInfo[2]
+    LOCAL sx    := ::aTopLeftTileInfo[3]
+    LOCAL sy    := ::aTopLeftTileInfo[4]
+return ::GetCoordsFromTile(sx+(x-left)/256,sy+(y-top)/256)
+
+METHOD LButtonDown(nRow, nCol, nKeyFlags, lTouch) class TMapControl
+    ::lastMousePos := {nRow,nCol}
+return ::Super:LButtonDown( nRow, nCol, nKeyFlags, lTouch )
+
+METHOD RButtonDown(nRow, nCol, nKeyFlags, lTouch) class TMapControl
+    ::lastMousePos := {nRow,nCol}
+return ::Super:RButtonDown( nRow, nCol, nKeyFlags, lTouch )
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) class TMapControl
+    LOCAL oldMouseCoords,newMouseCoords
+    if (nKeyFlags&lt;&gt;1 .and. nKeyFlags&lt;&gt;2) .or. empty(::lastMousePos)
+        return 0
+    endif
+    oldMouseCoords := ::GetCoordsFromPixel(::lastMousePos[2],::lastMousePos[1])
+    newMouseCoords := ::GetCoordsFromPixel(nCol,nRow)
+    ::nLon += oldMouseCoords[1] - newMouseCoords[1]
+    ::nLat += oldMouseCoords[2] - newMouseCoords[2]
+    ::lastMousePos := {nRow,nCol}
+    ::Refresh()
+return ::Super:MouseMove( nRow, nCol, nKeyFlags )
+
+METHOD MouseWheel( nKey, nDelta, nXPos, nYPos )  class TMapControl
+    if nDelta&gt;0 .and. ::nZoom&lt;::nMaxZoom 
+        ::nZoom+=1
+    endif
+    if nDelta&lt;0 .and. ::nZoom&gt;0
+        ::nZoom-=1
+    endif
+    ::Refresh()
+return ::Super:MouseWheel( nKey, nDelta, nXPos, nYPos )
+
+
+METHOD GetImage(x,y,zoom,lQueue) class TMapControl
+    local n, cUrl, img
+    LOCAL oHttp
+    DEFAULT zoom := ::nZoom
+   DEFAULT lQueue := .T.
+    
+    x:=int(x)
+    y:=int(y)
+    // looking for the image in the "cache"
+    n:= aScan(::aImages, {|v| v[2]=zoom .and. v[3]=x .and. v[4]=y })
+    if n&gt;0
+        // move the last returned image on top of cache
+      img := ::aImages[n][1]
+      //aDel(::aImages,n)
+      //::aImages[len(::aImages)] := img
+        return img
+    endif
+   if .not. lQueue
+      return nil
+   endif
+    // TODO: Limit cache size
+    cUrl := ::aServers[::nServer]
+    ::nServer++
+    if ::nServer&gt;len(::aServers)
+        ::nServer:=1
+    endif
+    cUrl := StrTran(cUrl,"{zoom}", allTrim(str(zoom)))
+    cUrl := StrTran(cUrl,"{x}", allTrim(str(x)))
+    cUrl := StrTran(cUrl,"{y}", allTrim(str(y)))
+    if (n:=aScan(::aHttps, {|v| v[2] = zoom .and. v[3] = x .and. v[4] = y})) &gt; 0
+      // already in download, update last query time
+      ::aHttps[n,5]:=Seconds()
+        return nil
+    endif
+    begin sequence
+        oHttp := win_oleCreateObject( "Msxml2.XMLHTTP.6.0" )
+        oHttp:Open("GET", cUrl, .T. )
+        oHttp:Send()
+        if oHttp:readyState &lt;&gt; 4
+            if oHttp:readyState=1 .or. oHttp:readyState=3
+                aAdd(::aHttps,{ oHttp, zoom, x, y, Seconds(), cUrl })
+            endif
+        else
+            img := FW_ReadImage(Self, oHttp:ResponseBody())
+            if .not. empty(img) .and. .not. empty(img)
+                aAdd(::aImages, { img, zoom, x, y })
+            endif
+        endif
+    end sequence
+return img</code></pre></div></li></div>
+    </div>
+  </div>
+  <div class="post" id="p211614">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Mon Apr 23, 2018 01:39 PM
+      </div>
+      <div class="content">Antonino, I do not know if this code will serve your purpose<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include &lt;fivewin.ch&gt;
+//#include "hbcurl.ch"
+
+#ifndef HBCURL_CH_
+
+#define HB_CURLOPT_FILE                  1
+#define HB_CURLOPT_URL                   2
+#define HB_CURLOPT_ERRORBUFFER          10
+#define HB_CURLOPT_CUSTOMREQUEST        36
+#define HB_CURLOPT_FAILONERROR          45
+#define HB_CURLOPT_FOLLOWLOCATION       52
+#define HB_CURLOPT_TRANSFERTEXT         53
+#define HB_CURLOPT_SSL_VERIFYPEER       64
+#define HB_CURLOPT_CONNECTTIMEOUT       78
+#define HB_CURLOPT_SSL_VERIFYHOST       81
+#define HB_CURLOPT_BUFFERSIZE           98
+#define HB_CURLOPT_RETURNTRANSFER       500
+#define HB_CURLOPT_DOWNLOAD             1001
+#define HB_CURLOPT_PROGRESSBLOCK        1002
+#define HB_CURLOPT_DL_BUFF_SETUP        1008
+
+#endif
+
+
+REQUEST __HBEXTERN__HBSSL__
+
+********** TEST CODE **********
+proc main
+    LOCAL oWnd, oMap
+    DEFINE WINDOW oWnd TITLE "3D objects"
+    SetWndDefault(oWnd)
+    oMap := TMapControl():New()
+    oMap:SetCenter(-4.806640,36.505522)
+    oMap:AddMarker(-4.806640,36.505522)
+    oWnd:oClient := oMap    
+    ACTIVATE WINDOW oWnd
+*******************************
+
+/// &lt;!-- m --&gt;&lt;a class="postlink" href="https://wiki.openstreetmap.org/wiki/Sli"&gt;https://wiki.openstreetmap.org/wiki/Sli&lt;/a&gt;&lt;!-- m --&gt; ... _tilenames
+class TMapControl FROM TControl
+    CLASSDATA lRegistered AS LOGICAL
+    CLASSDATA aServers AS ARRAY INIT {'https://a.tile.openstreetmap.org/{zoom}/{x}/{y}.png', ;
+                                                 'https://b.tile.openstreetmap.org/{zoom}/{x}/{y}.png', ;
+                                                 'https://c.tile.openstreetmap.org/{zoom}/{x}/{y}.png'}
+    CLASSDATA nMaxZoom AS NUMERIC INIT 19
+    DATA aHttps, oTimer
+    DATA nZoom, nLat, nLon
+    DATA nServer
+    DATA aMarkers AS ARRAY INIT {}
+    DATA aImages AS ARRAY INIT {}
+    DATA aTopLeftTileInfo
+    DATA lastMousePos, lastRenderTime
+
+    METHOD New( nRow, nCol, oWnd, nWidth, nHeight ) CONSTRUCTOR
+    METHOD End()
+    METHOD Display() INLINE ::BeginPaint(),::Paint(),::EndPaint(),0
+   METHOD EraseBkGnd( hDC ) INLINE 1
+    METHOD Paint()
+    
+    Method SetCenter(nLon,nLat)
+    Method AddMarker(nLon,nLat)
+
+    METHOD RButtonDown()    
+    METHOD LButtonDown()
+    METHOD MouseMove()
+    METHOD MouseWheel( ) 
+
+    METHOD TimerEvent()
+    
+    METHOD GetImage(x,y,zoom) HIDDEN
+    METHOD GetTileNumber(lon,lat,zoom)
+    METHOD GetCoordsFromTile(x,y,zoom)  
+    METHOD GetCoordsFromPixel(x,y)
+
+    METHOD GetMyImg(x,y,zoom,lQueue)
+
+endclass
+
+
+METHOD New( nRow, nCol, oWnd, nWidth, nHeight ) CLASS TMapControl
+    DEFAULT nRow := 10, nCol := 10, oWnd := GetWndDefault()
+    DEFAULT nWidth := 500
+    DEFAULT nHeight := 300
+    ::nZoom := 15
+    ::nLon := 0
+    ::nLat := 0
+    ::nServer := 1
+    ::aMarkers := {}
+
+    ::oWnd      := oWnd
+    ::nId           := ::GetNewId()
+    ::nStyle        := nOR( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER )
+    ::nTop      := nRow
+    ::nLeft     := nCol
+    ::nBottom   := ::nTop + nHeight - 1
+    ::nRight        := ::nLeft + nWidth
+    
+    ::aHttps := {}
+    
+    ::Register( nOR( CS_VREDRAW, CS_HREDRAW ) )
+
+    if ! Empty( oWnd:hWnd )
+        ::Create( )
+        oWnd:AddControl( Self )
+    else
+        oWnd:DefControl( Self )
+    endif
+    
+    DEFINE TIMER ::oTimer OF SELF INTERVAL 0.1 ACTION ::TimerEvent()
+    ::oTimer:Activate()
+    
+return Self
+
+METHOD End() class TMapControl
+    if .not. empty(::oTimer)
+        ::oTimer:Deactivate()
+        ::oTimer:End()
+    endif
+return ::Super:End()
+
+Method SetCenter(nLon,nLat) class TMapControl
+    local r := {::nLon,::nLat}
+    ::nLon := nLon
+    ::nLat := nLat
+return r
+
+Method AddMarker(nLon,nLat) class TMapControl
+return aAdd(::aMarkers, {nLon,nLat})
+
+#define SRCCOPY 13369376
+
+METHOD Paint() class TMapControl
+    LOCAL x,y, img, ix,iy, top, left, t,l, sx,sy,  hBmpMem
+    LOCAL w := ::nWidth,  h := ::nHeight, hDCMem, hBmpDB, hDCBmp
+   hDCMem  = CreateCompatibleDC( ::hDC )
+   hBmpMem = CreateCompatibleBitmap( ::hDC, w, h )
+   SelectObject( hDCMem, hBmpMem )
+   FillRect( hDCMem, {0,0,h,w}, ::oBrush:hBrush )
+    // get tile of center
+    x := ::GetTileNumber(::nLon,::nLat)
+    y := x[2]
+    x := x[1]
+    // move the desired pixel in the centre of canvas
+    sx := floor(x)
+    sy := floor(y)
+    top  := h/2 - int((y-sy)*256)
+    left := w/2 - int((x-sx)*256)
+    // check for fill all area
+    do while top&gt;0
+        sy-=1
+        top-=256
+    enddo
+    do while left&gt;0
+        sx-=1
+        left-=256
+    enddo
+    // draw the map
+   ::lastRenderTime := Seconds()
+   hDCBmp := CreateCompatibleDC( ::hDC )
+    for iy:=0 to ceiling(h/256)
+        for ix:=0 to ceiling(w/256)
+         t := top+iy*256 
+         l := left+ix*256
+            //img := ::GetImage(sx+ix,sy+iy)
+            img := ::GetMyImg(sx+ix,sy+iy)
+            if valtype(img)="A" .and. .not. empty(img[1])
+            SelectObject(hDCBmp, img[1])
+            BitBlt( hDCMem, l,t, 256, 256, hDCBmp, 0,0, SRCCOPY )
+                //FW_DrawImage(hDCMem, img, {t,l,t+256,l+256})
+         else
+            // try less zoomed images (if they are not in cache it are not downloaded)
+            //img := ::GetImage(hb_bitShift((sx+ix),-1),hb_bitShift((sy+iy),-1),::nZoom-1,.F.)
+            img := ::GetMyImg(hb_bitShift((sx+ix),-1),hb_bitShift((sy+iy),-1),::nZoom-1,.F.)
+            if valtype(img)="A" .and. .not. empty(img[1])
+               SelectObject(hDCBmp, img[1])
+               StretchBlt( hDCMem, l,t, 256, 256, hDCBmp, hb_bitAnd((sx+ix),1)*128,hb_bitAnd((sy+iy),1)*128,128,128, SRCCOPY )
+            else
+               // try more zoomed images (if they are not in cache it are not downloaded)
+               //img := ::GetImage(hb_bitShift((sx+ix),1),hb_bitShift((sy+iy),1),::nZoom+1,.F.)
+               img  := ::GetMyImg(hb_bitShift((sx+ix),1),hb_bitShift((sy+iy),1),::nZoom+1,.F.)
+               if valtype(img)="A" .and. .not. empty(img[1])
+                  SelectObject(hDCBmp, img[1])
+                  StretchBlt( hDCMem, l,t, 128, 128, hDCBmp, 0,0,255,255, SRCCOPY )
+               endif            
+               //img := ::GetImage(hb_bitShift((sx+ix),1)+1,hb_bitShift((sy+iy),1),::nZoom+1,.F.)
+               img := ::GetMyImg(hb_bitShift((sx+ix),1)+1,hb_bitShift((sy+iy),1),::nZoom+1,.F.)
+               if valtype(img)="A" .and. .not. empty(img[1])
+                  SelectObject(hDCBmp, img[1])
+                  StretchBlt( hDCMem, l+128,t, 128, 128, hDCBmp, 0,0,255,255, SRCCOPY )
+               endif            
+               //img := ::GetImage(hb_bitShift((sx+ix),1),hb_bitShift((sy+iy),1)+1,::nZoom+1,.F.)
+               img  := ::GetMyImg( hb_bitShift((sx+ix),1),hb_bitShift((sy+iy),1)+1,::nZoom+1,.F.)
+               if valtype(img)="A" .and. .not. empty(img[1])
+                  SelectObject(hDCBmp, img[1])
+                  StretchBlt( hDCMem, l,t+128, 128, 128, hDCBmp, 0,0,255,255, SRCCOPY )
+               endif            
+               //img := ::GetImage(hb_bitShift((sx+ix),1)+1,hb_bitShift((sy+iy),1)+1,::nZoom+1,.F.)
+               img := ::GetMyImg( hb_bitShift((sx+ix),1)+1,hb_bitShift((sy+iy),1)+1,::nZoom+1,.F.)
+               if valtype(img)="A" .and. .not. empty(img[1])
+                  SelectObject(hDCBmp, img[1])
+                  StretchBlt( hDCMem, l+128,t+128, 128, 128, hDCBmp, 0,0,255,255, SRCCOPY )
+               endif            
+             endif
+            endif
+        next
+    next
+   DeleteDC( hDCBmp )
+    // draw the markers
+    for ix:=1 to len(::aMarkers) 
+        x := ::GetTileNumber(::aMarkers[ix,1],::aMarkers[ix,2])
+        y := (x[2] - sy) * 256 + top
+        x := (x[1] - sx) * 256 + left
+        MoveTo(hDCMem,x-5,y-5)
+        LineTo(hDCMem,x+5,y+5)
+        MoveTo(hDCMem,x-5,y+5)
+        LineTo(hDCMem,x+5,y-5)
+    next
+    // save these infos
+    ::aTopLeftTileInfo := {top,left,sx,sy}
+   
+   img := "Queue len: " + alltrim(str(len(::aHttps)))
+   TextOut( hDCMem, 4, 4, img, Len( img ) )
+   BitBlt( ::hDC, 0,0, w, h, hDCMem, 0,0, SRCCOPY )
+   DeleteDC(hDCMem)
+return nil
+
+METHOD TimerEvent() class TMapControl
+    LOCAL lRedraw := .F., oHttp, img, idx
+    
+    for idx:=1 to len(::aHttps)
+        oHttp := ::aHttps[idx]
+        if oHttp[1]:readyState = 4
+            img := FW_ReadImage(Self, oHttp[1]:ResponseBody())
+            if .not. empty(img) .and. .not. empty(img)
+                lRedraw := .T.
+                aAdd(::aImages, { img, oHttp[2], oHttp[3], oHttp[4] })
+            endif
+            hb_ADel(::aHttps,idx,.t.)
+      else 
+         if oHttp[5]&lt;::lastRenderTime
+            oHttp[1]:abort()
+            hb_ADel(::aHttps,idx,.t.)
+         endif
+        endif
+    next
+    
+    if lRedraw
+        ::Refresh()
+    endif
+return nil
+
+// directly from OpenStreetMap wiki
+METHOD GetTileNumber(lon,lat,zoom) class TMapControl
+    LOCAL x,y,n, latRad
+    DEFAULT zoom := ::nZoom
+    n := hb_bitShift(1, zoom)
+    latRad := lat * PI() / 180
+    x := n * (lon + 180) / 360
+    y := n * (1-(log(tan(latRad) + 1/cos(latRad)) / PI())) / 2
+    do while(x&lt;0) 
+        x+=n
+    enddo
+    do while(x&gt;=n) 
+        x-=n
+    enddo
+    if y&lt;0
+        y:=0
+    endif
+    if y&gt;=n
+        y:=n-1
+    endif
+return {x,y}
+
+// directly from OpenStreetMap wiki
+METHOD GetCoordsFromTile(x,y,zoom) class TMapControl
+    LOCAL lon, lat, n, lat_rad
+    DEFAULT zoom := ::nZoom
+    n := hb_bitShift(1, zoom)
+    lon = x / n * 360.0 - 180.0
+    lat_rad = atan(sinh(PI() * (1 - 2 * y / n)))
+    lat = lat_rad * 180.0 / PI()
+return {lon,lat}
+
+// screen
+METHOD GetCoordsFromPixel(x,y)  class TMapControl
+    LOCAL top  := ::aTopLeftTileInfo[1]
+    LOCAL left := ::aTopLeftTileInfo[2]
+    LOCAL sx    := ::aTopLeftTileInfo[3]
+    LOCAL sy    := ::aTopLeftTileInfo[4]
+return ::GetCoordsFromTile(sx+(x-left)/256,sy+(y-top)/256)
+
+METHOD LButtonDown(nRow, nCol, nKeyFlags, lTouch) class TMapControl
+    ::lastMousePos := {nRow,nCol}
+return ::Super:LButtonDown( nRow, nCol, nKeyFlags, lTouch )
+
+METHOD RButtonDown(nRow, nCol, nKeyFlags, lTouch) class TMapControl
+    ::lastMousePos := {nRow,nCol}
+return ::Super:RButtonDown( nRow, nCol, nKeyFlags, lTouch )
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) class TMapControl
+    LOCAL oldMouseCoords,newMouseCoords
+    if (nKeyFlags&lt;&gt;1 .and. nKeyFlags&lt;&gt;2) .or. empty(::lastMousePos)
+        return 0
+    endif
+    oldMouseCoords := ::GetCoordsFromPixel(::lastMousePos[2],::lastMousePos[1])
+    newMouseCoords := ::GetCoordsFromPixel(nCol,nRow)
+    ::nLon += oldMouseCoords[1] - newMouseCoords[1]
+    ::nLat += oldMouseCoords[2] - newMouseCoords[2]
+    ::lastMousePos := {nRow,nCol}
+    ::Refresh()
+return ::Super:MouseMove( nRow, nCol, nKeyFlags )
+
+METHOD MouseWheel( nKey, nDelta, nXPos, nYPos )  class TMapControl
+    if nDelta&gt;0 .and. ::nZoom&lt;::nMaxZoom 
+        ::nZoom+=1
+    endif
+    if nDelta&lt;0 .and. ::nZoom&gt;0
+        ::nZoom-=1
+    endif
+    ::Refresh()
+return ::Super:MouseWheel( nKey, nDelta, nXPos, nYPos )
+
+
+METHOD GetImage(x,y,zoom,lQueue) class TMapControl
+    local n, cUrl, img
+    LOCAL oHttp
+    DEFAULT zoom := ::nZoom
+   DEFAULT lQueue := .T.
+    
+    x:=int(x)
+    y:=int(y)
+    // looking for the image in the "cache"
+    n:= aScan(::aImages, {|v| v[2]=zoom .and. v[3]=x .and. v[4]=y })
+    if n&gt;0
+        // move the last returned image on top of cache
+      img := ::aImages[n][1]
+      //aDel(::aImages,n)
+      //::aImages[len(::aImages)] := img
+        return img
+    endif
+   if .not. lQueue
+      return nil
+   endif
+    // TODO: Limit cache size
+    cUrl := ::aServers[::nServer]
+    ::nServer++
+    if ::nServer&gt;len(::aServers)
+        ::nServer:=1
+    endif
+    cUrl := StrTran(cUrl,"{zoom}", allTrim(str(zoom)))
+    cUrl := StrTran(cUrl,"{x}", allTrim(str(x)))
+    cUrl := StrTran(cUrl,"{y}", allTrim(str(y)))
+    if (n:=aScan(::aHttps, {|v| v[2] = zoom .and. v[3] = x .and. v[4] = y})) &gt; 0
+      // already in download, update last query time
+      ::aHttps[n,5]:=Seconds()
+        return nil
+    endif
+    begin sequence
+        oHttp := win_oleCreateObject( "Msxml2.XMLHTTP.6.0" )
+        oHttp:Open("GET", cUrl, .T. )
+        oHttp:Send()
+        if oHttp:readyState &lt;&gt; 4
+            if oHttp:readyState=1 .or. oHttp:readyState=3
+                aAdd(::aHttps,{ oHttp, zoom, x, y, Seconds(), cUrl })
+            endif
+        else
+            img := FW_ReadImage(Self, oHttp:ResponseBody())
+            if .not. empty(img) .and. .not. empty(img)
+                aAdd(::aImages, { img, zoom, x, y })
+            endif
+        endif
+    end sequence
+return img
+
+//----------------------------------------------------------------------------//
+
+METHOD GetMyImg(x,y,zoom,lQueue) class TMapControl
+
+    local n
+    local cUrl
+    local img
+    local oHttp
+    local cResult
+    local cErrorB
+    DEFAULT zoom := ::nZoom
+    DEFAULT lQueue := .T.
+    
+    x:=int(x)
+    y:=int(y)
+    // looking for the image in the "cache"
+    n:= aScan(::aImages, {|v| v[2]=zoom .and. v[3]=x .and. v[4]=y })
+    if n&gt;0
+        // move the last returned image on top of cache
+      img := ::aImages[n][1]
+      //aDel(::aImages,n)
+      //::aImages[len(::aImages)] := img
+        return img
+    endif
+   if .not. lQueue
+      return nil
+   endif
+    // TODO: Limit cache size
+    cUrl := ::aServers[::nServer]
+    ::nServer++
+    if ::nServer&gt;len(::aServers)
+        ::nServer:=1
+    endif
+    cUrl := StrTran(cUrl,"{zoom}", allTrim(str(zoom)))
+    cUrl := StrTran(cUrl,"{x}", allTrim(str(x)))
+    cUrl := StrTran(cUrl,"{y}", allTrim(str(y)))
+    if (n:=aScan(::aHttps, {|v| v[2] = zoom .and. v[3] = x .and. v[4] = y})) &gt; 0
+      // already in download, update last query time
+      ::aHttps[n,5]:=Seconds()
+        return nil
+    endif
+
+   curl_global_init()
+   oHttp := curl_easy_init()
+   
+   If !empty( oHttp )
+     curl_easy_setopt( oHttp,  HB_CURLOPT_URL, cUrl )
+     curl_easy_setopt( oHttp,  HB_CURLOPT_RETURNTRANSFER, 1 )
+     curl_easy_setopt( oHttp,  HB_CURLOPT_SSL_VERIFYHOST, 0 )
+     curl_easy_setopt( oHttp,  HB_CURLOPT_SSL_VERIFYPEER, 0 )
+     curl_easy_setopt( oHttp,  HB_CURLOPT_DL_BUFF_SETUP ) 
+     curl_easy_setopt( oHttp,  HB_CURLOPT_FAILONERROR, 1 )
+     curl_easy_setopt( oHttp,  HB_CURLOPT_ERRORBUFFER, cErrorB )
+     cResult := curl_easy_perform( oHttp )
+   
+     if cResult = 0
+            img := FW_ReadImage(Self, curl_easy_dl_buff_get( oHttp ) )
+            if .not. empty(img) .and. .not. empty(img)
+                aAdd(::aImages, { img, zoom, x, y })
+            endif
+     else
+        ? cResult
+        MsgInfo( curl_easy_strerror( cResult ), "Error: " + cErrorB )
+     endif
+   
+   endif
+   
+   curl_easy_reset( oHttp )
+   curl_easy_cleanup( oHttp )
+   curl_global_cleanup()
+   oHttp   := nil
+
+Return img
+
+//----------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p220250">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Wed Mar 20, 2019 08:11 AM
+      </div>
+      <div class="content">Antonino,<br>
+<br>
+How found coordinates ?<br>
+I tried this website  <a href="https://www.openstreetmap.org/export#map=12/42.6581/13.6989&amp;layers=NDG" rel="noopener">https&#58;//www&#46;openstreetmap&#46;org/export#map=12/42&#46;6581/13&#46;6989&amp;layers=NDG</a><br>
+ but then when I put the coordinates it show me another point of the globe<br>
+then How create  a line route on the map ?<br>
+sample : Rome-&gt;Ostia</div>
+    </div>
+  </div>
+  <div class="post" id="p220251">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Wed Mar 20, 2019 08:44 AM
+      </div>
+      <div class="content"><p>This is very good.<br>
+But as a user from India, it is not of much use for us. This is still not as universally useful as Google. For all practical purposes, we still need Google. The same may be the case with many countries.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p220254">
+    <div class="poster">
+      <div class="name" style="color:#105289">AntoninoP</div>
+      <div class="rank">Posts: 375</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 10, 2015 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Wed Mar 20, 2019 10:43 AM
+      </div>
+      <div class="content">The conversion street -&gt; lat long is a problem.<br>
+OpenStreetMap uses <a href="https://nominatim.openstreetmap.org/" rel="noopener">nominatim</a> that has an API too.<br>
+There is other free geolocation services, but I did not try them so much.<br>
+<br>
+I take this opportunity to put the updated code in this thread <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include &lt;fivewin.ch&gt;
+
+********** TEST CODE **********
+proc main
+    LOCAL oWnd, oMap
+    DEFINE WINDOW oWnd TITLE "3D objects"
+    SetWndDefault(oWnd)
+    oMap := TMapControl():New()
+    oMap:SetCenter(-4.806640,36.505522)
+    oMap:AddMarker(-4.806640,36.505522)
+    oWnd:oClient := oMap    
+    ACTIVATE WINDOW oWnd
+*******************************
+
+/// &lt;!-- m --&gt;&lt;a class="postlink" href="https://wiki.openstreetmap.org/wiki/Sli"&gt;https://wiki.openstreetmap.org/wiki/Sli&lt;/a&gt;&lt;!-- m --&gt; ... _tilenames
+class TMapControl FROM TControl
+    CLASSDATA lRegistered AS LOGICAL
+    CLASSDATA aServers AS ARRAY INIT {'https://a.tile.openstreetmap.org/{zoom}/{x}/{y}.png', ;
+                                                 'https://b.tile.openstreetmap.org/{zoom}/{x}/{y}.png', ;
+                                                 'https://c.tile.openstreetmap.org/{zoom}/{x}/{y}.png'}
+    CLASSDATA nMaxZoom AS NUMERIC INIT 19
+    DATA oTimer
+    DATA aHttps             // Queue of downloading images, array of { "Msxml2.XMLHTTP.6.0", zoom, x, y, Seconds(), cUrl }
+    DATA nZoom, nLat, nLon  // current zoom and center of the screen
+    DATA nServer            // Last used server Id (from aServers)
+    DATA aMarkers AS ARRAY INIT {}   // Couples of lat+lon to mark on map
+    DATA aImages AS ARRAY INIT {}    // Array of loaded images
+    DATA aTopLeftTileInfo            // Information about tile at top left corner { xpos, ypos, x-tile, y-tile }
+    DATA lastMousePos, lastRenderTime   // mouse down position and seconds of last rendering
+
+    METHOD New( nRow, nCol, oWnd, nWidth, nHeight ) CONSTRUCTOR
+    METHOD End()
+    METHOD Display() INLINE ::BeginPaint(),::Paint(),::EndPaint(),0
+    METHOD EraseBkGnd( ) INLINE 1
+    METHOD Paint()
+    
+    Method SetCenter(nLon,nLat)
+    Method AddMarker(nLon,nLat)
+
+    METHOD RButtonDown(nRow, nCol, nKeyFlags, lTouch)
+    METHOD LButtonDown(nRow, nCol, nKeyFlags, lTouch)
+    METHOD MouseMove( nRow, nCol, nKeyFlags )
+    METHOD MouseWheel( nKey, nDelta, nXPos, nYPos )
+
+    METHOD TimerEvent()
+    
+    METHOD GetImage(x,y,zoom,lQueue) HIDDEN
+    METHOD GetTileNumber(lon,lat,zoom)
+    METHOD GetCoordsFromTile(x,y,zoom)  
+    METHOD GetCoordsFromPixel(x,y)
+   
+   METHOD PaintTile(hDCMem,hDCBmp,l,t,tx,ty,zoom)
+       
+endclass
+
+
+METHOD New( nRow, nCol, oWnd, nWidth, nHeight ) CLASS TMapControl
+    DEFAULT nRow := 10, nCol := 10, oWnd := GetWndDefault()
+    DEFAULT nWidth := 500
+    DEFAULT nHeight := 300
+    ::nZoom := 15
+    ::nLon := 0
+    ::nLat := 0
+    ::nServer := 1
+    ::aMarkers := {}
+
+    ::oWnd      := oWnd
+    ::nId           := ::GetNewId()
+    ::nStyle        := nOR( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER )
+    ::nTop      := nRow
+    ::nLeft     := nCol
+    ::nBottom   := ::nTop + nHeight - 1
+    ::nRight        := ::nLeft + nWidth
+    
+    ::aHttps := {}
+    
+    ::Register( nOR( CS_VREDRAW, CS_HREDRAW ) )
+
+    if ! Empty( oWnd:hWnd )
+        ::Create( )
+        oWnd:AddControl( Self )
+    else
+        oWnd:DefControl( Self )
+    endif
+    
+    DEFINE TIMER ::oTimer OF SELF INTERVAL 0.1 ACTION ::TimerEvent()
+    ::oTimer:Activate()
+    
+return Self
+
+METHOD End() class TMapControl
+    if .not. empty(::oTimer)
+        ::oTimer:Deactivate()
+        ::oTimer:End()
+    endif
+return ::Super:End()
+
+Method SetCenter(nLon,nLat) class TMapControl
+    local r := {::nLon,::nLat}
+    ::nLon := nLon
+    ::nLat := nLat
+return r
+
+Method AddMarker(nLon,nLat) class TMapControl
+return aAdd(::aMarkers, {nLon,nLat})
+
+#define SRCCOPY 13369376
+
+METHOD Paint() class TMapControl
+    LOCAL x,y, img, ix,iy, top, left, sx,sy,  hBmpMem
+    LOCAL w := ::nWidth,  h := ::nHeight, hDCMem, hDCBmp
+   hDCMem  = CreateCompatibleDC( ::hDC )
+   hBmpMem = CreateCompatibleBitmap( ::hDC, w, h )
+   SelectObject( hDCMem, hBmpMem )
+   FillRect( hDCMem, {0,0,h,w}, ::oBrush:hBrush )
+    // get tile of center
+    x := ::GetTileNumber(::nLon,::nLat)
+    y := x[2]
+    x := x[1]
+    // move the desired pixel in the centre of canvas
+    sx := floor(x)
+    sy := floor(y)
+    top  := h/2 - int((y-sy)*256)
+    left := w/2 - int((x-sx)*256)
+    // check for fill all area
+    do while top&gt;0
+        sy-=1
+        top-=256
+    enddo
+    do while left&gt;0
+        sx-=1
+        left-=256
+    enddo
+    // draw the map
+   ::lastRenderTime := Seconds()
+   hDCBmp := CreateCompatibleDC( ::hDC )
+    for iy:=0 to ceiling((h-top)/256)
+        for ix:=0 to ceiling((w-left)/256)
+         ::PaintTile(hDCMem,hDCBmp,left+ix*256,top+iy*256 ,sx+ix,sy+iy,::nZoom)
+        next
+    next
+   DeleteDC( hDCBmp )
+    // draw the markers
+    for ix:=1 to len(::aMarkers) 
+        x := ::GetTileNumber(::aMarkers[ix,1],::aMarkers[ix,2])
+        y := (x[2] - sy) * 256 + top
+        x := (x[1] - sx) * 256 + left
+        MoveTo(hDCMem,x-5,y-5)
+        LineTo(hDCMem,x+5,y+5)
+        MoveTo(hDCMem,x-5,y+5)
+        LineTo(hDCMem,x+5,y-5)
+    next
+    // save these infos
+    ::aTopLeftTileInfo := {top,left,sx,sy}
+   
+   //img := "Queue len: " + alltrim(str(len(::aHttps)))
+   //TextOut( hDCMem, 4, 4, img, Len( img ) )
+   BitBlt( ::hDC, 0,0, w, h, hDCMem, 0,0, SRCCOPY )
+   DeleteDC(hDCMem)
+return nil
+
+METHOD PaintTile(hDCMem,hDCBmp,l,t,tx,ty,zoom)
+   LOCAL img, sx,sy, ix, iy, n
+   img := ::GetImage(tx,ty,zoom)
+   if .not. empty(img)
+         SelectObject(hDCBmp, img)
+         BitBlt( hDCMem, l,t, 256, 256, hDCBmp, 0,0, SRCCOPY )
+            return nil
+   endif
+   
+   // try less zoomed images (if they are not in cache it are not downloaded)
+   img := ::GetImage(hb_bitShift(tx,-1),hb_bitShift(ty,-1),zoom-1,.F.)
+   if .not. empty(img)
+      SelectObject(hDCBmp, img)
+      StretchBlt( hDCMem, l,t, 256, 256, hDCBmp, hb_bitAnd(tx,1)*128,hb_bitAnd(ty,1)*128,128,128, SRCCOPY )
+      return nil
+   endif
+   
+   
+   sx := hb_bitShift(tx,1)
+   sy := hb_bitShift(ty,1)
+   for iy:=0 to 1 
+      for ix:=0 to 1 
+         img := ::GetImage(sx+ix,sy+iy,zoom+1,.F.)
+         if .not. empty(img)
+            SelectObject(hDCBmp, img)
+            StretchBlt( hDCMem, l+ix*128,t+iy*128, 128, 128, hDCBmp, 0,0,255,255, SRCCOPY )
+         endif            
+      next
+   next
+return nil
+
+METHOD TimerEvent() class TMapControl
+    LOCAL lRedraw := .F., oHttp, img, idx
+    
+    for idx:=1 to len(::aHttps)
+        oHttp := ::aHttps[idx]
+        if oHttp[1]:readyState = 4
+         // downloaded a missing image!
+            img := GDIP_ImageFromStr(oHttp[1]:ResponseBody(), .t., .f.)
+            if .not. empty(img) // correctly created
+                lRedraw := .T.
+                aAdd(::aImages, { img, oHttp[2], oHttp[3], oHttp[4] })
+            endif
+            hb_ADel(::aHttps,idx,.t.)
+      else 
+         // stop the unfinisched download that are not relative of current view
+         if oHttp[5]&lt;::lastRenderTime
+            oHttp[1]:abort()
+            hb_ADel(::aHttps,idx,.t.)
+         endif
+        endif
+    next
+    
+    if lRedraw
+        ::Refresh()
+    endif
+return nil
+
+// directly from OpenStreetMap wiki
+METHOD GetTileNumber(lon,lat,zoom) class TMapControl
+    LOCAL x,y,n, latRad
+    DEFAULT zoom := ::nZoom
+    n := hb_bitShift(1, zoom)
+    latRad := lat * PI() / 180
+    x := n * (lon + 180) / 360
+    y := n * (1-(log(tan(latRad) + 1/cos(latRad)) / PI())) / 2
+    do while(x&lt;0) 
+        x+=n
+    enddo
+    do while(x&gt;=n) 
+        x-=n
+    enddo
+    if y&lt;0
+        y:=0
+    endif
+    if y&gt;=n
+        y:=n-1
+    endif
+return {x,y}
+
+// directly from OpenStreetMap wiki
+METHOD GetCoordsFromTile(x,y,zoom) class TMapControl
+    LOCAL lon, lat, n, lat_rad
+    DEFAULT zoom := ::nZoom
+    n := hb_bitShift(1, zoom)
+    lon = x / n * 360.0 - 180.0
+    lat_rad = atan(sinh(PI() * (1 - 2 * y / n)))
+    lat = lat_rad * 180.0 / PI()
+return {lon,lat}
+
+// screen to tile, with decimal, using aTopLeftTileInfo
+METHOD GetCoordsFromPixel(x,y)  class TMapControl
+    LOCAL top  := ::aTopLeftTileInfo[1]
+    LOCAL left := ::aTopLeftTileInfo[2]
+    LOCAL sx    := ::aTopLeftTileInfo[3]
+    LOCAL sy    := ::aTopLeftTileInfo[4]
+return ::GetCoordsFromTile(sx+(x-left)/256,sy+(y-top)/256)
+
+METHOD LButtonDown(nRow, nCol, nKeyFlags, lTouch) class TMapControl
+    ::lastMousePos := {nRow,nCol}
+return ::Super:LButtonDown( nRow, nCol, nKeyFlags, lTouch )
+
+METHOD RButtonDown(nRow, nCol, nKeyFlags, lTouch) class TMapControl
+    ::lastMousePos := {nRow,nCol}
+return ::Super:RButtonDown( nRow, nCol, nKeyFlags, lTouch )
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) class TMapControl
+    LOCAL oldMouseCoords,newMouseCoords
+    if (nKeyFlags&lt;&gt;1 .and. nKeyFlags&lt;&gt;2) .or. empty(::lastMousePos)
+        return 0
+    endif
+    oldMouseCoords := ::GetCoordsFromPixel(::lastMousePos[2],::lastMousePos[1])
+    newMouseCoords := ::GetCoordsFromPixel(nCol,nRow)
+    ::nLon += oldMouseCoords[1] - newMouseCoords[1]
+    ::nLat += oldMouseCoords[2] - newMouseCoords[2]
+    ::lastMousePos := {nRow,nCol}
+    ::Refresh()
+return ::Super:MouseMove( nRow, nCol, nKeyFlags )
+
+METHOD MouseWheel( nKey, nDelta, nXPos, nYPos )  class TMapControl
+    if nDelta&gt;0 .and. ::nZoom&lt;::nMaxZoom 
+        ::nZoom+=1
+    endif
+    if nDelta&lt;0 .and. ::nZoom&gt;0
+        ::nZoom-=1
+    endif
+    ::Refresh()
+return ::Super:MouseWheel( nKey, nDelta, nXPos, nYPos )
+
+
+METHOD GetImage(x,y,zoom,lQueue) class TMapControl
+    local n, cUrl, img
+    LOCAL oHttp
+    DEFAULT zoom := ::nZoom
+   DEFAULT lQueue := .T.
+    
+    x:=int(x)
+    y:=int(y)
+    // looking for the image in the "cache"
+    n:= aScan(::aImages, {|v| v[2]=zoom .and. v[3]=x .and. v[4]=y })
+    if n&gt;0
+        // move the last returned image on top of cache
+      img := ::aImages[n][1]
+      //aDel(::aImages,n)
+      //::aImages[len(::aImages)] := img
+        return img
+    endif
+   if .not. lQueue
+      return nil
+   endif
+    // TODO: Limit cache size
+    cUrl := ::aServers[::nServer]
+    ::nServer++
+    if ::nServer&gt;len(::aServers)
+        ::nServer:=1
+    endif
+    cUrl := StrTran(cUrl,"{zoom}", allTrim(str(zoom)))
+    cUrl := StrTran(cUrl,"{x}", allTrim(str(x)))
+    cUrl := StrTran(cUrl,"{y}", allTrim(str(y)))
+    if (n:=aScan(::aHttps, {|v| v[2] = zoom .and. v[3] = x .and. v[4] = y})) &gt; 0
+      // already in download, update last query time
+      ::aHttps[n,5]:=Seconds()
+        return nil
+    endif
+    begin sequence
+        oHttp := win_oleCreateObject( "Msxml2.XMLHTTP.6.0" )
+        oHttp:Open("GET", cUrl, .T. )
+        oHttp:Send()
+        if oHttp:readyState &lt;&gt; 4
+            if oHttp:readyState=1 .or. oHttp:readyState=3
+                aAdd(::aHttps,{ oHttp, zoom, x, y, Seconds(), cUrl })
+            endif
+        else
+            img := GDIP_ImageFromStr(oHttp:ResponseBody(), .t., .f.)
+            if .not. empty(img)
+                aAdd(::aImages, { img, zoom, x, y })
+            endif
+        endif
+    end sequence
+return img</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p220265">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Experiment: MapControl</span><br>
+        Posted: Wed Mar 20, 2019 05:56 PM
+      </div>
+      <div class="content">Antonino,<br>
+<br>
+I saw there is an error because Now I try to inverte the coordinates and I found my city<br>
+<br>
+with oMap:SetCenter(13.7025,42.6582)<br>
+<br>
+on <a href="https://www.openstreetmap.org/export#map=16/42.6572/13.7015" rel="noopener">https&#58;//www&#46;openstreetmap&#46;org/export#map=16/42&#46;6572/13&#46;7015</a><br>
+<br>
+on this box <br>
+<br>
+<img src="https://i.postimg.cc/9FTK7cLM/nn.png" alt="" loading="lazy"><br>
+<br>
+How I can make a router  sample :<br>
+<a href="https://www.openstreetmap.org/way/27972081#map=12/42.7093/13.6910" rel="noopener">https&#58;//www&#46;openstreetmap&#46;org/way/27972081#map=12/42&#46;7093/13&#46;6910</a><br>
+or<br>
+<a href="https://www.openstreetmap.org/way/27972119" rel="noopener">https&#58;//www&#46;openstreetmap&#46;org/way/27972119</a><br>
+<br>
+<br>
+then when I draw a Marker it draw  X .. <br>
+<br>
+How insert a marker as this ?<br>
+<br>
+<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Map_marker.svg/667px-Map_marker.svg.png" alt="" loading="lazy"><br>
+<br>
+<br>
+then If I have a city,address ( of customer)  how I can search with your classs the city ?<br>
+<br>
+I tried with  sample<br>
+<!-- m --><a class="postlink" href="https://nominatim.openstreetmap.org/search?q=Teramo%2C+via+vittorio+veneto">https://nominatim.openstreetmap.org/sea ... rio+veneto</a><!-- m --></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-35535-page-2.html">2</a> (24 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

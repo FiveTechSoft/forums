@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>xbrowse / ADS failure - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-31504">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> xbrowse / ADS failure</div>
+  <div class="post" id="p183151">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">xbrowse / ADS failure</span><br>
+        Posted: Sat Oct 24, 2015 11:07 PM
+      </div>
+      <div class="content"><p>In another thread, we identified there is still a continuing problem with xBrowse and ADS.</p>
+<p>When we open a browse and the dbf does not have an index opened, when going towards the end of the file, the pointer has an error.  We have shown this consistently and it has also been previously reported by at least one other person.  If an index is open, the error does not occur.</p>
+<p>The previous threads on this topic were specific and the error was noted, but no fix has yet taken place.</p>
+<p>The specific build uses FWH 15.09 xBrowse, Harbour, MSVC 2013, and ADS Server mode.  </p>
+<p>Can we please go back and get this resolved correctly ?  Thank you.  Although the temporary work around is to set the index before browsing the file, often we want to go to the last records added and natural order ( no index ) is the fastest way.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p183248">
+    <div class="poster">
+      <div class="name" style="color:#105289">Giovany Vecchi</div>
+      <div class="rank">Posts: 244</div>
+      <div class="avatar"></div>
+      Joined: Mon Jun 05, 2006 09:39 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: xbrowse / ADS failure</span><br>
+        Posted: Tue Oct 27, 2015 04:46 PM
+      </div>
+      <div class="content">All these navigation problems xbrowse already decided to put runs on TADs class, The Linear Sr could study and add in xBrowse class.<br>
+<br>
+In xbrowse.prg method SetRdd() change:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   If ( "ADS"$( ::cAlias )-&gt;( RddName() ) .or. 'ADT' $ ( ::cAlias )-&gt;( RddName() ) ) //.and. ;
+      //( ::cAlias )-&gt;( LastRec() ) &gt; 200
+
+      // Modified in FWH 9.06
+      // AdsGetRelKeyPos() returns approximate position as % and when multipilied by 100 and rounded off
+      // returns incorrect values occassionally on smaller  tables. OrdKeyNo() mapped to AdsKeyNo() gives reliable
+      // result in such cases. For large tables OrdKeyNo() is unacceptably slow. Limit of 200 is chosen because
+      // 0.5% is 1/200.
+
+      cAdsKeyNo    := "{| n, Self | iif( n == nil, " +;
+                         "nCalcRelPos( " + cAlias + "-&gt;( ADSGetRelKeyPos() ) * Self:nLen, Self ), "+;
+                         cAlias + "-&gt;( ADSSetRelKeyPos( n / Self:nLen ) ) ) }"
+
+      cAdsKeyCount := "{|| " + cAlias + "-&gt;( ADSKeyCount(,,1) )}" 
+
+      DEFAULT ::bKeyNo    := &amp;cAdsKeyNo ,;
+              ::bKeyCount := &amp;cAdsKeyCount</code></pre></div><br>
+<br>
+Function nCalcRalPos()<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FUNCTION nCalcRelPos(f_nVal,f_oXBrw)
+  Local nLenRegs := f_oXBrw:nLen, nRowPos := f_oXBrw:nRowSel
+  Local nRetorno := 0
+  
+  nRetorno := Round(f_nVal,3)
+  
+  If nRetorno == 0
+    nRetorno := 1
+  EndIf
+
+  If nRetorno &lt; nRowPos
+    nRetorno := nRowPos
+  EndIf  
+
+  nRetorno := Int(nRetorno)
+
+RETURN nRetorno</code></pre></div><br>
+<br>
+When I use the TADS class I use the tCtrlxBrw class ()<br>
+here is the class, most only works with TADS ().<br>
+<br>
+Class tCtrlxbrw:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#Include "Fivewin.ch"
+#Include "xBrowse.ch"
+
+#Define df_BaseMySql    1
+
+Class tCtrlxBrw 
+
+  Data oXBrwCtrl, oDbDs_DataBaseAds
+  Data bStrData
+  Data oGetDsFilter, nTpCampoFilter, cCampoFilter, lLastRecZero
+  Data bChangeBrw
+  
+  Method New(f_oXBrowse,f_oDbDs_DataBaseAds) Constructor
+  Method End()
+
+  Method SetTAds()
+  
+  Method tCtrlxBrw_Skip(f_nKip)
+  
+  Method tCtrlxBrw_Seek(f_oBjCol,f_uVar)
+  Method tCtrlxBrw_EditFilterRdd()
+  Method tCtrlxBrw_EditFilterSql()
+  Method tCtrlxBrw_EditChange()
+  Method tCtrlxBrw_EditClearChar(f_cTxt, f_nTipo)
+
+
+Endclass
+//-----------------------------------------------------------------------------
+Method New(f_oXBrowse,f_oDbDs_DataBaseAds,f_aGetFilter) Class tCtrlxBrw
+  Local oSelf
+
+  // f_aGetFilter[1] &gt; oBjeto Get
+  // f_aGetFilter[2] &gt; Tipo Filtro 1=SetAof contains / 2=Sql select Contains
+  // f_aGetFilter[3] &gt; Nome do campo a pesquisar
+   
+  ///Override Method Skip In Class Txbrowse With oSelf:tCtrlxBrw_Skip
+
+  ::lLastRecZero := .F.
+
+  ::oDbDs_DataBaseAds     := f_oDbDs_DataBaseAds
+  ::oXBrwCtrl             := f_oXBrowse
+  
+  ::oXBrwCtrl:cAlias      := ::oDbDs_DataBaseAds:cAlias
+  
+  If !Hb_IsNil(f_aGetFilter)
+
+    ::oGetDsFilter    := f_aGetFilter[1]
+    ::nTpCampoFilter  := f_aGetFilter[2]
+    ::cCampoFilter    := f_aGetFilter[3]
+    
+    If f_aGetFilter[2] == 2 // Sql Contains
+      ::oGetDsFilter:bChange := {||::tCtrlxBrw_EditFilterSql()}
+    
+    ElseIf f_aGetFilter[2] == 1 // Rdd set aof
+
+      ::oGetDsFilter:bChange := {||::tCtrlxBrw_EditFilterRdd()}
+      
+    EndIf
+
+    ::bChangeBrw := ::oXBrwCtrl:bChange
+    ::oXBrwCtrl:bChange    := {||::tCtrlxBrw_EditChange()}
+    ::oXBrwCtrl:bGotFocus  := {||::tCtrlxBrw_EditChange()}
+    
+  EndIf  
+
+  ::oXBrwCtrl:bClrSel := {|| { CLR_BLACK, CLR_HGRAY} } // Giovany
+  ::SetTAds()
+  ::oDbDs_DataBaseAds:Refresh()
+
+Return Self
+//-----------------------------------------------------------------------------
+Method End() Class tCtrlxBrw
+
+Self := Nil
+
+Return Nil
+//-----------------------------------------------------------------------------
+Method SetTAds() Class tCtrlxBrw
+  Local nTpGetRelPos := 1, cTmpQry := "", nTmp := 0
+
+  ::oDbDs_DataBaseAds:lBufferOnSkip := .T.
+  
+  If ::oDbDs_DataBaseAds:nOpenType == 3 // Open via Dataset
+    cTmpQry := Upper(::oDbDs_DataBaseAds:cQrySql)
+    If At("{STATIC}",cTmpQry) == 0 
+      nTpGetRelPos := 2
+    Else
+      nTpGetRelPos := 1 
+    EndIf
+  Else
+    nTpGetRelPos := 1
+  EndIf
+
+  If nTpGetRelPos == 2 // Open via Sql Dataset cursor vivo 
+
+    ::oXBrwCtrl:bKeyNo    := {| n, _Self | If( n == nil, ;
+                                   nCalcRelPos((::oDbDs_DataBaseAds:GetRelKeyPos() * _Self:nLen) /10,::oXBrwCtrl) , ;
+                                   ::oDbDs_DataBaseAds:SetRelKeyPos( Round(n / _Self:nLen,3) ) ) }
+
+  Else // Viao Rdd ou Static Cursor
+
+    ::oXBrwCtrl:bKeyNo    := {| n, _Self | If( n == nil, ;
+                                 nCalcRelPos((::oDbDs_DataBaseAds:GetRelKeyPos() * _Self:nLen),::oXBrwCtrl ) , ;
+                                 ::oDbDs_DataBaseAds:SetRelKeyPos( Round(n / _Self:nLen,3) ) ) }
+
+  EndIf
+
+  ::oXBrwCtrl:bBookMark := {| n | iif( n == nil,;
+                               ::oDbDs_DataBaseAds:Recno() , ;
+                               ::oDbDs_DataBaseAds:GoTo( n ) ) }
+
+  ::oXBrwCtrl:bKeyCount := {|| ::oDbDs_DataBaseAds:KeyCount(1)  }
+  
+  ::oXBrwCtrl:bBof      := { ||  ::oDbDs_DataBaseAds:Bof() }
+  ::oXBrwCtrl:bEof      := { ||  ::oDbDs_DataBaseAds:Eof() }
+  ::oXBrwCtrl:bSkip     := { |n| Iif( n == Nil, n := 1, ), ::tCtrlxBrw_Skip( n )} 
+  ::oXBrwCtrl:bGoTop    := { ||  ::oDbDs_DataBaseAds:GoTop() }
+  ::oXBrwCtrl:bGoBottom := { ||  ::oDbDs_DataBaseAds:GoBottom() }
+
+  ::oDbDs_DataBaseAds:OnSkip()
+
+Return Nil
+//-----------------------------------------------------------------------------
+Method tCtrlxBrw_Skip(f_nSkip) Class tCtrlxBrw
+  Local nSkipper := 0
+  
+  Default f_nSkip := 1 
+
+  nSkipper := (::oDbDs_DataBaseAds:cAlias)-&gt;(DbSkipper(f_nSkip))
+
+  ::oDbDs_DataBaseAds:OnSkip()
+  
+Return nSkipper  
+//-----------------------------------------------------------------------------
+Method tCtrlxBrw_Seek(f_oBjCol,f_uVar,f_lTpSeek) Class tCtrlxBrw
+LOCAL nRecMarca := ::oDbDs_DataBaseAds:Recno(), cTpData := ""
+
+  cTpData := VALTYPE(f_uVar)
+  
+  IF cTpData == "N"
+     f_lTpSeek := .F.
+  ELSEIF cTpData == "D"
+     f_lTpSeek := .F.
+  ELSEIF cTpData == "C"
+     f_lTpSeek := .T.
+  ENDIF
+  
+  //If ::oDbDs_DataBaseAds:nOpenType == 1
+    f_oBjCol:SetOrder()
+    ::oDbDs_DataBaseAds:Seek(f_uVar,f_oBjCol:cSortOrder,f_lTpSeek)
+  //EndIf
+  
+  IF ::oDbDs_DataBaseAds:EOF()
+  
+     ::oDbDs_DataBaseAds:GoTo(nRecMarca)
+     
+     MSGSTOP("A ocorrencia solicitada não foi encontrada.",;
+             "Procedimento abortado...")
+  
+  ENDIF
+  ::oXBrwCtrl:Refresh(.T.)
+  
+  IF ::oXBrwCtrl:bChange != nil
+     EVAL(::oXBrwCtrl:bChange)
+  ENDIF
+
+RETURN NIL
+//-----------------------------------------------------------------------------
+Method tCtrlxBrw_EditFilterRdd() Class tCtrlxBrw
+  Local cTxtDigitacao := "", cAof := ""
+
+  //::oGetDsFilter:Save()
+  cTxtDigitacao := Alltrim(::tCtrlxBrw_EditClearChar(::oGetDsFilter:cText))
+
+  If Len(cTxtDigitacao) &lt; 5
+    cTxtDigitacao := ""
+  Else
+    ::lLastRecZero := .F.
+  EndIf
+  
+  If ::lLastRecZero
+    Return Nil
+  EndIf
+  ///? cTxtDigitacao
+
+  cAof := "CONTAINS("+::cCampoFilter+","+cTxtDigitacao+")"
+
+    ::oGetDsFilter:oWnd:cTitle := cAof
+    ::oGetDsFilter:oWnd:Refresh()
+    ///msginfo(cAof)
+    
+    ::oDbDs_DataBaseAds:Filter(cAof)
+    ::oDbDs_DataBaseAds:GoTop()
+  ::oXBrwCtrl:Refresh(.T.)
+
+  If Len(cTxtDigitacao) &lt; 5
+    ::lLastRecZero := .T.
+  EndIf
+
+Return Nil
+//-----------------------------------------------------------------------------
+Method tCtrlxBrw_EditFilterSql() Class tCtrlxBrw
+  Local cTxtDigitacao := ""
+
+  //::oGetDsFilter:Save()
+  cTxtDigitacao := Alltrim(::tCtrlxBrw_EditClearChar(::oGetDsFilter:cText))
+
+  If Len(cTxtDigitacao) &lt; 5
+    cTxtDigitacao := ""
+  Else
+    ::lLastRecZero := .F.
+  EndIf
+  
+  If ::lLastRecZero
+    Return Nil
+  EndIf
+  ///? cTxtDigitacao
+
+  ::oDbDs_DataBaseAds:aVarsSql := {{"_TxtDigitacao_",cTxtDigitacao},;
+                                   {"_Campo_",::cCampoFilter}}
+  
+  ::oDbDs_DataBaseAds:DsExecute()
+  ::oXBrwCtrl:Refresh(.T.)
+
+  If Len(cTxtDigitacao) &lt; 5
+    ::lLastRecZero := .T.
+  EndIf
+
+Return Nil
+//-----------------------------------------------------------------------------
+Method tCtrlxBrw_EditChange() Class tCtrlxBrw
+
+  If ::oDbDs_DataBaseAds:LastRec() == 0
+    Return Nil
+  EndIf
+  
+  ::oGetDsFilter:VarPut(::oDbDs_DataBaseAds:VarGet(::cCampoFilter))
+  ::oGetDsFilter:Refresh()
+  
+  If !Hb_IsNil(::bChangeBrw)
+    Eval(::bChangeBrw)
+  EndIf
+  
+Return Nil
+
+//-----------------------------------------------------------------------------
+Method tCtrlxBrw_EditClearChar(f_cTxt) Class tCtrlxBrw
+  Local cRetTxt := f_cTxt
+  Local iFor := 0, cAnd := ""
+  Local aCharDeletes := { chr(34),"-",".","+","=","&amp;","'","´"}
+  Local aPalavras := {}
+  
+  cRetTxt := _CHAR_CLEAN(cRetTxt,{ " AND ",;
+                                      " NEAR ",;
+                                      " ANY "})
+
+  For iFor := 1 To Len(aCharDeletes)
+    cRetTxt := StrTran(cRetTxt,aCharDeletes[iFor]," ")
+  Next
+
+  aPalavras := Hb_aTokens(cRetTxt)
+
+  cRetTxt := ""
+  For iFor := 1 To Len(aPalavras)
+    If Len(aPalavras[iFor]) &gt; 3
+      cRetTxt += (cAnd + Chr(34)+aPalavras[iFor])+Chr(34) //+ " "
+      cAnd := " and "
+    Endif
+  Next
+
+Return cRetTxt
+///////////////////////////////////////////////////////////////////////////////
+FUNCTION nCalcRelPos(f_nVal,f_oXBrw)
+  Local nLenRegs := f_oXBrw:nLen, nRowPos := f_oXBrw:nRowSel
+  Local nRetorno := 0
+  
+  nRetorno := Round(f_nVal,3)
+  
+  If nRetorno == 0
+    nRetorno := 1
+  EndIf
+
+  If nRetorno &lt; nRowPos
+    nRetorno := nRowPos
+  EndIf  
+
+  nRetorno := Int(nRetorno)
+
+RETURN nRetorno
+///////////////////////////////////////////////////////////////////////////////
+FUNCTION _CHAR_CLEAN(f_cTxt,f_aCaracteresRetira)
+    Local cTxtRetorno := f_cTxt, iFor := 0
+    
+    For iFor := 1 To Len(f_aCaracteresRetira)
+    cTxtRetorno := StrTran(cTxtRetorno,f_aCaracteresRetira[iFor],"")
+  Next
+   
+RETURN cTxtRetorno</code></pre></div><br>
+<br>
+Exemplo com tAds<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">  ::oDb_BoletoNucleo  := DB_BOLNUCL():OpenRdd()
+
+  ::oBrw361_Remessas                     := tXBrowse():New( ::oDlgBoletosGeral )
+  ::oBrw361_Remessas:cAlias              := ::oDb_BoletoNucleo:cAlias
+  ::oBrw361_Remessas:nMarqueeStyle       := MARQSTYLE_HIGHLROW
+  ::oBrw361_Remessas:nRowDividerStyle    := LINESTYLE_BLACK
+  ::oBrw361_Remessas:nColDividerStyle    := LINESTYLE_BLACK
+  ::oBrw361_Remessas:nColSel             := 1
+  ::oBrw361_Remessas:l2007               := .T.
+  ::oBrw361_Remessas:nRowHeight          := 24
+  ::oBrw361_Remessas:nHeaderHeight       := 24 
+  ::oBrw361_Remessas:bClrRowFocus        := {||{ GetSysColor( 9 ), GetSysColor( 16 )}}
+  ::oBrw361_Remessas:lFooter             := .F.
+
+  aadd(aColunas,Nil)
+  nColTmp := Len(aColunas)
+  aColunas[nColTmp] := ::oBrw361_Remessas:AddCol()
+    With Object aColunas[nColTmp]
+      :bStrData         := {||::oDb_BoletoNucleo:dProcesso}
+      :cHeader          := "Dt. Imp. "
+      :nWidth           := 90
+      :nDataStrAlign    := AL_RIGHT
+      :nHeadStrAlign    := AL_RIGHT
+      :cSortOrder       := "dProcesso"
+      :nEditType        := EDIT_GET
+      //:cEditPicture     := "!"
+      //:bEditValue       := {||}
+      //:bEditWhen        := {||}
+      //:bEditValid       := {||}
+      //:aEditListTxt     := {}
+      :AddResource("B16_BRWSEEK") // Bitmaps
+      :AddResource("B16_LED_RED_1") // Bitmaps
+      :nHeadBmpNo       := 1 
+      //:bBmpData         := {||}
+      //:nBtnBmp          := 2
+      //:bEditBlock       := {|oSelf|::Fun_Menus(01,oSelf)}
+      :bOnPostEdit      := {|ooBj,vVar,nKey|::oCtrl361_Remessas:tCtrlxBrw_Seek(ooBj,vVar)} // Automatic seek on Presskey
+      //:cFooter          := "Total"
+      //:bFooter          := {||20+20}
+      //:nFootStrAlign    := 1
+    //:nTotal           := 0
+    //:lTotal           := .T.
+      //:nFootStrAlign    := 1 
+  
+    End With 
+
+  aadd(aColunas,Nil)
+  nColTmp := Len(aColunas)
+  aColunas[nColTmp] := ::oBrw361_Remessas:AddCol()
+    With Object aColunas[nColTmp]
+      :bStrData         := {||::oDb_BoletoNucleo:nOcorrencias}
+      :cHeader          := "Qta "
+      :nWidth           := 30
+      :nDataStrAlign    := AL_RIGHT
+      :nHeadStrAlign    := AL_RIGHT
+  
+    End With 
+
+
+  ::oBrw361_Remessas:SetRDD()
+  ::oBrw361_Remessas:CreateFromResource(361)
+    
+  aColunas[1]:SetOrder()
+  ::oBrw361_Remessas:GoTop()
+  ::oBrw361_Remessas:SetFocus()
+  ::oBrw361_Remessas:Refresh()
+
+  ::oCtrl361_Remessas  := tCtrlxBrw():New(::oBrw361_Remessas,::oDb_BoletoNucleo) // Class tCtrlxBrw control xbrowse</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p183279">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: xbrowse / ADS failure</span><br>
+        Posted: Wed Oct 28, 2015 03:57 PM
+      </div>
+      <div class="content"><p>I appreciate the alternative, but I really think the most appropriate solution is to get a fix for the bug !</p>
+<p>Antonio ?  Did you receive a response to your inquiries ?</p>
+<p>The problem does not exist with xHarbour ( .com ) builds, or DBFCDX, only ADS with Harbour ... so surely we can get the error fixed.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p183293">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: xbrowse / ADS failure</span><br>
+        Posted: Wed Oct 28, 2015 10:19 PM
+      </div>
+      <div class="content"><p>Tim,</p>
+<p>Could you prepare a small and self contained example without using FWH that reproduces the error ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p183294">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: xbrowse / ADS failure</span><br>
+        Posted: Wed Oct 28, 2015 10:28 PM
+      </div>
+      <div class="content">Antonio,<br>
+<br>
+This has been discussed in another thread, and Rao identified the exact lines in the xBrowse code that creates the error.<br>
+<br>
+In addition, others had the exact same result.<br>
+<br>
+He indicated he knew what was causing the error, but then the topic was never resolved.<br>
+<br>
+<blockquote>Thanks for testing. From the result of your tests we understand that OrdKeyGoTo() works with dbfcdx RDD even when there is no index and with ADS RDD it fails. When I made this change in 2009 I am sure it was working and at that time most of my applications were using ADSCDX.<br>
+<br>
+If you are using Harbour we need to check with xHarbour version also.<br>
+Surprisingly it appears these functions are working:<br>
+AdsGetRelKeyPos<br>
+AdsSetRelKeyPos<br>
+AdsGetKeyCount<br>
+Theoretically, these functions also should depend on the index still they work.<br>
+<br>
+Interestingly there is AdsGetKeyPos() function in ACE but no comparable function to OrdKeyGoTo()<br>
+<br>
+I suggest you please continue with the change we proposed earlier.<br>
+I study both xHarbour and Harbour versions of the RDD source and also Advantage documentation and implement a dependable solution.<br>
+</blockquote><br>
+<br>
+That dependable solution was never provided.<br>
+<br>
+Tim</div>
+    </div>
+  </div>
+  <div class="post" id="p183295">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: xbrowse / ADS failure</span><br>
+        Posted: Wed Oct 28, 2015 10:34 PM
+      </div>
+      <div class="content"><p>We need Rao help on this</p></div>
+    </div>
+  </div>
+  <div class="post" id="p183493">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: xbrowse / ADS failure</span><br>
+        Posted: Mon Nov 02, 2015 03:47 PM
+      </div>
+      <div class="content"><p>Did you get in touch with him ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p183495">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: xbrowse / ADS failure</span><br>
+        Posted: Mon Nov 02, 2015 04:19 PM
+      </div>
+      <div class="content"><p>Mr Tim</p>
+<p>I'll get back on this very soon</p></div>
+    </div>
+  </div>
+  <div class="post" id="p184768">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: xbrowse / ADS failure</span><br>
+        Posted: Sun Dec 06, 2015 10:43 AM
+      </div>
+      <div class="content"><p>Resolved in FWH 15.10<br>
+Please see</p>
+<!-- l -->
+<p><a class="postlink-local" href="http://forums.fivetechsupport.com/viewtopic.php?f=3&amp;t=31485&amp;p=184767#p184767">viewtopic.php?f=3t=31485p=184767#p184767</a></p>
+<p>&amp;&amp;<!-- l --></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

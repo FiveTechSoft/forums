@@ -1,0 +1,1361 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>autoGPT for OpenAI - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-43092">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> autoGPT for OpenAI</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-43092-page-2.html">2</a> (16 posts)</div>  <div class="post" id="p259166">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">autoGPT for OpenAI</span><br>
+        Posted: Sun Apr 23, 2023 09:52 AM
+      </div>
+      <div class="content"><r>Based on the excellent work of Carlos Gallego:<br/><br>
+<URL url="https://fivetechsupport.com/forums/viewtopic.php?f=6&amp;t=42575&amp;start=0"><s><a href="</s><LINK_TEXT text="https://fivetechsupport.com/forums/view ... 75&amp;start=0">https://fivetechsupport.com/forums/viewtopic.php?f=6&amp;t=42575&amp;start=0</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://fivetechsupport.com/forums/view ... 75&amp;start=0">https://fivetechsupport.com/forums/viewtopic.php?f=6&amp;t=42575&amp;start=0</LINK_TEXT><e></a></e></URL><br/><br>
+<br/><br>
+and after seeking advice from ChatGPT, I have managed to implement "context" for it.<br/><br>
+For example, if you first tell it "tell me a joke" and then say "tell me another," it knows what you mean <E>:-)</E><br/><br>
+<br/><br>
+The goal is to provide different "prompts," make it work automatically, be able to remove previous steps, etc.<br/><br>
+<br/><br>
+It's a work in progress and still has bugs. Here it is if you'd like to give it a try:<br/><br>
+<br/><br>
+autogpt.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+function Main()
+
+   local oDlg, oGet1, cVar1 := Space( 100 )
+   local oGet2, cVar2 := Space( 2048 )
+   local oFont, oBtn1, oSay1, oSay2
+   local nChars := 2048
+   local oOpenAI := TOPenAI()
+   local oGetContext, cContext
+   
+   oOpenAI:cKey = "sk-yours..."
+
+   TBtnBmp():lLegacyLookLeftRight := .T.
+   
+   DEFINE FONT oFont NAME "Verdana" SIZE 0, -16
+
+   DEFINE DIALOG oDlg FROM 0, 0 TO 39, 150 TRUEPIXEL TITLE "autoGPT with OpenAI"
+   
+   @ 24, 370 SAY "Question" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 28, 1040 SAY oSay1 VAR "Chars: 0 / " + cValToChar( nChars ) OF oDlg PIXEL ;
+      SIZE 120, 15 UPDATE CENTER
+
+   @ 45, 370 GET oGet1 VAR cVar1 OF oDlg PIXEL SIZE 800,200 MEMO FONT oFont 
+   
+   oGet1:bGotfocus := {|| oGet1:SetSel( 0, 0 ) }
+
+   @ 250, 590 BTNBMP PROMPT "Clean context" OF oDlg PIXEL SIZE 150, 45 ;
+      ACTION oOpenAI:Clean() NOBORDER 2007
+
+   @ 250, 755 BTNBMP PROMPT "Submit" OF oDlg PIXEL SIZE 150, 45 ;
+      ACTION ( oGet2:SetText( oOpenAI:Ask( AllTrim( cVar1 ) ) ), oGetContext:SetText( oOpenAI:cContext ) ) ;
+      NOBORDER 2007
+
+   @ 296, 370 SAY "Result" OF oDlg FONT oFont SIZE 70,15 PIXEL
+
+   @ 317, 370 GET oGet2 VAR cVar2 OF oDlg PIXEL SIZE 800, 200 MEMO FONT oFont
+   
+   oGet2:bGotfocus := {|| oGet2:SetSel( 0, 0 ) }
+
+   @ 24, 15 SAY "Context" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 45, 15 GET oGetContext VAR cContext PIXEL SIZE 340, 473 MEMO FONT oFont 
+
+   @ 535, 900 BTNBMP PROMPT "Close" OF oDlg PIXEL ACTION oDlg:End() SIZE 150,45;
+      NOBORDER 2007
+   
+   ACTIVATE DIALOG oDlg CENTERED ON PAINT oGet1:SetPos( 0 )
+   
+return nil
+
+//------------------------------------------------------------//
+
+CLASS TOpenAI
+
+   DATA   cKey
+   DATA   cContext INIT ""
+   DATA   cAnswer
+
+   METHOD Ask( cQuestion )
+   METHOD Clean() INLINE ::cContext := ""
+
+ENDCLASS   
+
+//------------------------------------------------------------//
+
+METHOD Ask( cQuestion ) CLASS TOpenAI
+
+   ::cContext += "User: " + cQuestion
+   ::cAnswer = OpenAICall( ::cContext, ::cKey )
+   if ! Empty( ::cAnswer )
+      ::cContext += ". chatGPT: " + StrTran( ::cAnswer, CRLF, "\r\n" )
+   endif   
+
+return ::cAnswer   
+
+//------------------------------------------------------------//
+
+function OpenAICall( cPrompt, cKey )
+
+   local cUrl  := "https://api.openai.com/v1/engines/text-davinci-003/completions"
+   local cJSon, hAnswer := {=&gt;}, cAnswer := ""
+   
+   static oSoap
+
+   if oSoap == nil 
+      oSoap = CreateObject( "MSXML2.ServerXMLHTTP.6.0" )
+   endif   
+
+   TEXT INTO cJson
+   {
+      "prompt": "cPrompt_empty",
+      "temperature": 0,
+      "max_tokens": 2048
+   }
+   ENDTEXT
+   
+   cPrompt = AllTrim( cPrompt )
+   cJson = StrTran( cJson, "cPrompt_empty", cPrompt )
+   cJson = StrTran( cJson, CRLF, "\r\n" )
+
+   oSoap:Open( "POST", cUrl, .F. )
+   oSoap:SetRequestHeader( "Content-Type", "application/json; charset=utf-8" )
+   oSoap:setRequestHeader( "Authorization", "Bearer " + cKey )
+   oSoap:Send( cJson )
+
+   hb_jsondecode( Alltrim( oSoap:responseText ), @hAnswer )
+
+   if hb_hHasKey( hAnswer, "error" )
+      if Empty( hAnswer[ "error" ][ "param" ] )
+         hAnswer[ "error" ][ "param" ] = ""
+      endif   
+      if Empty( hAnswer[ "error" ][ "code" ] )
+         hAnswer[ "error" ][ "code" ] = ""
+      endif   
+      MsgAlert( hAnswer[ "error" ][ "message" ] + CRLF + CRLF + ;
+                "Param: " + hAnswer[ "error" ][ "param" ] + CRLF + CRLF + ;
+                "Code: " + hAnswer[ "error" ][ "code" ] + CRLF + CRLF, ;
+                hAnswer[ "error" ][ "type" ] )
+   else
+      cAnswer = hAnswer[ "choices" ][ 1 ][ "text" ]
+      cAnswer = AllTrim( StrTran( cAnswer, Chr( 10 ), CRLF ) )
+      cAnswer = StrTran( cAnswer, '"', "'" )
+   endif
+   
+return cAnswer
+
+//------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p259171">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Sun Apr 23, 2023 10:21 AM
+      </div>
+      <div class="content"><r>Enhanced version:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+function Main()
+
+   local oDlg, oGet1, cVar1 := Space( 100 )
+   local oGet2, cVar2 := Space( 2048 )
+   local oFont, oBtn1, oSay1, oSay2
+   local nChars := 2048
+   local oOpenAI := TOPenAI()
+   local oGetContext, cContext
+   
+   oOpenAI:cKey = "sk-yours..."
+
+   TBtnBmp():lLegacyLookLeftRight := .T.
+   
+   DEFINE FONT oFont NAME "Verdana" SIZE 0, -16
+
+   DEFINE DIALOG oDlg FROM 0, 0 TO 39, 150 TRUEPIXEL TITLE "autoGPT with OpenAI"
+   
+   @ 24, 370 SAY "Question" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 28, 1040 SAY oSay1 VAR "Chars: 0 / " + cValToChar( nChars ) OF oDlg PIXEL ;
+      SIZE 120, 15 UPDATE CENTER
+
+   @ 45, 370 GET oGet1 VAR cVar1 OF oDlg PIXEL SIZE 800,200 MEMO FONT oFont 
+   
+   oGet1:bGotfocus := {|| oGet1:SetSel( 0, 0 ) }
+
+   @ 250, 590 BTNBMP PROMPT "Clean context" OF oDlg PIXEL SIZE 150, 45 ;
+      ACTION ( oOpenAI:Clean(), oGetContext:SetText( "" ) ) NOBORDER 2007
+
+   @ 250, 755 BTNBMP PROMPT "Submit" OF oDlg PIXEL SIZE 150, 45 ;
+      ACTION ( oGet2:SetText( oOpenAI:Ask( AllTrim( cVar1 ) ) ),;
+               oGetContext:SetText( oOpenAI:GetContext() ) ) ;
+      NOBORDER 2007
+
+   @ 296, 370 SAY "Result" OF oDlg FONT oFont SIZE 70,15 PIXEL
+
+   @ 317, 370 GET oGet2 VAR cVar2 OF oDlg PIXEL SIZE 800, 200 MEMO FONT oFont
+   
+   oGet2:bGotfocus := {|| oGet2:SetSel( 0, 0 ) }
+
+   @ 24, 15 SAY "Context" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 45, 15 GET oGetContext VAR cContext PIXEL SIZE 340, 473 MEMO FONT oFont 
+
+   @ 535, 900 BTNBMP PROMPT "Close" OF oDlg PIXEL ACTION oDlg:End() SIZE 150,45;
+      NOBORDER 2007
+   
+   ACTIVATE DIALOG oDlg CENTERED ON PAINT oGet1:SetPos( 0 )
+   
+return nil
+
+//------------------------------------------------------------//
+
+CLASS TOpenAI
+
+   DATA   cKey
+   DATA   cContext INIT ""
+   DATA   cAnswer
+
+   METHOD Ask( cQuestion )
+   METHOD Clean() INLINE ::cContext := ""
+   METHOD GetContext() INLINE StrTran( ::cContext, "\r\n", CRLF )
+
+ENDCLASS   
+
+//------------------------------------------------------------//
+
+METHOD Ask( cQuestion ) CLASS TOpenAI
+
+   ::cContext += "\r\nUser: " + cQuestion
+   ::cAnswer = OpenAICall( ::cContext, ::cKey )
+   if ! Empty( ::cAnswer )
+      ::cContext += "\r\nchatGPT: " + StrTran( ::cAnswer, CRLF, "\r\n" )
+   endif   
+
+return ::cAnswer   
+
+//------------------------------------------------------------//
+
+function OpenAICall( cPrompt, cKey )
+
+   local cUrl  := "https://api.openai.com/v1/engines/text-davinci-003/completions"
+   local cJSon, hAnswer := {=&gt;}, cAnswer := ""
+   
+   static oSoap
+
+   if oSoap == nil 
+      oSoap = CreateObject( "MSXML2.ServerXMLHTTP.6.0" )
+   endif   
+
+   TEXT INTO cJson
+   {
+      "prompt": "cPrompt_empty",
+      "temperature": 0,
+      "max_tokens": 2048
+   }
+   ENDTEXT
+   
+   cPrompt = AllTrim( cPrompt )
+   cJson = StrTran( cJson, "cPrompt_empty", cPrompt )
+   cJson = StrTran( cJson, CRLF, "\r\n" )
+
+   oSoap:Open( "POST", cUrl, .F. )
+   oSoap:SetRequestHeader( "Content-Type", "application/json; charset=utf-8" )
+   oSoap:setRequestHeader( "Authorization", "Bearer " + cKey )
+   oSoap:Send( cJson )
+
+   hb_jsondecode( Alltrim( oSoap:responseText ), @hAnswer )
+
+   if hb_hHasKey( hAnswer, "error" )
+      if Empty( hAnswer[ "error" ][ "param" ] )
+         hAnswer[ "error" ][ "param" ] = ""
+      endif   
+      if Empty( hAnswer[ "error" ][ "code" ] )
+         hAnswer[ "error" ][ "code" ] = ""
+      endif   
+      MsgAlert( hAnswer[ "error" ][ "message" ] + CRLF + CRLF + ;
+                "Param: " + hAnswer[ "error" ][ "param" ] + CRLF + CRLF + ;
+                "Code: " + hAnswer[ "error" ][ "code" ] + CRLF + CRLF, ;
+                hAnswer[ "error" ][ "type" ] )
+   else
+      cAnswer = hAnswer[ "choices" ][ 1 ][ "text" ]
+      cAnswer = AllTrim( StrTran( cAnswer, Chr( 10 ), CRLF ) )
+      cAnswer = StrTran( cAnswer, '"', "'" )
+   endif
+   
+return cAnswer
+
+//------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p259172">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Sun Apr 23, 2023 11:03 AM
+      </div>
+      <div class="content"><r>hi,<br/><br>
+<br/><br>
+it seem that you need a ABO Account for own Apps<br/><br>
+<IMG src="https://i.postimg.cc/KjHZwV2Z/No-ABO-Account.jpg"><s><img src="</s>https://i.postimg.cc/KjHZwV2Z/No-ABO-Account.jpg<e>" alt="" loading="lazy"></e></IMG><br/><br>
+<br/><br>
+"free" Account still work when use Online Webpage</r></div>
+    </div>
+  </div>
+  <div class="post" id="p259173">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Sun Apr 23, 2023 11:46 AM
+      </div>
+      <div class="content"><p><r>Dear Jimmy,<br/><br>
+<br/><br>
+Yes, you have to subscribe to it but it is very cheap <E>:-)</E></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p259174">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Sun Apr 23, 2023 11:47 AM
+      </div>
+      <div class="content"><r>Enhanced version:<br/><br>
+<br/><br>
+autogpt.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+function Main()
+
+   local oDlg, oGet1, cVar1 := Space( 100 )
+   local oGet2, cVar2 := Space( 2048 )
+   local oFont, oBtn1, oSay1, oSay2
+   local nChars := 2048
+   local oOpenAI := TOPenAI()
+   local oGetContext, cContext
+   
+   oOpenAI:cKey = "sk-yours..."
+   oOpenAI:AddRule( "don't include 'Bot:', 'chatGPT:', 'User:' in your answer" )
+
+   TBtnBmp():lLegacyLookLeftRight := .T.
+   
+   DEFINE FONT oFont NAME "Verdana" SIZE 0, -16
+
+   DEFINE DIALOG oDlg FROM 0, 0 TO 39, 150 TRUEPIXEL TITLE "autoGPT with OpenAI"
+   
+   @ 24, 370 SAY "Question" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 28, 1040 SAY oSay1 VAR "Chars: 0 / " + cValToChar( nChars ) OF oDlg PIXEL ;
+      SIZE 120, 15 UPDATE CENTER
+
+   @ 45, 370 GET oGet1 VAR cVar1 OF oDlg PIXEL SIZE 800,200 MEMO FONT oFont 
+   
+   oGet1:bGotfocus := {|| oGet1:SetSel( 0, 0 ) }
+
+   @ 250, 590 BTNBMP PROMPT "Clean context" OF oDlg PIXEL SIZE 150, 45 ;
+      ACTION ( oOpenAI:Clean(), oGetContext:SetText( "" ) ) NOBORDER 2007
+
+   @ 250, 755 BTNBMP PROMPT "Submit" OF oDlg PIXEL SIZE 150, 45 ;
+      ACTION ( oGet2:SetText( oOpenAI:Ask( AllTrim( cVar1 ) ) ),;
+               oGetContext:SetText( oOpenAI:GetContext() ) ) ;
+      NOBORDER 2007
+
+   @ 296, 370 SAY "Result" OF oDlg FONT oFont SIZE 70,15 PIXEL
+
+   @ 317, 370 GET oGet2 VAR cVar2 OF oDlg PIXEL SIZE 800, 200 MEMO FONT oFont
+   
+   oGet2:bGotfocus := {|| oGet2:SetSel( 0, 0 ) }
+
+   @ 24, 15 SAY "Context" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 45, 15 GET oGetContext VAR cContext PIXEL SIZE 340, 473 MEMO FONT oFont 
+
+   @ 535, 900 BTNBMP PROMPT "Close" OF oDlg PIXEL ACTION oDlg:End() SIZE 150,45;
+      NOBORDER 2007
+   
+   ACTIVATE DIALOG oDlg CENTERED ON PAINT oGet1:SetPos( 0 )
+   
+return nil
+
+//------------------------------------------------------------//
+
+CLASS TOpenAI
+
+   DATA   cKey
+   DATA   cContext INIT ""
+   DATA   cAnswer
+   DATA   aRules INIT {}
+
+   METHOD Ask( cQuestion )
+   METHOD Clean() INLINE ::cContext := ""
+   METHOD GetContext() INLINE StrTran( ::cContext, "\r\n", CRLF )
+   METHOD AddRule( cRule ) INLINE AAdd( ::aRules, cRule )
+
+ENDCLASS   
+
+//------------------------------------------------------------//
+
+METHOD Ask( cQuestion ) CLASS TOpenAI
+
+   local cRule
+
+   ::cContext += "\r\nUser: " + cQuestion
+   if ! Empty( ::aRules )
+      for each cRule in ::aRules
+         ::cContext += "\r\n" + cRule
+      next
+   endif      
+   ::cAnswer = OpenAICall( ::cContext, ::cKey )
+   if ! Empty( ::cAnswer )
+      ::cContext += "\r\nchatGPT: " + StrTran( ::cAnswer, CRLF, "\r\n" )
+   endif   
+
+return ::cAnswer   
+
+//------------------------------------------------------------//
+
+function OpenAICall( cPrompt, cKey )
+
+   local cUrl  := "https://api.openai.com/v1/engines/text-davinci-003/completions"
+   local cJSon, hAnswer := {=&gt;}, cAnswer := ""
+   
+   static oSoap
+
+   if oSoap == nil 
+      oSoap = CreateObject( "MSXML2.ServerXMLHTTP.6.0" )
+   endif   
+
+   TEXT INTO cJson
+   {
+      "prompt": "cPrompt_empty",
+      "temperature": 0,
+      "max_tokens": 2048
+   }
+   ENDTEXT
+   
+   cPrompt = AllTrim( cPrompt )
+   cJson   = StrTran( cJson, "cPrompt_empty", cPrompt )
+   cJson   = StrTran( cJson, CRLF, "\r\n" )
+   cJson   = StrTran( cJson, Chr( 13 ), "" )
+
+   oSoap:Open( "POST", cUrl, .F. )
+   oSoap:SetRequestHeader( "Content-Type", "application/json; charset=utf-8" )
+   oSoap:setRequestHeader( "Authorization", "Bearer " + cKey )
+   oSoap:Send( cJson )
+
+   hb_jsondecode( Alltrim( oSoap:responseText ), @hAnswer )
+
+   if hb_hHasKey( hAnswer, "error" )
+      if Empty( hAnswer[ "error" ][ "param" ] )
+         hAnswer[ "error" ][ "param" ] = ""
+      endif   
+      if Empty( hAnswer[ "error" ][ "code" ] )
+         hAnswer[ "error" ][ "code" ] = ""
+      endif   
+      MsgAlert( hAnswer[ "error" ][ "message" ] + CRLF + CRLF + ;
+                "Param: " + hAnswer[ "error" ][ "param" ] + CRLF + CRLF + ;
+                "Code: " + hAnswer[ "error" ][ "code" ] + CRLF + CRLF, ;
+                hAnswer[ "error" ][ "type" ] )
+      fw_memoEdit( cJson )          
+   else
+      cAnswer = hAnswer[ "choices" ][ 1 ][ "text" ]
+      cAnswer = AllTrim( StrTran( cAnswer, Chr( 10 ), CRLF ) )
+      cAnswer = StrTran( cAnswer, '"', "'" )
+   endif
+   
+return cAnswer
+
+//------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p259193">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Sun Apr 23, 2023 04:51 PM
+      </div>
+      <div class="content"><r>Enhanced version:<br/><br>
+<br/><br>
+autogpt.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+function Main()
+
+   local oDlg, oGetQuestion, cQuestion := Space( 100 )
+   local oGet2, cVar2 := Space( 2048 )
+   local oFont, oBtn1, oSay1, oSay2
+   local nChars := 0
+   local oOpenAI := TOPenAI()
+   local oGetContext, cContext, oBtnContinue, oBtnSubmit
+   
+   oOpenAI:cKey = "sk-yours..."
+   oOpenAI:AddRule( "don't include the words 'Bot:' 'chatGPT:' 'User:' in your answer" )
+
+   DEFINE FONT oFont NAME "Verdana" SIZE 0, -16
+
+   DEFINE DIALOG oDlg FROM 0, 0 TO 39, 150 TRUEPIXEL TITLE "autoGPT with OpenAI"
+   
+   @ 24, 370 SAY "Question" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 24, 1040 SAY oSay1 VAR "Chars: " + cValToChar( nChars ) OF oDlg PIXEL ;
+      SIZE 170, 15 UPDATE CENTER FONT oFont
+
+   @ 45, 370 GET oGetQuestion VAR cQuestion OF oDlg PIXEL SIZE 800,200 MEMO FONT oFont UPDATE
+
+   oGetQuestion:bChange = { || nChars := Len( AllTrim( oGetQuestion:GetText() ) ), oSay1:Refresh() }
+   oGetQuestion:bGotfocus = {|| oGetQuestion:SetSel( 0, 0 ) }
+
+   @ 255, 677 BUTTON "Clean context" OF oDlg PIXEL SIZE 150, 45 ;
+      FONT oFont ACTION ( oOpenAI:Clean(), oGetQuestion:SetText( "" ), ;
+                          cQuestion := "", oGetQuestion:VarPut( "" ),;
+                          oGetContext:SetText( "" ), oGet2:SetText( "" ) )
+
+   @ 255, 849 BUTTON oBtnSubmit PROMPT "Submit" OF oDlg PIXEL SIZE 150, 45 ;
+      FONT oFont ACTION ( oBtnSubmit:Disable(), oGet2:SetText( oOpenAI:Ask( AllTrim( cQuestion ) ) ),;
+                          oGetContext:SetText( oOpenAI:GetContext() ), oBtnSubmit:Enable() ) 
+
+   @ 255, 755 + 200 + 64 BUTTON oBtnContinue PROMPT "Continue" OF oDlg PIXEL SIZE 150, 45 ;
+      FONT oFont ;
+      ACTION ( oBtnContinue:Disable(),;
+               oGetQuestion:VarPut( "continue" ), oGetQuestion:SetText( "continue" ), SysRefresh(),;
+               oBtnSubmit:Click(), oBtnContinue:Enable() )
+
+   @ 296, 370 SAY "Result" OF oDlg FONT oFont SIZE 70,15 PIXEL
+
+   @ 317, 370 GET oGet2 VAR cVar2 OF oDlg PIXEL SIZE 800, 200 MEMO FONT oFont
+   
+   oGet2:bGotfocus := {|| oGet2:SetSel( 0, 0 ) }
+
+   @ 24, 15 SAY "Context" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 45, 15 GET oGetContext VAR cContext PIXEL SIZE 340, 473 MEMO FONT oFont 
+
+   @ 531, 1020 BUTTON "Close" OF oDlg PIXEL FONT oFont ACTION oDlg:End() SIZE 150, 45
+   
+   ACTIVATE DIALOG oDlg CENTERED ON PAINT oGetQuestion:SetPos( 0 )
+   
+return nil
+
+//------------------------------------------------------------//
+
+CLASS TOpenAI
+
+   DATA   cKey
+   DATA   cContext INIT ""
+   DATA   cAnswer
+   DATA   aRules INIT {}
+
+   METHOD Ask( cQuestion )
+   METHOD Clean() INLINE ( ::cContext := "", ::cAnswer := "" )
+   METHOD GetContext() INLINE StrTran( ::cContext, "\r\n", CRLF )
+   METHOD AddRule( cRule ) INLINE AAdd( ::aRules, cRule )
+
+ENDCLASS   
+
+//------------------------------------------------------------//
+
+METHOD Ask( cQuestion ) CLASS TOpenAI
+
+   local cRule
+
+   ::cContext += If( ! Empty( ::cContext ), "\r\n", "" ) + "User: " + cQuestion
+   if ! Empty( ::aRules )
+      for each cRule in ::aRules
+         ::cContext += "\r\n" + cRule
+      next
+   endif      
+   ::cAnswer = OpenAICall( ::cContext, ::cKey )
+   if ! Empty( ::cAnswer )
+      ::cContext += "\r\nchatGPT: " + StrTran( ::cAnswer, CRLF, "\r\n" )
+   endif   
+
+return ::cAnswer   
+
+//------------------------------------------------------------//
+
+function OpenAICall( cPrompt, cKey )
+
+   local cUrl  := "https://api.openai.com/v1/engines/text-davinci-003/completions"
+   local cJSon, hAnswer := {=&gt;}, cAnswer := ""
+   
+   static oSoap
+
+   if oSoap == nil 
+      oSoap = CreateObject( "MSXML2.ServerXMLHTTP.6.0" )
+   endif   
+
+   TEXT INTO cJson
+   {
+      "prompt": "cPrompt_empty",
+      "temperature": 0,
+      "max_tokens": 2048
+   }
+   ENDTEXT
+   
+   cPrompt = AllTrim( cPrompt )
+   cJson   = StrTran( cJson, "cPrompt_empty", cPrompt )
+   cJson   = StrTran( cJson, CRLF, "\r\n" )
+   cJson   = StrTran( cJson, Chr( 13 ), "" )
+
+   oSoap:Open( "POST", cUrl, .F. )
+   oSoap:SetRequestHeader( "Content-Type", "application/json; charset=utf-8" )
+   oSoap:setRequestHeader( "Authorization", "Bearer " + cKey )
+   oSoap:Send( cJson )
+
+   hb_jsondecode( Alltrim( oSoap:responseText ), @hAnswer )
+
+   if hb_hHasKey( hAnswer, "error" )
+      if Empty( hAnswer[ "error" ][ "param" ] )
+         hAnswer[ "error" ][ "param" ] = ""
+      endif   
+      if Empty( hAnswer[ "error" ][ "code" ] )
+         hAnswer[ "error" ][ "code" ] = ""
+      endif   
+      MsgAlert( hAnswer[ "error" ][ "message" ] + CRLF + CRLF + ;
+                "Param: " + hAnswer[ "error" ][ "param" ] + CRLF + CRLF + ;
+                "Code: " + hAnswer[ "error" ][ "code" ] + CRLF + CRLF, ;
+                hAnswer[ "error" ][ "type" ] )
+      fw_memoEdit( cJson )          
+   else
+      cAnswer = hAnswer[ "choices" ][ 1 ][ "text" ]
+      cAnswer = AllTrim( StrTran( cAnswer, Chr( 10 ), CRLF ) )
+      cAnswer = StrTran( cAnswer, '"', "'" )
+   endif
+   
+return cAnswer
+
+//------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p259267">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Wed Apr 26, 2023 10:06 AM
+      </div>
+      <div class="content"><r>Dear Antonio,<br/><br>
+<br/><br>
+many, many thanks for your tireless research work.<br/><br>
+So great that we can now access AI from Fivewin.<br/><br>
+It opens up so many possibilities.<br/><br>
+<br/><br>
+I am also already in the process of creating a small utility.<br/><br>
+You can choose standard tasks from a task box to set ChatGPT.<br/><br>
+<br/><br>
+Thanks again<br/><br>
+Otto<br/><br>
+<br/><br>
+<br/><br>
+<IMG src="https://mybergland.com/fwforum/ai1.jpg"><s><img src="</s>https://mybergland.com/fwforum/ai1.jpg<e>" alt="" loading="lazy"></e></IMG></r></div>
+    </div>
+  </div>
+  <div class="post" id="p259278">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Wed Apr 26, 2023 04:34 PM
+      </div>
+      <div class="content"><p><r>Dear Otto,<br/><br>
+<br/><br>
+yes, thats the idea <E>:-)</E><br/><br>
+<br/><br>
+To have a collection of tasks and also a collection of different prompts and rules</r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p259319">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Thu Apr 27, 2023 08:57 PM
+      </div>
+      <div class="content"><p><t>Hello Antonio;<br/><br>
+<br/><br>
+I think I have a very good use case for this class.   I have been testing the idea using Chat.openai.com manually.  I feed the document's text with a very technical question and so far the answers are better than what my most seasoned and technical users have been coming up with.<br/><br>
+<br/><br>
+A typical document is 166 tokens.  OpenAI answers are about 16 tokens at most for each document that is fed.<br/><br>
+<br/></p>
+<h1>1 -- When you limit tokens, does that limit the answer or does that includes question and answer?  <br/></h1>
+<h1>2 -- I noticed you are using SOAP.  Will it work with hbCurl.lib?   Doesn't it make more sense to use hbCurl.lib that is MS independent?<br/></h1>
+<p><br/><br>
+I noticed their samples are Python samples.  Are there c samples anywhere or can you help with a TOpenAI class sample using hbcurl?<br/><br>
+<br/><br>
+Thank you,<br/><br>
+<br/><br>
+Reinaldo.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p259333">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Fri Apr 28, 2023 08:32 AM
+      </div>
+      <div class="content"><r>Dear Reinaldo,<br/><br>
+<br/><br>
+In the source code, originally developed by Carlos Gallego, you find this:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;   TEXT INTO cJson
+   {
+      "prompt": "cPrompt_empty",
+      "temperature": 0,
+      "max_tokens": 2048
+   }
+   ENDTEXT&lt;e&gt;</code></pre></div></e></CODE><br>
+Not sure if modifying the max_tokens value may help. Maybe we need to contact OpenAI tech support.<br/><br>
+<br/><br>
+Regarding the use of SOAP I don't see any issue with that as we build Windows apps mostly. If a Linux or Mac user wants to use it, then it may get converted into curl.<br/><br>
+<br/><br>
+I am mostly focused on finding a good way to manage the context (deleting, modifying or redoing a previous step), manage different prompts and rules. It seems as the combination of context use, the right prompt and certain rules is the way to get the best from the OpenAI engine. <br/><br>
+<br/><br>
+I do appreciate your feedback about this, hopefully more users provide feedback too, so we can enhance this new Class TOpenAI to be used from our apps the best way</r></div>
+    </div>
+  </div>
+  <div class="post" id="p259542">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Thu May 04, 2023 06:42 AM
+      </div>
+      <div class="content"><p><t>Hello friends,<br/><br>
+<br/><br>
+I am thinking of creating an offline tool to submit text to ChatGPT.<br/><br>
+ Requiring customers to have an API key with variable cost billing can be cumbersome. <br/><br>
+Here, I will simply enter the text into a textbox and then select the task from a combobox. <br/><br>
+Then, I will use a copy command to transfer the text to the clipboard.<br/><br>
+<br/><br>
+Best regards,<br/><br>
+Otto</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p259548">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Thu May 04, 2023 10:18 AM
+      </div>
+      <div class="content"><p><t>Dear Otto,<br/><br>
+<br/><br>
+Who will pay for the OpenAI services ?<br/><br>
+<br/><br>
+Could you please explain your point of view and how will it work ?<br/><br>
+<br/><br>
+many thanks</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p259552">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Thu May 04, 2023 11:38 AM
+      </div>
+      <div class="content"><p><t>Dear Antonio,<br/><br>
+I have the ChatGPT Pro plan and pay $24 per month. However, if I want to use the OpenAI API, I need another plan that is billed per token.<br/><br>
+I hope my information is right.<br/><br>
+Best regards,<br/><br>
+Otto</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p259556">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Thu May 04, 2023 11:54 AM
+      </div>
+      <div class="content"><r>Dear Otto,<br/><br>
+<br/><br>
+yes, I think so<br/><br>
+<br/><br>
+This is our more recent version:<br/><br>
+<URL url="https://github.com/FiveTechSoft/screenshots/blob/master/autogpt04.png?raw=true"><s><a href="</s><LINK_TEXT text="https://github.com/FiveTechSoft/screens ... g?raw=true">https://github.com/FiveTechSoft/screenshots/blob/master/autogpt04.png?raw=true</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://github.com/FiveTechSoft/screens ... g?raw=true">https://github.com/FiveTechSoft/screenshots/blob/master/autogpt04.png?raw=true</LINK_TEXT><e></a></e></URL><br/><br>
+<IMG src="https://github.com/FiveTechSoft/screenshots/blob/master/autogpt04.png?raw=true"><s><img src="</s>https://github.com/FiveTechSoft/screenshots/blob/master/autogpt04.png?raw=true<e>" alt="" loading="lazy"></e></IMG><br/><br>
+autogpt.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+function Main()
+
+   local oDlg, oGetQuestion, cQuestion := Space( 100 )
+   local oGet2, cVar2 := Space( 2048 )
+   local oFont, oBtn1, oSay1, oSay2
+   local nChars := 0
+   local oOpenAI := TOPenAI()
+   local oBrwContext, aContext, oBtnContinue, oBtnSubmit
+   
+   oOpenAI:cKey = "sk-yours..."
+   oOpenAI:AddRule( "don't include the words 'Bot:' 'chatGPT:' 'User:' in your answer" )
+
+   DEFINE FONT oFont NAME "Verdana" SIZE 0, -16
+
+   DEFINE DIALOG oDlg FROM 0, 0 TO 39, 150 TRUEPIXEL TITLE "autoGPT with OpenAI"
+   
+   @ 24, 370 SAY "Question" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 24, 1040 SAY oSay1 VAR "Chars: " + cValToChar( nChars ) OF oDlg PIXEL ;
+      SIZE 170, 15 UPDATE CENTER FONT oFont
+
+   @ 45, 370 GET oGetQuestion VAR cQuestion OF oDlg PIXEL SIZE 800,200 MEMO FONT oFont UPDATE
+
+   oGetQuestion:bChange = { || nChars := Len( AllTrim( oGetQuestion:GetText() ) ), oSay1:Refresh() }
+   oGetQuestion:bGotfocus = {|| oGetQuestion:SetSel( 0, 0 ) }
+
+   @ 255, 677 BUTTON "Clean context" OF oDlg PIXEL SIZE 150, 45 ;
+      FONT oFont ACTION ( oOpenAI:Clean(), oOpenAI:Clean(), oBrwContext:Refresh(),;
+                          oGetQuestion:SetText( "" ), cQuestion := "", oGetQuestion:VarPut( "" ) )
+
+   @ 255, 849 BUTTON oBtnSubmit PROMPT "Submit" OF oDlg PIXEL SIZE 150, 45 ;
+      FONT oFont ACTION ( oBtnSubmit:Disable(), oGet2:SetText( oOpenAI:Ask( AllTrim( cQuestion ) ) ),;
+                          oBrwContext:Refresh(), oBtnSubmit:Enable() ) 
+
+   @ 255, 755 + 200 + 64 BUTTON oBtnContinue PROMPT "Continue" OF oDlg PIXEL SIZE 150, 45 ;
+      FONT oFont ;
+      ACTION ( oBtnContinue:Disable(),;
+               oGetQuestion:VarPut( "continue" ), oGetQuestion:SetText( "continue" ), SysRefresh(),;
+               oBtnSubmit:Click(), oBtnContinue:Enable() )
+
+   @ 296, 370 SAY "Result" OF oDlg FONT oFont SIZE 70,15 PIXEL
+
+   @ 317, 370 GET oGet2 VAR cVar2 OF oDlg PIXEL SIZE 800, 200 MEMO FONT oFont
+   
+   oGet2:bGotfocus := {|| oGet2:SetSel( 0, 0 ) }
+
+   @ 24, 15 SAY "Context" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 45, 15 XBROWSE oBrwContext SIZE 340, 473 PIXEL OF oDlg ;
+      DATASOURCE oOpenAI:aContext AUTOCOLS HEADERS "Context" FONT oFont // NOBORDER
+
+   WITH OBJECT oBrwContext
+      :nRowHeight       = 90
+      :lAllowRowSizing  = .T.
+      :nRowDividerStyle = 2
+      :nStretchCol = 1  
+      :lHScroll = .F. 
+      :aCols[ 1 ]:bStrData := { |x,o| If( oBrwContext:KeyNo % 2 == 1, "User", "chatGPT" ) + ":" + CRLF + IfNil( o:Value, "" ) }
+      :bClrStd  = { || If( oBrwContext:KeyNo % 2 == 0, { CLR_BLACK, CLR_HGREEN }, { CLR_BLACK, CLR_HCYAN } ) }
+      :lHeader  = .F.
+      :lRecordSelector = .F.  
+      :CreateFromCode()
+   END
+
+   @ 531, 1020 BUTTON "Close" OF oDlg PIXEL FONT oFont ACTION oDlg:End() SIZE 150, 45
+   
+   ACTIVATE DIALOG oDlg CENTERED ON PAINT oGetQuestion:SetPos( 0 )
+   
+return nil
+
+//------------------------------------------------------------//
+
+CLASS TOpenAI
+
+   DATA   cKey
+   DATA   aContext INIT {}
+   DATA   cAnswer
+   DATA   aRules INIT {}
+
+   METHOD Ask( cQuestion )
+   METHOD Clean() INLINE ( ::cAnswer := "", ASize( ::aContext, 0 ) )
+   // METHOD GetContext() INLINE StrTran( ::cContext, "\r\n", CRLF )
+   METHOD AddRule( cRule ) INLINE AAdd( ::aRules, cRule )
+
+ENDCLASS   
+
+//------------------------------------------------------------//
+
+METHOD Ask( cQuestion ) CLASS TOpenAI
+
+   local cRule, cContext := "", cLine
+
+   AAdd( ::aContext, cQuestion )
+   if ! Empty( ::aRules )
+      for each cRule in ::aRules
+         cContext += "\r\n" + cRule
+      next
+   endif      
+   for each cLine in ::aContext 
+      cContext += cLine 
+   next   
+   ::cAnswer = OemToAnsi( OpenAICall( cContext, ::cKey ) )
+   if ! Empty( ::cAnswer )
+      if Left( ::cAnswer, 4 ) == "Bot:"
+         ::cAnswer = SubStr( ::cAnswer, 6 )
+      endif   
+      if Left( ::cAnswer, 11 ) == "onechatGPT:"
+         ::cAnswer = SubStr( ::cAnswer, 13 )
+      endif   
+      AAdd( ::aContext, StrTran( ::cAnswer, CRLF, "\r\n" ) )
+   endif   
+
+return ::cAnswer   
+
+//------------------------------------------------------------//
+
+function OpenAICall( cPrompt, cKey )
+
+   local cUrl  := "https://api.openai.com/v1/engines/text-davinci-003/completions"
+   local cJSon, hAnswer := {=&gt;}, cAnswer := ""
+   
+   static oSoap
+
+   if oSoap == nil 
+      oSoap = CreateObject( "MSXML2.ServerXMLHTTP.6.0" )
+   endif   
+
+   TEXT INTO cJson
+   {
+      "prompt": "cPrompt_empty",
+      "temperature": 0,
+      "max_tokens": 2048
+   }
+   ENDTEXT
+   
+   cPrompt = AllTrim( cPrompt )
+   cJson   = StrTran( cJson, "cPrompt_empty", cPrompt )
+   cJson   = StrTran( cJson, CRLF, "\r\n" )
+   cJson   = StrTran( cJson, Chr( 13 ), "" )
+
+   oSoap:Open( "POST", cUrl, .F. )
+   oSoap:SetRequestHeader( "Content-Type", "application/json; charset=utf-8" )
+   oSoap:setRequestHeader( "Authorization", "Bearer " + cKey )
+   oSoap:Send( cJson )
+
+   hb_jsondecode( Alltrim( oSoap:responseText ), @hAnswer )
+
+   if hb_hHasKey( hAnswer, "error" )
+      if Empty( hAnswer[ "error" ][ "param" ] )
+         hAnswer[ "error" ][ "param" ] = ""
+      endif   
+      if Empty( hAnswer[ "error" ][ "code" ] )
+         hAnswer[ "error" ][ "code" ] = ""
+      endif   
+      MsgAlert( hAnswer[ "error" ][ "message" ] + CRLF + CRLF + ;
+                "Param: " + hAnswer[ "error" ][ "param" ] + CRLF + CRLF + ;
+                "Code: " + hAnswer[ "error" ][ "code" ] + CRLF + CRLF, ;
+                hAnswer[ "error" ][ "type" ] )
+      fw_memoEdit( cJson )          
+   else
+      cAnswer = hAnswer[ "choices" ][ 1 ][ "text" ]
+      cAnswer = AllTrim( StrTran( cAnswer, Chr( 10 ), CRLF ) )
+      cAnswer = StrTran( cAnswer, '"', "'" )
+   endif
+   
+return cAnswer
+
+//------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p259557">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT for OpenAI</span><br>
+        Posted: Thu May 04, 2023 12:21 PM
+      </div>
+      <div class="content"><r>Using "temperature:<br/><br>
+<br/><br>
+<URL url="https://github.com/FiveTechSoft/screenshots/blob/master/autogpt05.png"><s><a href="</s><LINK_TEXT text="https://github.com/FiveTechSoft/screens ... ogpt05.png">https://github.com/FiveTechSoft/screenshots/blob/master/autogpt05.png</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://github.com/FiveTechSoft/screens ... ogpt05.png">https://github.com/FiveTechSoft/screenshots/blob/master/autogpt05.png</LINK_TEXT><e></a></e></URL><br/><br>
+<IMG src="https://github.com/FiveTechSoft/screenshots/blob/master/autogpt05.png?raw=true"><s><img src="</s>https://github.com/FiveTechSoft/screenshots/blob/master/autogpt05.png?raw=true<e>" alt="" loading="lazy"></e></IMG><br/><br>
+autogpt.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+#include "Slider.ch"
+
+function Main()
+
+   local oDlg, oGetQuestion, cQuestion := Space( 100 )
+   local oGet2, cVar2 := Space( 2048 )
+   local oFont, oBtn1, oSay1, oSay2
+   local nChars := 0
+   local oOpenAI := TOPenAI()
+   local oBrwContext, aContext, oBtnContinue, oBtnSubmit, oSlide
+   
+   oOpenAI:cKey = "sk-yours..."
+   oOpenAI:AddRule( "don't include the words 'Bot:' 'chatGPT:' 'User:' in your answer" )
+
+   DEFINE FONT oFont NAME "Verdana" SIZE 0, -16
+
+   DEFINE DIALOG oDlg FROM 0, 0 TO 39, 150 TRUEPIXEL TITLE "autoGPT with OpenAI"
+   
+   @ 24, 370 SAY "Question" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 24, 1040 SAY oSay1 VAR "Chars: " + cValToChar( nChars ) OF oDlg PIXEL ;
+      SIZE 170, 15 UPDATE CENTER FONT oFont
+
+   @ 45, 370 GET oGetQuestion VAR cQuestion OF oDlg PIXEL SIZE 800,200 MEMO FONT oFont UPDATE
+
+   oGetQuestion:bChange = { || nChars := Len( AllTrim( oGetQuestion:GetText() ) ), oSay1:Refresh() }
+   oGetQuestion:bGotfocus = {|| oGetQuestion:SetSel( 0, 0 ) }
+
+   @ 255, 677 BUTTON "Clean context" OF oDlg PIXEL SIZE 150, 45 ;
+      FONT oFont ACTION ( oOpenAI:Clean(), oOpenAI:Clean(), oBrwContext:Refresh(),;
+                          oGetQuestion:SetText( "" ), cQuestion := "", oGetQuestion:VarPut( "" ) )
+
+   @ 255, 849 BUTTON oBtnSubmit PROMPT "Submit" OF oDlg PIXEL SIZE 150, 45 ;
+      FONT oFont ACTION ( oBtnSubmit:Disable(), oGet2:SetText( oOpenAI:Ask( AllTrim( cQuestion ) ) ),;
+                          oBrwContext:Refresh(), oBrwContext:GoBottom(), oBtnSubmit:Enable() ) 
+
+   @ 255, 755 + 200 + 64 BUTTON oBtnContinue PROMPT "Continue" OF oDlg PIXEL SIZE 150, 45 ;
+      FONT oFont ;
+      ACTION ( oBtnContinue:Disable(),;
+               oGetQuestion:VarPut( "continue" ), oGetQuestion:SetText( "continue" ), SysRefresh(),;
+               oBtnSubmit:Click(), oBtnContinue:Enable() )
+
+   @ 296, 370 SAY "Result" OF oDlg FONT oFont SIZE 70,15 PIXEL
+
+   @ 317, 370 GET oGet2 VAR cVar2 OF oDlg PIXEL SIZE 800, 200 MEMO FONT oFont
+   
+   oGet2:bGotfocus := {|| oGet2:SetSel( 0, 0 ) }
+
+   @ 24, 15 SAY "Context" OF oDlg FONT oFont SIZE 75, 15 PIXEL
+
+   @ 45, 15 XBROWSE oBrwContext SIZE 340, 473 PIXEL OF oDlg ;
+      DATASOURCE oOpenAI:aContext AUTOCOLS HEADERS "Context" FONT oFont // NOBORDER
+
+   WITH OBJECT oBrwContext
+      :nRowHeight       = 90
+      :lAllowRowSizing  = .T.
+      :nRowDividerStyle = 2
+      :nStretchCol = 1  
+      :lHScroll = .F. 
+      :aCols[ 1 ]:bStrData := { |x,o| If( oBrwContext:KeyNo % 2 == 1, "User", "chatGPT" ) + ":" + CRLF + IfNil( o:Value, "" ) }
+      :bClrStd  = { || If( oBrwContext:KeyNo % 2 == 0, { CLR_BLACK, CLR_HGREEN }, { CLR_BLACK, CLR_HCYAN } ) }
+      :lHeader  = .F.
+      :lRecordSelector = .F.  
+      :CreateFromCode()
+   END
+
+   @ 531, 1020 BUTTON "Close" OF oDlg PIXEL FONT oFont ACTION oDlg:End() SIZE 150, 45
+
+   @ 546, 500 SAY "Strict" OF oDlg PIXEL FONT oFont
+
+   @ 546, 800 SAY "Creative" OF oDlg PIXEL FONT oFont
+
+   @ 541, 570 SLIDER oSlide VAR oOpenAI:nTemperature OF oDlg ;
+            HORIZONTAL ;
+            BOTTOM DIRECTION ;
+            RANGE 0, 2 ;
+            MARKS 10 ;
+            EXACT ;
+            SIZE 210, 33 PIXEL // ;
+            // ON CHANGE Triangulo( nVar1, nVar, nVar3 ) ;
+            // ON THUMBPOS Triangulo( nVar1, nVar, nVar3 )
+   
+   ACTIVATE DIALOG oDlg CENTERED ON PAINT oGetQuestion:SetPos( 0 )
+   
+return nil
+
+//------------------------------------------------------------//
+
+CLASS TOpenAI
+
+   DATA   cKey
+   DATA   aContext INIT {}
+   DATA   cAnswer
+   DATA   aRules INIT {}
+   DATA   nTemperature
+
+   METHOD Ask( cQuestion )
+   METHOD Clean() INLINE ( ::cAnswer := "", ASize( ::aContext, 0 ) )
+   // METHOD GetContext() INLINE StrTran( ::cContext, "\r\n", CRLF )
+   METHOD AddRule( cRule ) INLINE AAdd( ::aRules, cRule )
+
+ENDCLASS   
+
+//------------------------------------------------------------//
+
+METHOD Ask( cQuestion ) CLASS TOpenAI
+
+   local cRule, cContext := "", cLine
+
+   AAdd( ::aContext, cQuestion )
+   if ! Empty( ::aRules )
+      for each cRule in ::aRules
+         cContext += "\r\n" + cRule
+      next
+   endif      
+   for each cLine in ::aContext 
+      cContext += cLine 
+   next   
+   ::cAnswer = OemToAnsi( OpenAICall( cContext, ::cKey, ::nTemperature ) )
+   if ! Empty( ::cAnswer )
+      if Left( ::cAnswer, 4 ) == "Bot:"
+         ::cAnswer = SubStr( ::cAnswer, 6 )
+      endif   
+      if Left( ::cAnswer, 11 ) == "onechatGPT:"
+         ::cAnswer = SubStr( ::cAnswer, 13 )
+      endif   
+      AAdd( ::aContext, StrTran( ::cAnswer, CRLF, "\r\n" ) )
+   endif   
+
+return ::cAnswer   
+
+//------------------------------------------------------------//
+
+function OpenAICall( cPrompt, cKey, nTemperature )
+
+   local cUrl  := "https://api.openai.com/v1/engines/text-davinci-003/completions"
+   local cJSon, hAnswer := {=&gt;}, cAnswer := ""
+   
+   static oSoap
+
+   if oSoap == nil 
+      oSoap = CreateObject( "MSXML2.ServerXMLHTTP.6.0" )
+   endif   
+
+   TEXT INTO cJson
+   {
+      "prompt": "cPrompt_empty",
+      "temperature": nTemperature,
+      "max_tokens": 2048
+   }
+   ENDTEXT
+   
+   cPrompt = AllTrim( cPrompt )
+   cJson   = StrTran( cJson, "cPrompt_empty", cPrompt )
+   cJson   = StrTran( cJson, CRLF, "\r\n" )
+   cJson   = StrTran( cJson, Chr( 13 ), "" )
+   cJson   = StrTran( cJson, "nTemperature", AllTrim( Str( nTemperature ) ) )
+
+   oSoap:Open( "POST", cUrl, .F. )
+   oSoap:SetRequestHeader( "Content-Type", "application/json; charset=utf-8" )
+   oSoap:setRequestHeader( "Authorization", "Bearer " + cKey )
+   oSoap:Send( cJson )
+
+   hb_jsondecode( Alltrim( oSoap:responseText ), @hAnswer )
+
+   if hb_hHasKey( hAnswer, "error" )
+      if Empty( hAnswer[ "error" ][ "param" ] )
+         hAnswer[ "error" ][ "param" ] = ""
+      endif   
+      if Empty( hAnswer[ "error" ][ "code" ] )
+         hAnswer[ "error" ][ "code" ] = ""
+      endif   
+      MsgAlert( hAnswer[ "error" ][ "message" ] + CRLF + CRLF + ;
+                "Param: " + hAnswer[ "error" ][ "param" ] + CRLF + CRLF + ;
+                "Code: " + hAnswer[ "error" ][ "code" ] + CRLF + CRLF, ;
+                hAnswer[ "error" ][ "type" ] )
+      fw_memoEdit( cJson )          
+   else
+      cAnswer = hAnswer[ "choices" ][ 1 ][ "text" ]
+      cAnswer = AllTrim( StrTran( cAnswer, Chr( 10 ), CRLF ) )
+      cAnswer = StrTran( cAnswer, '"', "'" )
+   endif
+   
+return cAnswer
+
+//------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-43092-page-2.html">2</a> (16 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

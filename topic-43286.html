@@ -1,0 +1,3870 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Connection to XPlane Flight Simulator - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-43286">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Connection to XPlane Flight Simulator</div>
+  <div class="post" id="p260493">
+    <div class="poster">
+      <div class="name" style="color:#105289">alvaro533</div>
+      <div class="rank">Posts: 230</div>
+      <div class="avatar"></div>
+      Joined: Sat Apr 19, 2008 10:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Connection to XPlane Flight Simulator</span><br>
+        Posted: Sun Jun 04, 2023 12:39 PM
+      </div>
+      <div class="content"><r>Good evening,<br/><br>
+<br/><br>
+I’m trying to use a SDK, from XplaneConnect (NASA),  to connect an external app to the X-Plane flight simulator. The C program in the SDK is as follows:<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#pragma BEGINDUMP
+
+
+//Copyright (c) 2013-2018 United States Government as represented by the Administrator of the
+//National Aeronautics and Space Administration. All Rights Reserved.
+//
+//DISCLAIMERS
+//    No Warranty: THE SUBJECT SOFTWARE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY OF ANY KIND,
+//    EITHER EXPRESSED, IMPLIED, OR STATUTORY, INCLUDING, BUT NOT LIMITED TO, ANY WARRANTY THAT
+//    THE SUBJECT SOFTWARE WILL CONFORM TO SPECIFICATIONS, ANY IMPLIED WARRANTIES OF
+//    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR FREEDOM FROM INFRINGEMENT, ANY WARRANTY
+//    THAT THE SUBJECT SOFTWARE WILL BE ERROR FREE, OR ANY WARRANTY THAT DOCUMENTATION, IF PROVIDED,
+//    WILL CONFORM TO THE SUBJECT SOFTWARE. THIS AGREEMENT DOES NOT, IN ANY MANNER, CONSTITUTE AN
+//    ENDORSEMENT BY GOVERNMENT AGENCY OR ANY PRIOR RECIPIENT OF ANY RESULTS, RESULTING DESIGNS,
+//    HARDWARE, SOFTWARE PRODUCTS OR ANY OTHER APPLICATIONS RESULTING FROM USE OF THE SUBJECT
+//    SOFTWARE.  FURTHER, GOVERNMENT AGENCY DISCLAIMS ALL WARRANTIES AND LIABILITIES REGARDING
+//    THIRD-PARTY SOFTWARE, IF PRESENT IN THE ORIGINAL SOFTWARE, AND DISTRIBUTES IT "AS IS."
+//
+//    Waiver and Indemnity: RECIPIENT AGREES TO WAIVE ANY AND ALL CLAIMS AGAINST THE UNITED STATES
+//    GOVERNMENT, ITS CONTRACTORS AND SUBCONTRACTORS, AS WELL AS ANY PRIOR RECIPIENT.  IF
+//    RECIPIENT'S USE OF THE SUBJECT SOFTWARE RESULTS IN ANY LIABILITIES, DEMANDS, DAMAGES, EXPENSES
+//    OR LOSSES ARISING FROM SUCH USE, INCLUDING ANY DAMAGES FROM PRODUCTS BASED ON, OR RESULTING
+//    FROM, RECIPIENT'S USE OF THE SUBJECT SOFTWARE, RECIPIENT SHALL INDEMNIFY AND HOLD HARMLESS THE
+//    UNITED STATES GOVERNMENT, ITS CONTRACTORS AND SUBCONTRACTORS, AS WELL AS ANY PRIOR RECIPIENT,
+//    TO THE EXTENT PERMITTED BY LAW.  RECIPIENT'S SOLE REMEDY FOR ANY SUCH MATTER SHALL BE THE
+//    IMMEDIATE, UNILATERAL TERMINATION OF THIS AGREEMENT.
+
+//  X-Plane Connect Client
+//
+//  DESCRIPTION
+//      Communicates with the XPC plugin to facilitate controling and gathering data from X-Plane.
+//
+//  INSTRUCTIONS
+//      See Readme.md in the root of this repository or the wiki hosted on GitHub at
+//      https://github.com/nasa/XPlaneConnect/wiki for requirements, installation instructions,
+//      and detailed documentation.
+//
+//  CONTACT
+//      For questions email Christopher Teubert (christopher.a.teubert@nasa.gov)
+//
+//  CONTRIBUTORS
+//      CT: Christopher Teubert (christopher.a.teubert@nasa.gov)
+//      JW: Jason Watkins (jason.w.watkins@nasa.gov)
+
+#include "xplaneConnect.h"
+
+#include &lt;math.h&gt;
+#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/types.h&gt;
+
+
+
+#ifdef _WIN32
+#include &lt;time.h&gt;
+#else
+#include &lt;sys/time.h&gt;
+#endif
+
+int sendUDP(XPCSocket sock, char buffer[], int len);
+int readUDP(XPCSocket sock, char buffer[], int len);
+int sendDREFRequest(XPCSocket sock, const char* drefs[], unsigned char count);
+int getDREFResponse(XPCSocket sock, float* values[], unsigned char count, int sizes[]);
+
+void printError(char *functionName, char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+
+    printf("[%s] ERROR: ", functionName);
+    vprintf(format, args);
+    printf("\n");
+
+    va_end(args);
+}
+
+/*****************************************************************************/
+/****                       Low Level UDP functions                       ****/
+/*****************************************************************************/
+XPCSocket openUDP(const char *xpIP)
+{
+    return aopenUDP(xpIP, 49009, 0);
+}
+
+XPCSocket aopenUDP(const char *xpIP, unsigned short xpPort, unsigned short port)
+{
+    XPCSocket sock;
+
+    // Setup Port
+    struct sockaddr_in recvaddr;
+    recvaddr.sin_family = AF_INET;
+    recvaddr.sin_addr.s_addr = INADDR_ANY;
+    recvaddr.sin_port = htons(port);
+
+    // Set X-Plane Port and IP
+    if (strcmp(xpIP, "localhost") == 0)
+    {
+        xpIP = "127.0.0.1";
+    }
+    strncpy(sock.xpIP, xpIP, 16);
+    sock.xpPort = xpPort == 0 ? 49009 : xpPort;
+
+#ifdef _WIN32
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &amp;wsa) != 0)
+    {
+        printError("OpenUDP", "WSAStartup failed");
+        exit(EXIT_FAILURE);
+    }
+#endif
+
+    if ((sock.sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+    {
+        printError("OpenUDP", "Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+    if (bind(sock.sock, (struct sockaddr*)&amp;recvaddr, sizeof(recvaddr)) == -1)
+    {
+        printError("OpenUDP", "Socket bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Set socket timeout period for sendUDP to 1 millisecond
+    // Without this, playback may become choppy due to process blocking
+#ifdef _WIN32
+    // Minimum socket timeout in Windows is 1 millisecond (0 makes it blocking)
+    DWORD timeout = 1;
+#else
+    // Set socket timeout to 1 millisecond = 1,000 microseconds to make it the same as Windows (0 makes it blocking)
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 1000;
+#endif
+    if (setsockopt(sock.sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&amp;timeout, sizeof(timeout)) &lt; 0)
+    {
+        printError("OpenUDP", "Failed to set timeout");
+    }
+    return sock;
+}
+
+void closeUDP(XPCSocket sock)
+{
+#ifdef _WIN32
+    int result = closesocket(sock.sock);
+#else
+    int result = close(sock.sock);
+#endif
+    if (result &lt; 0)
+    {
+        printError("closeUDP", "Failed to close socket");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/// Sends the given data to the X-Plane plugin.
+///
+/// \param sock   The socket to use to send the data.
+/// \param buffer A pointer to the data to send.
+/// \param len    The number of bytes to send.
+/// \returns      If an error occurs, a negative number. Otehrwise, the number of bytes sent.
+int sendUDP(XPCSocket sock, char buffer[], int len)
+{
+    // Preconditions
+    if (len &lt;= 0)
+    {
+        printError("sendUDP", "Message length must be positive.");
+        return -1;
+    }
+
+    // Set up destination address
+    struct sockaddr_in dst;
+    dst.sin_family = AF_INET;
+    dst.sin_port = htons(sock.xpPort);
+    inet_pton(AF_INET, sock.xpIP, &amp;dst.sin_addr.s_addr);
+
+    int result = sendto(sock.sock, buffer, len, 0, (const struct sockaddr*)&amp;dst, sizeof(dst));
+    if (result &lt; 0)
+    {
+        printError("sendUDP", "Send operation failed.");
+        return -2;
+    }
+    if (result &lt; len)
+    {
+        printError("sendUDP", "Unexpected number of bytes sent.");
+    }
+    return result;
+}
+
+/// Reads a datagram from the specified socket.
+///
+/// \param sock   The socket to read from.
+/// \param buffer A pointer to the location to store the data.
+/// \param len    The number of bytes to read.
+/// \returns      If an error occurs, a negative number. Otherwise, the number of bytes read.
+int readUDP(XPCSocket sock, char buffer[], int len)
+{
+    // For readUDP, use the select command - minimum timeout of 0 makes it polling.
+    // Without this, playback may become choppy due to process blocking
+
+    // Definitions
+    fd_set stReadFDS;
+    fd_set stExceptFDS;
+    struct timeval timeout;
+
+    // Setup for Select
+    FD_ZERO(&amp;stReadFDS);
+    FD_SET(sock.sock, &amp;stReadFDS);
+    FD_ZERO(&amp;stExceptFDS);
+    FD_SET(sock.sock, &amp;stExceptFDS);
+
+    // Set timeout period for select to 0.05 sec = 50 milliseconds = 50,000 microseconds (0 makes it polling)
+    // TO DO - This could be set to 0 if a message handling system were implemented, like in the plugin.
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 50000;
+
+    // Select Command
+    int status = select(sock.sock+1, &amp;stReadFDS, NULL, &amp;stExceptFDS, &amp;timeout);
+    if (status &lt; 0)
+    {
+        printError("readUDP", "Select command error");
+        return -1;
+    }
+    if (status == 0)
+    {
+        // No data
+        return 0;
+    }
+
+    // If no error: Read Data
+    status = recv(sock.sock, buffer, len, 0);
+    if (status &lt; 0)
+    {
+        printError("readUDP", "Error reading socket");
+    }
+    return status;
+}
+/*****************************************************************************/
+/****                    End Low Level UDP functions                      ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                      Configuration functions                        ****/
+/*****************************************************************************/
+int setCONN(XPCSocket* sock, unsigned short port)
+{
+    // Set up command
+    char buffer[32] = "CONN";
+    memcpy(&amp;buffer[5], &amp;port, 2);
+
+    // Send command
+    if (sendUDP(*sock, buffer, 7) &lt; 0)
+    {
+        printError("setCONN", "Failed to send command");
+        return -1;
+    }
+
+    // Switch socket
+    closeUDP(*sock);
+    *sock = aopenUDP(sock-&gt;xpIP, sock-&gt;xpPort, port);
+
+    // Read response
+    int result = readUDP(*sock, buffer, 32);
+
+    if (result &lt;= 0)
+    {
+        printError("setCONN", "Failed to read response");
+        return -2;
+    }
+    if (strncmp(buffer, "CONF", 4) == 0)
+    {
+        // Response received succesfully.
+        return 0;
+    }
+    // Response incorrect
+    return -3;
+}
+
+int pauseSim(XPCSocket sock, char pause)
+{
+    // Validte input
+    if (pause &lt; 0 || (pause &gt; 2 &amp;&amp; pause &lt; 100) || (pause &gt; 119 &amp;&amp; pause &lt; 200) || pause &gt; 219)
+    {
+        printError("pauseSim", "Invalid argument: %i", pause);
+        return -2;
+    }
+
+    // Setup command
+    char buffer[6] = "SIMU";
+    buffer[5] = pause;
+
+    // Send command
+    if (sendUDP(sock, buffer, 6) &lt; 0)
+    {
+        printError("pauseSim", "Failed to send command");
+        return -1;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                    End Configuration functions                      ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                    X-Plane UDP Data functions                       ****/
+/*****************************************************************************/
+int sendDATA(XPCSocket sock, float data[][9], int rows)
+{
+    // Preconditions
+    // There are only 134 DATA rows in X-Plane. Realistically, clients probably
+    // shouldn't be trying to set nearly this much data at once anyway.
+    if (rows &gt; 134)
+    {
+        printError("sendDATA", "Too many rows.");
+        return -1;
+    }
+
+    // Setup command
+    // 5 byte header + 134 rows * 9 values * 4 bytes per value =&gt; 4829 byte max length.
+    char buffer[4829] = "DATA";
+    int len = 5 + rows * 9 * sizeof(float);
+    unsigned short step = 9 * sizeof(float);
+    int i; // iterator
+    for (i = 0; i &lt; rows; i++)
+    {
+        buffer[5 + i * step] = (char)data[i][0];
+        memcpy(&amp;buffer[9 + i*step], &amp;data[i][1], 8 * sizeof(float));
+    }
+    // Send command
+    if (sendUDP(sock, buffer, len ) &lt; 0)
+    {
+        printError("sendDATA", "Failed to send command");
+        return -2;
+    }
+    return 0;
+}
+
+int readDATA(XPCSocket sock, float data[][9], int rows)
+{
+    // Preconditions
+    // There are only 134 DATA rows in X-Plane. Realistically, clients probably
+    // shouldn't be trying to read nearly this much data at once anyway.
+    if (rows &gt; 134)
+    {
+        printError("readDATA", "Too many rows.");
+        // Read as much as we can anyway
+        rows = 134;
+    }
+
+    // Read data
+    char buffer[4829] = { 0 };
+    int result = readUDP(sock, buffer, 4829);
+    if (result &lt;= 0)
+    {
+        printError("readDATA", "Failed to read from socket.");
+        return -1;
+    }
+    // Validate data
+    int readRows = (result - 5) / 36;
+    if (readRows &gt; rows)
+    {
+        printError("readDATA", "Read more rows than will fit in dataRef.");
+    }
+    else if (readRows &lt; rows)
+    {
+        printError("readDATA", "Read fewer rows than expected.");
+        // Copy as much data as we read anyway
+        rows = readRows;
+    }
+
+    // Parse data
+    int i; // iterator
+    for (i = 0; i &lt; rows; ++i)
+    {
+        data[i][0] = buffer[5 + i * 36];
+        memcpy(&amp;data[i][1], &amp;buffer[9 + i * 36], 8 * sizeof(float));
+    }
+    return rows;
+}
+/*****************************************************************************/
+/****                  End X-Plane UDP Data functions                     ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          DREF functions                             ****/
+/*****************************************************************************/
+int sendDREF(XPCSocket sock, const char* dref, float values[], int size)
+{
+    return sendDREFs(sock, &amp;dref, &amp;values, &amp;size, 1);
+}
+
+int sendDREFs(XPCSocket sock, const char* drefs[], float* values[], int sizes[], int count)
+{
+    // Setup command
+    // Max size is technically unlimited.
+    char buffer[65536] = "DREF";
+    int pos = 5;
+    int i; // Iterator
+    for (i = 0; i &lt; count; ++i)
+    {
+        int drefLen = strnlen(drefs[i], 256);
+        if (pos + drefLen + sizes[i] * 4 + 2 &gt; 65536)
+        {
+            printError("sendDREF", "About to overrun the send buffer!");
+            return -4;
+        }
+        if (drefLen &gt; 255)
+        {
+            printError("sendDREF", "dref %d is too long. Must be less than 256 characters.", i);
+            return -1;
+        }
+        if (sizes[i] &gt; 255)
+        {
+            printError("sendDREF", "size %d is too big. Must be less than 256.", i);
+            return -2;
+        }
+        // Copy dref to buffer
+        buffer[pos++] = (unsigned char)drefLen;
+        memcpy(buffer + pos, drefs[i], drefLen);
+        pos += drefLen;
+
+        // Copy values to buffer
+        buffer[pos++] = (unsigned char)sizes[i];
+        memcpy(buffer + pos, values[i], sizes[i] * sizeof(float));
+        pos += sizes[i] * sizeof(float);
+    }
+
+    // Send command
+    if (sendUDP(sock, buffer, pos) &lt; 0)
+    {
+        printError("setDREF", "Failed to send command");
+        return -3;
+    }
+    return 0;
+}
+
+int sendDREFRequest(XPCSocket sock, const char* drefs[], unsigned char count)
+{
+    // Setup command
+    // 6 byte header + potentially 255 drefs, each 256 chars long.
+    // Easiest to just round to an even 2^16.
+    char buffer[65536] = "GETD";
+    buffer[5] = count;
+    int len = 6;
+    int i; // iterator
+    for (i = 0; i &lt; count; ++i)
+    {
+        size_t drefLen = strnlen(drefs[i], 256);
+        if (drefLen &gt; 255)
+        {
+            printError("getDREFs", "dref %d is too long.", i);
+            return -1;
+        }
+        buffer[len++] = (unsigned char)drefLen;
+        strncpy(buffer + len, drefs[i], drefLen);
+        len += drefLen;
+    }
+    // Send Command
+    if (sendUDP(sock, buffer, len) &lt; 0)
+    {
+        printError("getDREFs", "Failed to send command");
+        return -2;
+    }
+    return 0;
+}
+
+int getDREFResponse(XPCSocket sock, float* values[], unsigned char count, int sizes[])
+{
+    char buffer[65536];
+    int result = readUDP(sock, buffer, 65536);
+
+    if (result &lt; 0)
+    {
+#ifdef _WIN32
+        printError("getDREFs", "Read operation failed. (%d)", WSAGetLastError());
+#else
+        printError("getDREFs", "Read operation failed.");
+#endif
+        return -1;
+    }
+
+    if (result &lt; 6)
+    {
+        printError("getDREFs", "Response was too short. Expected at least 6 bytes, but only got %d.", result);
+        return -2;
+    }
+    if (buffer[5] != count)
+    {
+        printError("getDREFs", "Unexpected response size. Expected %d rows, got %d instead.", count, buffer[5]);
+        return -3;
+    }
+
+    int cur = 6;
+    int i; // Iterator
+    for (i = 0; i &lt; count; ++i)
+    {
+        int l = buffer[cur++];
+        if (l &gt; sizes[i])
+        {
+            printError("getDREFs", "values is too small. Row had %d values, only room for %d.", l, sizes[i]);
+            // Copy as many values as we can anyway
+            memcpy(values[i], buffer + cur, sizes[i] * sizeof(float));
+        }
+        else
+        {
+            memcpy(values[i], buffer + cur, l * sizeof(float));
+            sizes[i] = l;
+        }
+        cur += l * sizeof(float);
+    }
+    return 0;
+}
+
+int getDREF(XPCSocket sock, const char* dref, float values[], int* size)
+{
+    return getDREFs(sock, &amp;dref, &amp;values, 1, size);
+}
+
+int getDREFs(XPCSocket sock, const char* drefs[], float* values[], unsigned char count, int sizes[])
+{
+    // Send Command
+    int result = sendDREFRequest(sock, drefs, count);
+    if (result &lt; 0)
+    {
+        // An error ocurred while sending.
+        // sendDREFRequest will print an error message, so just return.
+        return -1;
+    }
+
+    // Read Response
+    if (getDREFResponse(sock, values, count, sizes) &lt; 0)
+    {
+        // An error ocurred while reading the response.
+        // getDREFResponse will print an error message, so just return.
+        return -2;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                        End DREF functions                           ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          POSI functions                             ****/
+/*****************************************************************************/
+int getPOSI(XPCSocket sock, double values[7], char ac)
+{
+    // Setup send command
+    char buffer[6] = "GETP";
+    buffer[5] = ac;
+
+    // Send command
+    if (sendUDP(sock, buffer, 6) &lt; 0)
+    {
+        printError("getPOSI", "Failed to send command.");
+        return -1;
+    }
+
+    // Get response
+    char readBuffer[46];
+    float f[7];
+    int readResult = readUDP(sock, readBuffer, 46);
+
+    // Copy response into values
+    if (readResult &lt; 0)
+    {
+        printError("getPOSI", "Failed to read response.");
+        return -2;
+    }
+    else if (readResult == 34) /* lat/lon/h as 32-bit float */
+    {
+        memcpy(f, readBuffer + 6, 7 * sizeof(float));
+        values[0] = (double)f[0];
+        values[1] = (double)f[1];
+        values[2] = (double)f[2];
+        values[3] = (double)f[3];
+        values[4] = (double)f[4];
+        values[5] = (double)f[5];
+        values[6] = (double)f[6];
+    }
+    else if (readResult == 46) /* lat/lon/h as 64-bit double */
+    {
+        memcpy(values, readBuffer + 6, 3 * sizeof(double));
+        memcpy(f, readBuffer + 30, 4 * sizeof(float));
+        values[3] = (double)f[0];
+        values[4] = (double)f[1];
+        values[5] = (double)f[2];
+        values[6] = (double)f[3];
+    }
+    else
+    {
+        printError("getPOSI", "Unexpected response length.");
+        return -3;
+    }
+    return 0;
+}
+
+int sendPOSI(XPCSocket sock, double values[], int size, char ac)
+{
+    // Validate input
+    if (ac &lt; 0 || ac &gt; 20)
+    {
+        printError("sendPOSI", "aircraft should be a value between 0 and 20.");
+        return -1;
+    }
+    if (size &lt; 1 || size &gt; 7)
+    {
+        printError("sendPOSI", "size should be a value between 1 and 7.");
+        return -2;
+    }
+
+    // Setup command
+    char buffer[46] = "POSI";
+    buffer[4] = 0xff; //Placeholder for message length
+    buffer[5] = ac;
+    int i; // iterator
+
+    for (i = 0; i &lt; 7; i++) // double for lat/lon/h
+    {
+        double val = -998;
+
+        if (i &lt; size)
+        {
+            val = values[i];
+        }
+        if (i &lt; 3) /* lat/lon/h */
+        {
+            memcpy(&amp;buffer[6 + i*8], &amp;val, sizeof(double));
+        }
+        else /* attitude and gear */
+        {
+            float f = (float)val;
+            memcpy(&amp;buffer[18 + i*4], &amp;f, sizeof(float));
+        }
+    }
+
+    // Send Command
+    if (sendUDP(sock, buffer, 46) &lt; 0)
+    {
+        printError("sendPOSI", "Failed to send command");
+        return -3;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                        End POSI functions                           ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          TERR functions                             ****/
+/*****************************************************************************/
+int sendTERRRequest(XPCSocket sock, double posi[3], char ac)
+{
+    // Setup send command
+    char buffer[30] = "GETT";
+    buffer[5] = ac;
+    memcpy(&amp;buffer[6], posi, 3 * sizeof(double));
+
+    // Send command
+    if (sendUDP(sock, buffer, 30) &lt; 0)
+    {
+        printError("getTERR", "Failed to send command.");
+        return -1;
+    }
+    return 0;
+}
+
+int getTERRResponse(XPCSocket sock, double values[11], char ac)
+{
+    // Get response
+    char readBuffer[62];
+    int readResult = readUDP(sock, readBuffer, 62);
+    if (readResult &lt; 0)
+    {
+        printError("getTERR", "Failed to read response.");
+        return -2;
+    }
+    if (readResult != 62)
+    {
+        printError("getTERR", "Unexpected response length.");
+        return -3;
+    }
+
+    // Copy response into outputs
+    float f[8];
+    ac = readBuffer[5];
+    memcpy(values, readBuffer + 6, 3 * sizeof(double));
+    memcpy(f, readBuffer + 30, 8 * sizeof(float));
+    values[ 3] = (double)f[0];
+    values[ 4] = (double)f[1];
+    values[ 5] = (double)f[2];
+    values[ 6] = (double)f[3];
+    values[ 7] = (double)f[4];
+    values[ 8] = (double)f[5];
+    values[ 9] = (double)f[6];
+    values[10] = (double)f[7];
+
+    return 0;
+}
+
+int sendPOST(XPCSocket sock, double posi[], int size, double values[11], char ac)
+{
+    // Validate input
+    if (ac &lt; 0 || ac &gt; 20)
+    {
+        printError("sendPOST", "aircraft should be a value between 0 and 20.");
+        return -1;
+    }
+    if (size &lt; 1 || size &gt; 7)
+    {
+        printError("sendPOST", "size should be a value between 1 and 7.");
+        return -2;
+    }
+
+    // Setup command
+    char buffer[46] = "POST";
+    buffer[4] = 0xff; //Placeholder for message length
+    buffer[5] = ac;
+    int i; // iterator
+
+    for (i = 0; i &lt; 7; i++) // double for lat/lon/h
+    {
+        double val = -998;
+
+        if (i &lt; size)
+        {
+            val = posi[i];
+        }
+        if (i &lt; 3) /* lat/lon/h */
+        {
+            memcpy(&amp;buffer[6 + i*8], &amp;val, sizeof(double));
+        }
+        else /* attitude and gear */
+        {
+            float f = (float)val;
+            memcpy(&amp;buffer[18 + i*4], &amp;f, sizeof(float));
+        }
+    }
+
+    // Send Command
+    if (sendUDP(sock, buffer, 46) &lt; 0)
+    {
+        printError("sendPOST", "Failed to send command");
+        return -3;
+    }
+    
+    // Read Response
+    int result = getTERRResponse(sock, values, ac);
+    if (result &lt; 0)
+    {
+        // A error ocurred while reading the response.
+        // getTERRResponse will print an error message, so just return.
+        return result;
+    }
+    return 0;
+}
+
+int getTERR(XPCSocket sock, double posi[3], double values[11], char ac)
+{
+    // Send Command
+    int result = sendTERRRequest(sock, posi, ac);
+    if (result &lt; 0)
+    {
+        // An error ocurred while sending.
+        // sendTERRRequest will print an error message, so just return.
+        return result;
+    }
+
+    // Read Response
+    result = getTERRResponse(sock, values, ac);
+    if (result &lt; 0)
+    {
+        // An error ocurred while reading the response.
+        // getTERRResponse will print an error message, so just return.
+        return result;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                        End TERR functions                           ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          CTRL functions                             ****/
+/*****************************************************************************/
+int getCTRL(XPCSocket sock, float values[7], char ac)
+{
+    // Setup send command
+    char buffer[6] = "GETC";
+    buffer[5] = ac;
+
+    // Send command
+    if (sendUDP(sock, buffer, 6) &lt; 0)
+    {
+        printError("getCTRL", "Failed to send command.");
+        return -1;
+    }
+
+    // Get response
+    char readBuffer[31];
+    int readResult = readUDP(sock, readBuffer, 31);
+    if (readResult &lt; 0)
+    {
+        printError("getCTRL", "Failed to read response.");
+        return -2;
+    }
+    if (readResult != 31)
+    {
+        printError("getCTRL", "Unexpected response length.");
+        return -3;
+    }
+
+    // Copy response into values
+    memcpy(values, readBuffer + 5, 4 * sizeof(float));
+    values[4] = readBuffer[21];
+    values[5] = *((float*)(readBuffer + 22));
+    values[6] = *((float*)(readBuffer + 27));
+    return 0;
+}
+
+int sendCTRL(XPCSocket sock, float values[], int size, char ac)
+{
+    // Validate input
+    if (ac &lt; 0 || ac &gt; 20)
+    {
+        printError("sendCTRL", "aircraft should be a value between 0 and 20.");
+        return -1;
+    }
+    if (size &lt; 1 || size &gt; 7)
+    {
+        printError("sendCTRL", "size should be a value between 1 and 7.");
+        return -2;
+    }
+
+    // Setup Command
+    // 5 byte header + 5 float values * 4 + 2 byte values
+    char buffer[31] = "CTRL";
+    int cur = 5;
+    int i; // iterator
+    for (i = 0; i &lt; 6; i++)
+    {
+        float val = -998;
+
+        if (i &lt; size)
+        {
+            val = values[i];
+        }
+        if (i == 4)
+        {
+            buffer[cur++] = val == -998 ? -1 : (unsigned char)val;
+        }
+        else
+        {
+            *((float*)(buffer + cur)) = val;
+            cur += sizeof(float);
+        }
+    }
+    buffer[26] = ac;
+    *((float*)(buffer + 27)) = size == 7 ? values[6]: -998;
+
+    // Send Command
+    if (sendUDP(sock, buffer, 31) &lt; 0)
+    {
+        printError("sendCTRL", "Failed to send command");
+        return -3;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                        End CTRL functions                           ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                        Drawing functions                            ****/
+/*****************************************************************************/
+int sendTEXT(XPCSocket sock, char* msg, int x, int y)
+{
+    if (msg == NULL)
+    {
+        msg = "";
+    }
+    size_t msgLen = strnlen(msg, 255);
+    // Input Validation
+    if (x &lt; -1)
+    {
+        printError("sendTEXT", "x should be positive (or -1 for default).");
+        // Technically, this should work, and may print something to the screen.
+    }
+    if (y &lt; -1)
+    {
+        printError("sendTEXT", "y should be positive (or -1 for default).");
+        // Negative y will never result in text being displayed.
+        return -1;
+    }
+    if (msgLen &gt; 255)
+    {
+        printError("sendTEXT", "msg must be less than 255 bytes.");
+        return -2;
+    }
+
+    // Setup command
+    // 5 byte header + 8 byte position + up to 256 byte message
+    char buffer[269] = "TEXT";
+    size_t len = 14 + msgLen;
+    memcpy(buffer + 5, &amp;x, sizeof(int));
+    memcpy(buffer + 9, &amp;y, sizeof(int));
+    buffer[13] = (unsigned char)msgLen;
+    strncpy(buffer + 14, msg, msgLen);
+
+    // Send Command
+    if (sendUDP(sock, buffer, len) &lt; 0)
+    {
+        printError("sendTEXT", "Failed to send command");
+        return -3;
+    }
+    return 0;
+}
+
+int sendWYPT(XPCSocket sock, WYPT_OP op, float points[], int count)
+{
+    // Input Validation
+    if (op &lt; XPC_WYPT_ADD || op &gt; XPC_WYPT_CLR)
+    {
+        printError("sendWYPT", "Unrecognized operation.");
+        return -1;
+    }
+    if (count &gt; 255)
+    {
+        printError("sendWYPT", "Too many points. Must be less than 256.");
+        return -2;
+    }
+
+    // Setup Command
+    // 7 byte header + 12 bytes * count
+    char buffer[3067] = "WYPT";
+    buffer[5] = (unsigned char)op;
+    buffer[6] = (unsigned char)count;
+    size_t ptLen = sizeof(float) * 3 * count;
+    memcpy(buffer + 7, points, ptLen);
+
+    // Send Command
+    if (sendUDP(sock, buffer, 7 + 12 * count) &lt; 0)
+    {
+        printError("sendWYPT", "Failed to send command");
+        return -2;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                      End Drawing functions                          ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          View functions                             ****/
+/*****************************************************************************/
+int sendVIEW(XPCSocket sock, VIEW_TYPE view)
+{
+    // Validate Input
+    if (view &lt; XPC_VIEW_FORWARDS || view &gt; XPC_VIEW_FULLSCREENNOHUD)
+    {
+        printError("sendVIEW", "Unrecognized view");
+        return -1;
+    }
+
+    // Setup Command
+    char buffer[9] = "VIEW";
+    *((int*)(buffer + 5)) = view;
+
+    // Send Command
+    if (sendUDP(sock, buffer, 9) &lt; 0)
+    {
+        printError("sendVIEW", "Failed to send command");
+        return -2;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                        End View functions                           ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          Comm functions                             ****/
+/*****************************************************************************/
+int sendCOMM(XPCSocket sock, const char* comm) {
+    // Setup command
+    // Max size is technically unlimited.
+    unsigned char buffer[65536] = "COMM";
+    int pos = 5;
+
+    int commLen = strnlen(comm, 256);
+    if (pos + commLen + 2 &gt; 65536)
+    {
+        printError("sendCOMM", "About to overrun the send buffer!");
+        return -4;
+    }
+    if (commLen &gt; 255)
+    {
+        printError("sendCOMM", "comm is too long. Must be less than 256 characters.");
+        return -1;
+    }
+    // Copy comm to buffer
+    buffer[pos++] = (unsigned char)commLen;
+    memcpy(buffer + pos, comm, commLen);
+    pos += commLen;
+
+    // Send command
+    if (sendUDP(sock, buffer, pos) &lt; 0)
+    {
+        printError("setDREF", "Failed to send command");
+        return -3;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                        End Comm functions                           ****/
+/*****************************************************************************/
+
+
+
+#pragma ENDDUMP&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+I just added #pragma BEGINDUMP at the beginning and #pragma ENDDUMP  at the end.<br/><br>
+<br/><br>
+When I try to compile it I get this error<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;Warning W8071 source\\XPlaneConnect.prg 103: Conversion may lose significant digits in function aopenUDP
+Error E2140 source\\XPlaneConnect.prg 106: Declaration is not allowed here in function aopenUDP
+Warning W8012 source\\XPlaneConnect.prg 114: Comparing signed and unsigned values in function aopenUDP
+Error E2140 source\\XPlaneConnect.prg 129: Declaration is not allowed here in function aopenUDP
+Error E2140 source\\XPlaneConnect.prg 173: Declaration is not allowed here in function sendUDP
+Error E2140 source\\XPlaneConnect.prg 178: Declaration is not allowed here in function sendUDP
+Error E2140 source\\XPlaneConnect.prg 219: Declaration is not allowed here in function readUDP
+Error E2140 source\\XPlaneConnect.prg 264: Declaration is not allowed here in function setCONN
+Warning W8068 source\\XPlaneConnect.prg 283: Constant out of range in comparison in function pauseSim
+Warning W8068 source\\XPlaneConnect.prg 283: Constant out of range in comparison in function pauseSim
+Error E2140 source\\XPlaneConnect.prg 290: Declaration is not allowed here in function pauseSim
+Error E2140 source\\XPlaneConnect.prg 321: Declaration is not allowed here in function sendDATA
+Error E2140 source\\XPlaneConnect.prg 322: Declaration is not allowed here in function sendDATA
+Error E2140 source\\XPlaneConnect.prg 323: Declaration is not allowed here in function sendDATA
+Error E2140 source\\XPlaneConnect.prg 324: Declaration is not allowed here in function sendDATA
+Error E2140 source\\XPlaneConnect.prg 352: Declaration is not allowed here in function readDATA
+Error E2140 source\\XPlaneConnect.prg 353: Declaration is not allowed here in function readDATA
+Error E2140 source\\XPlaneConnect.prg 360: Declaration is not allowed here in function readDATA
+Error E2140 source\\XPlaneConnect.prg 373: Declaration is not allowed here in function readDATA
+Warning W8065 source\\XPlaneConnect.prg 402: Call to function 'strnlen' with no prototype in function sendDREFs
+Error E2140 source\\XPlaneConnect.prg 445: Declaration is not allowed here in function sendDREFRequest
+Error E2140 source\\XPlaneConnect.prg 446: Declaration is not allowed here in function sendDREFRequest
+Warning W8065 source\\XPlaneConnect.prg 449: Call to function 'strnlen' with no prototype in function sendDREFRequest
+Error E2140 source\\XPlaneConnect.prg 494: Declaration is not allowed here in function getDREFResponse
+Error E2140 source\\XPlaneConnect.prg 495: Declaration is not allowed here in function getDREFResponse
+Error E2140 source\\XPlaneConnect.prg 561: Declaration is not allowed here in function getPOSI
+Error E2140 source\\XPlaneConnect.prg 562: Declaration is not allowed here in function getPOSI
+Error E2140 source\\XPlaneConnect.prg 563: Declaration is not allowed here in function getPOSI
+Error E2140 source\\XPlaneConnect.prg 614: Declaration is not allowed here in function sendPOSI
+Warning W8071 source\\XPlaneConnect.prg 615: Conversion may lose significant digits in function sendPOSI
+Error E2140 source\\XPlaneConnect.prg 617: Declaration is not allowed here in function sendPOSI
+Error E2140 source\\XPlaneConnect.prg 686: Declaration is not allowed here in function getTERRResponse
+Warning W8057 source\\XPlaneConnect.prg 700: Parameter 'ac' is never used in function getTERRResponse
+Error E2140 source\\XPlaneConnect.prg 717: Declaration is not allowed here in function sendPOST
+Warning W8071 source\\XPlaneConnect.prg 718: Conversion may lose significant digits in function sendPOST
+Error E2140 source\\XPlaneConnect.prg 720: Declaration is not allowed here in function sendPOST
+Error E2140 source\\XPlaneConnect.prg 749: Declaration is not allowed here in function sendPOST
+Error E2140 source\\XPlaneConnect.prg 801: Declaration is not allowed here in function getCTRL
+Error E2140 source\\XPlaneConnect.prg 802: Declaration is not allowed here in function getCTRL
+Error E2140 source\\XPlaneConnect.prg 838: Declaration is not allowed here in function sendCTRL
+Error E2140 source\\XPlaneConnect.prg 839: Declaration is not allowed here in function sendCTRL
+Error E2140 source\\XPlaneConnect.prg 840: Declaration is not allowed here in function sendCTRL
+Warning W8071 source\\XPlaneConnect.prg 851: Conversion may lose significant digits in function sendCTRL
+Error E2140 source\\XPlaneConnect.prg 883: Declaration is not allowed here in function sendTEXT
+Warning W8065 source\\XPlaneConnect.prg 883: Call to function 'strnlen' with no prototype in function sendTEXT
+Error E2140 source\\XPlaneConnect.prg 904: Declaration is not allowed here in function sendTEXT
+Error E2140 source\\XPlaneConnect.prg 905: Declaration is not allowed here in function sendTEXT
+Error E2140 source\\XPlaneConnect.prg 936: Declaration is not allowed here in function sendWYPT
+Error E2140 source\\XPlaneConnect.prg 939: Declaration is not allowed here in function sendWYPT
+Error E2140 source\\XPlaneConnect.prg 967: Declaration is not allowed here in function sendVIEW
+Warning W8065 source\\XPlaneConnect.prg 991: Call to function 'strnlen' with no prototype in function sendCOMM
+Warning W8079 source\\XPlaneConnect.prg 1008: Mixing pointers to different 'char' types in function sendCOMM
+*** 39 errors in Compile ***&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Any help? Thank you  very much and regards<br/><br>
+<br/><br>
+<br/><br>
+Alvaro</r></div>
+    </div>
+  </div>
+  <div class="post" id="p260498">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Sun Jun 04, 2023 03:29 PM
+      </div>
+      <div class="content"><r>Dear Alvaro,<br/><br>
+<br/><br>
+C language does not allow to declare variables after code, in example: (for error in line 106)<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;XPCSocket aopenUDP(const char *xpIP, unsigned short xpPort, unsigned short port)
+{
+    XPCSocket sock;
+
+    // Setup Port
+    struct sockaddr_in recvaddr;
+    recvaddr.sin_family = AF_INET;
+    recvaddr.sin_addr.s_addr = INADDR_ANY;
+    recvaddr.sin_port = htons(port);
+
+    // Set X-Plane Port and IP
+    if (strcmp(xpIP, "localhost") == 0)
+    {
+        xpIP = "127.0.0.1";
+    }
+    strncpy(sock.xpIP, xpIP, 16);
+    sock.xpPort = xpPort == 0 ? 49009 : xpPort;
+
+#ifdef _WIN32
+    WSADATA wsa;&lt;e&gt;</code></pre></div></e></CODE><br>
+WSADATA can not be declared there. So the code should be modified this way:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;XPCSocket aopenUDP(const char *xpIP, unsigned short xpPort, unsigned short port)
+{
+    XPCSocket sock;
+    WSADATA wsa;
+
+    // Setup Port
+    struct sockaddr_in recvaddr;
+    recvaddr.sin_family = AF_INET;
+    recvaddr.sin_addr.s_addr = INADDR_ANY;
+    recvaddr.sin_port = htons(port);
+
+    // Set X-Plane Port and IP
+    if (strcmp(xpIP, "localhost") == 0)
+    {
+        xpIP = "127.0.0.1";
+    }
+    strncpy(sock.xpIP, xpIP, 16);
+    sock.xpPort = xpPort == 0 ? 49009 : xpPort;
+
+#ifdef _WIN32
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+y asi con todos los demas errores, que parece que son por lo mismo</r></div>
+    </div>
+  </div>
+  <div class="post" id="p260513">
+    <div class="poster">
+      <div class="name" style="color:#105289">alvaro533</div>
+      <div class="rank">Posts: 230</div>
+      <div class="avatar"></div>
+      Joined: Sat Apr 19, 2008 10:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Sun Jun 04, 2023 06:53 PM
+      </div>
+      <div class="content"><r>Muchas gracias Antonio,<br/><br>
+<br/><br>
+Ahora me da este error<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;Error: Unresolved external '_HB_FUN_OPENUDP' referenced from C:\......&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Cuando llamo a la función en C "openUDP"<br/><br>
+<br/><br>
+Gracias.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p260518">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Mon Jun 05, 2023 06:21 AM
+      </div>
+      <div class="content"><r>Estimado Alvaro,<br/><br>
+<br/><br>
+Las funciones en C no se pueden llamar directamente desde Harbour, sino que hay que usar lo que se denomina "el sistema extendido":<br/><br>
+<br/><br>
+despues de todos los includes inciales añade este:<br/><br>
+#include &lt;hbapi.h&gt;<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;XPCSocket openUDP(const char *xpIP)
+{
+    return aopenUDP(xpIP, 49009, 0);
+}
+
+HB_FUNC( OPENUDP )
+{
+   hb_retptr( openUDP( hb_parc( 1 ) ) );
+}&lt;e&gt;</code></pre></div></e></CODE><br>
+Adaptar ese código a Harbour va a ser un muy buen ejercicio para que lo aprendas <E>:-)</E></r></div>
+    </div>
+  </div>
+  <div class="post" id="p260522">
+    <div class="poster">
+      <div class="name" style="color:#105289">alvaro533</div>
+      <div class="rank">Posts: 230</div>
+      <div class="avatar"></div>
+      Joined: Sat Apr 19, 2008 10:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Mon Jun 05, 2023 11:27 AM
+      </div>
+      <div class="content"><r>Hola Antonio,<br/><br>
+<br/><br>
+Thanks a lot for your help. Everything is working know. I can read and write data from the simulator. I will upload the code when it is finish, just in case someone wants to program de X-Plane simulator. One last question:<br/><br>
+<br/><br>
+I have an array in Fivewin like this<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;oSocket[1]= 34433
+oSocket[2]= "192.168.1.25"
+oSocket[3]= 49009
+oSocket[4]= 15851
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+How can I send the array to a HB_FUNC( ) <br/><br>
+<br/><br>
+I use:<br/><br>
+<br/><br>
+pauseSim( oSocket[1],oSocket[2],oSocket[3],oSocket[4] )<br/><br>
+<br/><br>
+and then<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;HB_FUNC(  PAUSESIM )
+{
+    XPCSocket sock;
+    sock.port = hb_parni(1);
+    strcpy( sock.xpIP , hb_parc(2) ) ;
+    sock.xpPort = hb_parni(3);
+    sock.sock = hb_parni(4);
+    
+    pauseSim(sock, 2 ) ;
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+I there a way to send the array:<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;pauseSim( oSocket )&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+instead of:<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;pauseSim( oSocket[1],oSocket[2],oSocket[3],oSocket[4] )&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+How can I get the array in the HB_FUNC function?<br/><br>
+<br/><br>
+Thank you and regards,<br/><br>
+<br/><br>
+Alvaro</r></div>
+    </div>
+  </div>
+  <div class="post" id="p260523">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Mon Jun 05, 2023 11:44 AM
+      </div>
+      <div class="content"><p><t>sock.port = hb_parvni( 1, 1 );<br/><br>
+    strcpy( sock.xpIP , hb_parvc( 1, 2 ) ) ;<br/><br>
+    sock.xpPort = hb_parvni( 1, 3 );<br/><br>
+    sock.sock = hb_parvni( 1, 4 );</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p260526">
+    <div class="poster">
+      <div class="name" style="color:#105289">alvaro533</div>
+      <div class="rank">Posts: 230</div>
+      <div class="avatar"></div>
+      Joined: Sat Apr 19, 2008 10:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Mon Jun 05, 2023 01:41 PM
+      </div>
+      <div class="content"><p><t>Thanks again Antonio<br/><br>
+<br/><br>
+If there is some interest I will write a short tutorial and upload the code.<br/><br>
+<br/><br>
+Regards<br/><br>
+<br/><br>
+Alvaro</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p260532">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Mon Jun 05, 2023 04:44 PM
+      </div>
+      <div class="content"><r><QUOTE author="alvaro533"><s><blockquote><cite>alvaro533 wrote:</cite></s>Thanks again Antonio<br/><br>
+<br/><br>
+If there is some interest I will write a short tutorial and upload the code.<br/><br>
+<br/><br>
+Regards<br/><br>
+<br/><br>
+Alvaro<e></blockquote></e></QUOTE><br>
+Yes, thanks</r></div>
+    </div>
+  </div>
+  <div class="post" id="p260535">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Mon Jun 05, 2023 06:09 PM
+      </div>
+      <div class="content"><p><t>+1</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p260574">
+    <div class="poster">
+      <div class="name" style="color:#105289">alvaro533</div>
+      <div class="rank">Posts: 230</div>
+      <div class="avatar"></div>
+      Joined: Sat Apr 19, 2008 10:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Wed Jun 07, 2023 08:25 PM
+      </div>
+      <div class="content"><r>I made this program to connect Fivewin to the flight simulator “X-Plane” <br/><br>
+<br/><br>
+This could be used to develop an external program for: virtual instructor, flight recording, flight analyzer, moving map, instructor console, and other applications.<br/><br>
+<br/><br>
+The simulator is:<br/><br>
+<br/><br>
+<URL url="https://www.x-plane.com/"><s><a href="</s>https://www.x-plane.com/<e>" rel="noopener"></s>https://www.x-plane.com/<e></a></e></URL><br/><br>
+<br/><br>
+I have tested it with x-plane 11, but I think it also works with 9,10 and the newest, 12<br/><br>
+<br/><br>
+I used an API made by someone in the NASA<br/><br>
+<br/><br>
+<URL url="https://github.com/nasa/XPlaneConnect/wiki"><s><a href="</s>https://github.com/nasa/XPlaneConnect/wiki<e>" rel="noopener"></s>https://github.com/nasa/XPlaneConnect/wiki<e></a></e></URL><br/><br>
+<br/><br>
+<URL url="https://software.nasa.gov/software/ARC-17185-1"><s><a href="</s>https://software.nasa.gov/software/ARC-17185-1<e>" rel="noopener"></s>https://software.nasa.gov/software/ARC-17185-1<e></a></e></URL><br/><br>
+<br/><br>
+You need to install a “plugin” in xplane, as said here:<br/><br>
+<br/><br>
+<URL url="https://github.com/nasa/XPlaneConnect/wiki/XPC-Developer-Information#plugin-information"><s><a href="</s><LINK_TEXT text="https://github.com/nasa/XPlaneConnect/w ... nformation">https://github.com/nasa/XPlaneConnect/wiki/XPC-Developer-Information#plugin-information</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://github.com/nasa/XPlaneConnect/w ... nformation">https://github.com/nasa/XPlaneConnect/wiki/XPC-Developer-Information#plugin-information</LINK_TEXT><e></a></e></URL><br/><br>
+<br/><br>
+download the lastest binary of the plugin here:<br/><br>
+<br/><br>
+<URL url="https://github.com/nasa/XPlaneConnect/releases"><s><a href="</s>https://github.com/nasa/XPlaneConnect/releases<e>" rel="noopener"></s>https://github.com/nasa/XPlaneConnect/releases<e></a></e></URL><br/><br>
+<br/><br>
+I modified the C code to adapt it to harbour and I made a class to manage the plugin.<br/><br>
+<br/><br>
+You can read and write almost any data in the sim. I list of the data you can read and modify is here:<br/><br>
+<br/><br>
+<URL url="https://www.siminnovations.com/xplane/dataref/"><s><a href="</s>https://www.siminnovations.com/xplane/dataref/<e>" rel="noopener"></s>https://www.siminnovations.com/xplane/dataref/<e></a></e></URL><br/><br>
+<br/><br>
+Sample program: fw_xplane.prg<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+#define VERSION "Versión 1.0 06/06/2023" // inicial
+
+#define XPC_VIEW_FORWARDS  73
+#define XPC_VIEW_DOWN 74
+#define XPC_VIEW_LEFT 75
+#define XPC_VIEW_RIGHT 76 
+#define XPC_VIEW_BACK 77
+#define XPC_VIEW_TOWER 78
+#define XPC_VIEW_RUNWAY 79
+#define XPC_VIEW_CHASE 80
+#define XPC_VIEW_FOLLOW 81
+#define XPC_VIEW_FOLLOWWITHPANEL 82
+#define XPC_VIEW_SPOT 83
+#define XPC_VIEW_FULLSCREENWITHHUD 84
+#define XPC_VIEW_FULLSCREENNOHUD 85
+
+
+#define DLG_STYPE nor(DS_MODALFRAME,WS_BORDER,WS_SYSMENU,WS_DLGFRAME)
+#define CLR_GREY2 RGB(57,128,222)
+#define CLR_RED2 rgb(217,6,61)
+#define CLR_GREEN2 RGB(141,240,45)
+
+static oWnd
+static oSocket
+static connected
+static oMsg
+static oSay1
+static oSay2
+static ipserver := '127.0.0.1' // put your sim ip server address here 192.168.1.xxx (or 127.0.0.1 if it is in the same computer than this  app)
+
+
+function fw_xplane()
+
+    local oFont
+    local oTimer
+    
+    
+    DEFINE FONT oFont NAME GetSysFont() SIZE 8, 12 BOLD
+
+    DEFINE WINDOW oWnd TITLE "fw_xplane"  COLOR 25, CLR_GREY2 
+
+    oWnd:bKeyDown := { | nKey | iif( nKey == 27 , oWnd:end() , nil ) }
+    DEFINE TIMER oTimer INTERVAL 3000 ACTION connect() OF ownd
+    ACTIVATE TIMER oTimer
+    // connect()
+    
+
+    SET MESSAGE OF oWnd TO "fw_xplane versión "+VERSION+" para X-Plane11  @AQ 2023"
+    define MsgItem oMsg prompt "  " of oWnd:oMsgBar size 400
+    oMsg:=CLR_RED2
+    oMsg:settext(" Disconnected")
+
+    
+    @ 130 , 30 say oSay1 prompt "No data" size 200 , 200 pixel of oWnd  font oFont
+    @ 330 , 30 say oSay2 prompt "Put the ip adress of your sim in the code, line 31" size 200 , 200 pixel of oWnd  font oFont
+    
+    
+    
+    ACTIVATE WINDOW oWnd on init ( oWnd:SetCoors( TRect():New(  50,50,700,900  ) )  ,buttonbar()  ) ;
+        valid ( iif( !oTimer==nil, oTimer:end() , nil ) , iif( !oSocket==nil , oSocket:end() , nil ) , .t. )
+ 
+return nil
+
+
+
+// ---------------------------------------------------------------------- //
+static function buttonbar()
+    local obar
+     
+       
+    DEFINE BUTTONBAR oBar 3D OF oWnd size 80,60   2007
+    
+    define button of obar name "back"  Prompt "Exit" action ownd:end() 
+     
+    define button of obar name "back"  Prompt "Lights"+CRLF+"On" action ;
+        oSocket:send_datarefs( {  ;
+        {"sim/cockpit2/switches/landing_lights_on", "INT",  1},  ;
+        {"sim/cockpit2/switches/strobe_lights_on", "INT",  1 },  ;
+        {"sim/cockpit2/switches/taxi_light_on", "INT",  1 },  ;
+        {"sim/cockpit2/switches/navigation_lights_on", "INT",  1 },  ;
+        {"sim/cockpit2/switches/beacon_on", "INT",  1 }  ;
+        }) 
+    
+    define button of obar name "back"  Prompt "Lights"+CRLF+"Off" action ;
+        oSocket:send_datarefs( {  ;
+        {"sim/cockpit2/switches/landing_lights_on", "INT",  0},  ;
+        {"sim/cockpit2/switches/strobe_lights_on", "INT",  0 },  ;
+        {"sim/cockpit2/switches/taxi_light_on", "INT",  0 },  ;
+        {"sim/cockpit2/switches/navigation_lights_on", "INT",  0 },  ;
+        {"sim/cockpit2/switches/beacon_on", "INT",  0 }  ;
+        }) 
+    
+    define button of obar name "back"  Prompt "View"+CRLF+"Follow" action ;
+        oSocket:sendVIEW( XPC_VIEW_FOLLOW )
+    
+    define button of obar name "back"  Prompt "View"+CRLF+"Spot" action ;
+        oSocket:sendVIEW( XPC_VIEW_SPOT )
+ 
+    define button of obar name "back"  Prompt "View"+CRLF+"Fwd" action ;
+        oSocket:sendVIEW( XPC_VIEW_FORWARDS )
+    
+    define button of obar name "back"  Prompt "Send"+CRLF+"Text" action ;
+        oSocket:sendTEXT( "Hello from fivewin" , 300 , 300 )
+ 
+    define button of obar name "back"  Prompt "Read"+CRLF+"Throttle" action ( read_throttles() )
+  
+    define button of obar Prompt "Write"+CRLF+"Throttle"+CRLF+"3 &amp; 4" action ( ;
+        oSocket:send_datarefs( { ;
+        {"sim/flightmodel/engine/ENGN_thro", "FLOAT[8]",{0.8,0.6}, 2 } ; // write values 0.8 and 0.6 to throttle with "2" as offset to writes #3 and #4 throttle
+        } ) , read_throttles() )
+ 
+    
+    
+return .t.
+ 
+
+
+// ----------------------------------------------------------------------------- //
+static function connect()
+    local resul
+    local texto
+ 
+    if oSocket ==  nil
+        oSocket := tXPlaneConnect():new(ipserver)
+    endif
+ 
+    texto:="X-Plane  -  Disconnected " + oSocket:xpIP
+    // ?xbrowse(oSocket)
+    if oSocket == nil
+        connected := .f.
+        return nil
+    endif
+
+    // return nil
+
+    if !oSocket:is_connected()
+        oMsg:nClrPane := CLR_RED2
+        connected := .f.
+    else
+        oMsg:nClrPane := CLR_GREEN2
+        texto:="X-Plane - Connected " + oSocket:xpIP
+        connected := .t.
+    endif
+    
+    oMsg:settext(texto)
+
+    get_position()
+
+
+return nil
+
+// ----------------------------------------------------------------------------- //
+static function read_throttles()
+    local result
+
+    result := oSocket:get_datarefs( { ;
+        "sim/flightmodel/engine/ENGN_thro", "FLOAT[8]" ;
+        } )
+
+    oSay1:settext("Trottle1="+str(result[1,1])+CRLF+"Trottle2="+str(result[1,2])+CRLF+"Trottle3="+str(result[1,3])+CRLF+"Trottle4="+str(result[1,4])+CRLF+ ;
+        "Trottle5="+str(result[1,5])+CRLF+"Trottle6="+str(result[1,6])+CRLF+"Trottle7="+str(result[1,7])+CRLF+"Trottle8="+str(result[1,8])+CRLF ) 
+
+
+return nil
+
+// ----------------------------------------------------------------------------- //
+static function get_position()
+    local result
+
+    if connected
+        result := oSocket:get_datarefs( { ;
+            "sim/cockpit2/gauges/indicators/calibrated_airspeed_kts_pilot", "FLOAT", ;
+            "sim/flightmodel/position/latitude", "DOUBLE", ;
+            "sim/flightmodel/position/longitude", "DOUBLE", ;
+            "sim/cockpit2/gauges/indicators/altitude_ft_pilot", "FLOAT", ;
+            "sim/flightmodel/position/mag_psi", "FLOAT" ;
+            } )
+
+        if ! empty(result)
+            oSay2:settext("Airspeed:="+str(int(result[1,1]))+' kts'+CRLF+ ;
+                "Latitude="+tran(result[2,1],'999.999999')+CRLF+ ;
+                "Longitud="+tran(result[3,1],'999.999999')+CRLF+;
+                "Altitude="+str(int(result[4,1]))+' feet'+CRLF+ ;
+                "Heading="+str(int(result[5,1]))+'º'+CRLF ;
+                )
+        else
+            oSay2:settext("No data")
+        endif
+    endif
+return nil
+
+// ----------------------------------------------------------------------------- //
+function GetSysFont()
+
+    do case
+        case ! IsWinNt() .and. ! IsWin95()  // Win 3.1
+            return "System"
+    endcase
+return  "Ms Sans Serif"
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+This is the class: tXPlaneConnect.prg<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+
+Class tXPlaneConnect    // from vargen
+
+    data oSocket
+    data conectado
+    data port
+    data xpIP
+    data xpPort
+    data sock
+
+    data aArray
+
+    method new() constructor
+    method pon_pausa()
+    method quita_pausa()
+    method is_connected()
+    method get_datarefs()
+    method send_datarefs()
+    method sendVIEW()
+    method sendTEXT()
+    method end()
+
+endclass
+
+
+//-----------------------------------------------------------------//
+
+method new( var_xpIP ) class tXPlaneConnect
+
+    default var_xpIP := '127.0.0.1'
+    ::aArray := openUDP( var_xpIP )
+    ::port := ::aArray[1]
+    ::xpIP := ::aArray[2]
+    ::xpPort := ::aArray[3]
+    ::sock := ::aArray[4]
+    
+
+return self
+
+//-----------------------------------------------------------------//
+
+method end() class tXPlaneConnect
+    local result
+    
+    result := closeUDP( ::aArray )
+   
+    if result[1] !=  0
+        msginfo("Error: Failed to close socket")
+    endif
+
+    ::aArray := nil
+    ::port := nil
+    ::xpIP := nil
+    ::xpPort := nil
+    ::sock := nil
+
+
+return nil
+
+
+//-----------------------------------------------------------------//
+method pon_pausa() class tXPlaneConnect
+
+    pauseSim( ::aArray , 1 )
+
+return nil
+
+//-----------------------------------------------------------------//
+method quita_pausa() class tXPlaneConnect
+
+    pauseSim( ::aArray , 0 )
+
+return nil
+
+
+//-----------------------------------------------------------------//
+method is_connected() class tXPlaneConnect
+    local result
+    local connected := .f.
+
+    result := ::get_datarefs( {"sim/time/paused", "INT" } )
+    // xbrowse( result)
+    if len(result)&gt;0
+        if result[1,1] != nil
+            connected := .t.
+        endif
+    endif
+
+return connected
+
+//-----------------------------------------------------------------//
+method send_datarefs( aDatarefs ) class tXPlaneConnect
+    local drefs := {}
+    local sizes := {}
+    local sizes_real := {}
+    local values := {}
+    local values_ori := {}
+    local offsets := {}
+    local toAsk := {}
+    local toChange := {}
+    local result 
+    local count := len(aDatarefs)
+    local nFor
+    local nFor2
+    local nsize
+    local missing 
+
+
+    if count==0
+        msginfo("Empty aDatarefs !!!")
+        return result
+    endif
+
+    if count &gt; 25
+        msginfo("No more than 25 datarefs at a time !!" )
+        return result
+    endif
+
+    for nFor := 1 to count
+        
+        if empty( aDatarefs[nFor] )
+            msginfo("empty row in method send_datarefs. extra coma? ")
+            return result
+        endif
+
+        if valtype( aDatarefs[nFor,1] ) != "C"
+            msginfo('error: [send_datarefs] no char')
+            return .f.
+        endif
+        aadd( drefs , aDatarefs[nFor,1])
+
+        nsize := size( aDatarefs[nFor,2] )
+        if nsize == 0
+            msginfo('error: [send_datarefs] size')
+            return .f.
+        endif
+        aadd( sizes , nsize )
+        
+        if valtype( aDatarefs[nFor,3] ) != "A"
+            if valtype( aDatarefs[nFor,3] ) != "N"
+                msginfo('error: [send_datarefs] values1')
+                return .f.
+            endif
+            aDatarefs[nFor,3] := {aDatarefs[nFor,3] }
+        endif
+        
+        nsize := len(aDatarefs[nFor,3])
+
+        if nsize == 0
+            msginfo('error: [send_datarefs] values2')
+            return .f.
+        endif
+
+        aadd( sizes_real , nsize )
+        aadd( values_ori , {} )
+        
+        for nFor2 := 1 to nsize 
+            if valtype( aDatarefs[nFor,3,nFor2] ) != "N"
+                msginfo('error: [send_datarefs] values3')
+                return .f.
+            endif
+            aadd( values_ori[nFor] ,  aDatarefs[nFor,3,nFor2] )
+        next nFor2
+
+        if len(  aDatarefs[nFor] ) == 3
+            aadd( aDatarefs[nFor] , 0 )
+        endif
+
+        if valtype( aDatarefs[nFor,4] ) != "N"
+            msginfo('error: [send_datarefs] values4')
+            return .f.
+        endif
+
+        aadd( offsets ,  aDatarefs[nFor,4] )
+        
+        if aDatarefs[nFor,4] != 0 .or. sizes[nFor]&gt;sizes_real[nFor]
+            aadd( toAsk ,  aDatarefs[nFor,1] )
+            aadd( toAsk ,  aDatarefs[nFor,2] )
+            aadd( toChange ,  nFor )
+        endif
+
+
+    next nFor
+
+    if !empty( toAsk )
+        missing := ::get_datarefs( toAsk )
+        // xbrowse( missing )
+
+        if len(missing) != len(toAsk)/2
+            msginfo("Error: missing != toAsk")
+        endif
+        for nFor := 1 to len( missing)
+            for nFor2 := 1 to sizes_real[toChange[nFor]]
+                if offsets[toChange[nFor]]+nFor2 &lt;= len(missing[nFor] )
+                    missing[  nFor , offsets[toChange[nFor]]+nFor2  ] := values_ori[toChange[nFor],nFor2]
+                else
+                    msginfo("Error: Offset + array &gt; size")
+                endif
+            next nFor2
+            values_ori[toChange[nFor]] := missing[nFor]
+            sizes_real[toChange[nFor]] := len( missing[nFor] )
+        next nFor
+    endif
+
+    
+    // xbrowse( values_ori )
+
+
+    for nFor := 1 to count
+        for nFor2 := 1 to sizes_real[nFor] 
+            aadd( values ,  values_ori[nFor,nFor2] )
+        next nFor2
+    next nFor
+
+
+    /*
+    xbrowse( drefs )
+    xbrowse( sizes )
+    xbrowse( values )
+    xbrowse( offsets )
+    */
+    // xbrowse( offsets )
+    
+    result := sendDREFs( ::aArray , count , drefs , sizes  ,values , sizes_real)
+
+    // result 0 -&gt; "ok"
+    // result -1 -&gt; "dref is too long. Must be less than 256 characters."
+    // result -2 -&gt; "size is too big. Must be less than 256."
+    // result -3 -&gt; "Failed to send command"
+    // result -4 -&gt; "About to overrun the send buffer!"
+
+
+return result
+
+
+//-----------------------------------------------------------------//
+method get_datarefs( aDatarefs ) class tXPlaneConnect
+    
+    local result := {}
+    local nFor,nFor2 
+    local count := len(aDatarefs) / 2
+    local pointer
+    local drefs:={}
+    local sizes:={}
+    local aArray 
+    local subArray 
+
+    if count==0
+        msginfo("Empty aDatarefs !!!")
+        return result
+    endif
+    if int( count) != count
+        msginfo("Error: aDatarefs is not even !!!")
+        return result
+    endif
+
+    if count &gt; 25
+        msginfo("No more than 25 datarefs at a time !!" )
+        return result
+    endif
+
+
+    for nFor := 1 to count*2 step 2
+        aadd( drefs , aDatarefs[nFor])
+        aadd( sizes , size( aDatarefs[nFor+1] ))
+    next nFor
+
+    // xbrowse( drefs )
+    // xbrowse( sizes )
+
+    
+
+    result := getDREFs( ::aArray , count , drefs , sizes )
+
+    if valtype( result ) == "N"
+        // result array -&gt; OK
+        // result -1 -&gt; "sendDREFRequest will print an error message, so just return"
+        // result -2 -&gt; "getDREFResponse will print an error message, so just return"
+        // result -3 -&gt; "Failed to send command"
+        return {}
+    endif
+
+    aArray := {}
+    pointer := 1
+    for nFor := 1 to count
+        subArray := {}
+        sizes[nFor] := result[pointer]
+        for nFor2 := 1 to sizes[nFor]
+            aadd( subArray , result[ pointer + nFor2 ] )
+        next nFor2
+        pointer += sizes[nFor]+1
+        aadd( aArray , subArray )
+    next nFor
+
+    
+
+return aArray
+
+//-----------------------------------------------------------------//
+method sendVIEW( nView ) class tXPlaneConnect
+    local result
+
+    result := sendVIEW(  ::aArray , nView )
+
+    // result 0 -&gt; "ok"
+    // result -1 -&gt; "Unrecognized view"
+    // result -2 -&gt; "Failed to send command"
+
+return result
+
+//-----------------------------------------------------------------//
+method sendTEXT( cText , nX , nY ) class tXPlaneConnect
+    local result
+    default cText := "Hello from FiveWin"
+    default nX := -1
+    default nY := -1
+
+    result := sendTEXT(  ::aArray , cText , nX , nY )
+
+    // result 0 -&gt; "ok"
+    // result -1 -&gt; "y should be positive (or -1 for default)."
+    // result -2 -&gt; "msg must be less than 255 bytes."
+    // result -3 -&gt; "Failed to send command"
+
+return result
+
+
+// ------------------------------- functions -------------
+static function size( input )
+    local size := 1
+    local cad:= input
+
+    if '['$cad
+        cad := SubStr( cad , at('[',cad )+1  )
+        cad := SubStr( cad , 1 , at(']',cad )-1  )
+        size := val(cad)
+        if size == 0
+            // msginfo("Error en size datared"+CRLF+input)
+            return 0
+        endif
+    endif
+
+return size&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+And this is the C code: XPlaneConnect.prg<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#pragma BEGINDUMP
+
+
+//Copyright (c) 2013-2018 United States Government as represented by the Administrator of the
+//National Aeronautics and Space Administration. All Rights Reserved.
+//
+//DISCLAIMERS
+//    No Warranty: THE SUBJECT SOFTWARE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY OF ANY KIND,
+//    EITHER EXPRESSED, IMPLIED, OR STATUTORY, INCLUDING, BUT NOT LIMITED TO, ANY WARRANTY THAT
+//    THE SUBJECT SOFTWARE WILL CONFORM TO SPECIFICATIONS, ANY IMPLIED WARRANTIES OF
+//    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR FREEDOM FROM INFRINGEMENT, ANY WARRANTY
+//    THAT THE SUBJECT SOFTWARE WILL BE ERROR FREE, OR ANY WARRANTY THAT DOCUMENTATION, IF PROVIDED,
+//    WILL CONFORM TO THE SUBJECT SOFTWARE. THIS AGREEMENT DOES NOT, IN ANY MANNER, CONSTITUTE AN
+//    ENDORSEMENT BY GOVERNMENT AGENCY OR ANY PRIOR RECIPIENT OF ANY RESULTS, RESULTING DESIGNS,
+//    HARDWARE, SOFTWARE PRODUCTS OR ANY OTHER APPLICATIONS RESULTING FROM USE OF THE SUBJECT
+//    SOFTWARE.  FURTHER, GOVERNMENT AGENCY DISCLAIMS ALL WARRANTIES AND LIABILITIES REGARDING
+//    THIRD-PARTY SOFTWARE, IF PRESENT IN THE ORIGINAL SOFTWARE, AND DISTRIBUTES IT "AS IS."
+//
+//    Waiver and Indemnity: RECIPIENT AGREES TO WAIVE ANY AND ALL CLAIMS AGAINST THE UNITED STATES
+//    GOVERNMENT, ITS CONTRACTORS AND SUBCONTRACTORS, AS WELL AS ANY PRIOR RECIPIENT.  IF
+//    RECIPIENT'S USE OF THE SUBJECT SOFTWARE RESULTS IN ANY LIABILITIES, DEMANDS, DAMAGES, EXPENSES
+//    OR LOSSES ARISING FROM SUCH USE, INCLUDING ANY DAMAGES FROM PRODUCTS BASED ON, OR RESULTING
+//    FROM, RECIPIENT'S USE OF THE SUBJECT SOFTWARE, RECIPIENT SHALL INDEMNIFY AND HOLD HARMLESS THE
+//    UNITED STATES GOVERNMENT, ITS CONTRACTORS AND SUBCONTRACTORS, AS WELL AS ANY PRIOR RECIPIENT,
+//    TO THE EXTENT PERMITTED BY LAW.  RECIPIENT'S SOLE REMEDY FOR ANY SUCH MATTER SHALL BE THE
+//    IMMEDIATE, UNILATERAL TERMINATION OF THIS AGREEMENT.
+
+//  X-Plane Connect Client
+//
+//  DESCRIPTION
+//      Communicates with the XPC plugin to facilitate controling and gathering data from X-Plane.
+//
+//  INSTRUCTIONS
+//      See Readme.md in the root of this repository or the wiki hosted on GitHub at
+//      https://github.com/nasa/XPlaneConnect/wiki for requirements, installation instructions,
+//      and detailed documentation.
+//
+//  CONTACT
+//      For questions email Christopher Teubert (christopher.a.teubert@nasa.gov)
+//
+//  CONTRIBUTORS
+//      CT: Christopher Teubert (christopher.a.teubert@nasa.gov)
+//      JW: Jason Watkins (jason.w.watkins@nasa.gov)
+
+#include "xplaneConnect.h"
+
+#include &lt;math.h&gt;
+#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;hbapi.h&gt;
+#include &lt;hbapiitm.h&gt;
+#include &lt;hbapifs.h&gt;
+
+
+
+#ifdef _WIN32
+#include &lt;time.h&gt;
+#else
+#include &lt;sys/time.h&gt;
+#endif
+
+/*
+int sendUDP(XPCSocket sock, char buffer[], int len);
+int readUDP(XPCSocket sock, char buffer[], int len);
+int sendDREFRequest(XPCSocket sock, const char* drefs[], unsigned char count);
+int getDREFResponse(XPCSocket sock, float* values[], unsigned char count, int sizes[]);
+*/
+
+void printError(char *functionName, char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+
+    printf("[%s] ERROR: ", functionName);
+    vprintf(format, args);
+    printf("\n");
+
+    va_end(args);
+}
+
+    
+
+    HB_FUNC( PRUEBA_SEND )
+    {
+        XPCSocket sock;
+        
+        int i;
+        int err;    //holds return code
+        int sizes[] = { 1, 1 }; // The number of items in each row of "values"
+        int count = 2; //The number of datarefs being sent
+        
+        const char* drefs[] = { "sim/cockpit2/switches/landing_lights_on",
+                             "sim/cockpit2/switches/beacon_on",
+                              };
+        float* values[2]; //A multidimensional array of values representing the data to set.
+        
+        sock.port = hb_parvni( 1, 1 );
+        strcpy( sock.xpIP , hb_parvc( 1, 2 ) ) ;
+        sock.xpPort = hb_parvni( 1, 3 );
+        sock.sock = hb_parvni( 1, 4 );
+
+        for ( i = 0; i &lt; 2; ++i)
+        {
+            values[i] = (float*)malloc( 1 * sizeof(float) );
+        }
+        
+        
+        //Note: with XPC, everything is sent as floats, even if X-Plane wants an int.
+        values[0][0] = 1.0F; //turn off landing lights (1.0F = ON)
+        values[1][0] = 1.0F; //turn off beacon (1.0F = ON)
+        
+        err = sendDREFs(sock, drefs, values, sizes, count );
+        hb_reta( 1 ) ;
+
+            switch (err)  //interpret return value (error code)
+{
+case -1:
+    printError("PRUEBA_SEND", "Length of dref is greater than 255 characters.");
+    hb_storvc( "Error: Length of dref is greater than 255 characters." , -1, 1 );
+    break;
+case -2:
+    printError("PRUEBA_SEND", "There are more than 255 items in...");
+    hb_storvc( "Error: There are more than 255 items in..." , -1, 1 );
+    break;
+case -3:
+    printError("PRUEBA_SEND", "XPC client unable to send command.");
+    hb_storvc( "Error: XPC client unable to send command." , -1, 1 );
+    break;
+case 0:
+    printf("[PRUEBA_SEND] OK: XPC sent the specified datarefs.\n");
+    hb_storvc( "OK" , -1, 1 );
+}
+        
+        
+
+    }
+
+
+/*****************************************************************************/
+/****                       Low Level UDP functions                       ****/
+/*****************************************************************************/
+XPCSocket openUDP(const char *xpIP)
+{
+    return aopenUDP(xpIP, 49009, 0);
+}
+
+HB_FUNC( OPENUDP )
+{
+   // hb_retptr( openUDP( hb_parc( 1 ) ) );
+    XPCSocket vuelve;
+    LPSTR xpIP;
+    xpIP = hb_parc(1);
+    vuelve = openUDP(xpIP);
+
+    hb_reta( 4 ) ;
+
+    hb_storvni( vuelve.port , -1, 1 );
+    hb_storvc( vuelve.xpIP , -1, 2 );
+    hb_storvni( vuelve.xpPort , -1, 3 );
+    hb_storvni( vuelve.sock , -1, 4 );
+
+}
+
+
+
+XPCSocket aopenUDP(const char *xpIP, unsigned short xpPort, unsigned short port)
+{
+    XPCSocket sock;
+    #ifdef _WIN32
+    WSADATA wsa;
+    // Minimum socket timeout in Windows is 1 millisecond (0 makes it blocking)
+    DWORD timeout = 1;
+    #endif
+
+    // Setup Port
+    struct sockaddr_in recvaddr;
+    recvaddr.sin_family = AF_INET;
+    recvaddr.sin_addr.s_addr = INADDR_ANY;
+    recvaddr.sin_port = htons(port);
+
+    // Set X-Plane Port and IP
+    if (strcmp(xpIP, "localhost") == 0)
+    {
+        xpIP = "127.0.0.1";
+    }
+    strncpy(sock.xpIP, xpIP, 16);
+    sock.xpPort = xpPort == 0 ? 49009 : xpPort;
+
+#ifdef _WIN32
+    
+    if (WSAStartup(MAKEWORD(2, 2), &amp;wsa) != 0)
+    {
+        printError("OpenUDP", "WSAStartup failed");
+        strcpy( sock.xpIP , "Error1" ) ;
+        // exit(EXIT_FAILURE);
+    }
+#endif
+
+    if ((sock.sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+    {
+        printError("OpenUDP", "Socket creation failed");
+        strcpy( sock.xpIP , "Error2" ) ;
+        // exit(EXIT_FAILURE);
+    }
+    if (bind(sock.sock, (struct sockaddr*)&amp;recvaddr, sizeof(recvaddr)) == -1)
+    {
+        printError("OpenUDP", "Socket bind failed");
+        strcpy( sock.xpIP , "Error3" ) ;
+        // exit(EXIT_FAILURE);
+    }
+
+    // Set socket timeout period for sendUDP to 1 millisecond
+    // Without this, playback may become choppy due to process blocking
+#ifdef _WIN32
+    
+#else
+    // Set socket timeout to 1 millisecond = 1,000 microseconds to make it the same as Windows (0 makes it blocking)
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 1000;
+#endif
+    if (setsockopt(sock.sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&amp;timeout, sizeof(timeout)) &lt; 0)
+    {
+        printError("OpenUDP", "Failed to set timeout");
+        strcpy( sock.xpIP , "Error4") ;
+    }
+        // strcpy( sock.xpIP , "Error5" ) ;
+    return sock;
+}
+
+
+int closeUDP(XPCSocket sock)
+{
+#ifdef _WIN32
+    int result = closesocket(sock.sock);
+#else
+    int result = close(sock.sock);
+#endif
+    if (result &lt; 0)
+    {
+        printError("closeUDP", "Failed to close socket");
+        // exit(EXIT_FAILURE);
+    }
+    return result ;
+}
+
+
+
+HB_FUNC( CLOSEUDP )
+{
+    int result;
+
+    XPCSocket sock;
+    sock.port = hb_parvni( 1, 1 );
+    strcpy( sock.xpIP , hb_parvc( 1, 2 ) ) ;
+    sock.xpPort = hb_parvni( 1, 3 );
+    sock.sock = hb_parvni( 1, 4 );
+    
+    result = closeUDP( sock ) ;
+    
+    hb_reta(1) ;
+    hb_storvni( result, -1 , 1) ;
+}
+
+
+/// Sends the given data to the X-Plane plugin.
+///
+/// \param sock   The socket to use to send the data.
+/// \param buffer A pointer to the data to send.
+/// \param len    The number of bytes to send.
+/// \returns      If an error occurs, a negative number. Otehrwise, the number of bytes sent.
+int sendUDP(XPCSocket sock, char buffer[], int len)
+{
+    struct sockaddr_in dst;
+    int result ;
+    // Preconditions
+    if (len &lt;= 0)
+    {
+        printError("sendUDP", "Message length must be positive.");
+        return -1;
+    }
+
+    // Set up destination address
+    
+    dst.sin_family = AF_INET;
+    dst.sin_port = htons(sock.xpPort);
+    inet_pton(AF_INET, sock.xpIP, &amp;dst.sin_addr.s_addr);
+
+    result = sendto(sock.sock, buffer, len, 0, (const struct sockaddr*)&amp;dst, sizeof(dst));
+    if (result &lt; 0)
+    {
+        printError("sendUDP", "Send operation failed.");
+        return -2;
+    }
+    if (result &lt; len)
+    {
+        printError("sendUDP", "Unexpected number of bytes sent.");
+    }
+    return result;
+}
+
+/// Reads a datagram from the specified socket.
+///
+/// \param sock   The socket to read from.
+/// \param buffer A pointer to the location to store the data.
+/// \param len    The number of bytes to read.
+/// \returns      If an error occurs, a negative number. Otherwise, the number of bytes read.
+int readUDP(XPCSocket sock, char buffer[], int len)
+{
+    // For readUDP, use the select command - minimum timeout of 0 makes it polling.
+    // Without this, playback may become choppy due to process blocking
+
+    // Definitions
+    int status;
+    fd_set stReadFDS;
+    fd_set stExceptFDS;
+    struct timeval timeout;
+
+    // Setup for Select
+    FD_ZERO(&amp;stReadFDS);
+    FD_SET(sock.sock, &amp;stReadFDS);
+    FD_ZERO(&amp;stExceptFDS);
+    FD_SET(sock.sock, &amp;stExceptFDS);
+
+    // Set timeout period for select to 0.05 sec = 50 milliseconds = 50,000 microseconds (0 makes it polling)
+    // TO DO - This could be set to 0 if a message handling system were implemented, like in the plugin.
+    timeout.tv_sec = 1; // era 0 aq puse 50000 y funcionanba
+    timeout.tv_usec = 1; // era 50000 aq
+
+    // Select Command
+    status = select(sock.sock+1, &amp;stReadFDS, NULL, &amp;stExceptFDS, &amp;timeout);
+    if (status &lt; 0)
+    {
+        printError("readUDP", "Select command error");
+        return -1;
+    }
+    if (status == 0)
+    {
+        // No data
+        return 0;
+    }
+
+    // If no error: Read Data
+    status = recv(sock.sock, buffer, len, 0);
+    if (status &lt; 0)
+    {
+        printError("readUDP", "Error reading socket");
+    }
+    return status;
+}
+/*****************************************************************************/
+/****                    End Low Level UDP functions                      ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                      Configuration functions                        ****/
+/*****************************************************************************/
+int setCONN(XPCSocket* sock, unsigned short port)
+{
+    int result;
+    // Set up command
+    char buffer[32] = "CONN";
+    memcpy(&amp;buffer[5], &amp;port, 2);
+
+    // Send command
+    if (sendUDP(*sock, buffer, 7) &lt; 0)
+    {
+        printError("setCONN", "Failed to send command");
+        return -1;
+    }
+
+    // Switch socket
+    closeUDP(*sock);
+    *sock = aopenUDP(sock-&gt;xpIP, sock-&gt;xpPort, port);
+
+    // Read response
+    result = readUDP(*sock, buffer, 32);
+
+    if (result &lt;= 0)
+    {
+        printError("setCONN", "Failed to read response");
+        return -2;
+    }
+    if (strncmp(buffer, "CONF", 4) == 0)
+    {
+        // Response received succesfully.
+        return 0;
+    }
+    // Response incorrect
+    return -3;
+}
+
+int pauseSim(XPCSocket sock, char pause)
+{
+    char buffer[6] = "SIMU";
+    // Validte input
+    if (pause &lt; 0 || (pause &gt; 2 &amp;&amp; pause &lt; 100) || (pause &gt; 119 &amp;&amp; pause &lt; 200) || pause &gt; 219)
+    {
+        printError("pauseSim", "Invalid argument: %i", pause);
+        return -2;
+    }
+
+    // Setup command
+    
+    buffer[5] = pause;
+
+    // Send command
+    if (sendUDP(sock, buffer, 6) &lt; 0)
+    {
+        printError("pauseSim", "Failed to send command");
+        return -1;
+    }
+    else
+    {
+        printf("[pauseSim] OK: Parece que he mandado la pause\n");
+    }
+    return 0;
+}
+
+HB_FUNC(  PAUSESIM )
+{
+    XPCSocket sock;
+    sock.port = hb_parvni( 1, 1 );
+    strcpy( sock.xpIP , hb_parvc( 1, 2 ) ) ;
+    sock.xpPort = hb_parvni( 1, 3 );
+    sock.sock = hb_parvni( 1, 4 );
+    
+    
+    pauseSim(sock, hb_parvni( 2 ) ) ;
+
+}
+
+/*****************************************************************************/
+/****                    End Configuration functions                      ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                    X-Plane UDP Data functions                       ****/
+/*****************************************************************************/
+int sendDATA(XPCSocket sock, float data[][9], int rows)
+{
+    
+
+    // Setup command
+    // 5 byte header + 134 rows * 9 values * 4 bytes per value =&gt; 4829 byte max length.
+    char buffer[4829] = "DATA";
+    int len = 5 + rows * 9 * sizeof(float);
+    unsigned short step = 9 * sizeof(float);
+    int i; // iterator
+
+    // Preconditions
+    // There are only 134 DATA rows in X-Plane. Realistically, clients probably
+    // shouldn't be trying to set nearly this much data at once anyway.
+    if (rows &gt; 134)
+    {
+        printError("sendDATA", "Too many rows.");
+        return -1;
+    }
+
+    for (i = 0; i &lt; rows; i++)
+    {
+        buffer[5 + i * step] = (char)data[i][0];
+        memcpy(&amp;buffer[9 + i*step], &amp;data[i][1], 8 * sizeof(float));
+    }
+    // Send command
+    if (sendUDP(sock, buffer, len ) &lt; 0)
+    {
+        printError("sendDATA", "Failed to send command");
+        return -2;
+    }
+    return 0;
+}
+
+int readDATA(XPCSocket sock, float data[][9], int rows)
+{
+    
+
+    // Read data
+    char buffer[4829] = { 0 };
+    int result = readUDP(sock, buffer, 4829);
+    int readRows ;
+    int i; // iterator
+
+    // Preconditions
+    // There are only 134 DATA rows in X-Plane. Realistically, clients probably
+    // shouldn't be trying to read nearly this much data at once anyway.
+    if (rows &gt; 134)
+    {
+        printError("readDATA", "Too many rows.");
+        // Read as much as we can anyway
+        rows = 134;
+    }
+
+    if (result &lt;= 0)
+    {
+        printError("readDATA", "Failed to read from socket.");
+        return -1;
+    }
+    // Validate data
+    readRows = (result - 5) / 36;
+    if (readRows &gt; rows)
+    {
+        printError("readDATA", "Read more rows than will fit in dataRef.");
+    }
+    else if (readRows &lt; rows)
+    {
+        printError("readDATA", "Read fewer rows than expected.");
+        // Copy as much data as we read anyway
+        rows = readRows;
+    }
+
+    // Parse data
+    
+    for (i = 0; i &lt; rows; ++i)
+    {
+        data[i][0] = buffer[5 + i * 36];
+        memcpy(&amp;data[i][1], &amp;buffer[9 + i * 36], 8 * sizeof(float));
+    }
+    return rows;
+}
+/*****************************************************************************/
+/****                  End X-Plane UDP Data functions                     ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          DREF functions                             ****/
+/*****************************************************************************/
+int sendDREF(XPCSocket sock, const char* dref, float values[], int size)
+{
+    // return sendDREFs(sock, &amp;dref, &amp;values, &amp;size, 1);
+    return 0;
+}
+
+int sendDREFs(XPCSocket sock, const char* drefs[], float* values[], int sizes[], int count  )
+{
+    // Setup command
+    // Max size is technically unlimited.
+    char buffer[65536] = "DREF";
+    int pos = 5;
+    int i; // Iterator
+    for (i = 0; i &lt; count; ++i)
+    {
+        int drefLen = strnlen_s(drefs[i], 256);
+        if (pos + drefLen + sizes[i] * 4 + 2 &gt; 65536)
+        {
+            printError("sendDREF", "About to overrun the send buffer!");
+            return -4;
+        }
+        if (drefLen &gt; 255)
+        {
+            printError("sendDREF", "dref %d is too long. Must be less than 256 characters.", i);
+            return -1;
+        }
+        if (sizes[i] &gt; 255)
+        {
+            printError("sendDREF", "size %d is too big. Must be less than 256.", i);
+            return -2;
+        }
+        // Copy dref to buffer
+        buffer[pos++] = (unsigned char)drefLen;
+        memcpy(buffer + pos, drefs[i], drefLen);
+        pos += drefLen;
+
+
+        // Copy values to buffer
+        buffer[pos++] = (unsigned char)sizes[i];
+        memcpy(buffer + pos, values[i], sizes[i] * sizeof(float));
+        pos += sizes[i] * sizeof(float);
+    }
+
+    // printf( "buffer: %s\n", buffer );
+
+    // Send command
+    if (sendUDP(sock, buffer, pos) &lt; 0)
+    {
+        printError("setDREF", "Failed to send command");
+        return -3;
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------------- //
+HB_FUNC( SENDDREFS )
+{
+    XPCSocket sock;
+    unsigned char count =  hb_parvnd( 2) ;
+    int sizes[25] ;
+    int sizes_real[25] ;
+    float* values[25];
+    const char* drefs[25] ;
+    int nFor;
+    int nFor2;
+    int pointer ;
+    int nIndex ;
+
+    sock.port = hb_parvni( 1, 1 );
+    strcpy( sock.xpIP , hb_parvc( 1, 2 ) ) ;
+    sock.xpPort = hb_parvni( 1, 3 );
+    sock.sock = hb_parvni( 1, 4 );
+
+    pointer = 0;
+    for ( nFor = 0; nFor &lt; count; ++nFor )
+        {
+            // printf( "Dref: %s\n",hb_parvc( 3 , nFor+1 ) );
+            drefs[nFor] = hb_parvc( 3 , nFor+1 );
+            sizes[nFor] = hb_parvni( 4 , nFor+1 );
+            sizes_real[nFor] = hb_parvni( 6 , nFor+1 );
+            
+            
+            values[nFor] = (float*)malloc( sizes_real[nFor] * sizeof(float));
+            for ( nFor2 = 0 ; nFor2 &lt; sizes_real[nFor]; ++nFor2 )
+            {
+                values[nFor][nFor2] = hb_parvnd( 5 , pointer + nFor2 + 1  ) ;
+            }
+            pointer = pointer + sizes_real[nFor] ;
+            
+            // printf( "sizes = %i\n" , hb_parvni( 4 , nFor+1 ) ) ;
+            // printf( "valor = %f\n" , hb_parvnd( 5 , nFor+1  ) ) ;
+        }
+                        
+        hb_retni(  sendDREFs(sock, drefs, values, sizes, count ) ) ;
+    
+}
+
+int sendDREFRequest(XPCSocket sock, const char* drefs[], unsigned char count)
+{
+    // Setup command
+    // 6 byte header + potentially 255 drefs, each 256 chars long.
+    // Easiest to just round to an even 2^16.
+    char buffer[65536] = "GETD";
+    int len = 6;
+    int i; // iterator
+    buffer[5] = count;
+    for (i = 0; i &lt; count; ++i)
+    {
+        size_t drefLen = strnlen_s(drefs[i], 256);
+        if (drefLen &gt; 255)
+        {
+            printError("getDREFs", "dref %d is too long.", i);
+            return -1;
+        }
+        buffer[len++] = (unsigned char)drefLen;
+        strncpy(buffer + len, drefs[i], drefLen);
+        len += drefLen;
+    }
+    // Send Command
+    if (sendUDP(sock, buffer, len) &lt; 0)
+    {
+        printError("getDREFs", "Failed to send command");
+        return -2;
+    }
+    return 0;
+}
+
+int getDREFResponse(XPCSocket sock, float* values[], unsigned char count, int sizes[])
+{
+    char buffer[65536];
+    int result = readUDP(sock, buffer, 65536);
+    int cur = 6;
+    int i; // Iterator
+
+
+    if (result &lt; 0)
+    {
+#ifdef _WIN32
+        printError("getDREFs", "Read operation failed. (%d)", WSAGetLastError());
+#else
+        printError("getDREFs", "Read operation failed.");
+#endif
+        return -1;
+    }
+
+    if (result &lt; 6)
+    {
+        printError("getDREFs", "Response was too short. Expected at least 6 bytes, but only got %d.", result);
+        return -2;
+    }
+    if (buffer[5] != count)
+    {
+        printError("getDREFs", "Unexpected response size. Expected %d rows, got %d instead.", count, buffer[5]);
+        return -3;
+    }
+
+    for (i = 0; i &lt; count; ++i)
+    {
+        int l = buffer[cur++];
+        if (l &gt; sizes[i])
+        {
+            printError("getDREFs", "values is too small. Row had %d values, only room for %d.", l, sizes[i]);
+            // Copy as many values as we can anyway
+            memcpy(values[i], buffer + cur, sizes[i] * sizeof(float));
+        }
+        else
+        {
+            memcpy(values[i], buffer + cur, l * sizeof(float));
+            sizes[i] = l;
+        }
+        cur += l * sizeof(float);
+    }
+    return 0;
+}
+
+int getDREF(XPCSocket sock, const char* dref, float values[], int* size)
+{
+    return getDREFs(sock, &amp;dref, &amp;values, 1, size);
+}
+
+int getDREFs(XPCSocket sock, const char* drefs[], float* values[], unsigned char count, int sizes[])
+{
+    // Send Command
+    int result = sendDREFRequest(sock, drefs, count);
+    if (result &lt; 0)
+    {
+        // An error ocurred while sending.
+        // sendDREFRequest will print an error message, so just return.
+        return -1;
+    }
+
+    // Read Response
+    if (getDREFResponse(sock, values, count, sizes) &lt; 0)
+    {
+        // An error ocurred while reading the response.
+        // getDREFResponse will print an error message, so just return.
+        return -2;
+    }
+    return 0;
+}
+
+// --------------------------------------------------------------------------//
+HB_FUNC( GETDREFS )
+{
+    XPCSocket sock;
+    unsigned char count =  hb_parvnd( 2) ;
+    int sizes[25] ;
+    float* values[25];
+    const char* drefs[25] ;
+    int nFor;
+    int nFor2;
+    int nValues ;
+    int nIndex ;
+    int error ;
+
+    sock.port = hb_parvni( 1, 1 );
+    strcpy( sock.xpIP , hb_parvc( 1, 2 ) ) ;
+    sock.xpPort = hb_parvni( 1, 3 );
+    sock.sock = hb_parvni( 1, 4 );
+
+    nValues = 0;
+    for ( nFor = 0; nFor &lt; count; ++nFor )
+        {
+            // printf( "Dref: %s\n",hb_parvc( 3 , nFor+1 ) );
+            drefs[nFor] = hb_parvc( 3 , nFor+1 );
+            sizes[nFor] = hb_parvni( 4 , nFor+1 );
+            // printf( "size: %i\n" , sizes[nFor] ) ;
+            values[nFor] = (float*)malloc( sizes[nFor] * sizeof(float));
+            nValues = nValues + sizes[nFor] ;
+        }
+
+    // printf( "count: %i\n" , count ) ;
+    // printf( "nValues: %i\n" , nValues ) ;
+    // printf( count ) ;
+    // printf( sock.xpIP ) ;
+
+    error = getDREFs(sock, drefs, values, count, sizes) ;
+
+    if ( error &lt; 0)
+    {
+        hb_retni(error);
+    }
+    else
+    {
+            hb_reta( count + nValues ) ;
+            nIndex = 0;
+            for ( nFor = 0; nFor &lt; count; ++nFor )
+            {
+                ++nIndex ;
+                hb_storvni( sizes[nFor] , -1, nIndex );
+                // printf( "Dref: %s\n",drefs[ nFor] );
+                // printf("sizes = %i\n", sizes[nFor] );
+                for ( nFor2 = 0; nFor2 &lt; sizes[nFor]; ++nFor2 )
+                {
+                    ++nIndex ;
+                    hb_storvnd( values[nFor][nFor2] , -1, nIndex );
+                    // printf("nIndex = %i\n", nIndex );
+                }
+
+            }
+    
+    }
+    
+}
+
+/*****************************************************************************/
+/****                        End DREF functions                           ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          POSI functions                             ****/
+/*****************************************************************************/
+int getPOSI(XPCSocket sock, double values[7], char ac)
+{
+    // Setup send command
+    char buffer[6] = "GETP";
+    char readBuffer[46];
+    float f[7];
+    int readResult = readUDP(sock, readBuffer, 46);
+
+    buffer[5] = ac;
+
+    // Send command
+    if (sendUDP(sock, buffer, 6) &lt; 0)
+    {
+        printError("getPOSI", "Failed to send command.");
+        return -1;
+    }
+
+    // Get response
+    
+    
+
+    // Copy response into values
+    if (readResult &lt; 0)
+    {
+        printError("getPOSI", "Failed to read response.");
+        return -2;
+    }
+    else if (readResult == 34) /* lat/lon/h as 32-bit float */
+    {
+        memcpy(f, readBuffer + 6, 7 * sizeof(float));
+        values[0] = (double)f[0];
+        values[1] = (double)f[1];
+        values[2] = (double)f[2];
+        values[3] = (double)f[3];
+        values[4] = (double)f[4];
+        values[5] = (double)f[5];
+        values[6] = (double)f[6];
+    }
+    else if (readResult == 46) /* lat/lon/h as 64-bit double */
+    {
+        memcpy(values, readBuffer + 6, 3 * sizeof(double));
+        memcpy(f, readBuffer + 30, 4 * sizeof(float));
+        values[3] = (double)f[0];
+        values[4] = (double)f[1];
+        values[5] = (double)f[2];
+        values[6] = (double)f[3];
+    }
+    else
+    {
+        printError("getPOSI", "Unexpected response length.");
+        return -3;
+    }
+    return 0;
+}
+
+int sendPOSI(XPCSocket sock, double values[], int size, char ac)
+{
+    char buffer[46] = "POSI";
+    int i; // iterator
+    // Validate input
+    if (ac &lt; 0 || ac &gt; 20)
+    {
+        printError("sendPOSI", "aircraft should be a value between 0 and 20.");
+        return -1;
+    }
+    if (size &lt; 1 || size &gt; 7)
+    {
+        printError("sendPOSI", "size should be a value between 1 and 7.");
+        return -2;
+    }
+
+    // Setup command
+    
+    buffer[4] = 0xff; //Placeholder for message length
+    buffer[5] = ac;
+
+    for (i = 0; i &lt; 7; i++) // double for lat/lon/h
+    {
+        double val = -998;
+
+        if (i &lt; size)
+        {
+            val = values[i];
+        }
+        if (i &lt; 3) /* lat/lon/h */
+        {
+            memcpy(&amp;buffer[6 + i*8], &amp;val, sizeof(double));
+        }
+        else /* attitude and gear */
+        {
+            float f = (float)val;
+            memcpy(&amp;buffer[18 + i*4], &amp;f, sizeof(float));
+        }
+    }
+
+    // Send Command
+    if (sendUDP(sock, buffer, 46) &lt; 0)
+    {
+        printError("sendPOSI", "Failed to send command");
+        return -3;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                        End POSI functions                           ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          TERR functions                             ****/
+/*****************************************************************************/
+int sendTERRRequest(XPCSocket sock, double posi[3], char ac)
+{
+    // Setup send command
+    char buffer[30] = "GETT";
+    buffer[5] = ac;
+    memcpy(&amp;buffer[6], posi, 3 * sizeof(double));
+
+    // Send command
+    if (sendUDP(sock, buffer, 30) &lt; 0)
+    {
+        printError("getTERR", "Failed to send command.");
+        return -1;
+    }
+    return 0;
+}
+
+int getTERRResponse(XPCSocket sock, double values[11], char ac)
+{
+    // Get response
+    char readBuffer[62];
+    int readResult = readUDP(sock, readBuffer, 62);
+    float f[8];
+
+    if (readResult &lt; 0)
+    {
+        printError("getTERR", "Failed to read response.");
+        return -2;
+    }
+    if (readResult != 62)
+    {
+        printError("getTERR", "Unexpected response length.");
+        return -3;
+    }
+
+    // Copy response into outputs
+    ac = readBuffer[5];
+    memcpy(values, readBuffer + 6, 3 * sizeof(double));
+    memcpy(f, readBuffer + 30, 8 * sizeof(float));
+    values[ 3] = (double)f[0];
+    values[ 4] = (double)f[1];
+    values[ 5] = (double)f[2];
+    values[ 6] = (double)f[3];
+    values[ 7] = (double)f[4];
+    values[ 8] = (double)f[5];
+    values[ 9] = (double)f[6];
+    values[10] = (double)f[7];
+
+    return 0;
+}
+
+int sendPOST(XPCSocket sock, double posi[], int size, double values[11], char ac)
+{
+    char buffer[46] = "POST";
+    int i; // iterator
+    int result;
+
+    // Validate input
+    if (ac &lt; 0 || ac &gt; 20)
+    {
+        printError("sendPOST", "aircraft should be a value between 0 and 20.");
+        return -1;
+    }
+    if (size &lt; 1 || size &gt; 7)
+    {
+        printError("sendPOST", "size should be a value between 1 and 7.");
+        return -2;
+    }
+
+    // Setup command
+    
+    buffer[4] = 0xff; //Placeholder for message length
+    buffer[5] = ac;
+    
+
+    for (i = 0; i &lt; 7; i++) // double for lat/lon/h
+    {
+        double val = -998;
+
+        if (i &lt; size)
+        {
+            val = posi[i];
+        }
+        if (i &lt; 3) /* lat/lon/h */
+        {
+            memcpy(&amp;buffer[6 + i*8], &amp;val, sizeof(double));
+        }
+        else /* attitude and gear */
+        {
+            float f = (float)val;
+            memcpy(&amp;buffer[18 + i*4], &amp;f, sizeof(float));
+        }
+    }
+
+    // Send Command
+    if (sendUDP(sock, buffer, 46) &lt; 0)
+    {
+        printError("sendPOST", "Failed to send command");
+        return -3;
+    }
+    
+    // Read Response
+    result = getTERRResponse(sock, values, ac);
+    if (result &lt; 0)
+    {
+        // A error ocurred while reading the response.
+        // getTERRResponse will print an error message, so just return.
+        return result;
+    }
+    return 0;
+}
+
+int getTERR(XPCSocket sock, double posi[3], double values[11], char ac)
+{
+    // Send Command
+    int result = sendTERRRequest(sock, posi, ac);
+    if (result &lt; 0)
+    {
+        // An error ocurred while sending.
+        // sendTERRRequest will print an error message, so just return.
+        return result;
+    }
+
+    // Read Response
+    result = getTERRResponse(sock, values, ac);
+    if (result &lt; 0)
+    {
+        // An error ocurred while reading the response.
+        // getTERRResponse will print an error message, so just return.
+        return result;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                        End TERR functions                           ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          CTRL functions                             ****/
+/*****************************************************************************/
+int getCTRL(XPCSocket sock, float values[7], char ac)
+{
+    // Setup send command
+    char buffer[6] = "GETC";
+    char readBuffer[31];
+    int readResult ;
+
+    buffer[5] = ac;
+
+    // Send command
+    if (sendUDP(sock, buffer, 6) &lt; 0)
+    {
+        printError("getCTRL", "Failed to send command.");
+        return -1;
+    }
+
+    // Get response
+    
+    readResult = readUDP(sock, readBuffer, 31);
+    if (readResult &lt; 0)
+    {
+        printError("getCTRL", "Failed to read response.");
+        return -2;
+    }
+    if (readResult != 31)
+    {
+        printError("getCTRL", "Unexpected response length.");
+        return -3;
+    }
+
+    // Copy response into values
+    memcpy(values, readBuffer + 5, 4 * sizeof(float));
+    values[4] = readBuffer[21];
+    values[5] = *((float*)(readBuffer + 22));
+    values[6] = *((float*)(readBuffer + 27));
+    return 0;
+}
+
+int sendCTRL(XPCSocket sock, float values[], int size, char ac)
+{
+    char buffer[31] = "CTRL";
+    int cur = 5;
+    int i; // iterator
+    float val = -998;
+
+    // Validate input
+    if (ac &lt; 0 || ac &gt; 20)
+    {
+        printError("sendCTRL", "aircraft should be a value between 0 and 20.");
+        return -1;
+    }
+    if (size &lt; 1 || size &gt; 7)
+    {
+        printError("sendCTRL", "size should be a value between 1 and 7.");
+        return -2;
+    }
+
+    // Setup Command
+    // 5 byte header + 5 float values * 4 + 2 byte values
+    
+    for (i = 0; i &lt; 6; i++)
+    {
+
+        if (i &lt; size)
+        {
+            val = values[i];
+        }
+        if (i == 4)
+        {
+            buffer[cur++] = val == -998 ? -1 : (unsigned char)val;
+        }
+        else
+        {
+            *((float*)(buffer + cur)) = val;
+            cur += sizeof(float);
+        }
+    }
+    buffer[26] = ac;
+    *((float*)(buffer + 27)) = size == 7 ? values[6]: -998;
+
+    // Send Command
+    if (sendUDP(sock, buffer, 31) &lt; 0)
+    {
+        printError("sendCTRL", "Failed to send command");
+        return -3;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                        End CTRL functions                           ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                        Drawing functions                            ****/
+/*****************************************************************************/
+int sendTEXT(XPCSocket sock, char* msg, int x, int y)
+{
+    size_t msgLen ;
+    char buffer[269] = "TEXT";
+    size_t len;
+msg = "yholad";
+    if (msg == NULL)
+    {
+        msg = "";
+    }
+    msgLen = strnlen_s(msg, 255);
+    // Input Validation
+    if (x &lt; -1)
+    {
+        printError("sendTEXT", "x should be positive (or -1 for default).");
+        // Technically, this should work, and may print something to the screen.
+    }
+    if (y &lt; -1)
+    {
+        printError("sendTEXT", "y should be positive (or -1 for default).");
+        // Negative y will never result in text being displayed.
+        return -1;
+    }
+    if (msgLen &gt; 255)
+    {
+        printError("sendTEXT", "msg must be less than 255 bytes.");
+        return -2;
+    }
+
+    // Setup command
+    // 5 byte header + 8 byte position + up to 256 byte message
+    
+    len = 14 + msgLen;
+    memcpy(buffer + 5, &amp;x, sizeof(int));
+    memcpy(buffer + 9, &amp;y, sizeof(int));
+    buffer[13] = (unsigned char)msgLen;
+    strncpy(buffer + 14, msg, msgLen);
+
+    // Send Command
+    if (sendUDP(sock, buffer, len) &lt; 0)
+    {
+        printError("sendTEXT", "Failed to send command");
+        return -3;
+    }
+    return 0;
+}
+
+// ------------------------------------------------------------------------- //
+HB_FUNC( SENDTEXT )
+{
+    XPCSocket sock;
+    LPSTR cText ;
+    int nX ;
+    int nY ;
+    sock.port = hb_parvni( 1, 1 );
+    strcpy( sock.xpIP , hb_parvc( 1, 2 ) ) ;
+    sock.xpPort = hb_parvni( 1, 3 );
+    sock.sock = hb_parvni( 1, 4 );
+    cText = hb_parvc( 2 );
+    nX = hb_parvni( 3 );
+    nX = hb_parvni( 4 );
+
+    printf( "Msg: %s\n", cText );
+
+    hb_retni(  sendTEXT (sock, cText , nX , nY ) );
+
+}
+// ------------------------------------------------------------------------- //
+
+
+int sendWYPT(XPCSocket sock, WYPT_OP op, float points[], int count)
+{
+    char buffer[3067] = "WYPT";
+    size_t ptLen;
+
+    // Input Validation
+    if (op &lt; XPC_WYPT_ADD || op &gt; XPC_WYPT_CLR)
+    {
+        printError("sendWYPT", "Unrecognized operation.");
+        return -1;
+    }
+    if (count &gt; 255)
+    {
+        printError("sendWYPT", "Too many points. Must be less than 256.");
+        return -2;
+    }
+
+    // Setup Command
+    // 7 byte header + 12 bytes * count
+    
+    buffer[5] = (unsigned char)op;
+    buffer[6] = (unsigned char)count;
+    ptLen = sizeof(float) * 3 * count;
+    memcpy(buffer + 7, points, ptLen);
+
+    // Send Command
+    if (sendUDP(sock, buffer, 7 + 12 * count) &lt; 0)
+    {
+        printError("sendWYPT", "Failed to send command");
+        return -2;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                      End Drawing functions                          ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          View functions                             ****/
+/*****************************************************************************/
+int sendVIEW(XPCSocket sock, VIEW_TYPE view)
+{
+    char buffer[9] = "VIEW";
+    // Validate Input
+    if (view &lt; XPC_VIEW_FORWARDS || view &gt; XPC_VIEW_FULLSCREENNOHUD)
+    {
+        printError("sendVIEW", "Unrecognized view");
+        return -1;
+    }
+
+    // Setup Command 
+    
+    *((int*)(buffer + 5)) = view;
+
+    // Send Command
+    if (sendUDP(sock, buffer, 9) &lt; 0)
+    {
+        printError("sendVIEW", "Failed to send command");
+        return -2;
+    }
+    return 0;
+}
+
+HB_FUNC( SENDVIEW )
+{
+    XPCSocket sock;
+    int nview ;
+    sock.port = hb_parvni( 1, 1 );
+    strcpy( sock.xpIP , hb_parvc( 1, 2 ) ) ;
+    sock.xpPort = hb_parvni( 1, 3 );
+    sock.sock = hb_parvni( 1, 4 );
+    nview = hb_parvni( 2 );
+    
+    hb_retni( sendVIEW (sock, nview)  )  ;
+
+    
+
+}
+
+
+
+/*****************************************************************************/
+/****                        End View functions                           ****/
+/*****************************************************************************/
+
+/*****************************************************************************/
+/****                          Comm functions                             ****/
+/*****************************************************************************/
+int sendCOMM(XPCSocket sock, const char* comm) {
+    // Setup command
+    // Max size is technically unlimited.
+    unsigned char buffer[65536] = "COMM";
+    int pos = 5;
+
+    int commLen = strnlen_s(comm, 256);
+    if (pos + commLen + 2 &gt; 65536)
+    {
+        printError("sendCOMM", "About to overrun the send buffer!");
+        return -4;
+    }
+    if (commLen &gt; 255)
+    {
+        printError("sendCOMM", "comm is too long. Must be less than 256 characters.");
+        return -1;
+    }
+    // Copy comm to buffer
+    buffer[pos++] = (unsigned char)commLen;
+    memcpy(buffer + pos, comm, commLen);
+    pos += commLen;
+
+    // Send command
+    if (sendUDP(sock, buffer, pos) &lt; 0)
+    {
+        printError("setDREF", "Failed to send command");
+        return -3;
+    }
+    return 0;
+}
+/*****************************************************************************/
+/****                        End Comm functions                           ****/
+/*****************************************************************************/
+
+
+
+#pragma ENDDUMP&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<br/><br>
+Regards<br/><br>
+<br/><br>
+Alvaro</r></div>
+    </div>
+  </div>
+  <div class="post" id="p260576">
+    <div class="poster">
+      <div class="name" style="color:#105289">alvaro533</div>
+      <div class="rank">Posts: 230</div>
+      <div class="avatar"></div>
+      Joined: Sat Apr 19, 2008 10:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Wed Jun 07, 2023 08:28 PM
+      </div>
+      <div class="content"><r>Hi,<br/><br>
+<br/><br>
+I forgot, you have to Include this file “xplaneConnect.h” that I have also modified<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;//Copyright (c) 2013-2018 United States Government as represented by the Administrator of the
+//National Aeronautics and Space Administration. All Rights Reserved.
+//
+//DISCLAIMERS
+//    No Warranty: THE SUBJECT SOFTWARE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY OF ANY KIND,
+//    EITHER EXPRESSED, IMPLIED, OR STATUTORY, INCLUDING, BUT NOT LIMITED TO, ANY WARRANTY THAT
+//    THE SUBJECT SOFTWARE WILL CONFORM TO SPECIFICATIONS, ANY IMPLIED WARRANTIES OF
+//    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR FREEDOM FROM INFRINGEMENT, ANY WARRANTY
+//    THAT THE SUBJECT SOFTWARE WILL BE ERROR FREE, OR ANY WARRANTY THAT DOCUMENTATION, IF PROVIDED,
+//    WILL CONFORM TO THE SUBJECT SOFTWARE. THIS AGREEMENT DOES NOT, IN ANY MANNER, CONSTITUTE AN
+//    ENDORSEMENT BY GOVERNMENT AGENCY OR ANY PRIOR RECIPIENT OF ANY RESULTS, RESULTING DESIGNS,
+//    HARDWARE, SOFTWARE PRODUCTS OR ANY OTHER APPLICATIONS RESULTING FROM USE OF THE SUBJECT
+//    SOFTWARE.  FURTHER, GOVERNMENT AGENCY DISCLAIMS ALL WARRANTIES AND LIABILITIES REGARDING
+//    THIRD-PARTY SOFTWARE, IF PRESENT IN THE ORIGINAL SOFTWARE, AND DISTRIBUTES IT "AS IS."
+//
+//    Waiver and Indemnity: RECIPIENT AGREES TO WAIVE ANY AND ALL CLAIMS AGAINST THE UNITED STATES
+//    GOVERNMENT, ITS CONTRACTORS AND SUBCONTRACTORS, AS WELL AS ANY PRIOR RECIPIENT.  IF
+//    RECIPIENT'S USE OF THE SUBJECT SOFTWARE RESULTS IN ANY LIABILITIES, DEMANDS, DAMAGES, EXPENSES
+//    OR LOSSES ARISING FROM SUCH USE, INCLUDING ANY DAMAGES FROM PRODUCTS BASED ON, OR RESULTING
+//    FROM, RECIPIENT'S USE OF THE SUBJECT SOFTWARE, RECIPIENT SHALL INDEMNIFY AND HOLD HARMLESS THE
+//    UNITED STATES GOVERNMENT, ITS CONTRACTORS AND SUBCONTRACTORS, AS WELL AS ANY PRIOR RECIPIENT,
+//    TO THE EXTENT PERMITTED BY LAW.  RECIPIENT'S SOLE REMEDY FOR ANY SUCH MATTER SHALL BE THE
+//    IMMEDIATE, UNILATERAL TERMINATION OF THIS AGREEMENT.
+#ifndef xplaneConnect_h
+#define xplaneConnect_h
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "stdlib.h"
+#ifdef _WIN32 /* WIN32 SYSTEM */
+#include &lt;winsock2.h&gt;
+#include &lt;ws2tcpip.h&gt;
+#pragma comment(lib,"ws2_32.lib") //Winsock Library
+#elif (__APPLE__ || __linux)
+#include &lt;sys/socket.h&gt;
+#include &lt;netinet/in.h&gt;
+#include &lt;arpa/inet.h&gt;
+#include &lt;unistd.h&gt;
+#endif
+
+typedef struct xpcSocket
+{
+    unsigned short port;
+
+    // X-Plane IP and Port
+    char xpIP[16];
+    unsigned short xpPort;
+
+#ifdef _WIN32
+    SOCKET sock;
+#else
+    int sock;
+#endif
+} XPCSocket;
+
+typedef enum
+{
+    XPC_WYPT_ADD = 1,
+    XPC_WYPT_DEL = 2,
+    XPC_WYPT_CLR = 3
+} WYPT_OP;
+
+typedef enum
+{
+    XPC_VIEW_FORWARDS = 73,
+    XPC_VIEW_DOWN,
+    XPC_VIEW_LEFT,
+    XPC_VIEW_RIGHT,
+    XPC_VIEW_BACK,
+    XPC_VIEW_TOWER,
+    XPC_VIEW_RUNWAY,
+    XPC_VIEW_CHASE,
+    XPC_VIEW_FOLLOW,
+    XPC_VIEW_FOLLOWWITHPANEL,
+    XPC_VIEW_SPOT,
+    XPC_VIEW_FULLSCREENWITHHUD,
+    XPC_VIEW_FULLSCREENNOHUD,
+} VIEW_TYPE;
+
+// Low Level UDP Functions
+
+/// Opens a new connection to XPC on an OS chosen port.
+///
+/// \param xpIP   A string representing the IP address of the host running X-Plane.
+/// \returns      An XPCSocket struct representing the newly created connection.
+XPCSocket openUDP(const char *xpIP);
+
+/// Opens a new connection to XPC on the specified port.
+///
+/// \param xpIP   A string representing the IP address of the host running X-Plane.
+/// \param xpPort The port of the X-Plane Connect plugin is listening on. Usually 49009.
+/// \param port   The local port to use when sending and receiving data from XPC.
+/// \returns      An XPCSocket struct representing the newly created connection.
+XPCSocket aopenUDP(const char *xpIP, unsigned short xpPort, unsigned short port);
+
+/// Closes the specified connection and releases resources associated with it.
+///
+/// \param sock The socket to close.
+int closeUDP(XPCSocket sock);
+
+// Configuration
+
+/// Sets the port on which the socket sends and receives data.
+///
+/// \param sock A pointer to the socket to change.
+/// \param port The new port to use.
+/// \returns    0 if successful, otherwise a negative value.
+int setCONN(XPCSocket* sock, unsigned short port);
+
+/// Pause or unpause the simulation.
+///
+/// \param sock  The socket to use to send the command.
+/// \param pause 0 to unpause the sim; 1 to pause, 100:119 to pause a/c 0:19, 200:219 to unpause a/c 0:19.
+/// \returns     0 if successful, otherwise a negative value.
+int pauseSim(XPCSocket sock, char pause);
+
+// X-Plane UDP DATA
+
+/// Reads X-Plane data from the specified socket.
+///
+/// \details This command is compatible with the X-Plane data API.
+/// \param sock    The socket to use to send the command.
+/// \param data    A 2D array of data rows to read into.
+/// \param rows    The number of rows in dataRef.
+/// \returns       0 if successful, otherwise a negative value.
+int readDATA(XPCSocket sock, float data[][9], int rows);
+
+/// Sends X-Plane data on the specified socket.
+///
+/// \details This command is compatible with the X-Plane data API.
+/// \param sock    The socket to use to send the command.
+/// \param data    A 2D array of data rows to send.
+/// \param rows    The number of rows in dataRef.
+/// \returns       0 if successful, otherwise a negative value.
+int sendDATA(XPCSocket sock, float data[][9], int rows);
+
+// DREF Manipulation
+
+/// Sets the specified dataref to the specified value.
+///
+/// \details dref names and their associated data types can be found on the XPSDK wiki at
+///          http://www.xsquawkbox.net/xpsdk/docs/DataRefs.html. The size of values should match
+///          the size given on that page. XPC currently sends all values as floats regardless of
+///          the type described on the wiki. This doesn't cause any data loss for most datarefs.
+/// \param sock   The socket to use to send the command.
+/// \param dref   The name of the dataref to set.
+/// \param values An array of values representing the data to set.
+/// \param size   The number of elements in values.
+/// \returns      0 if successful, otherwise a negative value.
+int sendDREF(XPCSocket sock, const char* dref, float values[], int size);
+
+/// Sets the specified datarefs to the specified values.
+///
+/// \details dref names and their associated data types can be found on the XPSDK wiki at
+///          http://www.xsquawkbox.net/xpsdk/docs/DataRefs.html. The size of values should match
+///          the size given on that page. XPC currently sends all values as floats regardless of
+///          the type described on the wiki. This doesn't cause any data loss for most datarefs.
+/// \param sock   The socket to use to send the command.
+/// \param drefs  The names of the datarefs to set.
+/// \param values A 2D array containing the values for each dataref to set.
+/// \param sizes  The number of elements in each array in values
+/// \param count  The number of datarefs being set.
+/// \returns      0 if successful, otherwise a negative value.
+int sendDREFs(XPCSocket sock, const char* drefs[], float* values[], int sizes[], int count );
+
+/// Gets the value of the specified dataref.
+///
+/// \details dref names and their associated data types can be found on the XPSDK wiki at
+///          http://www.xsquawkbox.net/xpsdk/docs/DataRefs.html. The size of values should match
+///          the size given on that page. XPC currently sends all values as floats regardless of
+///          the type described on the wiki. This doesn't cause any data loss for most datarefs.
+/// \param sock   The socket to use to send the command.
+/// \param dref   The name of the dataref to get.
+/// \param values The array in which the values of the dataref will be stored.
+/// \param size   The number of elements in values. The actual number of elements copied in will
+///               be set when the function returns.
+/// \returns      0 if successful, otherwise a negative value.
+int getDREF(XPCSocket sock, const char* dref, float values[], int* size);
+
+/// Gets the values of the specified datarefs.
+///
+/// \details dref names and their associated data types can be found on the XPSDK wiki at
+///          http://www.xsquawkbox.net/xpsdk/docs/DataRefs.html. The size of values should match
+///          the size given on that page. XPC currently sends all values as floats regardless of
+///          the type described on the wiki. This doesn't cause any data loss for most datarefs.
+/// \param sock   The socket to use to send the command.
+/// \param drefs  The names of the datarefs to get.
+/// \param values A 2D array in which the values of the datarefs will be stored.
+/// \param count  The number of datarefs being requested.
+/// \param sizes  The number of elements in each row of values. The size of each row will be set
+///               to the actual number of elements copied in for that row.
+/// \returns      0 if successful, otherwise a negative value.
+int getDREFs(XPCSocket sock, const char* drefs[], float* values[], unsigned char count, int sizes[]);
+
+// Position
+
+/// Gets the position and orientation of the specified aircraft.
+///
+/// \param sock   The socket used to send the command and receive the response.
+/// \param values An array to store the position information returned by the
+///               plugin. The format of values is [Lat, Lon, Alt, Pitch, Roll, Yaw, Gear]
+/// \param ac     The aircraft number to get the position of. 0 for the main/user's aircraft.
+/// \returns      0 if successful, otherwise a negative value.
+int getPOSI(XPCSocket sock, double values[7], char ac);
+
+/// Sets the position and orientation of the specified aircraft.
+///
+/// \param sock   The socket to use to send the command.
+/// \param values A double array representing position data about the aircraft. The format of values is
+///               [Lat, Lon, Alt, Pitch, Roll, Yaw, Gear]. If less than 7 values are specified,
+///               the unspecified values will be left unchanged.
+/// \param size   The number of elements in values.
+/// \param ac     The aircraft number to set the position of. 0 for the main/user's aircraft.
+/// \returns      0 if successful, otherwise a negative value.
+int sendPOSI(XPCSocket sock, double values[], int size, char ac);
+
+// Terrain
+
+/// Sets the position and orientation and gets the terrain information of the specified aircraft.
+///
+/// \param sock   The socket to use to send the command.
+/// \param posi   A double array representing position data about the aircraft. The format of values is
+///               [Lat, Lon, Alt, Pitch, Roll, Yaw, Gear]. If less than 7 values are specified,
+///               the unspecified values will be left unchanged.
+/// \param size   The number of elements in posi.
+/// \param values A double array with the information for the terrain output. The format of values is
+///               [Lat, Lon, Alt, Nx, Ny, Nz, Vx, Vy, Vz, wet, result]. The first three are for output of
+///               the Lat and Lon of the aircraft with the terrain height directly below. The next three
+///               represent the terrain normal. The next three represent the velocity of the terrain.
+///               The wet variable is 0.0 if the terrain is dry and 1.0 if wet.
+///               The last output is the terrain probe result parameter.
+/// \param ac     The aircraft number to set the position of. 0 for the main/user's aircraft.
+/// \returns      0 if successful, otherwise a negative value.
+int sendPOST(XPCSocket sock, double posi[], int size, double values[11], char ac);
+
+/// Gets the terrain information of the specified aircraft.
+///
+/// \param sock   The socket to use to send the command.
+/// \param posi   A double array representing position data about the aircraft. The format of values is
+///               [Lat, Lon, Alt].
+///               -998 used for [Lat, Lon, Alt] to request terrain info at the current aircraft position.
+/// \param values A double array with the information for the terrain output. The format of values is
+///               [Lat, Lon, Alt, Nx, Ny, Nz, Vx, Vy, Vz, wet, result]. The first three are for output of
+///               the Lat and Lon of the aircraft with the terrain height directly below. The next three
+///               represent the terrain normal. The next three represent the velocity of the terrain.
+///               The wet variable is 0.0 if the terrain is dry and 1.0 if wet.
+///               The last output is the terrain probe result parameter.
+/// \param ac     The aircraft number to get the terrain data of. 0 for the main/user's aircraft.
+/// \returns      0 if successful, otherwise a negative value.
+int getTERR(XPCSocket sock, double posi[3], double values[11], char ac);
+
+// Controls
+
+/// Gets the control surface information for the specified aircraft.
+///
+/// \param sock   The socket used to send the command and receive the response.
+/// \param values An array to store the position information returned by the
+///               plugin. The format of values is [Elevator, Aileron, Rudder,
+///               Throttle, Gear, Flaps, Speed Brakes]
+/// \param ac     The aircraft to get the control surfaces of. 0 is the main/user's aircraft.
+/// \returns      0 if successful, otherwise a negative value.
+int getCTRL(XPCSocket sock, float values[7], char ac);
+
+/// Sets the control surfaces of the specified aircraft.
+///
+/// \param sock   The socket to use to send the command.
+/// \param values An array representing position data about the aircraft. The format of values is
+///               [Elevator, Aileron, Rudder, Throttle, Gear, Flaps, Speed Brakes]. If less than
+///               6 values are specified, the unspecified values will be left unchanged.
+/// \param size   The number of elements in values.
+/// \param ac     The aircraft to set the control surfaces of. 0 for the main/user's aircraft.
+/// \returns      0 if successful, otherwise a negative value.
+int sendCTRL(XPCSocket sock, float values[], int size, char ac);
+
+// Drawing
+
+/// Sets a string to be printed on the screen in X-Plane.
+///
+/// \param sock The socket to use to send the command.
+/// \param msg  The message to print of the screen.
+/// \param x    The distance in pixels from the left edge of the screen to print the text.
+/// \param y    The distance in pixels from the bottom edge of the screen to print the top line of text.
+/// \returns    0 if successful, otherwise a negative value.
+int sendTEXT(XPCSocket sock, char* msg, int x, int y);
+
+/// Sets the camera view in X-Plane.
+///
+/// \param sock The socket to use to send the command.
+/// \param view The view to use.
+/// \returns    0 if successful, otherwise a negative value.
+int sendVIEW(XPCSocket sock, VIEW_TYPE view);
+
+/// Adds, removes, or clears a set of waypoints. If the command is clear, the points are ignored
+/// and all points are removed.
+///
+/// \param sock   The socket to use to send the command.
+/// \param op     The operation to perform. 1=add, 2=remove, 3=clear.
+/// \param points An array of values representing points. Each triplet in the array will be
+///               interpreted as a (Lat, Lon, Alt) point.
+/// \param count  The number of points. There should be 3 * count elements in points.
+/// \returns      0 if successful, otherwise a negative value.
+int sendWYPT(XPCSocket sock, WYPT_OP op, float points[], int count);
+
+/// Sends commands.
+///
+/// \param sock The socket to use to send the command.
+/// \param comm The command string.
+/// \returns    0 if successful, otherwise a negative value.
+int sendCOMM(XPCSocket sock, const char* comm);
+
+#ifdef __cplusplus
+    }
+#endif
+#endif
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<br/><br>
+Regards<br/><br>
+<br/><br>
+Alvaro</r></div>
+    </div>
+  </div>
+  <div class="post" id="p260577">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Wed Jun 07, 2023 09:10 PM
+      </div>
+      <div class="content"><p><t>Thanks Alvaro<br/><br>
+I try and comment</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p260583">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Thu Jun 08, 2023 05:27 AM
+      </div>
+      <div class="content"><p><t>Estimado Alvaro,<br/><br>
+<br/><br>
+Muchas gracias por compartirlo.<br/><br>
+<br/><br>
+Podrias publicar aqui algunas capturas de pantalla para que veamos como se ve la aplicación ?<br/><br>
+Basicamente lo que tu has programado que utilidad tiene ?<br/><br>
+<br/><br>
+gracias nuevamente</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p260588">
+    <div class="poster">
+      <div class="name" style="color:#105289">alvaro533</div>
+      <div class="rank">Posts: 230</div>
+      <div class="avatar"></div>
+      Joined: Sat Apr 19, 2008 10:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Connection to XPlane Flight Simulator</span><br>
+        Posted: Thu Jun 08, 2023 10:11 AM
+      </div>
+      <div class="content"><r>Good morning,<br/><br>
+<br/><br>
+What I have programmed serves to create an external application, in this case in Fivewin, to control what is happening inside the simulator from another computer. The simulator usually has one or several dedicated computers.<br/><br>
+<br/><br>
+A typical application is to create an instructor console, where the instructor can see what the student flying the simulator is doing, even over internet, whether he is performing maneuvers correctly, maintaining speeds, altitudes, etc.<br/><br>
+<br/><br>
+For example, take a look at this commercial application; something similar can be done in Fivewin using the connection posted.<br/><br>
+<br/><br>
+<URL url="https://www.fs-flightcontrol.com/en/"><s><a href="</s>https://www.fs-flightcontrol.com/en/<e>" rel="noopener"></s>https://www.fs-flightcontrol.com/en/<e></a></e></URL><br/><br>
+<br/><br>
+I created a similar application in 2009 for a previous version of the simulator, which I am now updating for the current version of X-Plane.<br/><br>
+<br/><br>
+The simulator currently has 5224 data references, called datarefs, which you can view on this website:<br/><br>
+<br/><br>
+<URL url="https://www.siminnovations.com/xplane/dataref/"><s><a href="</s>https://www.siminnovations.com/xplane/dataref/<e>" rel="noopener"></s>https://www.siminnovations.com/xplane/dataref/<e></a></e></URL><br/><br>
+<br/><br>
+These data range from aircraft altitude, position, and speed to variables related to weather, electrical systems, engines, etc. Some data can only be read, while the majority can be both read and written from the external application.<br/><br>
+<br/><br>
+Here is a photo of the simulator I have been building gradually using OpenCockpits electronics and my own programming.<br/><br>
+<br/><br>
+<URL url="https://www.opencockpits.com/catalog/tarjetas-electronicas-iocards-c-21.html"><s><a href="</s><LINK_TEXT text="https://www.opencockpits.com/catalog/ta ... -c-21.html">https://www.opencockpits.com/catalog/tarjetas-electronicas-iocards-c-21.html</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://www.opencockpits.com/catalog/ta ... -c-21.html">https://www.opencockpits.com/catalog/tarjetas-electronicas-iocards-c-21.html</LINK_TEXT><e></a></e></URL><br/><br>
+<br/><br>
+<IMG src="https://live.staticflickr.com/65535/52958764057_3eb94a0010_b.jpg"><s><img src="</s>https://live.staticflickr.com/65535/52958764057_3eb94a0010_b.jpg<e>" alt="" loading="lazy"></e></IMG><br/><br>
+<br/><br>
+The external view is displayed on a projector positioned behind the simulator.<br/><br>
+<br/><br>
+Best regards,<br/><br>
+<br/><br>
+Alvaro</r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

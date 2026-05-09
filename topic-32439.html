@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Aporte: Sentencia SQL directa a Excel class tDboDBCDirect - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-32439">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</div>
+  <div class="post" id="p190519">
+    <div class="poster">
+      <div class="name" style="color:#105289">armando.lagunas</div>
+      <div class="rank">Posts: 346</div>
+      <img class="avatar avatar-img" src="avatars/1814.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 05, 2009 03:35 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Sat May 14, 2016 03:49 PM
+      </div>
+      <div class="content">Amigos del foro:<br>
+<br>
+<br>
+un pequeño aporte para las personas que utilizan la clase TdboDBCDirect<br>
+<br>
+por una necesidad puntual, he incorporado un nuevo metodo a esta clase, lo cual me permite llevar una consulta SQL en forma directa a excel, sin pasar por una tabla DBF temporal, un xBrowse y un oBrw:toExcel() , aumentando la velocidad en un 300% y lograr que cualquier consulta, vista o procedimiento almacenado, se vacíe en una hoja de excel.<br>
+<br>
+un ejemplo de utilización<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   oSql := Todbc():New("Nombre ODBC","Usuario","Password")
+...
+...
+          REDEFINE  SBUTTON  ID 42  ACTION Exportar_Sql_Excel("Stock Fruta a Proceso")  OF xDlg
+...
+...
+
+oSql:End()
+
+STATIC FUNCTION Exportar_Sql_Excel( cTitulo )
+LOCAL oDbf
+
+   oDbf:= oSql:Query("SELECT * FROM RECEPCIONES")
+   oDbf:SQLtoExcel( cTitulo )
+   oDbf:End()
+
+RETURN .T.</code></pre></div><br>
+<br>
+con esto sale esto:<br>
+<br>
+<img src="http://i67.tinypic.com/25q5b8x.jpg" alt="" loading="lazy"><br>
+<br>
+en la clase hay que hacer lo siguiente :<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CLASS TDbOdbcDirect
+...
+...
+METHOD  SQLtoExcel()
+...
+...
+//----------------------------------------------------------------------------//
+
+METHOD SQLtoExcel( cTitle, nRecs ) CLASS TDbOdbcDirect
+LOCAL aBuffer, n, nLen, lAll
+LOCAL oExcel, oBook, oSheet, uData, oRange, cRange, cCell, cLet, nColHead, bError, cText, oClip, nStart, aRepl
+LOCAL nLine  := 1  , nCount := 0 , aCol := { 26, 52, 78, 104, 130, 156 } , aLet := { "", "A", "B", "C", "D", "E" }     , xWin
+
+DEFAULT cTitle := "Datos de la consulta realizada", nRecs := 1
+
+   IF ::hStmt == 0
+      RETURN .f.
+   ENDIF
+
+   ::aFields  := ::CursorFields( ::hStmt )
+   lAll       := .T. // (nRecs == 0)
+   nLen       := LEN( ::aFields )
+   ::aBuffer  := Array(nLen)
+   ::aIsNull  := Array(nLen)
+   aBuffer    := ::aBuffer
+   aRepl      := {}
+   cLet       := aLet[ ASCAN( aCol, {|e| nLen  &lt;= e } ) ]
+   IF !EMPTY( cLet )              ;   n        := ASCAN( aLet, cLet ) - 1  ;    cLet += CHR( 64 + nLen - aCol[ MAX( 1, n ) ] )
+   ELSE                           ;   cLet     := CHR( 64 + nLen )
+   ENDIF                          ;   bError   := ErrorBlock( { | x | Break( x ) } )
+
+   BEGIN SEQUENCE
+                                           oExcel := TOleAuto():New("Excel.Application")
+   RECOVER
+                                           ErrorBlock( bError )
+                                           RETURN Nil
+   END SEQUENCE
+   ErrorBlock( bError )
+
+   nCount    -= 15
+   oExcel:ScreenUpdating := .F.
+   oExcel:WorkBooks:Add()
+   oBook     := oExcel:Get( "ActiveWorkBook")
+   oSheet    := oExcel:Get( "ActiveSheet" )
+   nCount    -= 15
+   cText     := ""
+   oSheet:Cells( nLine++, 1 ):Value := cTitle
+   oSheet:Range( "A1:" + cLet + "1" ):Set( "HorizontalAlignment", 7 )
+   ++nLine
+   nStart    := nLine
+   nColHead  := 0
+
+   FOR n     := 1 TO nLen
+       uData := ChkSp( ::aFields[ n ][ SQLNAME ])
+       uData := STRTRAN( uData, CRLF, Chr( 10 ) )
+       nColHead ++
+       oSheet:Cells( nLine, nColHead ):Value := uData
+       nCount ++
+   NEXT
+   nStart     := ++nLine
+
+   DO WHILE (lAll .or. nRecs &gt; 0)  .AND. ::hStmt != 0
+      IF ::Fetch()
+         For n := 1 To nLen
+             uData  := aBuffer[n]
+              IF VALTYPE( uData ) == "C" .AND. AT( CRLF, uData ) &gt; 0
+                 uData  := STRTRAN( uData, CRLF, "&amp;&amp;" )
+                 IF ASCAN( aRepl, n ) == 0
+                     AADD( aRepl, n )
+                 ENDIF
+              ENDIF
+              uData  :=  IIF( VALTYPE( uData )=="D", DTOC( uData ), ;
+                         IIF( VALTYPE( uData )=="N", TRANSFORM( uData, "@E 99,999,999,999.99" ) , ;
+                         IIF( VALTYPE( uData )=="L", IIF( uData ,".T." ,".F." ), cValToChar( uData ) ) ) )
+              cText  += TRIM( uData ) + Chr( 9 )
+              nCount ++
+          NEXT
+          cText += CHR( 13 )
+          ++nLine
+      ENDIF
+      nRecs --
+   ENDDO
+
+   oSheet:Rows( 1 ):Font:Bold   := .T.
+   IF LEN( cText ) &gt; 0      ;           oClip := TClipBoard():New()                      ;    oClip:Clear()
+      oClip:SetText(cText)  ;           cCell := "A" + Alltrim( Str( nStart ) )          ;    oRange := oSheet:Range( cCell )
+      oRange:Select()       ;           oSheet:Paste()                                   ;    oClip:End()
+      cText := ""
+   ENDIF                    ;           nLine := If( ! Empty( cTitle ), 3, 1 )           ;    cRange := "A" + LTrim( Str( nLine ) ) + ":" + cLet + Alltrim( Str( oSheet:UsedRange:Rows:Count() ) )
+                                        oRange := oSheet:Range( cRange )                 ;    oRange:Font:Name := "Consolas"
+   oRange:Font:Size := 11   ;           oRange:Font:Bold := .F.
+   IF ! EMPTY( aRepl )
+        FOR n := 1 TO LEN( aRepl )
+            oSheet:Columns( CHR( 64 + aRepl[ n ] ) ):REPLACE( "&amp;&amp;", CHR( 10 ) )
+        NEXT
+   ENDIF
+   oSheet:Rows( 1 ):Font:Size       := 14
+   oSheet:Rows( 1 ):Font:Bold       := .T.
+   oSheet:Rows( 1 ):RowHeight       := 30
+   oSheet:Rows( 1 ):Font:ColorIndex := 25
+
+   oSheet:Rows( 3 ):Font:Bold       := .T.
+   oSheet:Rows( 3 ):Font:ColorIndex := 20
+   oSheet:Rows( 3 ):RowHeight       := 25
+   oRange:Borders():LineStyle       := 1
+   oRange:Columns:AutoFit()
+   IF ! Empty( aRepl )
+         FOR n := 1 TO LEN( aRepl )
+            oSheet:Columns( CHR( 64 + aRepl[ n ] ) ):WrapText := .T.
+         NEXT
+   ENDIF
+   oSheet:Range( "A3:"+cLet+"3" ):Interior:ColorIndex := 49
+   oSheet:Range( "A3:"+cLet+"3" ):Borders:ColorIndex  :=  2
+   oSheet:Range( "A4" ):Select()
+   xWin                    := oExcel:ActiveWindow
+   xWin:SplitRow           := 3
+   xWin:FreezePanes        := .t.
+   oExcel:ScreenUpdating   := .t.
+   oExcel:Visible          := .T.
+   ShowWindow( oExcel:hWnd, 3 )
+   BringWindowToTop( oExcel:hWnd )
+
+RETURN Self
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+<br>
+con eso me funciona muy bien.<br>
+<br>
+espero que a alguien le ayude tanto como ami.<br>
+<br>
+Saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p190522">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Sat May 14, 2016 06:07 PM
+      </div>
+      <div class="content"><p>Armando, gracias</p></div>
+    </div>
+  </div>
+  <div class="post" id="p190590">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Tue May 17, 2016 09:23 AM
+      </div>
+      <div class="content">Fasted way to export to excel<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+function Main()
+
+   local oCn, oRs
+
+   oCn   := FW_OpenAdoConnection( "c:\fwh\samples\xbrtest.mdb" ) // MS Access
+// oCn   := FW_OpenAdoConnection( "c:\fwh\samples\" ) // DBase III
+// oCn   := FW_OpenAdoConnection( "MYSQL,localhost,FWH,root,password" ) // MySql DataBase FWH: Replace your details
+
+   oRs   := FW_OpenRecordSet( oCn, "SELECT * FROM CUSTOMER" ) // Use your sql statement
+
+   AdoToExcel( ors )
+
+   oRs:Close()
+   oCn:Close()
+
+return nil
+
+function AdoToExcel( oRs )
+
+   local oExcel, oBook, oSheet
+   local aHead, oHead, nFlds, nRow
+   local nSecs
+
+   if ( oExcel := ExcelObj() ) == nil
+      MsgAlert( "Excel Not Installed" )
+      return nil
+   endif
+   oBook    := oExcel:WorkBooks:Add()
+   oSheet   := oBook:ActiveSheet()
+   oExcel:ScreenUpdating := .f.
+
+   nSecs    := Seconds()
+
+   // Export Header
+   nFlds    := oRs:Fields:Count
+   aHead    := Array( nFlds )
+   AEval( aHead, { |u,i| aHead[ i ] := oRs:Fields( i - 1 ):Name } )
+   oHead    := oSheet:Range( oSheet:Cells( 1, 1 ), oSheet:Cells( 1, nFlds ) )
+   oHead:Value       := aHead
+   oHead:Font:Bold   := .t.
+
+   // Export All Cell Values
+   oRs:MoveFirst()
+   nRow   := oSheet:Cells( 2, 1 ):CopyFromRecordSet( oRs )
+   oRs:MoveFirst()
+   oSheet:Range( oSheet:Columns( 1 ), oSheet:Columns( nFlds ) ):AutoFit()
+
+   // Display Excel
+   oExcel:ScreenUpdating := .t.
+   oExcel:visible := .t.
+
+   nSecs    := Seconds() - nSecs
+   MsgInfo( "Time taken " + cValToChar( nSecs ) + " seconds" )
+
+return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p190598">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Tue May 17, 2016 12:35 PM
+      </div>
+      <div class="content">If we want to export from TDbOdbcDirect, this loop can be tried<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   if ( oExcel := ExcelObj() ) == nil
+      MsgAlert( "Excel Not Installed" )
+      return nil
+   endif
+   oBook    := oExcel:WorkBooks:Add()
+   oSheet   := oBook:ActiveSheet()
+   oExcel:ScreenUpdating := .f.
+
+   nLen     := Len( ::aFields )
+   AEval( ::aFields, { |a,i| oSheet:Cells( 1, 1 ):Value := a[ SQLNAME ] } )
+
+   oRange   := oSheet:Range( oSheet:Columns( 1 ), oSheet:Columns( nLen ) )
+   nRow     := 2  // after header
+
+   // MAIN EXPORT LOOP
+   do while ::Fetch()  // add other conditions
+      oRange:Rows( nRow ):Value := ::aBuffer
+      nRow++
+   enddo
+   // MAIN EXPORT LOOP ENDS
+   
+   oRange:AutoFit()
+   oRange:VerticalAlignment := -4160
+
+   // Display Excel
+   oExcel:ScreenUpdating := .t.
+   oExcel:visible := .t.</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p190612">
+    <div class="poster">
+      <div class="name" style="color:#105289">jose_murugosa</div>
+      <div class="rank">Posts: 1278</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 06, 2006 04:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Tue May 17, 2016 04:52 PM
+      </div>
+      <div class="content">Mr. Rao,<br>
+<br>
+It is interesting the study of FWH ADO functions, I start to study them because of this post, and I'd like to make you some questions.<br>
+<br>
+1)Is there a limit of rows for a recordset using this functions or a limit to export to dbf files, because I tried to export 700.000 records from a mysql table to a dbf file .and. it returns this error<br>
+<br>
+   Called from:  =&gt; TOLEAUTO:GETROWS( 0 )<br>
+   Called from: .\source\function\ADOFUNCS.PRG =&gt; FW_ADOEXPORTTODBF( 1219 )<br>
+   Called from: exportadbf.prg =&gt; ADOTODBF( 28 )<br>
+   Called from: exportadbf.prg =&gt; MAIN( 17 )<br>
+<br>
+This is the code, you will see that it is based on yours in this post.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+function Main()
+
+    local oCn, oRs
+    REQUEST DBFCDX
+    RddSetDefault( "DBFCDX")
+
+    //oCn   := FW_OpenAdoConnection( "c:\fwh\samples\xbrtest.mdb" ) // MS Access
+    //oCn   := FW_OpenAdoConnection( "c:\fwh\samples\" ) // DBase III El directorio es la base de datos
+    //oCn   := FW_OpenAdoConnection( "MYSQL,localhost,FWH,root,password" ) // MySql DataBase FWH: Replace your details
+    oCn   := FW_OpenAdoConnection( "MYSQL,192.168.123.161,stock2,root,1234" ) // MySql DataBase FWH: Replace your details
+
+    oRs   := FW_OpenRecordSet( oCn, "SELECT * FROM cajas_dbf" )
+    //oRs   := FW_OpenRecordSet( oCn, "SELECT * FROM producto_dbf" ) // Use your sql statement  (aca se selecciona la tabla)
+
+    AdotoDbf(oRs)
+
+    oRs:Close()
+    oCn:Close()
+
+return nil
+
+function AdoToDbf( oRs )
+
+    local nSecs
+    
+    FW_AdoExportToDBF( oRs, "cajas.dbf", .t. )
+    
+    nSecs    := Seconds()
+
+    nSecs    := Seconds() - nSecs
+    //MsgInfo( "Time taken " + cValToChar( nSecs ) + " seconds" )
+
+return nil</code></pre></div><br>
+<br>
+<br>
+2) In recordsets the first column is column 0 (zero)?<br>
+<br>
+3) Is there a way to obtain better information of this functions that the information we find in wiki of fivetech? because this functions are not in hlp files of FWH<br>
+<br>
+Thanks in advance for your help, and for your contributions in this forum.</div>
+    </div>
+  </div>
+  <div class="post" id="p190629">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Tue May 17, 2016 11:57 PM
+      </div>
+      <div class="content"><blockquote><br>
+1)Is there a limit of rows for a recordset using this functions or a limit to export to dbf files, because I tried to export 700.000 records from a mysql table to a dbf file .and. it returns this error<br>
+</blockquote><br>
+There is no such limit in the documentation. I can not answer unless I test myself. I'll test this some time later and come back to you.<br>
+<br>
+Are you able to successfully export smaller tables using this function?<br>
+<br>
+<blockquote><br>
+2) In recordsets the first column is column 0 (zero)?<br>
+</blockquote><br>
+Yes.<br>
+<blockquote><br>
+3) Is there a way to obtain better information of this functions that the information we find in wiki of fivetech? because this functions are not in hlp files of FWH<br>
+</blockquote><br>
+For now, the best way is to study the source code in the adofuncs.prg.<br>
+I'll soon try to update the Wiki. Spending more time on development, not finding enough time for the documentation.</div>
+    </div>
+  </div>
+  <div class="post" id="p190635">
+    <div class="poster">
+      <div class="name" style="color:#105289">jose_murugosa</div>
+      <div class="rank">Posts: 1278</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 06, 2006 04:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Wed May 18, 2016 09:41 AM
+      </div>
+      <div class="content"><p>Yes I did'nt have problems with smaller tables, I will study adofuncs.prg and make other tests</p>
+<p>Thanks a lot for your answer Mr. Rao.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p190636">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Wed May 18, 2016 09:51 AM
+      </div>
+      <div class="content"><blockquote>Yes I had success with smaller tables, I will be making some tests too and share results.<br>
+</blockquote><br>
+It is okay if you are testing the functions for academic interest.<br>
+<br>
+But if you have an immediate professional need to import large tables from MySql to DBF or other formats, ADO may not be the way. Mostly these are one-time jobs for us. Please examine options like mysqldump or  mysqldbexport.</div>
+    </div>
+  </div>
+  <div class="post" id="p190637">
+    <div class="poster">
+      <div class="name" style="color:#105289">jose_murugosa</div>
+      <div class="rank">Posts: 1278</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 06, 2006 04:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Wed May 18, 2016 10:04 AM
+      </div>
+      <div class="content"><blockquote><cite>nageswaragunupudi wrote:</cite><blockquote>Yes I had success with smaller tables, I will be making some tests too and share results.<br>
+</blockquote><br>
+It is okay if you are testing the functions for academic interest.<br>
+But if you have an immediate professional need to import large tables from MySql to DBF or other formats, ADO may not be the way. Mostly these are one-time jobs for us. <br>
+Please examine options like mysqldump or  mysqldbexport.</blockquote><br>
+<br>
+My systems are developed using sqlrdd of xharbour, and works with mysql, mariadb and sqlserver but backups tables to dbf files zipped so If server crash it is posible to work with dbf tables in other PC while repairing it and then charge the updated data to mysql or other databases again. <br>
+<br>
+In order to change to harbour, I have to live sqlrdd and use adordd and make this backups with ado functions, I will see your sugestion and the way I can use it for my purposes, it is not urgent, but is my goal to change to harbour this year and convert my programs to it.<br>
+<br>
+I will study this options you mention, thanks again for your help.</div>
+    </div>
+  </div>
+  <div class="post" id="p190638">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Wed May 18, 2016 10:23 AM
+      </div>
+      <div class="content"><p>My personal advice is to use ADO straight away to make the applications robust, fast and to take advantage of all features of ADO directly. Using RDD may seem to be easier way of migration, but better invest time on using ADO classes directly. It is worth the effort. This is only my personal opinion.</p>
+<p>I can anticipate your next question. How can you make your applications work with both DBF and also ADO simultaneously. Right?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p190677">
+    <div class="poster">
+      <div class="name" style="color:#105289">jose_murugosa</div>
+      <div class="rank">Posts: 1278</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 06, 2006 04:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte: Sentencia SQL directa a Excel class tDboDBCDirect</span><br>
+        Posted: Thu May 19, 2016 10:14 AM
+      </div>
+      <div class="content"><p>Thanks for your suggestion and interest, I'm thinking on it...</p>
+<p>Exact!!!!</p>
+<p>You anticipate correctly my next question <!-- s:) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":)" title="Smile" /><!-- s:) -->, I heard  that ado with dbfs doesn´t work very well, I don´t know if that is correct.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

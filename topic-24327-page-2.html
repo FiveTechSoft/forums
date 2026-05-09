@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>bug SQLRDD, xHarbour and BCC 5.8.2 - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-24327">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> bug SQLRDD, xHarbour and BCC 5.8.2</div>
+<div class="pagination">Page: <a href="topic-24327.html">1</a> <strong>2</strong> (20 posts)</div>  <div class="post" id="p141262">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: bug SQLRDD, xHarbour and BCC 5.8.2</span><br>
+        Posted: Mon Mar 11, 2013 03:00 PM
+      </div>
+      <div class="content"><p>If you plan to use an array of recno()'s for using xbrowse and are prepared to spend a little time in constructing the array initially, I suggest a simpler way.</p>
+<p>=========<br>
+aKeyNos := Array( OrdKeyCount() )<br>
+// OrdKeyCount() works in SQLRDD.<br>
+DBGOTOP()<br>
+n := 1<br>
+DBEVAL( { || aKeyNos[ n ] := RECNO(), n++ } )<br>
+DBGOTOP()</p>
+<p>@ &lt;r&gt;, &lt;c&gt; XBROWSE oBrw OF oWnd ALIAS &lt;OurAlias&gt; ;<br>
+      COLUMNS .......&lt;usual clauses&gt; ;<br>
+      ROWS aKeyNos</p>
+<p>Please note the clause ROWS aKeyNos</p>
+<p>The browse should work perfectly.</p>
+<p>You do not need to write any special code for ordkeyno() and ordkeygoto()</p></div>
+    </div>
+  </div>
+  <div class="post" id="p141279">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: bug SQLRDD, xHarbour and BCC 5.8.2</span><br>
+        Posted: Mon Mar 11, 2013 06:05 PM
+      </div>
+      <div class="content">For those colleagues who are comfortable with the use of array of key numbers, I have made a derived class.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include 'fivewin.ch'
+#include 'hbcompat.ch'
+#include 'xbrowse.ch'
+
+//------------------------------------------------------------------//
+
+CLASS TQBrowse FROM TXBrowse
+
+   CLASSDATA lRegistered AS LOGICAL // This is compulsory for derived classes
+   DATA bColClass INIT { || TQBrwColumn() }
+
+   //
+   DATA aSQKeys      INIT Array( 0 )
+   DATA lDescend     INIT .f.
+   //
+   METHOD Adjust()
+   METHOD SetRDD( lAddColumns, lAutoOrder, aFldNames, aRows )
+   METHOD Paint()
+   //
+   METHOD SQKeyNo( n )
+   METHOD BuildSqKeyArray()
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD Adjust() CLASS TQBrowse
+
+   ::Super:Adjust()
+
+   if ValType( ::aSQKeys ) == 'A'
+      ( ::cAlias )-&gt;( ::BuildSqKeyArray() )
+   endif
+
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD SetRDD( lAddColumns, lAutoOrder, aFldNames, aRows ) CLASS TQBrowse
+
+   ::Super:SetRDD( lAddColumns, lAutoOrder, aFldNames, aRows )
+
+   ::bKeyCount       := { || ( ::cAlias )-&gt;( OrdKeyCount() ) }
+   ::bKeyNo          := { |n| ( ::cAlias )-&gt;( ::SQKeyNo( n ) ) }
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD Paint() CLASS TQBrowse
+
+   if ValType( ::aSqKeys ) == 'A' .and. Len( ::aSqKeys ) != ::nLen
+      // in rare cases of addition / deletion of records
+      ( ::cAlias )-&gt;( ::BuildSqKeyArray() )
+   endif
+
+return ::Super:Paint()
+
+//----------------------------------------------------------------------------//
+
+METHOD SQKeyNo( nGoTo ) CLASS TQBrowse
+
+   local nRet
+
+   if Empty( ::aSqKeys )
+      nRet  := If( nGoTo == nil, OrdKeyNo(), OrdKeyGoTo( nGoTo ) )
+   else
+      if nGoTo == nil
+         nRet  := AScan( ::aSqKeys, RecNo() )
+         if ::lDescend
+            nRet  := ::nLen - nRet + 1
+         endif
+      else
+         if ::lDescend
+            nGoTo    := ::nLen - nGoTo + 1
+         endif
+         DbGoTo( ::aSqKeys[ nGoTo ] )
+      endif
+   endif
+
+return nRet
+
+//----------------------------------------------------------------------------//
+
+METHOD BuildSqKeyArray() CLASS TQBrowse
+
+   local nKey, nRec := RecNo()
+
+   CursorWait()
+
+   ::lDescend     := .f.
+   if ! Empty( OrdSetFocus() )
+      ::lDescend  := OrdDescend()
+   endif
+   ::aSqKeys      := Array( ::nLen := OrdKeyCount() )
+
+   DbGoTop()
+   if ::lDescend
+      nKey        := Len( ::aSqKeys )
+      DBEVAL( { || ::aSqKeys[ nKey ] := RecNo(), nKey-- } )
+   else
+      nKey        := 1
+      DBEVAL( { || ::aSqKeys[ nKey ] := RecNo(), nKey++ } )
+   endif
+   DbGoTo( nRec )
+
+return nil
+
+//----------------------------------------------------------------------------//
+//----------------------------------------------------------------------------//
+
+CLASS TQBrwColumn FROM TXBrwColumn
+
+   METHOD SetOrder()
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD SetOrder() CLASS TQBrwColumn
+
+   local lSorted
+   local cAlias   := ::oBrw:cAlias
+   local cOrder   := ( cAlias )-&gt;( OrdSetFocus() )
+   local nRec     := RecNo()
+
+   lSorted     := ::Super:SetOrder()
+
+   if lSorted .and. ValType( ::oBrw:aSqKeys ) == 'A'
+      ::oBrw:lDescend   := ( cAlias )-&gt;( OrdDescend() )
+
+      if ( cAlias )-&gt;( OrdSetFocus() ) == cOrder
+      else
+         ( cAlias )-&gt;( ::oBrw:BuildSqKeyArray() )
+      endif
+      DbGoTo( nRec )
+   endif
+
+return lSorted
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+You may use this new class in your program:<br>
+<br>
+1. oBrw := TQBrowse():New( oWnd )<br>
+<br>
+OR<br>
+<br>
+2. @ r,c XBROWSE &lt;........ clauses .......&gt; CLASS TQBrowse()<br>
+<br>
+I have tested with MySql tables on my local MySql server and performance is okay.<br>
+I shall be glad to have feedback from the users.</div>
+    </div>
+  </div>
+  <div class="post" id="p147068">
+    <div class="poster">
+      <div class="name" style="color:#105289">kokookao2007</div>
+      <div class="rank">Posts: 59</div>
+      <img class="avatar avatar-img" src="avatars/1064.jpg" alt="" loading="lazy">
+      Joined: Thu May 17, 2007 08:27 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: bug SQLRDD, xHarbour and BCC 5.8.2</span><br>
+        Posted: Wed Jun 19, 2013 06:41 AM
+      </div>
+      <div class="content"><p>HI nageswaragunupudi:</p>
+<p>Thank you for TQBrowse() Solution.</p>
+<p>It is as good as what you said .</p>
+<p>The only problem is when browse a Big Table ( more than 10k records) ,<br>
+First time need 10-20 seconds , second time need 3-5 seconds.</p>
+<p>Do you have any Idea about a Big Table ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p147070">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: bug SQLRDD, xHarbour and BCC 5.8.2</span><br>
+        Posted: Wed Jun 19, 2013 08:02 AM
+      </div>
+      <div class="content"><p>You are right.<br>
+But we made xbrowse <em>more</em> compatible with sqlrdd in the latest versions, without this overhead. <br>
+For most purposes behavior is on par with other RDDs.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p147073">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: bug SQLRDD, xHarbour and BCC 5.8.2</span><br>
+        Posted: Wed Jun 19, 2013 09:30 AM
+      </div>
+      <div class="content"><p>Kokoo,</p>
+<p>Many thanks for sharing your solution with all <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>I really enjoy when someone is able to bypass a limitation, even if his code is not the best implementation. But it shows creativity and the wish to solve problems, very good <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-24327.html">1</a> <strong>2</strong> (20 posts)</div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>ADO Ms Access SLow Close() and Re-Open tables on Win 7 - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-30820">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> ADO Ms Access SLow Close() and Re-Open tables on Win 7</div>
+  <div class="post" id="p177469">
+    <div class="poster">
+      <div class="name" style="color:#105289">Rick Lipkin</div>
+      <div class="rank">Posts: 2706</div>
+      <img class="avatar avatar-img" src="avatars/35.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:50 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">ADO Ms Access SLow Close() and Re-Open tables on Win 7</span><br>
+        Posted: Wed Jun 03, 2015 09:59 PM
+      </div>
+      <div class="content">To All<br>
+<br>
+I have a Customer Module that Opens 3 tables from a MS Access database and when I chose a different customer the tables get refreshed by closing them and re-opening them( _custedit() ). The close and re-open process works GREAT on 32 bit Windows XP, but times out on the re-open [Customer Item] table and breaks in the _CustEdit Function.<br>
+<br>
+Here is the code .. all the oRs variables were defined local at the top of the program and passed normally thru the various Functions.<br>
+<br>
+Again, this code works flawlessly on WinXP .. but 'barfs' using Windows 7. I have tried to stay away from using Static oRs variables because this is a MDI application and if the Customer module is opened twice on I have memory 'bleed thru' problems between Customer modules.<br>
+<br>
+Any advice would be welcome .. <br>
+Rick Lipkin<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/Top of Customer module
+//------------------------
+Func _CustView( cMode,oWndMain )
+
+Local oDlg,lOk1,cSay,oSay,cDefa
+Local oRsCust,oRsInvoice,oRsShip,oRsItem
+
+oRsCust     := " "
+oRsInvoice  := " "
+oRsShip     := " "
+oRsItem     := " "
+
+
+cDEFA := SET(7)
+
+LightGreyGrad()
+
+lOK1   := .F.
+
+DEFINE DIALOG oDlg RESOURCE "FILECHK"       ;
+       TITLE "Please be patient"
+
+       cSAY :=  "Opening Tables"
+       REDEFINE SAY oSay var cSay ID 120 of oDLG UPDATE
+
+       oDLG:bStart := { || lOK1 := _OpenUm0( oDLG,oSAY,@cSAY,@oRsCust,@oRsInvoice,@oRsShip,@oRsItem ) }
+
+ACTIVATE DIALOG oDLG CENTERED
+
+oSay := NIL
+cSay := NIL
+
+IF lOK1 = .F.
+   RETURN(NIL)
+ENDIF
+
+_CustView1( "A",oWndMain,oRsCust,oRsInvoice,oRsShip,oRsItem)
+
+Return(.t.)
+
+//----------------
+Static Func _OpenUm0( oDlg, oSay,cSay, oRsCust,oRsInvoice,oRsShip,oRsItem )
+
+Local cSql,oErr
+
+cSay := "Opening Customer Table"
+oSay:ReFresh()
+SysReFresh()
+
+// relational key
+
+cSQL := "SELECT * from CUSTOMER order by [Last Name],[First Name]"
+
+oRsCust := TOleAuto():New( "ADODB.Recordset" )
+oRsCust:CursorType     := 1        // opendkeyset
+oRsCust:CursorLocation := 3        // local cache
+oRsCust:LockType       := 3        // lockoportunistic
+
+TRY
+   oRsCust:Open( cSQL,xCONNECT )
+CATCH oErr
+   MsgInfo( "Error in Opening CUSTOMER table" )
+   oDlg:End()
+   RETURN(.F.)
+END TRY
+
+oRsCust:Filter := ""
+oRsCust:Filter := "[Last Name] = 'bogus'"
+
+// service address tab
+cSay := "Opening Customer ShipTo Table"
+oSay:ReFresh()
+SysReFresh()
+
+cSQL := "SELECT * from [CUSTOMER SHIPTO] where 1 = 2 order by [Customer Id], [Address1]"
+
+oRsShip := TOleAuto():New( "ADODB.Recordset" )
+oRsShip:CursorType     := 1        // opendkeyset
+oRsShip:CursorLocation := 3        // local cache
+oRsShip:LockType       := 3        // lockoportunistic
+
+TRY
+   oRsShip:Open( cSQL,xCONNECT )
+CATCH oErr
+   oRsCust:Close()
+   MsgInfo( "Error in Opening CUSTOMER SHIPTO table" )
+   oDlg:End()
+   RETURN(.F.)
+END TRY
+
+// electronics tab
+cSay := "Opening Customer Item Table"
+oSay:ReFresh()
+SysReFresh()
+
+cSql := "SELECT "
+cSql += "[Key],[Customer Id],[Model Number],[Manufacturer Name],[Product Class],[Serial Number] "
+cSql += "From [Customer Item] "
+cSql += "Where 1 = 2 Order by [Customer Id],[Serial Number]"
+
+oRsItem := TOleAuto():New( "ADODB.Recordset" )
+oRsItem:CursorType     := 1        // opendkeyset
+oRsItem:CursorLocation := 3        // local cache
+oRsItem:LockType       := 3        // lockoportunistic
+
+TRY
+   oRsItem:Open( cSQL,xCONNECT )
+CATCH oErr
+   oRsCust:Close()
+   oRsShip:Close()
+   MsgInfo( "Error in Opening CUSTOMER ITEM table" )
+   oDlg:End()
+   RETURN(.F.)
+END TRY
+
+// invoice table
+cSay := "Opening Invoice Table"
+oSay:ReFresh()
+SysReFresh()
+
+cSql := "SELECT "
+cSql += "[Repair Number], [Transaction Type], [Customer Id],[Invoiced Date], "
+cSql += "[Total], [Balance] "
+cSql += "From Invoice where 1 = 2 Order by [Invoiced Date] DESC"
+
+oRsInvoice := TOleAuto():New( "ADODB.Recordset" )
+oRsInvoice:CursorType     := 1        // opendkeyset
+oRsInvoice:CursorLocation := 3        // local cache
+oRsInvoice:LockType       := 3        // lockoportunistic
+
+TRY
+   oRsInvoice:Open( cSQL,xCONNECT )
+CATCH oErr
+   oRsCust:CLose()
+   oRsShip:CLose()
+   oRsItem:CLose()
+   MsgInfo( "Error in Opening INVOICE table" )
+   oDlg:End()
+   RETURN(.F.)
+END TRY
+
+oDlg:End()
+
+Return(.t.)
+
+//-------------------------------
+FUNC _Custview1( cMODE,oWnd,oRsCust,oRsInvoice,oRsShip,oRsItem )
+
+...
+...
+...
+// double click on xBrowse new Customer and I close and reopen the tables and here
+// is where I have problems
+
+oLbx:bLDblClick := { |nRow,nCol | _CustEdit( oRsCust,oRsShip,oRsItem,oRsInvoice,cCustomerId ..... )
+
+...
+...
+
+
+
+//---------------------
+Static Func _CustEdit( oRsCust,oRsShip,oRsItem,oRsInvoice,cCustomerId... more variables )
+
+...
+_OpenUm( oDLG,oSAY,cSAY,oRsItem,oRsInvoice,oRsShip,cCustomerId )
+...
+...
+
+// sets up the recordset for this customer down stream
+//--------------------
+Static Func _OpenUm( oDLG,oSAY,cSAY,oRsItem,oRsInvoice,oRsShip,cCustomerId )
+
+...
+...
+
+DEFINE DIALOG oDlg RESOURCE "FILECHK"       ;
+       TITLE "Please be patient"
+
+       cSAY :=  "Opening Tables"
+       REDEFINE SAY oSay var cSay ID 120 of oDLG UPDATE
+
+       oDLG:bStart := { || lOK1 := _OpenUm( oDLG,oSAY,@cSAY,oRsItem,oRsInvoice,oRsShip,cCustomerId ) }
+
+ACTIVATE DIALOG oDLG CENTERED
+
+oSay := NIL
+cSay := NIL
+
+IF lOK1 = .F.
+    Return(.f.)
+ENDIF
+
+   oLbxA:MakeTotals()     // invoices
+   oLbxA:ReFresh()
+   oLbx2:ReFresh()        // service items
+   oLbx3:ReFresh()        // service locations
+
+Endif
+
+Return(.t.)
+
+//--------------------------
+Static Func _OpenUm( oDLG,oSAY,cSAY,oRsItem,oRsInvoice,oRsShip,cCustomerId )
+
+Local cSql,oErr
+
+oRsItem:Filter := ""
+oRsItem:CLose()
+
+oRsInvoice:Filter := ""
+oRsInvoice:Close()
+oRsShip:Filter := ""
+oRsShip:CLose()
+
+
+cSay := "Opening Item Customer ShipTo Table"
+oSay:ReFresh()
+SysReFresh()
+
+cSQL := "SELECT * from [CUSTOMER SHIPTO] where [Customer Id] = '"+alltrim(cCustomerId)+"'"
+cSql += " order by [Customer Id], [Address1]"
+
+TRY
+   oRsShip:Open( cSQL,xCONNECT )
+CATCH oErr
+   MsgInfo( "Error in Opening CUSTOMER SHIPTO table" )
+   oDlg:ENd()
+   RETURN(.F.)
+END TRY
+
+cSay := "Opening Invoice Table"
+oSay:ReFresh()
+SysReFresh()
+
+cSql := "SELECT "
+cSql += "[Repair Number], [Transaction Type], [Customer Id],[Invoiced Date], "
+cSql += "[Total], [Balance] "
+cSql += "From Invoice Where [Customer Id] = '"+alltrim(cCustomerId)+"'"
+cSql += " Order by [Invoiced Date] DESC"
+
+TRY
+   oRsInvoice:Open( cSQL,xCONNECT )
+CATCH oErr
+   MsgInfo( "Error in Opening INVOICE table" )
+   oDlg:ENd()
+   RETURN(.F.)
+END TRY
+
+////////////////////
+//////////////// locks up here on this table
+//////////////// only with Window 7
+/////////////////
+
+cSay := "Opening Item Detail Table"
+oSay:ReFresh()
+SysReFresh()
+
+cSql := "SELECT "
+cSql += "[Key],[Customer Id],[Model Number],[Manufacturer Name],[Product Class],[Serial Number] "
+cSql += "From [Customer Item] "
+cSql += "Where [Customer Id] = '"+alltrim(cCustomerId)+"' Order by [Customer Id],[Serial Number]"
+
+TRY
+  oRsItem:Open( cSQL,xCONNECT )
+CATCH oErr
+  MsgInfo( "Error in Opening CUSTOMER ITEM table" )
+  RETURN(.F.)
+END TRY
+
+oDlg:End()
+Return(.t.)</code></pre></div><br>
+<img src="http://i60.tinypic.com/2vabh4i.jpg" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p177472">
+    <div class="poster">
+      <div class="name" style="color:#105289">Armando</div>
+      <div class="rank">Posts: 3354</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 08:20 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: ADO Ms Access SLow Close() and Re-Open tables on Win 7</span><br>
+        Posted: Wed Jun 03, 2015 11:23 PM
+      </div>
+      <div class="content">Rick:<br>
+<br>
+Just an idea, I have not W7, what if you remove the refresh code<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">cSay := "Opening Item Customer ShipTo Table"
+oSay:ReFresh()    // This one
+SysReFresh()       // And this one too
+
+cSQL := "SELECT * from [CUSTOMER SHIPTO] where [Customer Id] = '"+alltrim(cCustomerId)+"'"
+cSql += " order by [Customer Id], [Address1]"
+
+TRY
+   oRsShip:Open( cSQL,xCONNECT )
+CATCH oErr
+   MsgInfo( "Error in Opening CUSTOMER SHIPTO table" )
+   oDlg:ENd()
+   RETURN(.F.)
+END TRY
+
+cSay := "Opening Invoice Table"
+oSay:ReFresh()     // This one
+SysReFresh()        // And this one too</code></pre></div><br>
+<br>
+Regards</div>
+    </div>
+  </div>
+  <div class="post" id="p177494">
+    <div class="poster">
+      <div class="name" style="color:#105289">Rick Lipkin</div>
+      <div class="rank">Posts: 2706</div>
+      <img class="avatar avatar-img" src="avatars/35.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:50 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: ADO Ms Access SLow Close() and Re-Open tables on Win 7</span><br>
+        Posted: Thu Jun 04, 2015 12:49 PM
+      </div>
+      <div class="content"><p>Armando</p>
+<p>I think I am going to revise my Customer screen and instead of opening 4 tables, just open the Customer and Invoice and have buttons for the other tables to click and open the other two tables on demand.</p>
+<p>I would still like to know why the my current code works GREAT on XP but hangs when closing and re-opening the same table(s) with the same fields with only a parameter change.</p>
+<p>Thanks<br>
+Rick Lipkin</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

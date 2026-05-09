@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Drawing Alphablend From Stream !!! - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-15388">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Drawing Alphablend From Stream !!!</div>
+  <div class="post" id="p79725">
+    <div class="poster">
+      <div class="name" style="color:#105289">toninhofwi</div>
+      <div class="rank">Posts: 182</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 18, 2005 10:01 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Drawing Alphablend From Stream !!!</span><br>
+        Posted: Fri Apr 24, 2009 05:28 PM
+      </div>
+      <div class="content">This code can be useful to draw a bitmap with alphablend directly from a stream.<br>
+<br>
+Sample code, 7777 is my alphabitmap resource. This code can be optimized by calling cResToStr() directly from StreamAlphaBlend():<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   local hDC := oDlg:GetDC()
+
+   StreamAlphaBlend( hDC, 7777, 0, 0, 255, cResToStr( 7777, 2 ) )
+
+   oDlg:ReleaseDC()</code></pre></div><br>
+<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#pragma BEGINDUMP
+
+#include "windows.h"
+#include "hbapi.h"
+
+HINSTANCE GetResources( void );
+
+WORD DibNumColors( void * pv );
+
+HPALETTE CreateDIBPalette( HGLOBAL hDIB );
+
+HANDLE DibFromBitmap( HBITMAP, DWORD, WORD, HPALETTE );
+
+BOOL DibDraw( HDC hDC, HGLOBAL hDib, WORD wCol, WORD wRow, HPALETTE hPalette, WORD wWidth, WORD wHeight, DWORD dwRop );
+
+static WORD PaletteSize( void * pv )
+{
+    LPBITMAPINFOHEADER lpbi = ( LPBITMAPINFOHEADER ) pv;
+
+    WORD NumColors = DibNumColors( lpbi );
+
+    if( lpbi-&gt;biSize == sizeof( BITMAPCOREHEADER ) )
+    {
+       return ( WORD )( NumColors * sizeof( RGBTRIPLE ) );
+    }
+    else
+    {
+       return ( WORD )( NumColors * sizeof( RGBQUAD ) );
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------//
+
+void DrawNewAlpha( HDC hDC1, HBITMAP hBitmap1, int iRow, int iCol, int alpha, char * szText )
+{
+   HDC hDC2;
+
+   HANDLE hDib2;
+
+   unsigned char * uc2;
+
+   unsigned char a1, a2;
+
+   unsigned int i1, iPos = 40;
+
+   LPBITMAPINFO lpbmi2;
+
+   HBITMAP hBitmap2, hBmpOld;
+
+   BITMAP bm;
+
+   hDC2 = CreateCompatibleDC( hDC1 );
+
+   GetObject( ( HGDIOBJ ) hBitmap1, sizeof( BITMAP ), ( LPSTR ) &amp;bm );
+
+   hBitmap2 = CreateCompatibleBitmap( hDC1, bm.bmWidth, bm.bmHeight );
+
+   hBmpOld = ( HBITMAP ) SelectObject( hDC2, hBitmap2 );
+
+   BitBlt( hDC2, 0, 0, bm.bmWidth, bm.bmHeight, hDC1, iCol, iRow, SRCCOPY );
+
+   //---------------------------------------------------------------------------------------------------------------//
+
+   hDib2 = DibFromBitmap( hBitmap2, 0, 32, ( HPALETTE ) 0 );
+
+   lpbmi2 = ( LPBITMAPINFO ) GlobalLock( hDib2 );
+
+   uc2 = ( LPBYTE ) lpbmi2 + ( WORD ) lpbmi2-&gt;bmiHeader.biSize + PaletteSize( lpbmi2 );
+
+   //---------------------------------------------------------------------------------------------------------------//
+
+   for( i1 = 3; i1 &lt;= lpbmi2-&gt;bmiHeader.biSizeImage; i1 += 4 )
+   {
+        a1 = (unsigned char) szText[ i1 + iPos ];
+
+        if( a1 != 0 )
+        {
+            a1 = alpha * ( ( a1 * 100 ) / 255 ) / 100;
+
+            a2 = 255 - a1;
+
+            uc2[ i1 - 1 ] = ( ( a1 * (unsigned char) szText[ i1 + iPos - 1 ] ) + ( a2 * uc2[ i1 - 1 ] ) ) &gt;&gt; 8;
+            uc2[ i1 - 2 ] = ( ( a1 * (unsigned char) szText[ i1 + iPos - 2 ] ) + ( a2 * uc2[ i1 - 2 ] ) ) &gt;&gt; 8;
+            uc2[ i1 - 3 ] = ( ( a1 * (unsigned char) szText[ i1 + iPos - 3 ] ) + ( a2 * uc2[ i1 - 3 ] ) ) &gt;&gt; 8;
+        }
+   }
+
+   DibDraw( hDC1, hDib2, iCol, iRow, 0, 0, 0, 0 );
+
+   //---------------------------------------------------------------------------------------------------------------//
+
+   GlobalUnlock( hDib2 );
+
+   GlobalFree( hDib2 );
+
+   SelectObject( hDC2, hBmpOld );
+
+   DeleteObject( hBitmap2 );
+
+   DeleteDC( hDC2 );
+}
+
+//------------------------------------------------------------------------------------------------------------------//
+
+HB_FUNC( STREAMALPHABLEND )
+{
+   HMODULE hMod = GetResources();
+
+   HBITMAP hBmp = LoadBitmap( ( HINSTANCE ) hMod, ( ISCHAR( 2 ) ? hb_parc( 2 ) : ( LPSTR ) MAKEINTRESOURCE( hb_parnl( 2 ) ) ) );
+
+   DrawNewAlpha( ( HDC )  hb_parnl( 1 ), ( HBITMAP ) hBmp, hb_parni( 3 ), hb_parni( 4 ), hb_parni( 5 ), hb_parc( 6 ) );
+}
+
+//------------------------------------------------------------------------------------------------------------------//
+
+HB_FUNC( CRESTOSTR )
+{
+   HMODULE hMod = GetResources();
+
+   HRSRC hRes = FindResource( hMod, MAKEINTRESOURCE( hb_parni( 1 ) ), MAKEINTRESOURCE( hb_parni( 2 ) ) );
+
+   DWORD size = SizeofResource( hMod, hRes );
+
+   HGLOBAL pt = LoadResource( hMod, hRes );
+
+   LPSTR pResult = ( LPSTR ) hb_xgrab( size + 1 );
+
+   memcpy( pResult, pt, size );
+
+   hb_retclen( pResult, size );
+
+   hb_xfree( pResult );
+}
+
+#pragma ENDDUMP</code></pre></div><br>
+<br>
+<br>
+Regards,<br>
+<br>
+Toninho.</div>
+    </div>
+  </div>
+  <div class="post" id="p79986">
+    <div class="poster">
+      <div class="name" style="color:#105289">toninhofwi</div>
+      <div class="rank">Posts: 182</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 18, 2005 10:01 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Drawing Alphablend From Stream !!!</span><br>
+        Posted: Wed Apr 29, 2009 12:39 AM
+      </div>
+      <div class="content"><p>Hi friends,</p>
+<p>I'm trying to draw a PNG file in this same way.  Anybody knows where I can find information about PNG file format please ?</p>
+<p>Regards,</p>
+<p>Toninho.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p80001">
+    <div class="poster">
+      <div class="name" style="color:#105289">StefanHaupt</div>
+      <div class="rank">Posts: 824</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 13, 2005 07:39 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Drawing Alphablend From Stream !!!</span><br>
+        Posted: Wed Apr 29, 2009 08:07 AM
+      </div>
+      <div class="content">Toninho,<br>
+<br>
+here you can find informations about png graphics file format<br>
+<br>
+<a href="http://www.libpng.org/pub/png/" rel="noopener">http&#58;//www&#46;libpng&#46;org/pub/png/</a><br>
+<br>
+Another good site is <a href="http://www.wotsit.org" rel="noopener">http&#58;//www&#46;wotsit&#46;org</a>, here you can find links for near every filefomat that exist</div>
+    </div>
+  </div>
+  <div class="post" id="p80025">
+    <div class="poster">
+      <div class="name" style="color:#105289">toninhofwi</div>
+      <div class="rank">Posts: 182</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 18, 2005 10:01 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Drawing Alphablend From Stream !!!</span><br>
+        Posted: Wed Apr 29, 2009 01:21 PM
+      </div>
+      <div class="content"><p>Hi Stefan,</p>
+<p>Thanks, the second link is great.</p>
+<p>Toninho.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

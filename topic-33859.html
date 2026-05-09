@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Transym OCR wrapper functions for Harbour - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-33859">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Transym OCR wrapper functions for Harbour</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-33859-page-2.html">2</a> <a href="topic-33859-page-3.html">3</a> (31 posts)</div>  <div class="post" id="p200104">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Tue Mar 28, 2017 11:12 PM
+      </div>
+      <div class="content"><r><p>Hello everyone;</p><br>
+<br>
+<p>I finally got Transym OCR to work from API using (x)Harbour.  Here is the code in case anyone is interested in the future.</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;//Reinaldo Crespo-Bazan 3/28/2017 6:39:11 PM
+//reinaldo.crespo@gmail.com
+//reinaldo.crespo@structuredsystems.com
+//This is sample code and wrapper functions to use Transym OCR engine.
+//www.Transym.com
+
+
+#define TOCRJOBTYPE_TIFFFILE 0      //  specifies a tiff file
+#define TOCRPROCESS_OPTIONS_MERGE  0x00000001  //Merge options ON
+#define TOCRPROCESS_OPTIONS_DESKEW 0x00000010 //deskew ON
+
+FUNCTION MAIN() 
+LOCAL TestTifFile := "sample.tif"
+
+   IF !FILE( TestTifFile ) 
+      Alert( "testfile sample.tif not found" ) 
+      return NIL 
+   ENDIF 
+
+   MsgInfo( OCRFromFileUsingTransym( TestTifFile ), "TOCR dll results using default options" ) 
+
+   //I find MergeBreakOff and DeskOff turned off works better for some documents.
+   MsgInfo( OCRFromFileUsingTransym( TestTifFile, ;
+            TOCRJOBTYPE_TIFFFILE, ;
+            TOCRPROCESS_OPTIONS_DESKEW | TOCRPROCESS_OPTIONS_MERGE, "TOCR dll results with Merge and Deskew OFF" ) ) 
+   
+RETURN NIL 
+
+//-----------------------------------------------------------
+//-------------------------------------------------------------------------------------
+/**/
+#pragma BEGINDUMP
+#include &lt;hbapi.h&gt;
+#include &lt;windows.h&gt;
+#include &lt;TOCRdll.h&gt;
+#include &lt;TOCRuser.h&gt;
+#include &lt;TOCRerrs.h&gt;
+
+BOOL OCRWait( long JobNo, TOCRJOBINFO2 JobInfo2 );
+BOOL GetResults( long JobNo, TOCRRESULTSEX ** Results );
+BOOL FormatResults( TOCRRESULTSEX * Results, char * Msg );
+
+//--------------------------------------------------------
+//parameters 
+// 1. input file with image 
+// 2. type of file to ocr defaults to TIFF 
+// 3. options mask defaults to 0
+//returns OCRed text 
+
+HB_FUNC( OCRFROMFILEUSINGTRANSYM )
+{
+   TOCRJOBINFO2 JobInfo2;
+   TOCRRESULTSEX  * Results = 0;
+   long            Status;
+   long            JobNo;
+   byte            OptionsMask = ISNUM( 3 ) ? hb_parnl( 3 ) : 0x00000000 ;
+   char            Msg[8192];
+   char * InputFile = ( char * ) hb_parcx( 1 );   //parm 1 is input file
+
+   //Sets Transym to print error to show errors on screen dialog
+   TOCRSetConfig( TOCRCONFIG_DEFAULTJOB, TOCRCONFIG_DLL_ERRORMODE, TOCRERRORMODE_MSGBOX );
+
+   memset( &amp;JobInfo2, 0, sizeof( TOCRJOBINFO2 ) );
+
+   JobInfo2.JobType = ISNUM( 2 ) ? hb_parni( 2 ) : TOCRJOBTYPE_TIFFFILE ;
+   JobInfo2.InputFile = InputFile ;
+
+   //if MergeBreakOff and DeskewOff parameters are sent then change options accordingly.
+   JobInfo2.ProcessOptions.MergeBreakOff = OptionsMask &amp; 0x00000001 ;   //1 bit MergeBreakOff
+   JobInfo2.ProcessOptions.DeskewOff = OptionsMask&gt;&gt;1 &amp; 0x00000001 ;    //2nd bit DeskewOff
+
+   Status = TOCRInitialise( &amp;JobNo );
+
+   if ( Status == TOCR_OK ) {
+      if ( OCRWait( JobNo, JobInfo2 ) ) {
+         if ( GetResults( JobNo, &amp;Results ) ) {
+
+            FormatResults( Results, Msg );
+            hb_xfree( Results );
+         }
+      }
+
+      TOCRShutdown( JobNo );
+   }
+   hb_retc( Msg ) ;
+}
+
+//--------------------------------------------------------
+BOOL OCRWait( long JobNo, TOCRJOBINFO2 JobInfo2 )
+{
+    long                Status;
+    long                JobStatus;
+    long                ErrorMode;
+    char                Msg[4096];
+
+    Status = TOCRDoJob2( JobNo, &amp;JobInfo2 );
+    if (Status == TOCR_OK) {
+        Status = TOCRWaitForJob(JobNo, &amp;JobStatus);
+    }
+    
+    if (Status == TOCR_OK &amp;&amp; JobStatus == TOCRJOBSTATUS_DONE)
+    {
+        return TRUE;
+    } else {
+        // If something hass gone wrong extract the error message and log or return 
+        // not doing anything with it for the time being.
+        // Check that the OCR engine hasn't already displayed a message first.
+        TOCRGetConfig(JobNo, TOCRCONFIG_DLL_ERRORMODE, &amp;ErrorMode);
+        if ( ErrorMode == TOCRERRORMODE_NONE ) {
+            TOCRGetJobStatusMsg(JobNo, Msg);
+        }
+        return FALSE;
+    }
+} // OCRWait()
+
+
+//--------------------------------------------------------
+// Get the results from TOCR
+BOOL getresults(long JobNo, long mode, void **Results)
+{
+   long                Status;
+   long                ResultsInf;
+   char                Msg[4096];
+
+   Status = TOCRGetJobResultsEx(JobNo, mode, &amp;ResultsInf, 0);
+
+   if ( Status != TOCR_OK ) return FALSE;
+
+   if ( ResultsInf &gt; 0 ) {
+      // Allocate memory for results
+      *Results = ( char * ) hb_xgrab( ResultsInf + 1 );
+
+      // Retrieve the results
+      Status = TOCRGetJobResultsEx(JobNo, mode, &amp;ResultsInf, *Results);
+      if ( Status != TOCR_OK ) {
+         hb_xfree( Results );
+         *Results = 0;
+         return FALSE;
+      }
+   } else return FALSE ;
+
+   return TRUE;
+} // getresults()
+
+
+//--------------------------------------------------------
+// Get extended results
+BOOL GetResults( long JobNo, TOCRRESULTSEX **Results )
+{
+    return getresults( JobNo, TOCRGETRESULTS_EXTENDED, (void **)Results );
+} // GetResults()
+
+
+//--------------------------------------------------------
+// Convert extended results to a string
+BOOL FormatResults(TOCRRESULTSEX *Results, char *Msg)
+{
+   long            ItemNo;
+   long            APos = 0;
+   BOOL            Status = FALSE;
+
+   if ( Results-&gt;Hdr.NumItems &gt; 0 ) {
+      for (ItemNo = 0; ItemNo &lt; Results-&gt;Hdr.NumItems; ItemNo ++ ) {
+         if ( Results-&gt;Item[ItemNo].OCRCha == '\r' )
+            Msg[APos] = '\n';
+         else
+            Msg[APos] = (char)Results-&gt;Item[ItemNo].OCRCha;
+         APos ++;
+      }
+      Msg[APos] = 0;
+      Status = TRUE;
+   }
+
+    return Status;
+} // FormatResults()
+
+#pragma ENDDUMP 
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>Reinaldo.</p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p200127">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Wed Mar 29, 2017 07:56 AM
+      </div>
+      <div class="content"><p>Great! <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>EMG</p></div>
+    </div>
+  </div>
+  <div class="post" id="p200154">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Wed Mar 29, 2017 05:00 PM
+      </div>
+      <div class="content"><p>run with demo  Evaluate TOCR  ?</p>
+<p>How I must make to  create a test sample ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p200340">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Wed Apr 05, 2017 11:25 PM
+      </div>
+      <div class="content">Hi Silvio;<br>
+<br>
+Transym has a demo that runs for 30 days (I think).  You can download from the webpage.  After creating the lib from the dll you only have to add the lib to the link script.  That's all you have to do to make the project.  It is all straight forward.   To create a .lib from .dll use ImpLib.exe which is found on the borland bin directory.<br>
+<br>
+<a href="http://www.transym.com" rel="noopener">http&#58;//www&#46;transym&#46;com</a><br>
+<br>
+<br>
+Good luck;<br>
+<br>
+Reinaldo.</div>
+    </div>
+  </div>
+  <div class="post" id="p238746">
+    <div class="poster">
+      <div class="name" style="color:#105289">damianodec</div>
+      <div class="rank">Posts: 434</div>
+      <img class="avatar avatar-img" src="avatars/1082.jpg" alt="" loading="lazy">
+      Joined: Wed Jun 06, 2007 02:58 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Wed Feb 17, 2021 08:02 AM
+      </div>
+      <div class="content"><p>hi Reinaldo,<br>
+I'm interested to OCR.<br>
+are you using this product?<br>
+are there any others product?</p>
+<p>any help?</p>
+<p>thanks</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238751">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Wed Feb 17, 2021 02:36 PM
+      </div>
+      <div class="content"><p>Hello Mr. Damianoodec;</p>
+<p>Yes, I'm using Transym.  I used the free google OCR libs (Leptonica and Tesseract) for years before moving to Transym.  Tresseract works pretty well depending on the document being fed and it can be trained so it gets better with time if documents and fonts are the same type.  The main problem with Tess is that you are pretty much on your own when it comes to Harbour and it seems Google has released that product after abandoning it.   </p>
+<p>In all honesty, I don't remember my code although I'm pretty sure I had to write some c.   It has been working without my intervention for years and my mind has been somewhere else for a very long time.   If you need help, I can try to find time to go back and review my code.   But, in short, I do recommend Transym over Tess.</p>
+<p>I hope that helps,</p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238772">
+    <div class="poster">
+      <div class="name" style="color:#105289">damianodec</div>
+      <div class="rank">Posts: 434</div>
+      <img class="avatar avatar-img" src="avatars/1082.jpg" alt="" loading="lazy">
+      Joined: Wed Jun 06, 2007 02:58 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Thu Feb 18, 2021 04:05 PM
+      </div>
+      <div class="content"><p>hi Reinaldo,<br>
+I'd like understand OCR.<br>
+Are you using transym and FWH ?<br>
+in Transym site tehre are:<br>
+TOCR version 5.0, C++ samples code and c# samples code.<br>
+inside C++ samples there are a lot of folder and files.<br>
+have you any example?</p>
+<p>thank you.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238779">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Thu Feb 18, 2021 11:30 PM
+      </div>
+      <div class="content"><p>Hello Damlanodec;</p>
+<p>I just realized I had already shared sample code to test Transym on this same thread.   It is the first post on this thread.    At the very top.   </p>
+<p>Now that I look at it; the beauty of that code is that it is a self-contained minimized sample app-code that produces results.   Notice on my sample code the wrapper functions you will need and a few other c functions that can help.   </p>
+<p>Please look at that code and let me know how it works for you.   The lib works great.</p>
+<p>Thank you.</p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238781">
+    <div class="poster">
+      <div class="name" style="color:#105289">damianodec</div>
+      <div class="rank">Posts: 434</div>
+      <img class="avatar avatar-img" src="avatars/1082.jpg" alt="" loading="lazy">
+      Joined: Wed Jun 06, 2007 02:58 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Fri Feb 19, 2021 09:57 AM
+      </div>
+      <div class="content"><r><p>hi Reinaldo,<br/><br>
+when I try to compile you example by buildx.bat inside samples folder I get thi:</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;Embarcadero C++ 7.00 for Win32 Copyright (c) 1993-2015 Embarcadero Technologies, Inc.
+ocrreina.c:
+Error E2046 ocrreina.prg 35: Bad file name format in include directive
+Error E2046 ocrreina.prg 36: Bad file name format in include directive
+Error E2046 ocrreina.prg 37: Bad file name format in include directive
+Error E2303 ocrreina.prg 39: Type name expected
+Error E2303 ocrreina.prg 40: Type name expected
+Error E2147 ocrreina.prg 41: 'TOCRRESULTSEX' cannot start a parameter declaration
+Error E2451 ocrreina.prg 52: Undefined symbol 'TOCRJOBINFO2' in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2379 ocrreina.prg 52: Statement missing ; in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2451 ocrreina.prg 53: Undefined symbol 'TOCRRESULTSEX' in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2451 ocrreina.prg 53: Undefined symbol 'Results' in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2140 ocrreina.prg 54: Declaration is not allowed here in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2140 ocrreina.prg 55: Declaration is not allowed here in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2140 ocrreina.prg 56: Declaration is not allowed here in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2140 ocrreina.prg 57: Declaration is not allowed here in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2140 ocrreina.prg 58: Declaration is not allowed here in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2451 ocrreina.prg 61: Undefined symbol 'TOCRCONFIG_DEFAULTJOB' in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2451 ocrreina.prg 61: Undefined symbol 'TOCRCONFIG_DLL_ERRORMODE' in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2451 ocrreina.prg 61: Undefined symbol 'TOCRERRORMODE_MSGBOX' in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Warning W8065 ocrreina.prg 61: Call to function 'TOCRSetConfig' with no prototype in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2451 ocrreina.prg 63: Undefined symbol 'JobInfo2' in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2109 ocrreina.prg 63: Not an allowed type in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2451 ocrreina.prg 65: Undefined symbol 'TOCRJOBTYPE_TIFFFILE' in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Warning W8065 ocrreina.prg 72: Call to function 'TOCRInitialise' with no prototype in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2451 ocrreina.prg 74: Undefined symbol 'TOCR_OK' in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Warning W8065 ocrreina.prg 75: Call to function 'OCRWait' with no prototype in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Warning W8065 ocrreina.prg 76: Call to function 'GetResults' with no prototype in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Warning W8065 ocrreina.prg 83: Call to function 'TOCRShutdown' with no prototype in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Warning W8004 ocrreina.prg 86: 'InputFile' is assigned a value that is never used in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Warning W8004 ocrreina.prg 86: 'OptionsMask' is assigned a value that is never used in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Warning W8004 ocrreina.prg 86: 'Status' is assigned a value that is never used in function HB_FUN_OCRFROMFILEUSINGTRANSYM
+Error E2303 ocrreina.prg 89: Type name expected
+*** 23 errors in Compile ***
+* Linking errors *
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>can y ou help me?</p><br>
+<br>
+<p>thank you</p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p238782">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Fri Feb 19, 2021 10:06 AM
+      </div>
+      <div class="content"><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Error E2046 ocrreina.prg 35: Bad file name format in include directive</code></pre></div><br>
+<br>
+Can you show the line 35, please?<br>
+<br>
+EMG</div>
+    </div>
+  </div>
+  <div class="post" id="p238783">
+    <div class="poster">
+      <div class="name" style="color:#105289">damianodec</div>
+      <div class="rank">Posts: 434</div>
+      <img class="avatar avatar-img" src="avatars/1082.jpg" alt="" loading="lazy">
+      Joined: Wed Jun 06, 2007 02:58 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Fri Feb 19, 2021 10:37 AM
+      </div>
+      <div class="content">hi Enrico,<br>
+<br>
+line 35, 36 and 37<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include &lt;TOCRdll.h&gt;
+#include &lt;TOCRuser.h&gt;
+#include &lt;TOCRerrs.h&gt;</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p238784">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Fri Feb 19, 2021 10:40 AM
+      </div>
+      <div class="content"><p>Do you have TOCRdll.h in the same directory?</p>
+<p>EMG</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238785">
+    <div class="poster">
+      <div class="name" style="color:#105289">damianodec</div>
+      <div class="rank">Posts: 434</div>
+      <img class="avatar avatar-img" src="avatars/1082.jpg" alt="" loading="lazy">
+      Joined: Wed Jun 06, 2007 02:58 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Fri Feb 19, 2021 10:49 AM
+      </div>
+      <div class="content"><p>yes that files are inside FWH\include with other .ch fwh files (fivewin.ch and others)</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238786">
+    <div class="poster">
+      <div class="name" style="color:#105289">damianodec</div>
+      <div class="rank">Posts: 434</div>
+      <img class="avatar avatar-img" src="avatars/1082.jpg" alt="" loading="lazy">
+      Joined: Wed Jun 06, 2007 02:58 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Fri Feb 19, 2021 10:57 AM
+      </div>
+      <div class="content"><r><p>hi,<br/><br>
+I'm over my error (thank you Enrico), now I get this:</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;Compiling...
+xHarbour 1.2.3 Intl. (SimpLex) (Build 20161218)
+Copyright 1999-2016, http://www.xharbour.org http://www.harbour-project.org/
+Compiling 'ocrreina.prg' and generating preprocessed output to 'ocrreina.ppo'...
+Generating C source output to 'ocrreina.c'...
+Done.
+Lines 29, Functions/Procedures 1, pCodes 42
+Embarcadero C++ 7.00 for Win32 Copyright (c) 1993-2015 Embarcadero Technologies, Inc.
+ocrreina.c:
+Turbo Incremental Link 6.70 Copyright (c) 1997-2014 Embarcadero Technologies, Inc.
+Error: 'C:\XHARBOUR1709\LIB\TOCRDLL.LIB' contains invalid OMF record, type 0x21 (possibly COFF)
+* Linking errors *
+&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p238787">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR wrapper functions for Harbour</span><br>
+        Posted: Fri Feb 19, 2021 10:58 AM
+      </div>
+      <div class="content"><p>Can you send me all the required files to make a test here, please?</p>
+<p>EMG</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-33859-page-2.html">2</a> <a href="topic-33859-page-3.html">3</a> (31 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

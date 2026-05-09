@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Scroll Box (Continuacion) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-29308">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Scroll Box (Continuacion)</div>
+  <div class="post" id="p165329">
+    <div class="poster">
+      <div class="name" style="color:#105289">antolin</div>
+      <div class="rank">Posts: 498</div>
+      <div class="avatar"></div>
+      Joined: Thu May 10, 2007 08:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Scroll Box (Continuacion)</span><br>
+        Posted: Mon Sep 22, 2014 11:41 AM
+      </div>
+      <div class="content"><p>Como continuación a mi hilo <!-- l --><a class="postlink-local" href="http://forums.fivetechsupport.com/viewtopic.php?f=6&amp;t=29226">viewtopic.php?f=6&amp;t=29226</a><!-- l --></p>
+<p>Me ocurre una cosa curiosa. Cuando en cualquier control pulsas una tecla, el sistema le manda un mensaje al Método KeyDown() de ese control informandole de la tecla pulsada para poder procesarla. Y cuando manejas el Scroll le manda un mensaje a los métodos VSCroll() y HSCroll() para poder procesar la correspondiente acción.</p>
+<p>Pues bien, desde que he modificado mi clase TScrollBar, en principio todo bien, pero tras manejar el Scroll, si pulso una tecla, además de a KeyDown() le manda otro mensaje al Scroll, con lo cual la acción se ejecuta por partida doble: La programada para las teclas y la programada para el Scroll en el método VSCRoll(). De momento lo he solucionado poniendo oVSCRooll:lCaptured en .T. en KeyDown() de manera que las acciones del Scroll sólo se procesen cuando  oVSCRooll:lCaptured esté en .F., pero la verdad es que no comprendo porque ocurre eso. ¿Alguna idea?</p>
+<p>Gracias</p></div>
+    </div>
+  </div>
+  <div class="post" id="p165381">
+    <div class="poster">
+      <div class="name" style="color:#105289">antolin</div>
+      <div class="rank">Posts: 498</div>
+      <div class="avatar"></div>
+      Joined: Thu May 10, 2007 08:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Scroll Box (Continuacion)</span><br>
+        Posted: Tue Sep 23, 2014 10:04 AM
+      </div>
+      <div class="content"><p>Es curiosos. Si sólo pulso las teclas sólo trabaja KeyDown(), pero si toco el Scroll, aunque sólo se una vez, a partir de entonces al pulsar una tecla trabaja, primero KeyDown() y después pasa por VSROLL().</p>
+<p>Y no veo porqué, pues mi clase  TScrollBar tampoco es tan diferente que la del FWH.</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p165447">
+    <div class="poster">
+      <div class="name" style="color:#105289">antolin</div>
+      <div class="rank">Posts: 498</div>
+      <div class="avatar"></div>
+      Joined: Thu May 10, 2007 08:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Scroll Box (Continuacion)</span><br>
+        Posted: Wed Sep 24, 2014 11:18 AM
+      </div>
+      <div class="content">Bueno, solucionado. Resulta que en mi control, en realidad una clase que muestra ficheros con sus iconos, en el método VSCroll() tengo que retomar el foco de la clase, y lo he hecho añadiendo:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CASE nScrollCode == SB_ENDSCROLL
+   ::SetFocus()</code></pre></div><br>
+Y solucionado, ya no tengo que depender de oVSCRooll:lCaptured que podría interferir con el procesao de DRAG.<br>
+<br>
+Y para no olvidarlo para otras posibles clases, lo que he hecho es forzarlo en el método GOTFOCUS de TScrollBar. Ahora, mi clase TScrollBar quedaría así:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+#include "Constant.ch"
+
+#define SB_HORZ         0
+#define SB_VERT         1
+#define SB_CTL          2
+
+#ifdef __XPP__
+   #define Super ::TControl
+   #define New _New
+#endif
+
+//----------------------------------------------------------------------------//
+
+CLASS TScrollBar FROM TControl
+
+   DATA   lVertical, lReDraw, lIsChild, nMin, nMax, nPgStep, nMaxPos
+   DATA   bGoUp, bGoDown, bGoTop, bGoBottom, bPageUp, bPageDown, bPos
+   DATA   bTrack, bWheel
+   DATA   hPant,nFlag
+   DATA   hCDC, lThumbResize
+
+
+   CLASSDATA aProperties INIT { "cVarName", "nMin", "nMax",;
+                                "nPgStep", "nTop", "nLeft", "Cargo", "lVertical" }
+
+   METHOD New( nRow, nCol, nMin, nMax, nPgStep, lVertical, oWnd, nWidth,;
+               nHeight, bUpAction, bDownAction, bPgUp, bPgDown,;
+               bPos, lPixel, nClrText, nClrBack, cMsg, lUpdate,;
+               bWhen, bValid, lDesign, lThumb ) CONSTRUCTOR
+
+   METHOD WinNew( nMin, nMax, nPgStep, lVertical, oWnd, bUpAction,;
+                  bDownAction, bPgUp, bPgDown, bPos, nClrText, nClrBack,;
+                  lUpdate, bWhen, bValid, lThumb ) CONSTRUCTOR
+
+   METHOD ReDefine( nID, nMin, nMax, nPgStep, oWnd, bUpAction, bDownAction, ;
+                    bPgUp, bPgDown, bPos, nClrText, nClrBack, cMsg,;
+                    lUpdate, bWhen, bValid, lThumb ) CONSTRUCTOR
+
+   METHOD Initiate( hDlg )
+
+   METHOD Default()
+
+   METHOD Paint()
+
+   METHOD cToChar() INLINE Super:cToChar( "SCROLLBAR" )
+
+   METHOD GetPos() INLINE GetScrollPos( ::hPant,::nFlag )
+
+   METHOD GetRange() INLINE GetScrollRange( ::hPant,::nFlag )
+
+   METHOD HandleEvent( nMsg, nWParam, nLParam )
+
+   METHOD SetPos( nPos )
+
+   METHOD GotFocus( hCtlLost )
+
+
+
+   // These two have to be BLOCK
+
+   METHOD GoUp()   BLOCK { | Self, nPos | nPos := ::GetPos(), IF( nPos &gt; ::nMin,;
+                                          ::SetPos( --nPos ), ), IF( ::bGoUp # NIL, Eval( ::bGoUp ),) }
+
+   METHOD GoDown() BLOCK { | Self, nPos | nPos := ::GetPos(), IF( nPos &lt; ::nMax, ;
+                                          ::SetPos( ++nPos ), ), IF( ::bGoDown # NIL, Eval( ::bGoDown ),) }
+
+
+   METHOD GoTop()       INLINE  ::SetPos( ::nMin ), IF( ::bGoTop # NIL, Eval( ::bGoTop ),)
+
+   METHOD GoBottom()        INLINE  ::SetPos( ::nMax ), IF( ::bGoBottom # NIL, Eval( ::bGoBottom ),)
+
+   METHOD PageUp()      INLINE  If( ::bPageUp # NIL, Eval( ::bPageUp ),), ::SetPos( ::GetPos()-::nPgStep )
+
+   METHOD PageDown()        INLINE  IF( ::bPageDown # NIL, Eval( ::bPageDown ),), ::SetPos( ::GetPos()+::nPgStep )
+
+   METHOD ThumbPos( nPos )  INLINE  IF( ::bPos # NIL, Eval( ::bPos, nPos ),)
+
+   METHOD ThumbTrack( nPos )    INLINE  IF( ::bTrack # NIL, Eval( ::bTrack, nPos ),)
+
+   METHOD SetRange( nMin, nMax, nPage )
+
+   METHOD MouseMove( nRow, nCol, nKeyFlags )
+
+   METHOD MouseWheel(nKeys,nDelta,nXPos,nYPos)
+
+
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( nRow, nCol, nMin, nMax, nPgStep, lVertical, oWnd, nWidth, nHeight,;
+            bUpAct, bDownAct, bPgUp, bPgDown, bPos, lPixel, nClrText,;
+            nClrBack, cMsg, lUpdate, bWhen, bValid, lDesign, lThumb ) CLASS TScrollBar
+
+   #ifdef __XPP__
+      #undef New
+   #endif
+
+   DEFAULT nRow := 0, nCol := 0,;
+           nMin := 0, nMax := 0, nPgStep := 0,;
+           oWnd := GetWndDefault(),;
+           lVertical := .T., nWidth := IF( lVertical, 16, 100 ),;
+           nHeight   := IF( lVertical, 100, 17 ),;
+           lPixel    := .F.,;
+           nClrText  := GetSysColor( COLOR_WINDOW ),;
+           nClrBack  := GetSysColor( COLOR_SCROLLBAR ),;
+           lUpdate   := .F., lDesign := .F., ;
+       lThumb := .F.
+
+   ::cCaption   = ""
+   ::nTop       = nRow * If( lPixel, 1, SCRL_CHARPIX_H )    //14
+   ::nLeft      = nCol * If( lPixel, 1, SCRL_CHARPIX_W )    // 8
+   ::nBottom    = ::nTop + nHeight - 1
+   ::nRight     = ::nLeft + nWidth - 1
+   ::nMin       = nMin
+   ::nMax       = nMax
+   ::nPgStep    = nPgStep
+   ::lVertical  = lVertical
+   ::lReDraw    = .T.
+   ::nStyle     = nOR( WS_CHILD, WS_VISIBLE, WS_TABSTOP,;
+                       If( lVertical, SBS_VERT, SBS_HORZ ),;
+                       If( lDesign, WS_CLIPSIBLINGS, 0 ) )
+   ::bGoUp      = bUpAct
+   ::bGoDown    = bDownAct
+   ::bPageUp    = bPgUp
+   ::bPageDown  = bPgDown
+   ::bPos       = bPos
+   ::oWnd       = oWnd
+   ::lIsChild   = .F.
+   ::lDrag      = lDesign
+   ::lCaptured  = .F.
+   ::cMsg       = cMsg
+   ::lUpdate    = lUpdate
+   ::bWhen      = bWhen
+   ::bValid     = bValid
+
+   ::lThumbResize := lThumb
+
+   ::SetColor( nClrText, nClrBack )
+
+   IF !Empty( oWnd:hWnd )
+      ::Create( "SCROLLBAR" )
+      ::Default()   // &lt;----------- PARA REDIMENSIONAR EL THUMB
+      ::SetRange( ::nMin, ::nMax )
+      ::SetPos( ::nMin )
+
+      oWnd:AddControl( Self )
+   ELSE
+      oWnd:DefControl( Self )
+   ENDIF
+
+   IF lDesign
+      ::CheckDots()
+   ENDIF
+
+RETURN Self
+
+//---------------------------------------------------------------------------//
+
+// Constructor for non-true ScrollBar Controls
+// ( when using WS_VSCROLL, WS_HSCROLL styles in a Window )
+// They are NOT controls but we consider them as real Objects!
+
+METHOD WinNew( nMin, nMax, nPgStep, lVertical, oWnd, bUpAction,;
+               bDownAction, bPgUp, bPgDown, bPos, nClrText, nClrBack,;
+               lUpdate, bWhen, bValid, lThumb ) CLASS TScrollBar
+
+   DEFAULT nMin := 1, nMax := 2, nPgStep := 0, lVertical := .T.,;
+           nClrText  := GetSysColor( COLOR_WINDOW ),;
+           nClrBack  := GetSysColor( COLOR_SCROLLBAR ),;
+           oWnd := GetWndDefault(), lUpdate   := .F., ;
+       lThumb := .F.
+
+   ::oWnd      = oWnd
+   ::lVertical = lVertical
+   ::lReDraw   = .T.
+   ::lIsChild  = .T.
+   ::nMin      = nMin
+   ::nMax      = nMax
+   ::nPgStep   = nPgStep
+   ::bGoUp     = bUpAction
+   ::bGoDown   = bDownAction
+   ::bPageUp   = bPgUp
+   ::bPageDown = bPgDown
+   ::bPos      = bPos
+   ::lUpdate   = lUpdate
+   ::bWhen     = bWhen
+   ::bValid    = bValid
+   ::hWnd      = 0
+
+   ::lThumbResize := lThumb
+
+   ::SetRange( nMin, nMax )
+   ::SetPos( nMin )
+
+   ::Default()
+
+RETURN Self
+
+//----------------------------------------------------------------------------//
+
+METHOD Redefine( nID, nMin, nMax, nPgStep, oWnd, bUpAction, bDownAction, ;
+                 bPgUp, bPgDown, bPos, nClrText, nClrBack, cMsg,;
+                 lUpdate, bWhen, bValid, lThumb ) CLASS TScrollbar
+
+   DEFAULT nMin := 0, nMax := 0, nPgStep := 0,;
+           nClrText  := GetSysColor( COLOR_WINDOW ),;
+           nClrBack  := GetSysColor( COLOR_SCROLLBAR ),;
+           oWnd := GetWndDefault(), lUpdate   := .F., ;
+       lThumb := .F.    // &lt;---------------------- DEFECTO .F. POR COMPATIBILIDAD
+
+   ::nID        = nID
+   ::nMin       = nMin
+   ::nMax       = nMax
+   ::nPgStep    = nPgStep
+   ::lVertical  = .F.
+   ::lReDraw    = .T.
+   ::bGoUp      = bUpAction
+   ::bGoDown    = bDownAction
+   ::bPageUp    = bPgUp
+   ::bPageDown  = bPgDown
+   ::bPos       = bPos
+   ::oWnd       = oWnd
+   ::lIsChild   = .F. // .T. only for Windows with WS_HSCROLL ¢ WS_VSCROLL style
+   ::lRedraw    = .T.
+   ::oWnd       = oWnd
+   ::lDrag      = .F.
+   ::lCaptured  = .F.
+   ::cMsg       = cMsg
+   ::lUpdate    = lUpdate
+   ::bWhen      = bWhen
+   ::bValid     = bValid
+
+   ::lThumbResize := lThumb
+
+   ::SetColor( nClrText, nClrBack )
+   oWnd:DefControl( Self )
+
+RETURN Self
+
+METHOD Initiate( hDlg )  CLASS TScrollBar
+   DEFAULT ::lActive   := .T., ;
+       ::lCaptured := .F., ;
+       ::lFocused  := .F., ;
+       ::lCancel   := .F.
+
+   IF ( ( ::hWnd := GetDlgItem( hDlg, ::nId ) ) != 0 )
+      IF( ::lActive, ::Enable(), ::Disable() )
+      ::Link()
+      ::Default()
+   ELSE
+      Eval( ErrorBlock(), _FWGenError( 1, "No: " + Str( ::nId, 6 ) ) )
+   ENDIF
+RETURN NIL
+
+METHOD Default()  CLASS TScrollBar
+   ::hPant := IF( ::lIsChild, ::oWnd:hWnd, ::hWnd )
+   ::nFlag := IF( ::lIsChild, IF( ::lVertical, SB_VERT, SB_HORZ ), SB_CTL )
+   *
+   IF ::lThumbResize
+      SetInfoScroll( ::hPant , ::nMin, ::nMin, ::nMax, ::nPgStep, ::nFlag, .T. )
+      ::nMaxPos := ::nMax-::nPgStep
+   ELSE
+      ::nMaxPos := ::nMax
+   ENDIF
+RETURN NIL
+
+METHOD Paint()  CLASS TScrollBar
+   IF ::hCDC = NIL
+      CallWindowProc( ::nOldProc, ::hWnd, WM_PAINT, ::hDc, 0 )
+   ELSE
+      CallWindowProc( ::nOldProc, ::hWnd, WM_PAINT, ::hCDC,0 )
+   ENDIF
+RETURN 1
+
+METHOD MouseWheel(nKeys,nDelta,nXPos,nYPos)  CLASS TScrollBar
+   IF ::bWheel # NIL
+      EVAL(::bWheel,nDelta)
+   ELSEIF nDelta &gt; 0
+      ::GoUp()
+   ELSE
+      ::GoDown()
+   ENDIF
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD HandleEvent( nMsg, nWParam, nLParam ) CLASS TScrollBar
+
+   DO CASE
+      CASE nMsg == FM_SCROLLUP
+           ::GoUp()
+           RETURN 0
+
+      CASE nMsg == FM_SCROLLDOWN
+           ::GoDown()
+           RETURN 0
+
+      CASE nMsg == FM_SCROLLPGUP
+           ::PageUp()
+           RETURN 0
+
+      CASE nMsg == FM_SCROLLPGDN
+           ::PageDown()
+           RETURN 0
+
+      CASE nMsg == FM_THUMBPOS
+           ::ThumbPos( nWParam )
+           RETURN 0
+
+      CASE nMsg == FM_THUMBTRACK
+           ::ThumbTrack( nWParam )
+           RETURN 0
+   ENDCASE
+
+RETURN Super:HandleEvent( nMsg, nWParam, nLParam )
+
+//----------------------------------------------------------------------------//
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) CLASS TScrollBar
+   IF nRow &gt; 32768
+      nRow -= 65535
+   ENDIF
+   IF nCol &gt; 32768
+      nCol -= 65535
+   ENDIF
+   *
+   IF ::oCursor # NIL
+      SetCursor( ::oCursor:hCursor )
+   ELSE
+      CursorHand()
+   ENDIF
+   *
+   ::SetMsg( ::cMsg )
+   *
+   IF ::OnMouseMove != nil
+      Eval( ::OnMouseMove, Self, nRow, nCol, nKeyFlags )
+   ENDIF
+   IF ::bMMoved != nil
+      RETURN Eval( ::bMMoved, nRow, nCol, nKeyFlags )
+   ENDIF
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD SetPos( nPos ) CLASS TScrollBar
+   IF ::lThumbResize
+      SetInfoPos( ::hPant, nPos, ::nFlag, ::lReDraw )
+   ELSE
+      SetScrollPos( ::hPant, ::nFlag, nPos, ::lReDraw )
+   ENDIF
+RETURN NIL
+
+METHOD SetRange( nMin, nMax, nPage ) CLASS TScrollBar
+   ::nMin := nMin
+   ::nMax := nMax
+   *
+   IF ::lThumbResize    // ---------------------------------------------- METODO NUEVO 
+      ::nMaxPos := ::nMax-::nPgStep
+      IF nPage # NIL
+     ::nPgStep := nPage
+     SetInfoRange( ::hPant, ::nMin, ::nMax, ::nPgStep, ::nFlag, ::lReDraw )
+      ELSE
+         nMin := ::GetPos()
+     SetInfoScroll( ::hPant, nMin, ::nMin, ::nMax, ::nPgStep, ::nFlag, ::lReDraw )
+      ENDIF
+   ELSE         // ---------------------------------------------- METODO ANTIGUO
+      ::nMaxPos := ::nMax
+      IF nPage # NIL
+     ::nPgStep := nPage
+      ENDIF
+      SetScrollRange( ::hPant, ::nFlag, ::nMin, ::nMax, ::lReDraw )
+   ENDIF
+RETURN NIL
+
+METHOD GotFocus( hCtlLost ) CLASS TScrollBar
+   IF ::oWnd # NIL
+      ::lFocused := .F.
+      ::oWnd:SetFocus()
+      IF ::bGotFocus # NIL
+         RETURN Eval( ::bGotFocus, Self, hCtlLost )
+      ENDIF
+   ELSE
+      Super:GotFocus( hCtlLost )
+   ENDIF
+RETURN NIL</code></pre></div><br>
+Claro que así es como me gusta a mi. Vosotros podéis implementar el método GOTFOCUS o no hacerlo.<br>
+<br>
+Si averiguo algo más ya lo comentaré aquí.<br>
+<br>
+Saludos</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

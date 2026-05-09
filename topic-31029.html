@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Modification for TEdit - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-31029">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-22.html">To do - WishList / Por hacer - Peticiones</a> Modification for TEdit</div>
+  <div class="post" id="p178955">
+    <div class="poster">
+      <div class="name" style="color:#105289">AntoninoP</div>
+      <div class="rank">Posts: 375</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 10, 2015 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Modification for TEdit</span><br>
+        Posted: Fri Jul 03, 2015 01:36 PM
+      </div>
+      <div class="content">Hello,<br>
+<br>
+I tried to use TEdit in my application, because I want an empty edit Box with unlimited text input, and it is not possible with TGet.<br>
+The problems I saw are:<br>
+<ol><br>
+<li> The font is not setted, it is  only if you create the TEdit between <strong>Init Dialog</strong> and <strong>Activate Dialog</strong> as the example does, but with TWindow or using on Init it is not.[/*:m]<br>
+</li><li> There is no bUpdate/bChange support[/*:m]<br>
+</li><li> It works only with text, it is very minor.[/*:m]<br>
+</li><li> It is not possilbe use PIXEL coordinate, It is minor too.[/*:m][/list:o]<br>
+The 1,3 and 4 are easily resolvible, the point 2 is a little more difficult, <br>
+To maintain compatibility with TGet I split the bChange in 2 notifications, 1 is bChange that can be used for accept/discard a character, and bUpdate that is called after the value updates.<br>
+<br>
+So, Here the edit.prg modified:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Class TEdit for two characters support (Chinesse, etc.)
+
+#include "FiveWin.ch"
+#include "constant.ch"
+
+#define DEFAULT_GUI_FONT   17
+
+#define EM_SETSEL          177
+#define EM_LIMITTEXT       197
+#define EM_SETCUEBANNER 0x1501
+
+//#define EN_SETFOCUS         0x0100
+//#define EN_KILLFOCUS        0x0200
+//#define EN_CHANGE           0x0300
+#define EN_UPDATE           0x0400
+//#define EN_ERRSPACE         0x0500
+//#define EN_MAXTEXT          0x0501
+#define EN_HSCROLL          0x0601
+//#define EN_VSCROLL          0x0602
+
+//----------------------------------------------------------------------------//
+
+CLASS TEdit FROM TControl
+   DATA cPicture, cType
+   DATA bHScroll, bUpdate
+   
+   METHOD New( nRow, nCol, bSetGet, oWnd, nWidth, nHeight, lPixel, oFont, cPicture, ;
+                  bChanged, bUpdate, bHScroll) CONSTRUCTOR
+
+   METHOD ReDefine( nId, oWnd, bSetGet, cPicture, bChanged, bUpdate, bHScroll ) CONSTRUCTOR
+      
+   METHOD cToChar() INLINE ::Super:cToChar( "EDIT" )
+   
+   METHOD Initiate( hDlg )
+   
+   METHOD MouseMove() VIRTUAL
+   
+   METHOD LostFocus( hWndGetFocus )
+   
+   METHOD GotFocus() INLINE ::SelectAll(), ::Super:GotFocus()
+
+   METHOD SelectAll() INLINE ::SetSel( 0, -1 )
+   
+   METHOD SetSel( nStart, nEnd ) INLINE ;
+                  nStart := If( nStart == nil, 1, nStart ),;
+                  nEnd   := If( nEnd == nil, nStart, nEnd ),;
+                  SendMessage( ::hWnd, EM_SETSEL, nStart, nEnd )                
+                  
+   METHOD Refresh() INLINE ::SetText( If( Empty( ::cPicture ), ;
+                                             cValToChar( Eval( ::bSetGet ) ),;
+                                             Transform( Eval( ::bSetGet ), ::cPicture ) ) ) 
+   
+   METHOD Read()
+   
+   METHOD SetLimitText(n) INLINE SendMessage( ::hWnd, EM_LIMITTEXT, if(valtype(n)="N",n,0), 0 )
+   METHOD SetCueBanner( lOnFocus, cText ) INLINE SendMessage( ::hWnd, EM_SETCUEBANNER, lOnFocus, AnsiToWide( cText ) )
+   
+   METHOD KeyChar( nKey, nFlags )
+   METHOD Command( nWParam, nLParam )
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( nRow, nCol, bSetGet, oWnd, nWidth, nHeight, lPixel, oFont, cPicture,;
+               bChanged, bUpdate, bHScroll ) CLASS TEdit
+   LOCAL startVal := Eval(bSetGet)
+   LOCAL cType :=ValType(startVal)
+   
+   DEFAULT nRow := 0, nCol := 0, oWnd := GetWndDefault(), nWidth := 80,;
+           nHeight := 20, lPixel := .F.
+
+   if oFont == nil
+      oFont := TFont():New()
+      oFont:hFont := GetStockObject( DEFAULT_GUI_FONT )
+   endif
+
+   ::oWnd    = oWnd
+   ::nId     = ::GetNewId()
+   ::nStyle  = nOR( WS_CHILD, WS_VISIBLE, WS_BORDER, WS_TABSTOP, ES_AUTOHSCROLL )
+   ::nTop    = if( lPixel, nRow, nRow * GET_CHARPIX_H    )
+   ::nLeft   = if( lPixel, nCol, nCol * GET_CHARPIX_W    )
+   ::nBottom = ::nTop + nHeight - 1
+   ::nRight  = ::nLeft + nWidth
+   ::lDrag   = .F.                
+   ::bSetGet = bSetGet
+   ::cPicture = cPicture
+   ::cType = cType
+   ::oFont = oFont
+   ::bChange = bChanged
+   ::bUpdate = bUpdate
+   ::bHScroll = bHScroll
+
+   ::cCaption  = If( Empty( cPicture ), cValToChar( startVal ),;
+                     Transform( startVal, cPicture ) )
+
+   if ! Empty( oWnd:hWnd )
+      ::Create( "EDIT" )
+      if ::oFont != nil
+         ::SetFont( ::oFont )
+      else
+         ::GetFont()
+      endif
+      oWnd:AddControl( Self )
+   else
+      oWnd:DefControl( Self )
+   endif
+   
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD ReDefine( nId, oWnd, bSetGet, cPicture, bChanged, bUpdate, bHScroll ) CLASS TEdit
+
+   DEFAULT oWnd := GetWndDefault()
+
+   ::nId     = nId
+   ::oWnd    = oWnd
+   ::bSetGet = bSetGet
+   ::cPicture = cPicture
+   ::bChange = bChanged
+   ::bUpdate = bUpdate
+   ::bHScroll = bHScroll
+
+   oWnd:DefControl( Self )
+   ::Refresh()
+   
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD Initiate( hDlg ) CLASS TEdit
+
+   ::Super:Initiate( hDlg )
+   
+   ::Refresh()
+   
+return nil     
+
+//----------------------------------------------------------------------------//    
+
+METHOD LostFocus( hWndGetFocus ) CLASS TEdit
+
+   ::Super:LostFocus( hWndGetFocus )
+   ::Read()
+   
+return nil 
+
+//----------------------------------------------------------------------------//    
+
+METHOD Read() CLASS TEdit
+   
+   if Empty( ::bSetGet )
+      return nil
+   endif
+   
+   if ::cType == "C"
+      Eval( ::bSetGet, ::GetText() )
+   elseif ::cType == "N"
+      Eval( ::bSetGet, Val(::GetText()) )
+   elseif ::cType == "D"
+      Eval( ::bSetGet, CToD(::GetText()) )
+   endif
+   
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD KeyChar( nKey, nFlags ) CLASS TEdit
+   LOCAL lAccept
+   
+   if ::cType == "N"
+      if .not. (( nKey&gt;=asc('0') .and. nKey&lt;=asc('9')) .or. ;
+                  nKey==asc('-') .or. nKey==asc('.') .or. nKey&lt;32)
+         return 0
+      endif
+   endif
+
+  if ::bChange != nil
+     lAccept = Eval( ::bChange, nKey, nFlags, Self )
+     if ValType( lAccept ) == "L" .and. ! lAccept
+        return 0
+      endif
+  endif
+
+return ::Super:KeyChar( nKey, nFlags )
+
+//----------------------------------------------------------------------------//
+
+METHOD Command( nWParam, nLParam ) CLASS TEdit
+   local nCode := nHiWord( nWParam )
+
+   if nCode == EN_UPDATE .and. ::bUpdate != nil
+      ::Read()
+      Eval( ::bUpdate, Self )
+   endif
+   
+   if nCode == EN_HSCROLL .and. ::bHScroll != nil
+      Eval( ::bHScroll, Self )
+   endif
+   
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+to use this is necessary change the METHOD Command of TDialog and TWindow adding this case:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">      case GetClassName( hWndCtl ) == "Edit" 
+           oCtrl :=oWndFromHwnd( hWndCtl )
+           if oCtrl!=nil .and. oCtrl:ClassName() == "TEDIT"
+               oCtrl:Command( nWParam, nLParam )
+               return nil
+           endif</code></pre></div><br>
+<br>
+IMHO, as user, with these modification the TEdit is usable, and the cue banner works!<br>
+<br>
+some comments?<br>
+<br>
+Regards,<br>
+Antonino</li></div>
+    </div>
+  </div>
+  <div class="post" id="p178965">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Modification for TEdit</span><br>
+        Posted: Fri Jul 03, 2015 02:37 PM
+      </div>
+      <div class="content"><p>Antonino,</p>
+<p>Many thanks for your contribution, it looks very well <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>Do you have a little example to test the new TEdit features ? thanks!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p179100">
+    <div class="poster">
+      <div class="name" style="color:#105289">bpd2000</div>
+      <div class="rank">Posts: 153</div>
+      <img class="avatar avatar-img" src="avatars/3115.jpg" alt="" loading="lazy">
+      Joined: Tue Aug 05, 2014 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Modification for TEdit</span><br>
+        Posted: Tue Jul 07, 2015 04:41 AM
+      </div>
+      <div class="content"><blockquote><cite>Antonio Linares wrote:</cite>Antonino,<br>
+<br>
+Many thanks for your contribution, it looks very well <br>
+<br>
+Do you have a little example to test the new TEdit features ? thanks!</blockquote><br>
++1</div>
+    </div>
+  </div>
+  <div class="post" id="p179104">
+    <div class="poster">
+      <div class="name" style="color:#105289">AntoninoP</div>
+      <div class="rank">Posts: 375</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 10, 2015 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Modification for TEdit</span><br>
+        Posted: Tue Jul 07, 2015 07:32 AM
+      </div>
+      <div class="content">Here an example:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oDlg
+   
+   DEFINE DIALOG oDlg SIZE 500, 250
+   ACTIVATE DIALOG oDlg CENTERED ON INIT init(oDlg)
+
+return nil
+
+PROC init(oDlg)
+   local oSay1,oSay2,oSay3,oSay4
+   local oEdit1,oEdit2,oEdit3,oEdit4
+   local cFirst := "Start value", cLast := ""
+   LOCAl nVal1 := VAL("0"), nVal2 := 3.1415000
+   
+   @ 8, 10 EDIT oEdit1 VAR cFirst OF oDlg SIZE 160, 20 PIXEL ON UPDATE oSay1:Refresh()
+   @ 40,10 SAY oSay1 VAR cFirst OF oDlg SIZE 160, 20 PIXEL 
+   oEdit1:SetCueBanner(.T.,"Write here")
+   @ 72, 10 EDIT oEdit2 VAR cLast OF oDlg SIZE 160, 20 PIXEL ON UPDATE oSay2:Refresh() ON CHANGE if(nKey==asc('a'),.F.,.T.)
+   @ 104,10 SAY oSay2 VAR cLast OF oDlg SIZE 160, 20 PIXEL 
+   oEdit2:SetCueBanner(.T.,"No 'a' allowed here")
+
+   @ 8, 200 EDIT nVal1 OF oDlg SIZE 160, 20 PIXEL
+   @ 72, 200 EDIT nVal2 OF oDlg SIZE 160, 20 PIXEL
+   
+   @ 136, 110 BUTTON "Ok"  PIXEL SIZE 80,32;
+      ACTION MsgInfo( cFirst + ", " + cLast+ ":" +Transform(nVal1,"@E") + "; "+Transform(nVal2,"@E") )
+
+   @ 136, 210 BUTTON "Cancel" ACTION oDlg:End() PIXEL  SIZE 80,32
+
+return
+//----------------------------------------------------------------------------//</code></pre></div><br>
+In this example you can see the &quot;on update&quot; and &quot;on change&quot; at work.<br>
+If you link with common control v.6 you can see the cue banner also, they can not work on TGet because it is never empty.<br>
+<br>
+To compile, need to change the macro in fivewin.ch in this way:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*----------------------------------------------------------------------------//
+!short: EDIT  */
+
+#command @ &lt;nRow&gt;, &lt;nCol&gt; EDIT [ &lt;oEdit&gt; VAR ] &lt;uVar&gt; ;
+            [ &lt;dlg: OF, WINDOW, DIALOG&gt; &lt;oWnd&gt; ] ;
+            [ SIZE &lt;nWidth&gt;, &lt;nHeight&gt; ] ;
+            [ &lt;lPixel: PIXEL, PIXELS &gt; ] ;
+            [ FONT &lt;oFont&gt; ]  ;
+            [ &lt;pict: PICT, PICTURE&gt; &lt;cPict&gt; ] ;
+            [ ON CHANGE &lt;uChange&gt; ] ;
+            [ ON UPDATE &lt;uUpdate&gt; ] ;
+            [ ON SCROLL &lt;uScroll&gt; ] ;
+       =&gt; ;
+          [ &lt;oEdit&gt; := ] TEdit():New( &lt;nRow&gt;, &lt;nCol&gt;, bSETGET(&lt;uVar&gt;),;
+            [&lt;oWnd&gt;], &lt;nWidth&gt;, &lt;nHeight&gt;, &lt;.lPixel.&gt;, &lt;oFont&gt;, &lt;cPict&gt;,;
+            [\{|nKey, nFlags, Self| &lt;uChange&gt;\}],;
+            [\{|Self| &lt;uUpdate&gt;\}],;
+            [\{|Self| &lt;uScroll&gt;\}],)
+
+#xcommand REDEFINE EDIT [ &lt;oEdit&gt; VAR ] &lt;uVar&gt; ;
+            [ ID &lt;nId&gt; ] ;
+            [ &lt;dlg: OF, WINDOW, DIALOG&gt; &lt;oWnd&gt; ] ;
+            [ &lt;pict: PICT, PICTURE&gt; &lt;cPict&gt; ] ;
+            [ ON CHANGE &lt;uChange&gt; ] ;
+            [ ON UPDATE &lt;uUpdate&gt; ] ;
+            [ ON SCROLL &lt;uScroll&gt; ] ;
+       =&gt; ;
+          [ &lt;oEdit&gt; := ] TEdit():Redefine( &lt;nId&gt;, [&lt;oWnd&gt;],;
+                                           bSETGET(&lt;uVar&gt;), &lt;cPict&gt;,;
+            [\{|nKey, nFlags, Self| &lt;uChange&gt;\}],;
+            [\{|Self| &lt;uUpdate&gt;\}],;
+            [\{|Self| &lt;uScroll&gt;\}],)</code></pre></div><br>
+<br>
+<img src="http://i.imgur.com/cW8NhHM.png" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p179107">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Modification for TEdit</span><br>
+        Posted: Tue Jul 07, 2015 07:53 AM
+      </div>
+      <div class="content"><p>Antonino,</p>
+<p>many thanks! Added for next FWH version.</p>
+<p>&gt; If you link with common control v.6 you can see the cue banner also</p>
+<p>Could you explain how to do it ? thanks</p></div>
+    </div>
+  </div>
+  <div class="post" id="p179110">
+    <div class="poster">
+      <div class="name" style="color:#105289">AntoninoP</div>
+      <div class="rank">Posts: 375</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 10, 2015 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Modification for TEdit</span><br>
+        Posted: Tue Jul 07, 2015 08:08 AM
+      </div>
+      <div class="content"><blockquote><cite>Antonio Linares wrote:</cite>&gt; If you link with common control v.6 you can see the cue banner also<br>
+<br>
+Could you explain how to do it ? thanks</blockquote><br>
+<br>
+It is when you add a manifest in the resources with this dependency:<br>
+<div class="codebox"><div class="codehead"><span>Code (xml):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-xml">&lt;div class="xml" id="{CB}" style="font-family: monospace;"&gt;&lt;dependency&gt;
+    &lt;dependentAssembly&gt;
+        &lt;assemblyIdentity
+            type="win32"
+            name="Microsoft.Windows.Common-Controls"
+            version="6.0.0.0"
+            processorArchitecture="X86"
+            publicKeyToken="6595b64144ccf1df"
+            language="*"
+        /&gt;
+    &lt;/dependentAssembly&gt;
+&lt;/dependency&gt;&lt;/div&gt;</code></pre></div><br>
+see: &quot;Common controls&quot; version &quot;6&quot;.<br>
+<br>
+How do you explain it?</div>
+    </div>
+  </div>
+  <div class="post" id="p179112">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Modification for TEdit</span><br>
+        Posted: Tue Jul 07, 2015 08:17 AM
+      </div>
+      <div class="content"><p>many thanks! <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

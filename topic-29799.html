@@ -1,0 +1,1434 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Oracle API - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-29799">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Oracle API</div>
+  <div class="post" id="p168660">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Oracle API</span><br>
+        Posted: Tue Dec 09, 2014 04:17 PM
+      </div>
+      <div class="content">Jorge Gayoso, who is developing a large commercial application using FiveLinux has been so kind to provide us this Oracle API that he has developed that I am sure that will be helpful for other users too. Many thanks Jorge! <br>
+<br>
+oracle.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#IfDef __FIVELINUX__
+
+            #include "FiveLinux.ch"
+            #include "linuxpos.ch"
+#Endif
+
+#IfDef __SQL__
+            #define n_Use         1
+            #define n_Alias       2
+            #define n_Key         3
+            #define n_DBSeek      4
+            #define n_Where       5
+            #define n_Found       6
+            #define n_Filter      7
+            #define n_Append      8
+            #define n_Keys        9
+
+            #define n_cmd         0
+            #define n_cmdPOS      1 
+            #define n_cmdServer  2 
+#Endif
+
+#IfnDef __SQL__
+        Function fSelect_SQL(v_Alias)
+        Return iif(v_Alias=NIL,select(),select(v_Alias))
+#Else
+        Function fSelect_SQL(v_Alias)
+            local vRetorno,cR_SQL_Select:='',nR_SQL_Select:=0
+            
+            if ValType(v_Alias)='C'
+                cR_SQL_Select:=v_Alias
+            elseif ValType(v_Alias)='N'
+                if v_Alias&lt;=len(tSQL_select) .and. len(tSQL_select[v_Alias,2])&gt;0
+                    cR_SQL_Select:=tSQL_select[v_Alias,2]
+                    nR_SQL_Select:=v_Alias
+                endif
+            else
+                cR_SQL_Select:=cSQL_Select
+            endif
+            if (nR_SQL_Select:=ascan(tSQL_select,{|x,y| upper(x[2])=upper(cR_SQL_Select) .and. len(alltrim(x[2]))&gt;0 .and. len(alltrim(x[2]))=len(alltrim(cR_SQL_Select))}))=0
+                cR_SQL_Select:=''
+                nR_SQL_Select:=0
+            endif
+        Return iif(v_Alias=NIL,nR_SQL_Select,cR_SQL_Select)
+#Endif
+
+Function fDbSetOrder_SQL(cKEY)   
+    local nKeyAct:=0
+    
+    #IfnDef __SQL__
+            Dbsetorder(cKEY)
+    #Else
+            if valtype(cKey)='N'
+               nKeyAct=cKey
+            else
+               nKeyAct=ascan(tSQL_select[nSQL_Select,n_Keys],{|x,y| upper(x[1])=upper(cKey)})
+            endif
+            if .not. nKeyAct=tSQL_select[nSQL_Select,n_Key]
+                tSQL_select[nSQL_Select,n_Where]:=''
+            endif
+            tSQL_select[nSQL_Select,n_Key]:=nKeyAct
+    #Endif
+Return .T.
+            
+Function fDBSeek_SQL(v_Buscar)   
+    Local lRetorno:=.F., c_SQL:=''
+
+    #IfnDef __SQL__
+            lRetorno:=DBSeek(v_Buscar)
+    #Else
+            if nSQL_Select&gt;0
+                if valtype(tSQL_select[nSQL_Select,n_DBSeek])!=valtype(v_Buscar) .or. tSQL_select[nSQL_Select,n_DBSeek]!=v_Buscar .or. len(tSQL_select[nSQL_Select,n_Where])&gt;0 
+                    tSQL_select[nSQL_Select,n_DBSeek]:=v_Buscar
+                    if valtype(v_Buscar)='C'
+                       tSQL_select[nSQL_Select,n_Where]:="SUBSTR("+tSQL_select[nSQL_Select,n_Keys][tSQL_select[nSQL_Select,n_Key],2]+",1,"+;
+                       alltrim(str(len(v_Buscar),4,0))+")='"+fEvalua_Busqueda(v_Buscar)+"'"
+                    else   
+                      tSQL_select[nSQL_Select,n_Where]:=tSQL_select[nSQL_Select,n_Keys][tSQL_select[nSQL_Select,n_Key],2]+"="+alltrim(str(v_Buscar,15,0))
+                    endif   
+                endif
+                tSQL_select[nSQL_Select,n_Found]:=.F.
+                c_SQL:='select rowid,rownum, '+cSQL_Select+'.* from '+cSQL_Select+' where '+tSQL_select[nSQL_Select,n_Where]
+                if left(cSQL_Ejecuta(nSQL_Select,upper(c_SQL)),2)='OK'
+                    tSQL_select[nSQL_Select,n_Found]:=iif(fLastRec_SQL()&gt;0,.T.,.F.)
+                    lRetorno:=tSQL_select[nSQL_Select,n_Found]
+                endif
+            endif
+    #Endif
+Return lRetorno
+
+Function fEof_SQL() 
+    Public lRetorno:=.F.
+
+    #IfnDef __SQL__
+            lRetorno:=Eof()
+    #Else
+            if cSQL_Eof(nSQL_Select)=1
+                lRetorno := .T.
+            endif
+    #Endif      
+Return lRetorno 
+
+Function fBof_SQL() 
+    Public lRetorno:=.F.
+
+    #IfnDef __SQL__
+        lRetorno:=Bof()
+    #Else
+        if cSQL_Bof(nSQL_Select)=1
+            lRetorno := .T.
+        endif
+    #Endif  
+Return lRetorno 
+
+Function fRecno_SQL() 
+    Public nRetorno:=0
+
+    #IfnDef __SQL__
+            nRetorno:=RecNo()
+    #Else
+            nRetorno := cSQL_Field(nSQL_Select,"rownum")
+            if ValType(nRetorno)='C'
+                msgalert(nRetorno)
+            endif
+    #Endif
+Return nRetorno 
+
+Function fLastRec_SQL() 
+    Public nRetorno:=0
+
+    #IfnDef __SQL__
+            nRetorno:=LastRec()
+    #Else
+            nRetorno := cSQL_LastRec(nSQL_Select)  
+            if ValType(nRetorno)='C'
+                msgalert(nRetorno)
+            endif
+    #Endif
+Return nRetorno 
+
+Function fDBCommit_SQL()   
+    local i, cReplace:='',cValues:=' VALUES(', lRetorno:=.F.
+
+    #IfnDef __SQL__
+            Dbunlock();Dbcommit()
+    #Else
+            if tSQL_select[nSQL_Select,n_Append]
+                cReplace:='INSERT INTO '+tSQL_select[nSQL_Select,n_Use]+'('
+            else
+                cReplace:='UPDATE '+tSQL_select[nSQL_Select,n_Use]+' SET ' 
+            endif
+            for i:=1 to len(tSQL_Replace)
+                if valtype(tSQL_Replace[i,2])='N'
+                    tSQL_Replace[i,2]:=alltrim(str(tSQL_Replace[i,2],15,2))
+                elseif valtype(tSQL_Replace[i,2])='L'
+                    tSQL_Replace[i,2]:=iif(tSQL_Replace[i,2],'1','0')
+                elseif valtype(tSQL_Replace[i,2])='D'
+                    tSQL_Replace[i,2]:="to_date('"+DTOS(tSQL_Replace[i,2])+"','YYYYMMDD')"
+                else
+                    tSQL_Replace[i,2]:="'"+STRTRAN(tSQL_Replace[i,2],"'",'"')+"'"
+                endif
+                if tSQL_select[nSQL_Select,n_Append]
+                    cReplace+=tSQL_Replace[i,1]+iif(i&lt;len(tSQL_Replace),',',')')
+                    cValues+=tSQL_Replace[i,2]+iif(i&lt;len(tSQL_Replace),',',')')
+                else
+                    cReplace+=tSQL_Replace[i,1]+' = '+tSQL_Replace[i,2]+iif(i&lt;len(tSQL_Replace),',','')
+                endif
+            next i
+            if tSQL_select[nSQL_Select,n_Append]
+                cReplace+=cValues
+            else
+                cReplace+=' WHERE '+tSQL_select[nSQL_Select,n_Where]   
+            endif
+            if left(cValues:=cSQL_Ejecuta(nSQL_Select,cReplace,'A'),2)='OK'
+                lRetorno:=.T.
+                msgalert(cValues)
+            else
+                msgalert(cValues + ' ('+cReplace+')')
+            endif
+    #Endif
+Return lRetorno
+
+Function fFound_SQL() 
+    local lRetorno:=.F.
+
+    #IfnDef __SQL__
+            lRetorno:=found()
+    #Else
+            lRetorno:=tSQL_select[nSQL_Select,n_Found] 
+    #Endif
+Return lRetorno
+
+Function fRegLock_SQL()  
+    local lRetorno:=.F.
+
+    #IfnDef __SQL__
+            lRetorno:=RegLock()
+    #Else
+            tSQL_Replace:={}
+            tSQL_select[nSQL_Select,n_Append]:=.F. 
+            lRetorno:=.T.
+    #Endif
+Return lRetorno
+
+Function fSumReg_SQL()   
+    local lRetorno:=.F.
+
+    #IfnDef __SQL__
+        lRetorno:=SumReg()
+    #Else
+        tSQL_Replace:={}
+        tSQL_select[nSQL_Select,n_Append]:=.T.
+        lRetorno:=.T.
+    #Endif
+Return lRetorno
+
+Function fDbSkip_SQL(nRegistros)
+    Local cResultado:=NIL
+    
+    #IfnDef __SQL__
+            cResultado:=DbSkip(nRegistros)
+    #Else
+            nRegistros:=if(nRegistros=NIL,1,nRegistros)
+            
+            if nRegistros&lt;&gt;0
+                cResultado := cSQL_DbSkip(nSQL_Select,nRegistros)
+            endif   
+            
+            if valtype(cResultado)='C'
+               msgalert(cResultado)
+            endif
+    #Endif
+Return cResultado
+
+Function fDbSelectArea_SQL(v_Alias)
+    #IfnDef __SQL__
+            DbSelectArea(v_Alias)
+    #Else
+            if valtype(v_Alias)='C'
+                if (nSQL_Select:=ascan(tSQL_select,{|x,y| upper(x[2])=upper(v_Alias) .and. len(alltrim(x[2]))&gt;0 .and. len(alltrim(x[2]))=len(alltrim(v_Alias))}))=0
+                    cSQL_Select:=''
+                else
+                    cSQL_Select:=tSQL_select[nSQL_Select,2]
+                endif
+            elseif valtype(v_Alias)='N' .and. nSQL_Select&lt;=len(tSQL_select) .and. len(tSQL_select[nSQL_Select,2])&gt;0
+                cSQL_Select:=tSQL_select[nSQL_Select,2]
+            endif   
+    #Endif
+Return .T.
+
+Function fIndexOrd_SQL()
+    Local nRetorno:=''
+
+    #IfnDef __SQL__
+            nRetorno:=IndexOrd()
+    #Else
+            nRetorno := tSQL_select[nSQL_Select,n_Key]
+    #Endif
+Return nRetorno
+
+Function fDbGoBottom_SQL()
+    Local cResultado:=NIL
+    
+    #IfnDef __SQL__
+            cResultado:=DbGoBottom()
+    #Else
+            cResultado := cSQL_DbGoBottom(nSQL_Select)
+            if valtype(cResultado)='C'
+               msgalert(cResultado)
+            endif
+    #Endif  
+Return cResultado
+
+Function fDbGoTop_SQL()
+    Local cResultado:=NIL
+    
+    #IfnDef __SQL__
+            cResultado:=DbGoTop()
+    #Else
+            cResultado := cSQL_DbGoTop(nSQL_Select)
+            if valtype(cResultado)='C'
+               msgalert(cResultado)
+            endif
+    #Endif  
+Return cResultado
+
+Function fDbGoto_SQL(nRegistro)
+    Local cResultado:=NIL
+    
+    #IfnDef __SQL__
+            cResultado:=DbGoto(nRegistro)
+    #Else
+            if valtype(nRegistro)='N'
+                cResultado := cSQL_DbGoto(nSQL_Select, nRegistro)
+            else
+                cResultado := 'Tipo de dato no valido (SQL_DbGoto)'
+            endif   
+            if valtype(cResultado)='C'
+               msgalert(cResultado)
+            endif
+    #endif  
+Return cResultado
+
+Function fAlias_SQL()
+    local cRetorno:=''
+
+    #IfnDef __SQL__
+            cRetorno:=Alias()
+    #Else
+            cRetorno:=cSQL_Select
+    #Endif
+Return cRetorno
+
+Function fClose_SQL(cArchivo)
+    #IfnDef __SQL__
+            if cArchivo=NIL
+                DbCloseArea()
+            elseif lower(cArchivo)='index'
+                Close Index
+            else
+                Close (cArchivo)
+            endif
+    #Else
+            local i:=0
+            
+            if cArchivo=NIL
+               i:=nSQL_Select
+               nSQL_Select:=0
+               cSQL_Select:=''
+            else
+               i:=ascan(tSQL_select,{|x,y| upper(x[2])=upper(cArchivo) .and. len(alltrim(x[2]))&gt;0 .and. len(alltrim(x[2]))=len(alltrim(cArchivo))})
+            endif   
+            if i&gt;0
+               tSQL_select[i]:={'','',0,'','',.F.,'',.F.,{}}
+               if i=nSQL_Select
+                   nSQL_Select:=0
+                   cSQL_Select:=''
+               endif    
+            endif   
+    #Endif  
+Return .T.
+
+Function fDbCloseAll_SQL()
+    #IfnDef __SQL__
+            DbCloseAll()
+    #Else
+            tSQL_select:={}
+            nSQL_Select:=0
+            cSQL_Select:=''
+    #Endif  
+Return .T.</code></pre></div><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Function fDeleteAll_SQL(cFiltro)
+    local cRetorno:='Ok', c_SQL_Delete, cMsgProblemaAlEjecutar:=''
+    
+    #IfnDef __SQL__
+            if cFiltro=NIL
+                delete all
+            else
+                delete all for &amp;cFiltro.
+            endif   
+    #Else
+            if cFiltro=NIL
+                cFiltro:=''
+            else
+                cFiltro:=fEvalua_Busqueda(cFiltro)
+            endif
+            c_SQL_Delete="delete from "+upper(cSQL_Select)+iif(len(cFiltro)=0,'',' where '+cFiltro)
+            
+            if .not. left(cMsgProblemaAlEjecutar:=cSQL_Ejecuta(nSQL_Select,c_SQL_Delete,"A"),2)='OK'
+                cRetorno:=cMsgProblemaAlEjecutar
+            endif
+    #Endif  
+Return cRetorno
+
+Function fSetFilter_SQL(cFiltro)
+    local cRetorno:=NIL, c_SQL_Filter, cMsgProblemaAlEjecutar:=''
+    
+    #IfnDef __SQL__
+            if cFiltro=NIL
+                set filter to 
+            else
+                set filter to &amp;cFiltro.
+            endif   
+    #Else
+            if cFiltro=NIL
+                cFiltro:=''
+            else
+                cFiltro:=fEvalua_Busqueda(cFiltro)
+            endif
+            c_SQL_Filter="select rowid,rownum, "+cSQL_Select+".* from "+upper(cSQL_Select)+iif(len(cFiltro)=0,'',' where '+cFiltro)
+            if .not. left(cMsgProblemaAlEjecutar:=cSQL_Ejecuta(nSQL_Select,c_SQL_Filter),2)='OK'
+                cRetorno:=cMsgProblemaAlEjecutar
+            endif
+    #Endif  
+Return cRetorno
+
+Function fCountAll_SQL(cFiltro)
+    local nRetorno:=0, c_SQL_Count, cMsgProblemaAlEjecutar:=''
+    
+    #IfnDef __SQL__
+            if cFiltro=NIL
+                Count all to nRetorno
+            else
+                Count all to nRetorno for &amp;cFiltro.
+            endif   
+    #Else
+            if cFiltro=NIL
+                cFiltro:=''
+            else
+                cFiltro:=fEvalua_Busqueda(cFiltro)
+            endif
+            c_SQL_Count="select count(*) as nCuenta from "+upper(cSQL_Select)+iif(len(cFiltro)=0,'',' where '+cFiltro)
+            if .not. left(cMsgProblemaAlEjecutar:=cSQL_Ejecuta(nSQL_Select,c_SQL_Count,'X'),2)='OK'
+                nRetorno:=cMsgProblemaAlEjecutar
+            else
+                nRetorno:=fField_SQL('nCuenta',n_cmd)           
+            endif
+    #Endif  
+Return nRetorno
+
+Function fCopyTo_SQL(cArchivo,cWhile,cFor,lSoloStructura)
+    local cRetorno:=NIL, c_SQL_CopyTo, cMsgProblemaAlEjecutar:=''
+    
+    lSoloStructura:=iif(lSoloStructura=NIL,.F.,lSoloStructura)
+    
+    #IfnDef __SQL__
+            cWhile:=iif(cWhile=NIL,'.T.',cWhile)
+            cFor:=iif(cFor=NIL,'.T.',cFor)
+            if lSoloStructura   
+               copy struct TO (cArchivo)
+            else   
+               copy TO &amp;cArchivo. WHILE &amp;cWhile. FOR &amp;cFor.            
+            endif   
+    #Else 
+        // cWhile NO SE OCUPA en SQL
+        
+        if (i:=rat('/',cArchivo))&gt;0
+           cArchivo:=substr(cArchivo,i+1)
+        endif
+        cArchivo:=strtran(cArchivo,'.','_')
+        
+        if cFor=NIL
+            cFor:=''
+        else
+            cFor:=fEvalua_Busqueda(cFor)
+            if len(alltrim(cFor))&gt;0
+               cFor:=' where '+cFor
+            endif
+        endif
+        
+        c_SQL_CopyTo:='drop table '+cArchivo
+        cSQL_Ejecuta(nSQL_Select,c_SQL_CopyTo,'A')
+        
+        c_SQL_CopyTo:='CREATE Table '+cArchivo+' as SELECT * FROM '+cSQL_Select+cFor
+        if .not. left(cMsgProblemaAlEjecutar:=cSQL_Ejecuta(nSQL_Select,c_SQL_CopyTo,'A'),2)='OK'
+            cRetorno:=cMsgProblemaAlEjecutar
+        endif
+    #Endif  
+Return cRetorno
+
+Function fDbDelete_SQL()
+    local lRetorno:=.T.
+    
+    #IfnDef __SQL__
+            DbDelete()
+    #Else
+            local cRowId,cMsgProblemaAlEjecutar
+            
+            cRowId := cSQL_Field(nSQL_Select,"rowid")
+?cRowId         
+            c_SQL_CopyTo:="Delete from "+cArchivo+" where rowid='"+cRowId+"'"
+            if .not. left(cMsgProblemaAlEjecutar:=cSQL_Ejecuta(nSQL_Select,c_SQL_CopyTo,'A'),2)='OK'
+                lRetorno:=.F.
+            endif
+?cMsgProblemaAlEjecutar
+            
+    #Endif  
+Return lRetorno
+
+Function fLocateAll_SQL(cWhile,cFor)
+    local cRetorno:=NIL, c_SQL_LocateAll, cMsgProblemaAlEjecutar:=''
+    
+    #IfnDef __SQL__
+            if cWhile!=NIL
+                locate WHILE &amp;cWhile. FOR &amp;cFor.
+            else
+                locate all FOR &amp;cFor.
+            endif   
+    #Else 
+    
+    #Endif  
+Return cRetorno
+
+Function fSetRelationTo(tRelacion)
+    local cRetorno:=NIL,i,cR1,cA1,cR2,cA2,cR3,cA3
+    
+    #IfnDef __SQL__
+            if tRelacion=NIL
+                Set relation to
+            else
+                cR1:=tRelacion[1,1]
+                cA1:=tRelacion[1,2]
+                do case
+                   case len(tRelacion)=1
+                        Set relation to &amp;cR1. into &amp;cA1.
+                   case len(tRelacion)=2
+                        cR2:=tRelacion[2,1]
+                        cA2:=tRelacion[2,2]
+                        Set relation to &amp;cR1. into &amp;cA1.,to &amp;cR2. into &amp;cA2.
+                   case len(tRelacion)=3
+                        cR3:=tRelacion[2,1]
+                        cA3:=tRelacion[2,2]
+                        Set relation to &amp;cR1. into &amp;cA1.,to &amp;cR2. into &amp;cA2.,to &amp;cR3. into &amp;cA3.
+                endcase 
+            endif   
+    #Else 
+    
+    #Endif  
+Return cRetorno
+
+Function fDbCreate_SQL(cArchivo,tEstructura)
+    local cRetorno:=NIL, cMsgProblemaAlEjecutar:=''
+    
+    #IfnDef __SQL__
+            DbCreate(cArchivo, tEstructura)
+    #Else
+    
+    #Endif  
+Return cRetorno
+
+Function fIndexOn_SQL(cOrden,cArchivo,lUnico)
+    local cRetorno:=NIL, cMsgProblemaAlEjecutar:=''
+    lUnico:=iif(lUnico=NIL,.F.,lUnico)
+    
+    #IfnDef __SQL__
+            if lUnico
+                index on &amp;cOrden. to &amp;cArchivo. unique
+            else
+                index on &amp;cOrden. to &amp;cArchivo.
+            endif   
+    #Else
+    
+    #Endif  
+Return cRetorno
+
+Function fAppendFrom_SQL(cArchivo,cFiltro,lSDF)
+    local cRetorno:=NIL, c_SQL_AppendFrom, cMsgProblemaAlEjecutar:=''
+    lSDF:=iif(lSDF=NIL,.F.,lSDF)
+    
+    #IfnDef __SQL__
+            if cFiltro=NIL
+                c_SQL_AppendFrom:=cArchivo
+            else
+                c_SQL_AppendFrom:=cArchivo+' for '+cFiltro
+            endif   
+            if lSDF
+               c_SQL_AppendFrom+=' SDF'
+            endif
+            append from &amp;c_SQL_AppendFrom.
+    #Else
+    
+    #Endif  
+Return cRetorno
+
+Function fReplaceAll_SQL(tReplace,cFiltro)
+    local cRetorno:=NIL, c_SQL_Replace:='', cMsgProblemaAlEjecutar:='',i:=0
+    
+    #IfnDef __SQL__
+            cFiltro:=iif(cFiltro=NIL,'.T.',cFiltro)
+            for i:=1 to len(tReplace)
+                paso1:=tReplace[i,1]
+                paso2:=tReplace[i,2]
+                replace all &amp;paso1 with &amp;paso2 for &amp;cFiltro.
+            next i
+    #Else
+    
+    
+    #Endif  
+Return cRetorno
+
+#IfDef __SQL__
+
+            Function fUse_SQL(cAlias,nOrigenData)
+                local lRetorno:=.F.,tKey:={}, i, cSelect:=cSelect:="select rowid,rownum, ai.index_name, ic.column_name "+;
+                    "from all_ind_columns ic, all_indexes ai "+;
+                    "where ai.index_name = ic.index_name and ai.table_name = '"+upper(cAlias)+"'"
+                    
+                cSQL_Select:=cAlias
+                if (nSQL_Select:=ascan(tSQL_select,{|x,y| upper(x[2])=upper(cSQL_Select) .and. len(alltrim(x[2]))&gt;0 .and. len(alltrim(x[2]))=len(alltrim(cSQL_Select))}))=0
+                    nSQL_Select:=len(tSQL_select)+1 
+                    aadd(tSQL_select,{cSQL_Select,cAlias,0,'','',.F.,'',.F.,{}})
+
+                    cSQL_Use(nSQL_Select, nOrigenData)
+                    
+            &amp;&amp;        ?'USE:',cSQL_Select,'  nSelect:',alltrim(str(nSQL_Select,3,0)),'  nOrigenData:',alltrim(str(nOrigenData,3,0)) 
+
+                    if left(cSQL_Ejecuta(nSQL_Select,cSelect,"X"),2)='OK'
+                        cSQL_Keys(@tKey) 
+                        cSelect="select rowid,rownum, posindex.* from posindex where name = '"+upper(cAlias)+"'"
+                        if left(cSQL_Ejecuta(nSQL_Select,cSelect),2)='OK'
+                            for i:=1 to len(tKey)
+                                tKey[i]:={tKey[i],fField_SQL('KEY'+alltrim(str(i,3,0)))}
+            &amp;&amp;                    ?'INDEX:',alltrim(str(i,3,0)),tKey[i,1],tKey[i,2]
+                            next i
+                            tSQL_select[nSQL_Select,n_Keys]:=tKey
+                            fDbSetOrder_SQL('KEY1',.T.)
+                        endif   
+                        cSelect="select rowid,rownum, "+cSQL_Select+".* from "+upper(cAlias)
+                        if left(cSQL_Ejecuta(nSQL_Select,cSelect),2)='OK'
+                           lRetorno:=.T.
+                        endif
+                    endif   
+                else
+                    lRetorno:=.T.
+                endif
+            Return lRetorno
+
+            Function fReplace_SQL(cField, vData) 
+                if c_Modo_SQL$'CD'
+                    replace &amp;cField with vData
+                Endif
+                if c_Modo_SQL$'OD' 
+                    aadd(tSQL_Replace,{cField, vData})
+                endif
+            Return .T.
+
+            Function fDBSkipper_SQL(lRecs , lPageDown)
+                lSkipped := 0
+                fBEof := .F.
+                ulRecords := 0
+                lPageDown:=iif(lPageDown=NIL,.F.,lPageDown)
+                
+                if fSelect_SQL() &gt; 0
+                    if (ulRecords:=fLastRec_SQL()) &gt; 0 
+                        if ( lRecs &gt; 0 )
+                            if fRecno_SQL()!=ulRecords      
+                                do while ( lSkipped &lt; lRecs )
+                                    if fEof_SQL()   
+                                        exit
+                                    endif   
+                                    fDbSkip_SQL( 1 )
+                                    lSkipped++
+                                enddo   
+                                if fEof_SQL()
+                                    if (c_Modo_SQL='O' .and. .not. lPageDown) .or. c_Modo_SQL='C'
+                                       lSkipped:=0
+                                    endif   
+                                    fDbSkip_SQL( -1 )
+                                endif   
+                            endif
+                        elseif ( lRecs &lt; 0 )
+                            do while ( lSkipped &gt; lRecs )
+                                fDbSkip_SQL( -1 )
+                                if fBof_SQL()
+                                    exit
+                                endif   
+                                lSkipped--
+                            enddo   
+                        endif
+                    endif
+                endif   
+            Return lSkipped
+            
+            Function fField_SQL(vField,nCmd)
+                local vRetorno
+                
+                vRetorno := cSQL_Field(iif(nCmd=NIL,nSQL_Select,nCmd),vField) 
+            Return vRetorno
+
+            Function fEvalua_Busqueda(cKey)  
+                  local cKeyOracle:=cKey,cPaso:=cKey 
+
+                  &amp;&amp; VAL
+                        ii=AT('VAL(',upper(cPaso))
+                        IF II&gt;0
+                            DO WHILE ii&gt;0
+                               cKeyOracle=LEFT(cPaso,ii-1)
+                               cPaso='TO_NUMBER'+SUBSTR(cPaso,ii+3)
+                               yy=fBuscaCierreFuncion('(',')',cPaso)
+                               IF yy&gt;0
+                                  cPaso=LEFT(cPaso,yy-1)+':'+SUBSTR(cPaso,yy+1)
+                                  cKeyOracle=cKeyOracle+LEFT(cPaso,yy-1)+SUBSTR(cPaso,yy)
+                               ENDIF
+                               ii=AT('VAL(',upper(cKeyOracle))
+                               cPaso=cKeyOracle
+                            ENDDO
+                        ENDIF
+                        
+                  &amp;&amp; DTOS
+                        cPaso=cKeyOracle
+                        ii=AT('DTOS',upper(cPaso))
+                        DO WHILE ii&gt;0
+                           cKeyOracle=LEFT(cPaso,ii-1)
+                           cPaso='TO_CHAR'+SUBSTR(cPaso,ii+4)
+                           yy=fBuscaCierreFuncion('(',')',cPaso)
+                           IF yy&gt;0
+                              cPaso=LEFT(cPaso,yy-1)+':'+SUBSTR(cPaso,yy+1)
+                              cKeyOracle=cKeyOracle+LEFT(cPaso,yy-1)+"á'yyyymmdd'"+SUBSTR(cPaso,yy)
+                           ENDIF
+                           ii=AT('DTOS',upper(cKeyOracle))
+                           cPaso=cKeyOracle
+                        ENDDO
+                        
+                  &amp;&amp; DTOC
+                        cPaso=cKeyOracle
+                        ii=AT('DTOC',upper(cPaso))
+                        IF II&gt;0
+                            DO WHILE ii&gt;0
+                               cKeyOracle=LEFT(cPaso,ii-1)
+                               cPaso='TO_CHAR'+SUBSTR(cPaso,ii+4)
+                               yy=fBuscaCierreFuncion('(',')',cPaso)
+                               IF yy&gt;0
+                                  cPaso=LEFT(cPaso,yy-1)+':'+SUBSTR(cPaso,yy+1)
+                                  cKeyOracle=cKeyOracle+LEFT(cPaso,yy-1)+",'dd/mm/yyyy'"+SUBSTR(cPaso,yy)
+                               ENDIF
+                               ii=AT('DTOC',upper(cKeyOracle))
+                               cPaso=cKeyOracle
+                            ENDDO
+                        ENDIF
+                        
+                  &amp;&amp; STR(
+                        cPaso=cKeyOracle
+                        ii=fBuscaFuncion('STR(',upper(cPaso))
+                        IF II&gt;0
+                            DO WHILE ii&gt;0
+                               cKeyOracle=LEFT(cPaso,ii-1)
+                               cPaso='TO_CHAR'+SUBSTR(cPaso,ii+3)
+                               xx=AT(',',cPaso)
+                               yy=fBuscaCierreFuncion('(',')',cPaso)
+                               IF xx&gt;0
+                                  cPaso=LEFT(cPaso,xx-1)+';'+SUBSTR(cPaso,xx+1)
+                                  cPaso=LEFT(cPaso,yy-1)+':'+SUBSTR(cPaso,yy+1)
+                                  cKeyOracle=cKeyOracle+LEFT(cPaso,xx)+STRTRAN(SUBSTR(cPaso,xx+1,yy-xx),',0','')+SUBSTR(cPaso,yy+1)
+                               ENDIF
+                               ii=fBuscaFuncion('STR(',upper(cKeyOracle))
+                               cPaso=cKeyOracle
+                            ENDDO
+                        ENDIF    
+
+                  &amp;&amp; LEFT(
+                        cPaso=cKeyOracle
+                        ii=AT('LEFT(',upper(cPaso))
+                        IF II&gt;0
+                            DO WHILE ii&gt;0
+                               cKeyOracle=LEFT(cPaso,ii-1)
+                               cPaso='SUBSTR'+SUBSTR(cPaso,ii+4)
+                               xx=AT(',',cPaso)
+                               yy=fBuscaCierreFuncion('(',')',cPaso)
+                               IF xx&gt;0
+                                  cPaso=LEFT(cPaso,xx-1)+';1;'+SUBSTR(cPaso,xx+1)
+                                  cKeyOracle=cKeyOracle+cPaso
+                               ENDIF
+                               ii=AT('LEFT(',upper(cKeyOracle))
+                               cPaso=cKeyOracle
+                            ENDDO
+                        ENDIF    
+                        
+                        
+                  &amp;&amp; STRZERO
+                        cPaso=cKeyOracle
+                        ii=AT('STRZERO',upper(cPaso))
+                        IF II&gt;0
+                            cKeyOracle=''
+                            DO WHILE ii&gt;0
+                               cKeyOracle=LEFT(cPaso,ii-1)
+                               cPaso='TRIM(TO_CHAR'+SUBSTR(cPaso,ii+7)
+                               xx=AT(',',cPaso)
+                               yy=fBuscaCierreFuncion('(',')',substr(cPaso,6))+5
+                               IF xx&gt;0
+                                  cPaso=LEFT(cPaso,xx-1)+';'+SUBSTR(cPaso,xx+1)
+                                  cPaso=LEFT(cPaso,yy-1)+':'+SUBSTR(cPaso,yy+1)
+                                  cKeyOracle=cKeyOracle+LEFT(cPaso,xx)+"RPAD('0'"+SUBSTR(cPaso,xx,yy-xx)+"))"+SUBSTR(cPaso,yy)
+                               ENDIF
+                               ii=AT('STRZERO',upper(cKeyOracle))
+                               cPaso=cKeyOracle
+                            ENDDO
+                        ENDIF
+                        
+                  IF LEN(TRIM(cKeyOracle))=0
+                     cKeyOracle=cKey
+                  ENDIF
+                  cKeyOracle:=STRTRAN(cKeyOracle,'+','||')
+                  cKeyOracle:=STRTRAN(cKeyOracle,';',',')
+                  cKeyOracle:=STRTRAN(cKeyOracle,':',')')
+                  cKeyOracle:=STRTRAN(cKeyOracle,'"',"'")
+
+                  do while (ii:=at('$',cKeyOracle))&gt;0
+                     xx:=rat(' ',left(cKeyOracle,ii))+1
+                     if (yy:=at(' .',substr(cKeyOracle,ii)))=0
+                        yy:=len(cKeyOracle)
+                     else
+                        yy+=ii-2                     
+                     endif
+                     cKeyOracle:=left(cKeyOracle,xx-1)+'INSTR('+strtran(substr(cKeyOracle,ii+1,yy-ii),'"',"'")+','+substr(cKeyOracle,xx,ii-xx)+')&gt;0'+substr(cKeyOracle,yy+1)
+                  enddo               
+                  
+                  do while (ii:=at('DELETE()',upper(cKeyOracle)))&gt;0
+                     cKeyOracle:=left(cKeyOracle,ii-1)+''+substr(cKeyOracle,ii+8)
+                  enddo
+                  if alltrim(upper(cKeyOracle))$'.NOT.'
+                     cKeyOracle:='' 
+                  endif
+                  
+                  do while (ii:=at('PADR(',upper(cKeyOracle)))&gt;0
+                     cKeyOracle:=left(cKeyOracle,ii-1)+'RPAD('+substr(cKeyOracle,ii+5)
+                  enddo
+                  do while (ii:=at('PADL(',upper(cKeyOracle)))&gt;0
+                     cKeyOracle:=left(cKeyOracle,ii-1)+'LPAD('+substr(cKeyOracle,ii+5)
+                  enddo
+                  do while (ii:=at('.NOT.',upper(cKeyOracle)))&gt;0
+                     cKeyOracle:=left(cKeyOracle,ii-1)+substr(cKeyOracle,ii+1,3)+substr(cKeyOracle,ii+5)
+                  enddo
+                  do while (ii:=at('.AND.',upper(cKeyOracle)))&gt;0
+                     cKeyOracle:=left(cKeyOracle,ii-1)+substr(cKeyOracle,ii+1,3)+substr(cKeyOracle,ii+5)
+                  enddo
+                  do while (ii:=at('.OR.',upper(cKeyOracle)))&gt;0
+                     cKeyOracle:=left(cKeyOracle,ii-1)+substr(cKeyOracle,ii+1,3)+substr(cKeyOracle,ii+5)
+                  enddo
+                  do while (ii:=at('INT(',upper(cKeyOracle)))&gt;0 .and. (ii=1 .or. substr(cKeyOracle,ii-1,1)$' (')
+                     cKeyOracle:=left(cKeyOracle,ii-1)+'TRUNC'+substr(cKeyOracle,ii+3)
+                  enddo 
+                  do while (ii:=at('LEN(',upper(cKeyOracle)))&gt;0 .and. (ii=1 .or. substr(cKeyOracle,ii-1,1)$' (')
+                     cKeyOracle:=left(cKeyOracle,ii-1)+'LENGTH'+substr(cKeyOracle,ii+3)
+                  enddo 
+                  do while (ii:=at('ALLTRIM',upper(cKeyOracle)))&gt;0
+                     cKeyOracle:=left(cKeyOracle,ii-1)+'R'+substr(cKeyOracle,ii+3)
+                  enddo 
+                  
+            Return cKeyOracle
+
+            FUNCTION fBuscaCierreFuncion(cA,cB,cPaso)
+              LOCAL i,c,y
+              
+              c=0
+              FOR i=1 TO LEN(cPaso)
+                  IF SUBSTR(cPaso,i,1)=cA
+                     c=c+1
+                  ELSE
+                     IF SUBSTR(cPaso,i,1)=cB
+                        exit
+                     ENDIF
+                  ENDIF
+              NEXT i
+              y=0
+              FOR i=1 TO LEN(cPaso)
+                  IF SUBSTR(cPaso,i,1)=cB
+                     y=y+1
+                     IF y=c
+                        EXIT
+                     ENDIF
+                  ENDIF
+              NEXT i
+              IF i&gt;LEN(cPaso)
+                 i=LEN(cPaso)
+              endif
+            RETURN i
+            
+            Function fBuscaFuncion(cFuncion,cTxt)
+              local i, d:=at(cFuncion,cTxt)
+              
+              for i:=d to len(cTxt)
+                  if upper(substr(cTxt,i,len(cFuncion)))=upper(cFuncion)
+                     if substr(cTxt,i-1,1)$' (+' .or. i=1
+                        exit
+                     endif
+                  endif
+              
+              next i
+            Return iif(i&gt;len(cTxt),0,i)
+
+            #pragma BEGINDUMP     
+                #include "hbapi.h"
+                #include &lt;SQLAPI.h&gt; // main SQLAPI++ header  
+                #include &lt;hbapiitm.h&gt;
+                #include "stdio.h"
+
+                #define n_cmd            0
+                #define n_cmdPOS         1
+                #define n_cmdServer      2
+
+                SAConnection conector_pos; 
+                SAConnection conector_server;
+                SACommand cmd[200];
+                int cmd_param[200][5];    //0=cmd_origen_Data, 1=lastrec()
+
+                HB_FUNC( CSQL_USE )
+                {
+                    cmd_param[hb_parnl(1)][0]=hb_parnl(2);
+                    hb_retnl( cmd_param[hb_parnl(1)][0] );
+                }
+                
+                HB_FUNC( CSQL_CONECTA )      
+                    {
+                       try
+                       {
+                          if ( hb_parnl(1) == n_cmdPOS ) {
+                              if(conector_pos.isConnected()) {
+                                     conector_pos.setAutoCommit(SA_AutoCommitOn);
+                                     hb_retc( "OK - Ya esta conectado a datos POS" );
+                              } else {
+                                     conector_pos.Connect("XE_POS", "fasapos", "Farmacia1", SA_Oracle_Client);
+                                     hb_retc( "OK - Conectado a datos POS" );
+                              }
+                            } else {
+                              if(conector_server.isConnected()) {
+                                     conector_server.setAutoCommit(SA_AutoCommitOn);
+                                     hb_retc( "OK - Ya esta conectado a datos SERVER" );
+                              } else {
+                                     conector_server.Connect("XE_SERVER", "fasapos", "Farmacia1", SA_Oracle_Client);
+                                     hb_retc( "OK - Conectado a datos SERVER" );
+                              }
+                            };
+                        } catch(SAException &amp;x) {
+                          try
+                             {
+                                 // on error rollback changes
+                                 if ( hb_parnl(1) == n_cmdPOS ) {
+                                     conector_pos.Rollback();
+                                 } else {
+                                     conector_server.Rollback();
+                                 }
+                                } catch(SAException &amp;) {
+
+                              }
+                                hb_retc( x.ErrText() + " (cSQL_Conecta)" );
+                            }
+                    }
+
+                HB_FUNC( CSQL_EJECUTA )     
+                    {
+                       bool b_isResultSet;
+                       int i = hb_parnl(1);
+                       const char* cUtiliza_cmd = " ";
+
+                       try
+                          {
+                              if ( hb_pcount() &gt;= 3 ) {
+                                 cUtiliza_cmd = hb_parc(3);
+                                 i = n_cmd;
+                              };
+                              if ( cmd_param[hb_parnl(1)][0] == n_cmdPOS ) {
+                                 cmd[i].setConnection(&amp;conector_pos);
+                              } else {
+                                 cmd[i].setConnection(&amp;conector_server);
+                              };
+
+                                cmd[i].setCommandText( hb_parc(2) );
+                                if ( i != n_cmd ) {
+                                    cmd[i].setOption("Scrollable") = "true";
+                                }
+                                cmd[i].Execute();
+                                
+                                if ( *cUtiliza_cmd == 'A' ) {
+                                    hb_retc( "OK - Ejecutado" );
+                                } else {
+                                     b_isResultSet = cmd[i].isResultSet();
+                                     if ( b_isResultSet ) {
+                                            if ( i &gt; n_cmd ) {                   
+                                                    cmd[i].FetchLast();
+                                                    cmd_param[i][1] = cmd[i].Field("rownum").asLong();
+                                                    cmd[i].FetchFirst();
+                                            } else {    
+                                                    cmd[i].FetchNext();                                     
+                                            }
+                                            hb_retc( "OK - Ejecutado" );
+                                     } else {
+                                         hb_retc( "NOT - isResultSet" );
+                                     }
+                                }
+
+                            } catch(SAException &amp;x) {
+                                try
+                                {
+                                  // on error rollback changes
+                                    if ( hb_parnl(1) == n_cmdPOS ) {
+                                     conector_pos.Rollback();
+                                    } else {
+                                        conector_server.Rollback();
+                                    }
+                                } catch(SAException &amp;) {
+
+                                }
+                                hb_retc( x.ErrText() + " (cSQL_Ejecuta)" );
+                            }
+                    }
+
+                HB_FUNC( CSQL_KEYS )    
+                    {
+                          PHB_ITEM pArray = hb_itemNew( NULL );    
+                          PHB_ITEM pValue;
+                            SAString cNombreIndice;
+                          
+                          hb_arrayNew( pArray, 0 );
+                            cNombreIndice = ' ';
+                          try
+                                {
+                                 while(cmd[n_cmd].FetchNext()) 
+                                 { 
+                                       if ( cmd[n_cmd].Field(2).asString() != cNombreIndice ) {
+                                            pValue = hb_itemPutC( NULL, cmd[n_cmd].Field(2).asString() );
+                                            hb_arrayAdd( pArray, pValue );
+                                            cNombreIndice = cmd[n_cmd].Field(2).asString();
+                                        }
+                                    }
+                                    hb_itemCopy( hb_param( 1, HB_IT_ANY ), pArray );
+                                    hb_itemRelease( pArray );
+                                    hb_itemRelease( pValue );
+                                } catch(SAException &amp;x) {
+                                    hb_retc( x.ErrText() + " (cSQL_Key)" );
+                                }
+                    }
+
+                HB_FUNC( CSQL_DBSKIP )       
+                    {
+                        int i = hb_parnl(1);
+                        int c = 1;
+                        int x = 1;
+                        try
+                        {
+                            if ( hb_pcount() &gt; 1 ) {
+                                c = hb_parnl(2);
+                                if (c &lt; 0 ) {
+                                    x = c;
+                                    c = -1;
+                                }
+                            }
+                            while( x &lt;= c ) {
+                               if ( x &gt; 0 ) { 
+                                    cmd[i].FetchNext();
+                                } else {
+                                    cmd[i].FetchPrior();
+                                }   
+                                x = x + 1;
+                            };
+
+                        } catch(SAException &amp;x) {
+                             hb_retc( x.ErrText() + " (cSQL_DbSkip)" );
+                        }
+                    }
+
+                HB_FUNC( CSQL_DBGOTO )       
+                    {
+                       int i = hb_parnl(1);
+                        int x = 1;
+                       try
+                        {
+            // SIMULA DBGOTO(X)
+                            cmd[i].FetchFirst();
+                            while ( x &lt; hb_parnl(2) ) {
+                                cmd[i].FetchNext();
+                                x = x + 1;
+                            }
+            //              
+                        } catch(SAException &amp;x) {
+                            hb_retc( x.ErrText() + " (cSQL_DbGoto)" );
+                        }
+                    }
+                    
+                    
+                HB_FUNC( CSQL_DBGOTOP )       
+                    {
+                       int i = hb_parnl(1);
+                       try
+                        {
+                          cmd[i].FetchFirst();
+                        } catch(SAException &amp;x) {
+                          hb_retc( x.ErrText() + " (cSQL_DbGoTop)" );
+                        }
+                    }
+                    
+                HB_FUNC( CSQL_DBGOBOTTOM )       
+                    {
+                       int i = hb_parnl(1);
+                       try
+                        {
+                          cmd[i].FetchLast();
+                        } catch(SAException &amp;x) {
+                          hb_retc( x.ErrText() + " (cSQL_DbGoBottom)" );
+                        }
+                    }
+
+                HB_FUNC( CSQL_BOF )       
+                    {
+                       int i = hb_parnl(1);
+                       try
+                        {
+                          if ( cmd[i].Field(1).asLong() == 1 ) {
+                                hb_retnl( 1 );
+                            } else {
+                                hb_retnl( 0 );
+                            }
+                        } catch(SAException &amp;x) {
+                          hb_retc( x.ErrText() + " (cSQL_Bof)" );
+                        }
+                    }
+                    
+                HB_FUNC( CSQL_EOF )       
+                    {
+                       int i = hb_parnl(1);
+                       try
+                        {
+                          if ( cmd[i].Field(1).asLong() == cmd_param[i][1] ) {
+                                hb_retnl( 1 );
+                            } else {
+                                hb_retnl( 0 );
+                            }
+                        } catch(SAException &amp;x) {
+                          hb_retc( x.ErrText() + " (cSQL_Eof)" );
+                        }
+                    }
+                    
+                HB_FUNC( CSQL_LASTREC )       
+                    {
+                        int i = hb_parnl(1);
+                       try
+                        {
+                            hb_retnl( cmd_param[i][1] );
+                       } catch(SAException &amp;x) {
+                          hb_retc( x.ErrText() + " (cSQL_LastRec)" );
+                       }
+                    }
+
+                HB_FUNC( CSQL_FIELD )   
+                    {
+                        SADateTime dtValue;
+                       int i = hb_parnl(1);
+                       try
+                       {
+                              //  0 - SA_dtUnknown    Data type is unknown.
+                              //  1 - SA_dtBool    Data type is C bool .
+                              //  2 - SA_dtShort    Data type is C short.
+                              //  4 - SA_dtLong    Data type is C long.
+                              //  6 - SA_dtDouble    Data type is C double.
+                              //  7 - SA_dtNumeric    Data type is SANumeric (used internally).
+                              //  8 - SA_dtDateTime    Data type is SADateTime.
+                              // 10 - SA_dtString    Data type is character string (SAString).
+                              // 11 - SA_dtBytes    Data type is binary string (SAString).
+                              // 12 - SA_dtLongBinary    Data type is long binary data (SAString).
+                              // 13 - SA_dtLongChar    Data type is long character data (SAString).
+                              // 14 - SA_dtBLob     Data type is BLob data (SAString).
+                              // 15 - SA_dtCLob     Data type is CLob data (SAString).
+                              // 16 - SA_dtCursor    Data type is Oracle REF CURSOR (SACommand).
+                              // 17 - SA_dtSpecificToDBMS    Data type is server-specific.
+
+                              // printf("Tipo: %d \n",cmd[i].Field(hb_parc(2)).FieldType());
+
+                              switch (cmd[i].Field(hb_parc(2)).FieldType())
+                              {
+                                     case SA_dtDateTime:
+                                                dtValue = cmd[i].Field(hb_parc(2)).asDateTime();
+                                            hb_retd( dtValue.GetYear(), dtValue.GetMonth(), dtValue.GetDay());
+                                            break;
+                                     case SA_dtBool:
+                                            hb_retnl( cmd[i].Field(hb_parc(2)).asLong() );
+                                            break;
+                                     case SA_dtNumeric:
+                                            hb_retnl( cmd[i].Field(hb_parc(2)).asLong() );
+                                            break;
+                                     case SA_dtLong:
+                                            hb_retnl( cmd[i].Field(hb_parc(2)).asLong() );
+                                            break;
+                                     case SA_dtDouble:
+                                            hb_retnl( cmd[i].Field(hb_parc(2)).asLong() );
+                                            break;
+                                     case SA_dtString:
+                                            hb_retc( cmd[i].Field(hb_parc(2)).asString() );
+                                            break;
+                                     case SA_dtLongChar:
+                                            hb_retc( cmd[i].Field(hb_parc(2)).asString() );
+                                            break;
+                                     default:
+                                            break;
+                              };
+                        } catch(SAException &amp;x) {
+                                     hb_retc( x.ErrText() + " (cSQL_Field)" );
+                        }                        
+                    }
+                    
+            #pragma ENDDUMP     
+
+#Endif</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p168788">
+    <div class="poster">
+      <div class="name" style="color:#105289">Rick Lipkin</div>
+      <div class="rank">Posts: 2706</div>
+      <img class="avatar avatar-img" src="avatars/35.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:50 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Oracle API</span><br>
+        Posted: Wed Dec 10, 2014 02:21 PM
+      </div>
+      <div class="content"><p>Antonio</p>
+<p>I appreciate the code .. just a couple of questions ?</p>
+<p>1) How is Jorge connecting to Oracle from Linux ( ole client ) ?<br>
+2) What about TnsNames.ora and Sqlnet.ora ?</p>
+<p>Thanks<br>
+Rick Lipkin</p></div>
+    </div>
+  </div>
+  <div class="post" id="p168867">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Oracle API</span><br>
+        Posted: Thu Dec 11, 2014 01:52 PM
+      </div>
+      <div class="content"><p>Rick,</p>
+<p>Jorge told me that he is using SQLAPI to manage Oracle:</p>
+<!-- m -->
+<p><a class="postlink" href="http://www.sqlapi.com">http://www.sqlapi.com</a></p>
+<p>thats all that I know <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p168881">
+    <div class="poster">
+      <div class="name" style="color:#105289">Horizon</div>
+      <div class="rank">Posts: 1387</div>
+      <div class="avatar"></div>
+      Joined: Fri May 23, 2008 01:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Oracle API</span><br>
+        Posted: Thu Dec 11, 2014 06:29 PM
+      </div>
+      <div class="content"><blockquote><cite>Antonio Linares wrote:</cite>Rick,<br>
+<br>
+Jorge told me that he is using SQLAPI to manage Oracle:<br>
+ <br>
+<!-- m --><a class="postlink" href="http://www.sqlapi.com">http://www.sqlapi.com</a><!-- m --><br>
+<br>
+thats all that I know </blockquote><br>
+<br>
+Hi Antonio,<br>
+<br>
+What do yOu think about sqlapi++?. Is it faster than ado?<br>
+<br>
+Thanks,</div>
+    </div>
+  </div>
+  <div class="post" id="p168885">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Oracle API</span><br>
+        Posted: Thu Dec 11, 2014 07:02 PM
+      </div>
+      <div class="content"><p>Hakan,</p>
+<p>I have not tested them. Anyhow, to me ADO is a great choice <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

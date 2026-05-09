@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>HIX -&amp;gt; Ticket Project (I) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46058">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-45.html">mod_harbour</a> HIX -&amp;gt; Ticket Project (I)</div>
+  <div class="post" id="p282105">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">HIX -&amp;gt; Ticket Project (I)</span><br>
+        Posted: Sun Oct 26, 2025 11:11 AM
+      </div>
+      <div class="content"><r>Hi, <br/><br>
+<br/><br>
+Let's create a simple app for city folks so kids can watch E.T Movie at summer parties. They just need to enter their name and the system will register them and give them a code to access and watch the movie. Easy peasy.<br/><br>
+<br/><br>
+We'll create a file called ticket.html<br/><br>
+<br/><br>
+We'll set up the ticket request process and call it proc_ticket.prg<br>
+<CODE lang="html"><s><div class="codebox"><div class="codehead"><span>Code (html):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-html">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;body&gt;
+
+  &lt;h2&gt;Movie Ticket&lt;/h2&gt;
+
+  &lt;form action="proc_ticket.prg" method='post' &gt;
+    &lt;label for="user_name"&gt;Name:&lt;/label&gt;&lt;br&gt;
+    &lt;input type="text" name="user_name" value="John"&gt;&lt;br&gt;&lt;br&gt;
+    &lt;input type="submit" value="Give me a ticket"&gt;
+  &lt;/form&gt; 
+
+  &lt;p&gt;If you click the "Submit" button, the form-data will be sent to a page called "proc_ticket.prg".&lt;/p&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+We'll set up the ticket request process and call it proc_ticket.prg<br/><br>
+<br>
+<CODE lang="php"><s><div class="codebox"><div class="codehead"><span>Code (php):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-php">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;#define FILE_TICKET  	hb_dirbase() + 'ticket.dbf'
+#define MAX_TIMEOUT 	5
+
+function main()
+
+     local lExist 	:= file( FILE_TICKET )
+     local hData 	:= UPost()
+     local cAlias, aDbf, cMessage		
+	
+	if ! file( FILE_TICKET )
+	
+		aDbf    := {}
+		AAdd(aDbf, { 'name', 'C', 40, 0 })
+		AAdd(aDbf, { 'data', 'D',  8, 0 })		
+		AAdd(aDbf, { 'key'	, 'C',  5, 0 })		
+		
+		dbCreate( FILE_TICKET, aDbf )
+
+	endif
+
+	USE ( FILE_TICKET ) SHARED NEW 
+	
+     cAlias := alias() 
+
+	(cAlias)-&gt;( Dbappend() )   
+
+	if (cAlias)-&gt;( TRlock() ) 
+
+		(cAlias)-&gt;name 	:= hData[  'user_name' ]
+		(cAlias)-&gt;data 	:= date()
+		(cAlias)-&gt;key 	:= key()
+
+		(cAlias)-&gt;( DbUnlock() )
+
+	endif   		
+	
+    (cAlias)-&gt;( DbCommit() ) 
+	
+	cMessage := '&lt;html&gt;'
+	cMessage += '&lt;h1&gt;Request processed !&lt;/h1&gt;&lt;hr&gt;'
+	cMessage += '&lt;h3&gt;Hi ' + hData[ 'user_name' ] + '. Your access code is ' + (cAlias)-&gt;key + '&lt;/h3&gt;'
+	cMessage += '&lt;hr&gt;&lt;small&gt;' + 'This ticket was processed at ' + dtoc( date() ) + ' ' + time() + '&lt;/small&gt;'
+	cMessage += '&lt;/html&gt;'
+ 
+    (cAlias)-&gt;( DbCloseArea() ) 
+
+ RETU cMessage
+	
+//---------------------------------------------------// 
+
+function TRLock()
+    
+    LOCAL lRlock  	:= .F.
+    LOCAL nIni  	:= Seconds()
+    LOCAL cAlias  	:= Alias()
+    LOCAL nElapsed
+    
+    WHILE !lRlock
+	
+		lRlock := (cAlias)-&gt;(DbRlock())
+        
+        if !lRlock
+            nElapsed := Seconds() - nIni
+            if nElapsed &gt;= MAX_TIMEOUT
+                EXIT  // Timeout
+            endif
+            hb_IdleSleep(0.01)  
+        endif
+		
+    END
+    
+RETU lRlock	
+
+//---------------------------------------------------// 
+
+FUNCTION Key()
+
+    LOCAL cKey 	 := ''
+    LOCAL cWords := 'abcdefghijklmnopqrstuvwxyz'
+    LOCAL nI, nPos
+    
+    FOR nI := 1 TO 5
+        nPos := hb_RandomInt(1, Len(cWords))
+        cKey += SubStr(cWords, nPos, 1)
+    NEXT
+    
+RETURN cKey
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+It's super basic code that handles everything in a simple way - it even creates the table! Obviously this could be improved a ton: indexes, maximum requests, number of tickets, capacity limits... but I'll leave that for you all to work on  <E>:D</E> <br/><br>
+<br/><br>
+We will start the HIX server, and run localhost/ticket.html and voilà, our app is ready to go<br/><br>
+<br/><br>
+<IMG src="https://i.postimg.cc/qqvQkCqv/screen1.png"><s><img src="</s><URL url="https://i.postimg.cc/qqvQkCqv/screen1.png">https://i.postimg.cc/qqvQkCqv/screen1.png</URL><e>" alt="" loading="lazy"></e></IMG><br/><br>
+<br/><br>
+<IMG src="https://i.postimg.cc/zfYjyQv4/screen2.png"><s><img src="</s><URL url="https://i.postimg.cc/zfYjyQv4/screen2.png">https://i.postimg.cc/zfYjyQv4/screen2.png</URL><e>" alt="" loading="lazy"></e></IMG><br/><br>
+<br/><br>
+All the data will be in our table<br/><br>
+<br/><br>
+<IMG src="https://i.postimg.cc/RV3QXmnw/screen3.png"><s><img src="</s><URL url="https://i.postimg.cc/RV3QXmnw/screen3.png">https://i.postimg.cc/RV3QXmnw/screen3.png</URL><e>" alt="" loading="lazy"></e></IMG><br/><br>
+<br/><br>
+Is it easy?  <E>:D</E></r></div>
+    </div>
+  </div>
+  <div class="post" id="p282107">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HIX -&amp;gt; Ticket Project (I)</span><br>
+        Posted: Sun Oct 26, 2025 11:13 AM
+      </div>
+      <div class="content"><p><r>Working url please <E>;-)</E></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p282109">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HIX -&amp;gt; Ticket Project (I)</span><br>
+        Posted: Sun Oct 26, 2025 11:20 AM
+      </div>
+      <div class="content"><p><r>Antonio, <br/><br>
+<br/><br>
+This is an exercise for you to create on your computer... If we finish the whole exercise (a few chapters) maybe I'll put it on some URL.  <E>:wink:</E> <br/><br>
+<br/><br>
+C.</r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p282118">
+    <div class="poster">
+      <div class="name" style="color:#105289">FiveWiDi</div>
+      <div class="rank">Posts: 1444</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 02:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HIX -&amp;gt; Ticket Project (I)</span><br>
+        Posted: Sun Oct 26, 2025 07:14 PM
+      </div>
+      <div class="content"><p><t>Bona tarda Charly,<br/><br>
+<br/><br>
+A ver, yo estoy muy lejos de esto.<br/><br>
+Me quedé en FWeb, lo recuerdas? Que por cierto no aparece en el historial evolutivo, y ahí empezó todo.. creo.<br/><br>
+<br/><br>
+Pero cada vez que te leo me da un subidón.<br/><br>
+<br/><br>
+Pregunto (ya te he dicho que estoy muy lejos):<br/><br>
+<br/><br>
+-Si las funciones TRlock() y Key() las quiero tener para más menesteres, las puedo poner en un PRG independiente? Cómo se llamaría a este PRG para poder ejecutar estas funciones?<br/><br>
+<br/><br>
+Ya nos dices,</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p282119">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HIX -&amp;gt; Ticket Project (I)</span><br>
+        Posted: Mon Oct 27, 2025 06:12 AM
+      </div>
+      <div class="content"><r>Bones, <br/><br>
+<br>
+<QUOTE author="FiveWiDi" post_id="282118" time="1761506092" user_id="92"><s>[quote=FiveWiDi post_id=282118 time=1761506092 user_id=92]</s><br>
+Me quedé en FWeb, lo recuerdas? Que por cierto no aparece en el historial evolutivo, y ahí empezó todo.. creo.<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+Cierto, pero eso fue en php. Todavía hoy en dia en la administración hay una aplicación que lo usa y va como un cohete.  <E>:D</E> <br/><br>
+<br>
+<QUOTE author="FiveWiDi" post_id="282118" time="1761506092" user_id="92"><s>[quote=FiveWiDi post_id=282118 time=1761506092 user_id=92]</s><br>
+Si las funciones TRlock() y Key() las quiero tener para más menesteres, las puedo poner en un PRG independiente? Cómo se llamaría a este PRG para poder ejecutar estas funciones?,<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+En una aplicación clásica esto seria tener una librería que enlazarías a tu aplicación y todo estaria en una saco llamado exe. En la web vas cargando a medida que necesites. Ahora misma tienes la opción de meter en este caso estas 2 funciones en un fichero llamado por ejemplo milib.prg y en tu código hacer un #include 'mylib.prg'   <br/><br>
+<br/><br>
+Esta previsto poder cargar en el momento de arrancar el servidor ficheros hrb que serian como librerias. <br/><br>
+<br/><br>
+Prueba el ejercicio propuesto y vamos avanzando... Vais a ver que es mas simple de lo que imaginais<br/><br>
+<br/><br>
+C.</r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

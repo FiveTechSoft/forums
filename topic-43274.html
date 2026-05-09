@@ -1,0 +1,1328 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Transym OCR for Harbour - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-43274">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Transym OCR for Harbour</div>
+  <div class="post" id="p260422">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Transym OCR for Harbour</span><br>
+        Posted: Thu Jun 01, 2023 10:15 PM
+      </div>
+      <div class="content"><r>Hello Fivewinners; <br/><br>
+<br/><br>
+I have re-written my wrapper functions to OCR from Harbour using Transym.  This time using Transym TOCR version 5.1.  TOCR is pretty accurate.  The biggest problem is their support sucks and you must purchase the license which is good in one single pc.  Installing the license is cumbersome to say the least.  For these reasons I plan to write these wrappers and class for Tesseract sometime in the near future.<br/><br>
+<br/><br>
+In the meantime, here is what you need to work with Transym OCR.<br/><br>
+<br/><br>
+First the actual Harbour class:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;//-----------------------------------------------------------------------------------
+//Author:  Reinaldo Crespo
+//reinaldo.crespo@gmail.com
+//reinaldocrespo@structuredsystems.com
+//reinaldo.crespo@icloud.com 
+//-----------------------------------------------------------------------------------
+
+#include "hbclass.ch"
+#include "TOCRUser.h"
+
+#xcommand DEFAULT &lt;uVar1&gt; := &lt;uVal1&gt; ;
+   [, &lt;uVarN&gt; := &lt;uValN&gt; ] =&gt; ;
+      If( &lt;uVar1&gt; == nil, &lt;uVar1&gt; := &lt;uVal1&gt;, ) ;;
+    [ If( &lt;uVarN&gt; == nil, &lt;uVarN&gt; := &lt;uValN&gt;, ); ]
+
+#define CRLF chr( 13 )  + chr( 10 )
+#define _MAX_LOG_SIZE 8192
+
+//-----------------------------------------------------------------------------------
+//TOCRv51_functions.cpp
+//Class to use Transym OCR software from a harbour application.
+//you will also need TOCRv51_functions.cpp source file that includes 
+//the actual Harbour VM wrapper functions 
+//to use Transym TOCRDLL.dll.  
+//
+//-----------------------------------------------------------------------------------
+//Steps to follow to use this class:
+//1. Instanciate an object using TOcr():New()
+//2. Assign nJobType the appropriate values from tocrUser.h TOCRJOBTYPEs
+//3. Assign the file name to be OCRed to cFileName and optionally assign nErrorMode a value
+//4. run SetupJob() method
+//5. run OCRFromFile that returns the OCRed text.
+//
+//if OCRing from scanneer, then these would be the steps to follow
+//1. instanciate the object using Tocr():New()
+//2. optionally assign nErrorMode a value from TOCRERRORMODEs from tocrUser.h
+//3. run OCRFromScanner() method that returns OCRed text.
+//
+//optionally you may call SetupJob() sending up to 4 parameters.
+//1 Jobtype = one of TOCRJOBTYPE_s from tocruser.h
+//2. nErrorMode = one of TOCRERRORMODE_s from tocrUser.h
+//4. cLogfile name is file where logmessages are to be sent to
+//5. nMaxLogSize for maximum log file size before space is recycled.
+//Or you can set these data and then call SetupJob() with no parameters.
+//
+//-----------------------------------------------------------------------------------
+CLASS TOCR 
+
+   DATA nJobType     INIT TOCRJOBTYPE_PDFFILE
+   DATA nNumPages    INIT 0 
+   DATA nMaxLogSize  INIT _MAX_LOG_SIZE
+   DATA nErrorMode   INIT TOCRERRORMODE_LOG
+
+   DATA cLogFile     INIT 'TOCR.log'
+   DATA cFileName    INIT ''
+   DATA cOCRText     INIT ''
+
+   DATA bProgress 
+
+   METHOD New() INLINE SELF 
+   METHOD SetupJob( nJobtype, nErrorMode, cLogFile, nMaxLogSize ) 
+   METHOD End(lAlsoKillAnyPendingJobs ) 
+
+   METHOD OCRFromFile( cFileName )
+   METHOD GetNumPages() 
+
+   METHOD OCRFromScanner() 
+
+   METHOD Reset( lAlsoKillAnyPendingJobs ) 
+
+END CLASS 
+
+
+//-----------------------------------------------------------------------------------
+METHOD End(lAlsoKillAnyPendingJobs ) 
+
+   ::Reset( lAlsoKillAnyPendingJobs )
+   SELF := NIL 
+
+RETURN NIL 
+
+
+
+//-----------------------------------------------------------------------------------
+METHOD SetupJob( nJobtype, nErrorMode, cLogFile, nMaxLogSize ) 
+   LOCAL cFileExt 
+   
+   IF nJobtype != Nil ; ::nJobtype := nJobtype; ENDIF 
+   IF nErrorMode != Nil ; ::nErrorMode := nErrorMode ; ENDIF 
+   IF cLogFile != Nil ; ::cLogFile := cLogFile ; ENDIF 
+   IF nMaxLogSize != NIL; ::nMaxLogSize := nMaxLogSize ; ENDIF 
+
+   DEFAULT ::nJobType := TOCRJOBTYPE_PDFFILE
+   DEFAULT ::nErrorMode := TOCRERRORMODE_LOG 
+   DEFAULT ::cLogFile := "tocr.log"
+   DEFAULT ::nMaxLogSize := _MAX_LOG_SIZE
+
+   IF file( ::cFileName )
+      hb_FNameSplit( LOWER( ::cFileName ),,, @cFileExt )
+      ::nJobType := iif( cFileExt = '.pdf', TOCRJOBTYPE_PDFFILE, TOCRJOBTYPE_TIFFFILE )
+   ENDIF 
+
+   #ifdef TRANSYM
+      TOCRSetup( ::nJobType, ::nErrorMode, ::cLogFile, ::nMaxLogSize )
+   #endif 
+
+RETURN NIL 
+
+
+
+//-----------------------------------------------------------------------------------
+METHOD GetNumPages() 
+
+   ::nNumPages := 0 
+
+   IF File( ::cFileName )
+
+      #ifdef TRANSYM
+         ::nNumPages := TocrGetNumPages( ::cFileName )
+      #endif 
+
+   ENDIF 
+
+RETURN ::nNumPages
+
+
+//-----------------------------------------------------------------------------------
+METHOD OCRFromFile( cFileName )
+   LOCAL nPage 
+
+   IF cFileName != NIL ; ::cFileName := cFileName ; ENDIF 
+
+   IF file( ::cFileName )  
+
+      IF ::nNumPages == 0 
+         #IFDEF TRANSYM
+            ::GetNumPages()
+         #ENDIF 
+      ENDIF 
+
+      IF ::nNumPages &gt; 0 
+
+         FOR nPage := 1 TO ::nNumPages
+
+            IF ::bProgress != NIL 
+               EVAL( ::bProgress, nPage )
+            ENDIF 
+            #ifdef TRANSYM
+               ::cOCRText += TOCRFromFile( ::cFileName, nPage ) + CRLF 
+            #ENDIF 
+      
+         NEXT 
+
+      ENDIF
+
+   ENDIF 
+
+RETURN ::cOCRText 
+
+//-----------------------------------------------------------------------------------
+METHOD Reset( lAlsoKillAnyPendingJobs ) 
+
+   DEFAULT lAlsoKillAnyPendingJobs := .F. 
+   #ifdef TRANSYM
+      IF lAlsoKillAnyPendingJobs ; TOCRReset()  ;ENDIF 
+   #endif 
+
+   ::nNumPages := 0 
+   ::cOCRText  := ''
+   ::cFileName := ''
+
+RETURN NIL 
+
+
+//-----------------------------------------------------------------------------------
+METHOD OCRFromScanner() 
+   #IFDEF TRANSYM
+      ::cOCRText := TOCRFromScanner()
+   #ENDIF 
+RETURN ::cOCRText 
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Now the c wrapper functions.  Notice there's also some c++.<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;//-----------------------------------------------------------------------------------
+//Author:  Reinaldo Crespo
+//reinaldo.crespo@gmail.com
+//reinaldocrespo@structuredsystems.com
+//reinaldo.crespo@icloud.com 
+//-----------------------------------------------------------------------------------
+
+
+#include &lt;string&gt;
+
+#include &lt;stdlib.h&gt;
+#include &lt;hbapi.h&gt;
+#include &lt;hbapistr.h&gt;
+#include "hbvm.h"
+
+#include &lt;windows.h&gt;
+
+#include &lt;stdio.h&gt;
+#include &lt;time.h&gt;
+#include &lt;TOCRdll.h&gt;
+#include &lt;TOCRuser.h&gt;
+#include &lt;TOCRerrs.h&gt;
+
+
+#include &lt;conio.h&gt;
+#include &lt;io.h&gt;
+#include &lt;fcntl.h&gt;
+#define WIN32_LEAN_AND_MEAN     // Exclude rarely-used stuff from Windows headers
+
+#pragma warning(disable : 4996)
+#include "TOCRlangsel.h"
+
+// for PDF
+#include "DL_TOCRPDF.h"
+
+#define MAX_LOG_SIZE    8192
+
+typedef struct
+{
+   long JobNo    ;
+   long JobType   ; 
+   long ErrorMode ;
+   char * LogFileName ;
+   long MaxLogSize;  
+   long Orientation ;//from one of TOCRJOBORIENT_s from TOCRUser.h
+   long CCThreshold; //0 to 100.  Values between .5 and .80 seems to work best.
+                     //referr to Transym docs for more information on CCThreshold.
+
+} HB_TOCRJOB;
+
+static HB_TOCRJOB hb_tocrJob = { TOCRCONFIG_DEFAULTJOB, 
+                                 TOCRJOBTYPE_PDFFILE, 
+                                 TOCRERRORMODE_LOG, 
+                                 "tocr.log", 
+                                 MAX_LOG_SIZE, 
+                                 TOCRJOBORIENT_AUTO, 0.75 }; 
+
+bool OCRWait(long JobNo, TOCRJOBINFO2 JobInfo2);
+bool OCRWait(long JobNo, TOCRJOBINFO_EG JobInfoEg);
+bool OCRWait_PDF(long JobNo, TOCRJOBINFO_EG&amp; JobInfoEg, char* filename, TOCRPROCESSPDFOPTIONS_EG&amp; pPdfOpts);
+bool OCRPoll(long JobNo, TOCRJOBINFO2 JobInfo2);
+bool GetResults(long JobNo, TOCRRESULTS **Results);
+bool GetResults(long JobNo, TOCRRESULTSEX **Results);
+bool GetResults(long JobNo, TOCRRESULTSEX_EG **Results);
+bool FormatResults(TOCRRESULTS *Results, char *Msg);
+bool FormatResults(TOCRRESULTSEX *Results, char *Msg);
+bool FormatResults(TOCRRESULTSEX_EG *Results, wchar_t *Msg);
+
+void LogData( const char * Msg );
+void LogData( const wchar_t * Msg );
+void trimTrailing(wchar_t *str);
+
+
+HANDLE ConvertGlobalMemoryToMMF(HANDLE hMem);
+
+//-----------------------------------------------------------------------------------------------------
+HB_FUNC( TOCRSETUP )
+{
+   if( hb_pcount() &gt; 0 ) {
+      hb_tocrJob.JobType = HB_ISNUM( 1 ) ? hb_parnl( 1 ) : TOCRJOBTYPE_PDFFILE ; 
+   }
+
+   if( hb_pcount() &gt; 1 ) {
+      hb_tocrJob.ErrorMode = HB_ISNUM( 1 ) ? hb_parnl( 1 ) : TOCRERRORMODE_LOG ; 
+   }
+
+   if( hb_pcount() &gt; 2 ){
+      hb_tocrJob.LogFileName =  (char *) hb_parcx(3);
+   }
+
+   if( hb_pcount() &gt; 3 ){
+      hb_tocrJob.MaxLogSize =  hb_parnl(4);
+   }
+
+}
+
+//-----------------------------------------------------------------------------------------------------
+HB_FUNC( TOCRRESET )
+{
+   hb_retnl(TOCRShutdown(hb_tocrJob.JobNo));
+}
+
+
+//-----------------------------------------------------------------------------------------------------
+//Parm #1 is filename with full path
+//returns the number of pages
+HB_FUNC( TOCRGETNUMPAGES )
+{
+   char * InputFile  = ( char * ) hb_parcx( 1 );  
+   long NumPages     = 0 ;
+   long Status ;
+   long JobNo        = 0 ;
+   char Msg[TOCRJOBMSGLENGTH];
+
+   Status = TOCRSetConfig(TOCRCONFIG_DEFAULTJOB, TOCRCONFIG_DLL_ERRORMODE, hb_tocrJob.ErrorMode );
+   sprintf(Msg, "inputfile %s JobType %ld Error Mode %ld\n", InputFile, hb_tocrJob.JobType, hb_tocrJob.ErrorMode );
+   LogData( Msg ) ;
+
+   //Status = TOCRSetConfigStr(TOCRCONFIG_DEFAULTJOB, TOCRCONFIG_LOGFILE, hb_tocrJob.LogFileName);
+   //sprintf(Msg, "inputfile %s JobType %ld Status %ld Error Mode %ld\n", 
+   //InputFile, hb_tocrJob.JobType, Status, hb_tocrJob.ErrorMode );
+   //LogData( Msg ) ;
+
+   if ( Status == TOCR_OK ){
+
+      Status = TOCRInitialise( &amp;JobNo );
+      hb_tocrJob.JobNo = JobNo ; 
+
+      sprintf(Msg, "TOCRInitialise Status %ld \n", Status );
+      LogData( Msg ) ;
+
+      if ( Status == TOCR_OK ) {
+
+         Status = TOCRGetNumPages( JobNo, InputFile, hb_tocrJob.JobType, &amp;NumPages);
+         sprintf(Msg, "TOCRGetNumPages() Status %ld. Numb Pages %ld", Status, NumPages );
+         LogData( Msg ) ;
+      }
+
+   }
+
+   if ( Status != TOCR_OK ) {
+
+      sprintf(Msg, "InputFile %s TOCRGetNumPages failed with error %ld", InputFile, Status);
+      LogData( Msg ) ;
+
+   } else {
+
+      sprintf(Msg, "InputFile %s Number of Pages %ld", InputFile, NumPages);
+      LogData( Msg);
+
+   }
+
+   TOCRShutdown( JobNo );
+   hb_retnl(NumPages);
+
+}
+
+
+//-----------------------------------------------------------------------------------------------------
+//parameters 
+// 1. input file with image 
+// 2. type of file to ocr defaults to TIFF 
+// 3. options mask defaults to 0
+//returns OCRed text
+// 4. Paper Orientation.  It defaults to AUTO 
+// 5. TOCR error mode.  It defautls to TOCR.log file 
+// 6. Page No in Inputfile to OCR
+
+HB_FUNC( TOCRFROMFILE )
+{
+   TOCRJOBINFO_EG    JobInfo_EG;
+   TOCRRESULTSEX_EG* Results = 0;
+   long           Status;
+   long           JobNo = 0;
+   char           *InputFile = ( char * ) hb_parcx( 1 );   //parm 1 is input file
+   long           PageNo      = ( HB_ISNUM( 2 ) ? hb_parnl( 2 ) : 1 )-1; //page num to OCR dimensioned from 0
+   HB_WCHAR       Msg[10240];   //will contain OCRed text extracted from filename page #PageNo.
+   char           LogMsg[ TOCRJOBMSGLENGTH ];
+
+   //byte            OptionsMask = HB_ISNUM( 3 ) ? hb_parnl( 3 ) : 0x00000000 ;
+   //long            Orientation = HB_ISNUM( 4 ) ? hb_parnl( 4 ) : TOCRJOBORIENT_AUTO; 
+   //long            ErrorMode   = HB_ISNUM( 5 ) ? hb_parnl( 5 ) : TOCRERRORMODE_LOG ; 
+
+   memset( Msg, 0, sizeof( Msg ) );  //make sure Msg is empty
+
+   TOCRSetConfig( TOCRCONFIG_DEFAULTJOB, TOCRCONFIG_DLL_ERRORMODE, hb_tocrJob.ErrorMode ) ;
+   //Status = TOCRSetConfigStr(TOCRCONFIG_DEFAULTJOB, TOCRCONFIG_LOGFILE, hb_tocrJob.LogFileName);
+   //sprintf( LogMsg, "Inputfile: %s. TOCRSetConfig status: %d.  ErrorMode %d.  Page Numb: %ld", 
+   //      InputFile, Status, hb_tocrJob.ErrorMode, PageNo );
+   //LogData( LogMsg ) ;
+
+   memset( &amp;JobInfo_EG, 0, sizeof( TOCRJOBINFO_EG ) );
+
+   JobInfo_EG.JobType   = hb_tocrJob.JobType; 
+   JobInfo_EG.InputFile = InputFile ;
+   JobInfo_EG.PageNo    = PageNo; 
+
+   //JobInfo_EG.ProcessOptions.MergeBreakOff = OptionsMask &amp; 0x00000001 ;   //1 bit MergeBreakOff  ??
+   //JobInfo_EG.ProcessOptions.DeskewOff = (OptionsMask&gt;&gt;1) &amp; 0x00000010 ;    //2nd bit DeskewOff
+   JobInfo_EG.ProcessOptions.Orientation = hb_tocrJob.Orientation ;
+   JobInfo_EG.ProcessOptions.CCThreshold = 0.75; //try to darken colored font if in shades of grey
+
+   Status = TOCRInitialise( &amp;JobNo );
+   hb_tocrJob.JobNo = JobNo ; 
+
+   if ( Status == TOCR_OK ) {
+      if ( OCRWait( JobNo, JobInfo_EG ) ) {
+
+         LogData("OCRWait successfull");
+
+         if ( GetResults( JobNo, &amp;Results ) )  {
+
+            LogData("GetResults successfull");
+
+            if ( FormatResults( Results, Msg ) ) {
+               sprintf(LogMsg, "FormatResults  page %ld successful.  OCRed text below:", PageNo);
+               LogData(LogMsg );
+               LogData(Msg);
+
+            }
+            hb_xfree(Results);
+         } 
+      } 
+
+      TOCRShutdown( JobNo );
+      hb_tocrJob.JobNo = 0 ; 
+
+      LogData("TOCR JobNo has been shutdown.");
+
+   }
+
+   //harbour VM function to return wide strings wchar_t
+   hb_retstr_u16( HB_CDP_ENDIAN_NATIVE, Msg );
+   
+
+   /*int length = wcslen( Msg );
+   char * buffer = ( char* ) hb_xgrab( length + 1 * sizeof(wchar_t) );
+
+   if ( buffer != NULL ) {
+
+      wcstombs( buffer, Msg, length + 1 );   //wide char string  multy byte string
+      hb_retc( buffer );
+      hb_xfree( buffer );
+
+   } else {
+      hb_retc_null();
+   }*/
+
+   //fw_retWide( Msg ) ;
+}
+
+
+//-----------------------------------------------------------------------------------------------------
+// V4 Version
+bool OCRWait(long JobNo, TOCRJOBINFO2 JobInfo2)
+{
+    long                Status;
+    long                JobStatus;
+    //long              ErrorMode;
+    char                Msg[TOCRJOBMSGLENGTH];
+
+    Status = TOCRDoJob2(JobNo, &amp;JobInfo2);
+    if (Status == TOCR_OK) {
+        Status = TOCRWaitForJob(JobNo, &amp;JobStatus);
+    }
+
+    if (Status == TOCR_OK &amp;&amp; JobStatus == TOCRJOBSTATUS_DONE)
+    {
+        return true;
+    }
+    else {
+        // If something has gone wrong log the error message
+        TOCRGetJobStatusMsg(JobNo, Msg);
+      sprintf( Msg, "OCRWait failed with: %s", Msg );
+      LogData( Msg ) ;
+
+        return false;
+    }
+} // OCRWait()
+
+
+
+//-----------------------------------------------------------------------------------------------------
+// V5 version
+bool OCRWait(long JobNo, TOCRJOBINFO_EG JobInfoEg)
+{
+    long                Status;
+    long                JobStatus;
+    //long              ErrorMode;
+    char                Msg[TOCRJOBMSGLENGTH];
+
+    Status = TOCRDoJob_EG(JobNo, &amp;JobInfoEg);
+    if (Status == TOCR_OK) {
+      LogData("Now Waiting for Job");
+      Status = TOCRWaitForJob(JobNo, &amp;JobStatus);
+      LogData("Done Waiting for Job");
+    }
+
+    if (Status == TOCR_OK &amp;&amp; JobStatus == TOCRJOBSTATUS_DONE)
+    {
+        return true;
+    }
+    else {
+        // If something has gone wrong display a message
+        // (Check that the OCR engine hasn't already displayed a message)
+        TOCRGetJobStatusMsg(JobNo, Msg);
+      sprintf( Msg, "OCRWait failed with: %s", Msg );
+      LogData( Msg ) ;
+
+        return false;
+    }
+} // OCRWait()
+
+
+
+//-----------------------------------------------------------------------------------------------------
+bool OCRWait_PDF(long JobNo, TOCRJOBINFO_EG&amp; JobInfoEg, char* filename, TOCRPROCESSPDFOPTIONS_EG&amp; PdfOpts)
+{
+    long                Status;
+    long                JobStatus;
+    //long              ErrorMode;
+    char                Msg[TOCRJOBMSGLENGTH];
+
+    Status = TOCRDoJobPDF_EG(JobNo, &amp;JobInfoEg, filename, &amp;PdfOpts);
+    if (Status == TOCR_OK) {
+        Status = TOCRWaitForJob(JobNo, &amp;JobStatus);
+    }
+    
+    if (Status == TOCR_OK &amp;&amp; JobStatus == TOCRJOBSTATUS_DONE)
+    {
+        return true;
+    } else {
+        // If something has gone wrong display a message
+        // (Check that the OCR engine hasn't already displayed a message)
+        TOCRGetJobStatusMsg(JobNo, Msg);
+      sprintf( Msg, "OCRWait failed with: %s", Msg );
+      LogData( Msg ) ;
+        return false;
+
+    }
+} // OCRWait_PDF()
+
+
+
+//-----------------------------------------------------------------------------------------------------
+bool OCRPoll(long JobNo, TOCRJOBINFO2 JobInfo2)
+{
+    long                Status;
+    long                Jobstatus;
+    //long              ErrorMode;
+    char                Msg[TOCRJOBMSGLENGTH];
+
+    Status = TOCRDoJob2(JobNo, &amp;JobInfo2);
+    if (Status == TOCR_OK) {
+        do {
+            Sleep(100);
+            Status = TOCRGetJobStatus(JobNo, &amp;Jobstatus);
+            if ( Status != TOCR_OK ) {
+                sprintf(Msg, "OCRPoll failed - %d", Status);
+            LogData(Msg);
+            return false;
+            }
+
+        } while ( !Jobstatus );
+    }
+    
+    if (Status == TOCR_OK &amp;&amp; Jobstatus == TOCRJOBSTATUS_DONE)
+    {
+        return true;
+    } else {
+        // If something hass gone wrong display a message
+        // (Check that the OCR engine hasn't already displayed a message)
+        TOCRGetJobStatusMsg(JobNo, Msg);
+      sprintf( Msg, "OCRWait failed with: %s", Msg );
+      LogData( Msg ) ;
+
+        return false;
+    }
+} // OCRPoll()
+
+
+
+
+//-----------------------------------------------------------------------------------------------------
+// Get the results from TOCR
+bool getresults(long JobNo, long mode, void **Results)
+{
+    long                Status;
+    long                ResultsInf;
+    char                Msg[TOCRJOBMSGLENGTH];
+
+    if ( mode == TOCRGETRESULTS_NORMAL_EG || mode == TOCRGETRESULTS_EXTENDED_EG ) {
+        Status = TOCRGetJobResultsEx_EG(JobNo, mode, &amp;ResultsInf, 0);
+        if ( Status != TOCR_OK ) {
+            sprintf(Msg, "TOCRGetJobResultsEx_EG failed - %d", Status);
+        }
+    } else {
+        Status = TOCRGetJobResultsEx(JobNo, mode, &amp;ResultsInf, 0);
+        if ( Status != TOCR_OK ) {
+            sprintf(Msg, "TOCRGetJobResultsEx failed - %d", Status);
+        }
+    }
+    if ( Status != TOCR_OK ) {
+      LogData(Msg);
+      return false;
+    }
+    if ( ResultsInf &gt; 0 ) {
+        // Allocate memory for results
+
+      *Results = ( char * ) hb_xgrab( ResultsInf + 1 );
+        //*Results = (void *)malloc(ResultsInf * sizeof(unsigned char));
+        if ( *Results ) {
+
+            // Retrieve the results
+            if ( mode == TOCRGETRESULTS_NORMAL_EG || mode == TOCRGETRESULTS_EXTENDED_EG ) {
+                Status = TOCRGetJobResultsEx_EG(JobNo, mode, &amp;ResultsInf, *Results);
+                if ( Status != TOCR_OK ) {
+                    sprintf(Msg, "TOCRGetJobResultsEx_EG failed - %d", Status);
+                }
+            } else {
+                Status = TOCRGetJobResultsEx(JobNo, mode, &amp;ResultsInf, *Results);
+                if ( Status != TOCR_OK ) {
+                    sprintf(Msg, "TOCRGetJobResultsEx failed - %d", Status);
+                }
+            }
+            if ( Status != TOCR_OK ) {
+            LogData(Msg);
+                free(*Results);
+                *Results = 0;
+                return false;
+            }
+        } else {
+         LogData("Failed to allocate memory for results");
+            return false;
+        }
+    } else {
+        //MessageBox(NULL, (LPCWSTR) "No results found\n", (LPCWSTR) "getresults", MB_TASKMODAL | MB_TOPMOST | MB_ICONSTOP);
+      LogData("No results found");
+   }
+    
+    return true;
+} // getresults()
+
+
+
+
+//-----------------------------------------------------------------------------------------------------
+// Get normal results
+bool GetResults(long JobNo, TOCRRESULTS **Results)
+{
+    return getresults(JobNo, TOCRGETRESULTS_NORMAL, (void **)Results);
+} // GetResults()
+
+// Get extended results
+bool GetResults(long JobNo, TOCRRESULTSEX **Results)
+{
+    return getresults(JobNo, TOCRGETRESULTS_EXTENDED, (void **)Results);
+} // GetResults()
+
+// Get extended eg results
+bool GetResults(long JobNo, TOCRRESULTSEX_EG **Results)
+{
+    return getresults(JobNo, TOCRGETRESULTS_EXTENDED_EG, (void **)Results);
+} // GetResults()
+
+
+
+
+//-----------------------------------------------------------------------------------------------------
+// Convert results to a string
+bool FormatResults(TOCRRESULTS *Results, char *Msg)
+{
+    long            ItemNo;
+    long            APos = 0;
+    bool            Status = false;
+
+    if ( Results-&gt;Hdr.NumItems &gt; 0 ) {
+        for (ItemNo = 0; ItemNo &lt; Results-&gt;Hdr.NumItems; ItemNo ++ ) {
+            if ( Results-&gt;Item[ItemNo].OCRCha == '\r' )
+                Msg[APos] = '\n';
+            else
+                Msg[APos] = (char)Results-&gt;Item[ItemNo].OCRCha;
+            APos ++;
+        }
+        Msg[APos] = 0;
+        Status = true;
+    }
+
+    return Status;
+
+} // FormatResults()
+
+
+
+//-----------------------------------------------------------------------------------------------------
+// Convert extended results to a string
+bool FormatResults(TOCRRESULTSEX *Results, char *Msg)
+{
+    long            ItemNo;
+    long            APos = 0;
+    bool            Status = false;
+
+    if ( Results-&gt;Hdr.NumItems &gt; 0 ) {
+        for (ItemNo = 0; ItemNo &lt; Results-&gt;Hdr.NumItems; ItemNo ++ ) {
+            if ( Results-&gt;Item[ItemNo].OCRCha == '\r' )
+                Msg[APos] = '\n';
+            else
+                Msg[APos] = (char)Results-&gt;Item[ItemNo].OCRCha;
+            APos ++;
+        }
+        Msg[APos] = 0;
+        Status = true;
+    }
+
+    return Status;
+} // FormatResults()
+
+
+
+
+
+//-----------------------------------------------------------------------------------------------------
+// Convert extended results to a string
+bool FormatResults(TOCRRESULTSEX_EG *Results, wchar_t *Msg)
+{
+    long            ItemNo;
+    long            APos = 0;
+    bool            Status = false;
+
+    if ( Results-&gt;Hdr.NumItems &gt; 0 ) {
+        for (ItemNo = 0; ItemNo &lt; Results-&gt;Hdr.NumItems; ItemNo ++ ) {
+            if ( Results-&gt;Item[ItemNo].OCRCharWUnicode == L'\r' )
+                Msg[APos] = L'\n';
+            else
+                Msg[APos] = Results-&gt;Item[ItemNo].OCRCharWUnicode;
+            APos ++;
+        }
+        Msg[APos] = 0;
+        Status = true;
+    }
+
+    return Status;
+} // FormatResults()
+
+
+
+//-------------------------------------------------------------------------------
+HB_FUNC( TOCRFROMSCANNER )
+{
+   TOCRJOBINFO_EG    JobInfo_EG;
+   TOCRRESULTSEX_EG* Results = 0;
+    long                JobNo;
+    long                Status;
+    long                NumImages = 0;
+    long                CntImages = 0;
+    HANDLE          *hMems;
+    HANDLE          hMMF ;
+   HB_WCHAR       Msg[10240];   
+   wchar_t       FullText[10240] = L"\n"; //final returning string
+   char           LogMsg[ TOCRJOBMSGLENGTH ] ;
+   //HB_WCHAR       pageBreak = L'\u000C';
+
+   memset( Msg, 0, sizeof( Msg ) );  //make sure Msg is empty
+   trimTrailing(FullText);
+
+   //Sets Transym to log errors on tocrerr.log or screen dialog according to ErrorMode sent parameter
+   TOCRSetConfig( TOCRCONFIG_DEFAULTJOB, TOCRCONFIG_DLL_ERRORMODE, hb_tocrJob.ErrorMode) ;
+   //TOCRSetConfigStr(TOCRCONFIG_DEFAULTJOB, TOCRCONFIG_LOGFILE, hb_tocrJob.LogFileName);
+   memset( &amp;JobInfo_EG, 0, sizeof( TOCRJOBINFO_EG ) );
+
+   JobInfo_EG.ProcessOptions.CCThreshold = 0.75; //try to darken colored font if in shades of grey
+
+   Status = TOCRInitialise( &amp;JobNo );
+   hb_tocrJob.JobNo = JobNo ; 
+
+   if ( Status == TOCR_OK ) {
+      
+      Status = TOCRTWAINSelectDS(); // select the TWAIN device
+
+      if ( Status == TOCR_OK) {
+
+         TOCRTWAINShowUI(1);
+         TOCRTWAINAcquire(&amp;NumImages);
+
+         if ( NumImages &gt; 0 ) {
+
+            hMems = (HANDLE *) hb_xgrab( NumImages * sizeof (HANDLE) );
+            //hMems = (HANDLE *)malloc(NumImages * sizeof (HANDLE));
+            if ( hMems ) {
+
+               sprintf( LogMsg, "Number of images processing %ld. ", NumImages );
+               LogData( LogMsg ) ;
+
+               memset(hMems, 0, NumImages * sizeof(HANDLE));
+               TOCRTWAINGetImages(hMems);
+
+               for (long ImgNo = 0; ImgNo &lt; NumImages; ImgNo++) {
+
+                  //show progress using a callback func here 
+                  //callback func registered from harbour calling func.
+
+                  if ( hMems[ImgNo] ) {
+
+                     sprintf( LogMsg, "Processing image # %ld.", ImgNo );
+                     LogData( LogMsg ) ;
+
+                     // convert the memory block to a Memory Mapped File
+                     hMMF = ConvertGlobalMemoryToMMF( hMems[ ImgNo ] );
+                     // free the global memory block to save space
+                     GlobalFree(hMems[ImgNo]);  //?????
+
+                     if ( hMMF ) {
+
+                        JobInfo_EG.JobType = TOCRJOBTYPE_MMFILEHANDLE;
+                        JobInfo_EG.hMMF = hMMF;
+
+                        if ( OCRWait(JobNo, JobInfo_EG) ) {
+
+                           if ( GetResults(JobNo, &amp;Results) ) {
+
+                              if ( FormatResults( Results, Msg ) ) {
+
+                                 FormatResults( Results, Msg );
+                                 trimTrailing( Msg );
+                                 wcscat( FullText, Msg );
+
+                                 //MessageBoxW(NULL, Msg, L"Example 7", MB_TASKMODAL | MB_TOPMOST);
+                                 LogData( FullText );
+                                 hb_xfree( Results );
+
+                              }
+                           }
+                        }
+                        //place a page break between images
+                        //wcscat(FullText, ( const wchar_t ) pageBreak );
+
+                        CntImages ++;
+                        CloseHandle(hMMF);
+                     }
+                  }
+               }
+
+               hb_xfree( hMems );
+
+            }
+         }
+      }
+   }
+
+   TOCRShutdown( JobNo );
+   hb_tocrJob.JobNo = 0 ; 
+    sprintf(LogMsg, "%d images successfully acquired\n", CntImages);
+   LogData(LogMsg);
+
+   hb_retstr_u16( HB_CDP_ENDIAN_NATIVE, FullText );
+}
+
+
+//-------------------------------------------------------------------------------
+HANDLE ConvertGlobalMemoryToMMF(HANDLE hMem)
+{
+    void                *View ;
+    HANDLE              hMMF ;
+    void                *ucImg ;
+    long                Status;
+
+    Status = TOCR_OK + 1;
+
+    hMMF = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, (DWORD)GlobalSize((void *)hMem), 0);
+    if ( hMMF != NULL ) {
+        View = (void *)MapViewOfFile(hMMF, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+        if ( View != NULL ) {
+            ucImg = GlobalLock((void *)hMem);
+            if ( ucImg ) {
+                memcpy(View, ucImg, GlobalSize((void *)hMem) * sizeof(unsigned char));
+                GlobalUnlock((void *)hMem);
+                Status = TOCR_OK;
+            }
+            UnmapViewOfFile(View);
+        }
+    }
+
+    if ( Status == TOCR_OK )
+        return hMMF;
+    else {
+        if ( hMMF )
+            CloseHandle(hMMF);
+        return NULL;
+    }
+
+} // ConvertGlbalMemoryToMMF()
+
+
+
+//------------------------------------------------------------------------------
+// Remove trailing white space characters from string
+//
+
+void trimTrailing(wchar_t * str)
+{
+    int index, i;
+
+    // Set default index 
+    index = -1;
+
+    //Find last index of non-white space character 
+    i = 0;
+    while(str[i] != '\0')
+    {
+        if(str[i] != ' ' &amp;&amp; str[i] != '\t' &amp;&amp; str[i] != '\n')
+        {
+            index= i;
+        }
+
+        i++;
+    }
+
+    // Mark next character to last non-white space character as NULL 
+    str[index + 1] = '\0';
+}
+
+
+//This code uses std::wstring instead of a wide character array (wchar_t*) to represent 
+//the string, as it provides more convenient and safer string manipulation operations. 
+//It finds the last index of a non-white space character using the find_last_not_of 
+//member function, and then erases the trailing characters if found. 
+//If the string is empty or contains only white space, it clears the string.
+
+void trimTrailing(std::wstring&amp; str)
+{
+    // Find the last index of a non-white space character
+    std::size_t index = str.find_last_not_of(L" \t\n");
+
+    if (index != std:::npos)
+    {
+        // Erase all characters from the index+1 position to the end
+        str.erase(index + 1);
+    }
+    else
+    {
+        // If the string is empty or contains only white space, clear it
+        str.clear();
+    }
+}
+
+
+
+
+/*
+//-------------------------------------------------------------------------------
+void LogData( const char *Msg ) 
+{
+   time_t         currentTime;
+   char timeString[ 100 ];
+   size_t fileSize;
+   FILE *file ;
+   size_t maxFileSize = MAX_LOG_SIZE; // hb_tocrJob.MaxLogSize;
+   const char *logfileName = "tocr.log";
+
+   time( &amp;currentTime );
+   strftime( timeString, sizeof( timeString ), "%Y-%m-%d %H:%M:%S", localtime( &amp;currentTime ) );
+
+
+
+   // Open TOCR log file in append mode
+   file = fopen( logfileName, "a");
+
+   if ( file != NULL ) {  
+
+      // Check the current file size and place pointer at eof
+      fseek( file, 0L, SEEK_END );
+      fileSize = ftell( file ) + strlen( Msg );
+
+      if ( fileSize &gt; maxFileSize ) {
+
+            int bytesToKeep = maxFileSize - strlen(Msg);
+
+            fseek(file, bytesToKeep, SEEK_SET);
+            char *buffer = (char *)hb_xgrab(bytesToKeep);
+            size_t elementsRead = fread(buffer, sizeof(char), bytesToKeep, file);
+            fprintf(file, "\n%s", buffer, elementsRead);
+            hb_xfree(buffer);
+      }
+
+      fprintf( file, "\n[%s] %s", timeString, Msg ); 
+      fclose( file );
+   }
+
+} */
+
+
+//-------------------------------------------------------------------------------
+void LogData( const char *Msg ) 
+{
+   size_t len = mbstowcs( NULL, Msg, 0 );
+   wchar_t *wideText = (wchar_t *)hb_xgrab((len + 1) * sizeof(wchar_t));
+   mbstowcs(wideText, Msg, len + 1);
+   LogData(wideText); 
+
+}
+
+//-------------------------------------------------------------------------------
+/*void LogData( const wchar_t *Msg )
+{
+   time_t         currentTime;
+   char timeString[ 100 ];
+   size_t fileSize;
+   FILE *file ; 
+   int length = wcslen( Msg );
+   const char* logfileName  = "tocr.log";
+   size_t maxFileSize =  hb_tocrJob.MaxLogSize;  // MAX_LOG_SIZE;  //
+
+   time( &amp;currentTime );
+   strftime( timeString, sizeof( timeString ), "%Y-%m-%d %H:%M:%S", localtime( &amp;currentTime ) );
+
+   // Open TOCR log file in append mode
+   file = fopen( logfileName, "r+");
+
+   if ( file != NULL ) {  
+
+      fseek( file, 0, SEEK_END );
+      
+      // Check the current file size and place pointer at eof
+      fileSize = ftell( file ) + length ;
+
+      if ( fileSize &gt; maxFileSize ) {
+
+         //move file pointer to where data will be kept from.
+         fseek(file, length - maxFileSize, SEEK_END);
+
+         // Allocate memory for the buffer
+         //need to allocate space for the wide characters, not just the length of the string
+         wchar_t* buffer = (wchar_t*)hb_xgrab( maxFileSize * sizeof(wchar_t) );
+
+         // Read the data from the file.
+         //buffer is allocated with a size in bytes, you need to divide maxFileSize - length 
+         //by sizeof(wchar_t) to read the correct number of wide characters.
+         fread(buffer, sizeof(wchar_t), (maxFileSize - length), file);
+
+         //move file pointer back to the top to write old data being kept.
+         //fseek(file, 0, SEEK_SET);
+         fwprintf(file, L"\n:%ls", buffer );
+         hb_xfree(buffer);
+         //fseek( file, 0, SEEK_END );
+      }
+
+      fprintf(file, "\nlength %i. maxFileSize %ld.  fileSize %ld", length, maxFileSize, fileSize);
+      fprintf(file, "\n[%s]", timeString);
+      fwprintf( file, L"wchar_t:%ls", Msg ); 
+      fclose( file );
+   }
+
+} */
+
+
+#include &lt;iostream&gt;
+#include &lt;fstream&gt;
+#include &lt;ctime&gt;
+#include &lt;string&gt;
+
+void LogData(const wchar_t* Msg) {
+   std::time_t currentTime = std::time(NULL);
+   char timeString[100];
+   size_t fileSize;
+   std::string logfileName = hb_tocrJob.LogFileName;  //"tocr.log";
+   size_t maxFileSize = hb_tocrJob.MaxLogSize ; // Maximum file size in bytes
+
+   std::strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", std::localtime(&amp;currentTime));
+
+   // Open TOCR log file in append mode
+   std::wifstream readFile(logfileName.c_str());
+
+   if (readFile.is_open() ) {
+      // Check the current file size
+      readFile.seekg(0, std::ios::end);
+      fileSize = readFile.tellg();
+
+      if (fileSize &gt; maxFileSize) {
+         // Calculate the excess size to be removed
+         size_t excessSize = fileSize - maxFileSize;
+            
+         //move file pointer to excessSize 
+         readFile.seekg(excessSize, std::ios::beg);
+
+         // Create a temporary file to hold the truncated content
+         std::string tempFileName = logfileName + ".tmp";
+         std::wofstream tempFile(tempFileName.c_str());
+
+         // Copy the remaining content to the temporary file
+         tempFile &lt;&lt; readFile.rdbuf() &lt;&lt; "\n";
+         tempFile.close();
+         readFile.close();
+
+         // Remove the original file
+         std::remove(logfileName.c_str());
+
+         // Rename the temporary file as the original file
+         std::rename(tempFileName.c_str(), logfileName.c_str());
+
+
+      } else {
+         readFile.close() ; 
+      }
+
+      std::wofstream writeFile(logfileName.c_str(), std::ios::app);
+      if ( writeFile.is_open() ) {
+         // Move the file pointer back to the end
+         writeFile.seekp(0, std::ios::end);
+         writeFile &lt;&lt; "[" &lt;&lt; timeString &lt;&lt; "]";
+         writeFile &lt;&lt; Msg &lt;&lt; "\n";
+         writeFile.close();
+      }
+   }
+
+}
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+For the class to work you need to declare TRANSYM on your compile script.  AS in: -DTRANSYM.<br/><br>
+<br/><br>
+and here is sample use.  In this case I'm OCRing from a Windows Service so there is no GUI involved but you get the idea:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;METHOD ProcessEOBImages() CLASS TService 
+   LOCAL aDir := Directory( ::cEOBImagesPath + "*.pdf" )
+   LOCAL cHistoryPath := ::cEOBImagesPath + "\history\"
+   LOCAL cFileName, cExt, oOcr, cFile 
+   LOCAL cText, cCheckNum, dCheckDate 
+   LOCAL aClaimKeys, aKeys
+
+   LogData( ::cLogFile, "ProcessEOBImages", ::nMaxLogSize )
+
+   FOR EACH cFileName IN aDir
+
+      cFileName := ::cEOBImagesPath + cFileName[ 1 ]
+
+      hb_fNameSplit( LOWER( cFileName ),,@cfile, @cExt )
+
+      oOcr := TOCR():New()
+
+      oOcr:nJobtype     := iif( cExt = '.pdf', TOCRJOBTYPE_PDFFILE, TOCRJOBTYPE_TIFFFILE )
+      oOcr:nErrorMode   := TOCRERRORMODE_LOG 
+      oOcr:cLogFile     := ::cLogFile 
+      oOcr:cFileName    := cFileName 
+      oOcr:SetupJob() 
+      oOcr:GetNumPages()
+   
+      oOcr:bProgress    := { |p| LogData( ::cLogFile, {cFileName, "Page", p }, ::nMaxLogSize )  }
+   
+      cText := oOcr:OCRFromFile() 
+   
+      oOcr:Reset()
+      oOcr:End() 
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Enjoy.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p260439">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Transym OCR for Harbour</span><br>
+        Posted: Fri Jun 02, 2023 05:22 AM
+      </div>
+      <div class="content"><p><t>Dear Reinaldo,<br/><br>
+<br/><br>
+many thanks for sharing it</t></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

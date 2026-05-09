@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Plotting locations on Google Maps - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-33729">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Plotting locations on Google Maps</div>
+<div class="pagination">Page: <a href="topic-33729.html">1</a> <strong>2</strong> <a href="topic-33729-page-3.html">3</a> <a href="topic-33729-page-4.html">4</a> (49 posts)</div>  <div class="post" id="p199427">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Fri Mar 10, 2017 04:22 AM
+      </div>
+      <div class="content"><blockquote><cite>TimStone wrote:</cite>The translation time for the geocode is quite long when creating a map.  So I decided to get the codes and store them in the database for each address.</blockquote><br>
+Obviously this will take time because google has to search its database based on the address provided by you and then return the most accurate result from a bunch of data. If your list is too long then it increases the time further. For this reason, I keep the Lat and Lng in the database. May be you can run this routine once in a while to update the Lat and Lng in your Customer address DBF/Table. For large list of address there are services from Google named Google App Scripts.<br>
+<br>
+My initial example in this thread was to display a Google Map based on the available Lat and Lng. I created the sample to get the Lat and Lng based on the address when you said that your requirement was to display a Googe Map based on the Address details that you have in your database. It is just a sample to demonstrate that this is possible using FiveWin. Its my mistake that, I have not gone deep into catching the run time errors if there are no results from Google.<br>
+<br>
+<blockquote><cite>TimStone wrote:</cite>Thoughts on trapping hjson values that do not have an array would be appreciated.</blockquote><br>
+You should add the lat long to the array only if hJson[&quot;status&quot;] == &quot;OK&quot; <br>
+OR you can put a try catch<br>
+<br>
+Anyway here is one of the methods to consider to gracefully control the run time error which may occur if the searched address is not found by Google.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#Include "FiveWin.ch"
+
+//-----------------------------
+Function Main()
+    Local aLatLng:={} 
+    Local aAddress:={ {"Anser","K K"            , "just dummy so that it  ", "will not give"       ,"any results" },;
+                      {"Eiffel Tower","Champ de Mars"            , "5 Avenue Anatole France", "75007 Paris"         ,"France" },;
+                      {"Taj Mahal"   ,"Dharmapuri, Forest Colony", "Tajganj, Agra"          , "Uttar Pradesh 282001","India"   } }
+
+    // This function will grab the Lat and Lng information from Google and returns an array
+    aLatLng:=GetLatLng(aAddress)
+
+    // Displays Markers on a Google Map
+    ViewGoogleMap(aLatLng)
+Return NIL
+
+//------------------------------------------//
+Function GetLatLng(aData)
+  Local i,cName,cAddress,cCity,cState,cCountry,aLatLng:={},nLatitude,nLongitude
+  Local oHttp, cURL, lNetError, cResponse,hJson
+  
+  For i:=1 to Len(aData)
+  
+    cName:=STRTRAN(ALLTRIM(aData[i][1])," ","+")
+    cName:=STRTRAN(ALLTRIM(aData[i][1]),"&amp;"," E ")
+    cAddress:=STRTRAN(ALLTRIM(aData[i][2]),",","")
+    cAddress:=STRTRAN(ALLTRIM(aData[i][2])," ","+")
+    cCity:=STRTRAN(ALLTRIM(aData[i][3])," ","+")
+    cCountry:=STRTRAN(ALLTRIM(aData[i][5])," ","+")  
+    cState:=aData[i][4]
+    
+    oHttp:=CreateObject("Microsoft.XMLHTTP")
+    cURL:="http://maps.google.com/maps/api/geocode/json?address="+cAddress+"+"+cCity+"+-+"+cState+"+"+cCountry+"&amp;sensor=false"
+    oHttp:Open("GET",cURL,.F.)
+    lNetError:=.F.
+    TRY
+        oHttp:Send()
+    CATCH oError
+        lNetError:=.T.
+    END TRY
+    
+    IF !lNetError
+      cResponse := oHttp:ResponseBody
+    ELSE
+      // Search Error. Could not find the details on Google Maps.
+      Loop
+    ENDIF    
+
+    hb_jsonDecode(cResponse,@hJson)
+    IF hJson["status"] == "OK"
+        nLatitude:= hJson["results"][1]["geometry"]["location"]["lat"]
+        nLongitude:=hJson["results"][1]["geometry"]["location"]["lng"]    
+        Aadd(aLatLng,{aData[i][1],nLatitude, nLongitude} )
+    ENDIF
+    
+  Next
+  
+Return aLatLng
+
+//-----------------------------------------------------------------------/
+Function ViewGoogleMap(aData)
+   Local cMapFile:="D:\GMaps.htm", cHtmlContent1,cHtmlContent2, oOle, i
+   Local cAppendStr:="var locations = ["+CRLF
+   
+   If Len(aData) == 0
+      MsgInfo("Location data not available in the list")
+      Return
+   Endif
+   
+   For i:=1 to Len(aData)
+       cAppendStr+=Space(4)+"['" +aData[i][1] +"',"+Ltrim(Str(aData[i][2]))+","+ Ltrim(Str(aData[i][3]))+ If( i &lt; Len(aData), "],", "]") +CRLF
+   Next
+   cAppendStr+="];"+CRLF
+
+TEXT INTO cHtmlContent1
+    
+    &lt;html&gt;
+    &lt;head&gt;
+      
+      &lt;title&gt;Google Maps Multiple Markers&lt;/title&gt;
+      &lt;script src="http://maps.google.com/maps/api/js?sensor=false" type="text/javascript"&gt;&lt;/script&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+      &lt;div id="map" style="height: 100%; width: 100%;"&gt;
+    &lt;/div&gt;
+    &lt;script type="text/javascript"&gt;
+    
+ENDTEXT
+    
+    
+TEXT INTO cHtmlContent2    
+        
+        var map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 0,           
+          mapTypeId: google.maps.MapTypeId.ROADMAP
+        });
+        var bounds = new google.maps.LatLngBounds();
+        var infowindow = new google.maps.InfoWindow();
+    
+        var marker, i;
+    
+        for (i = 0; i &lt; locations.length; i++) { 
+         var position = new google.maps.LatLng(locations[i][1], locations[i][2]);
+            bounds.extend(position);
+          marker = new google.maps.Marker({
+            position: new google.maps.LatLng(locations[i][1], locations[i][2]),        
+            map: map
+          });
+    
+          google.maps.event.addListener(marker, 'click', (function(marker, i) {
+            return function() {
+              infowindow.setContent(locations[i][0]);
+              infowindow.open(map, marker);
+            }
+          })(marker, i));
+
+          // Automatically center the map fitting all markers on the screen
+          map.fitBounds(bounds);
+         
+        }
+      &lt;/script&gt;
+    &lt;/body&gt;
+    &lt;/html&gt;
+    
+ENDTEXT
+
+     MEMOWRIT( cMapFile, cHtmlContent1+cAppendStr+cHtmlContent2 )
+
+     Shellexecute( NIL, "open", cMapFile )     
+   
+Return</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p199429">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Fri Mar 10, 2017 05:14 AM
+      </div>
+      <div class="content"><blockquote>May be you can run this routine once in a while to update the Lat and Lng in your Customer address DBF/Table.</blockquote><br>
+It is a good idea to find latlong and save it in database when adding a contact or modifying the address of a contact.</div>
+    </div>
+  </div>
+  <div class="post" id="p199430">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Fri Mar 10, 2017 05:44 AM
+      </div>
+      <div class="content"><blockquote><cite>nageswaragunupudi wrote:</cite><blockquote>May be you can run this routine once in a while to update the Lat and Lng in your Customer address DBF/Table.</blockquote><br>
+It is a good idea to find latlong and save it in database when adding a contact or modifying the address of a contact.</blockquote>.<br>
+Yes. you are right. That's the right way to do.</div>
+    </div>
+  </div>
+  <div class="post" id="p199452">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Fri Mar 10, 2017 05:41 PM
+      </div>
+      <div class="content"><p>As I noted previously, I have been doing exactly what was suggested ... and that is to get the coordinates and save them to the database.  I did find a way yesterday to trap no data found responses, but apparently there are other types of responses also so I will be working more on this today.</p>
+<p>What I am trying to do is build a map that shows where clients come from over a period of time.  Hidden deeply inside the Google documents, however, I found that you the API apparently only allows for 15 markers.  That is strange because I see applications frequently that show far more than 15 points.  I suppose I will have to work on that issue.  </p>
+<p>The reason for the maps is that they are often used in marketing programs to show areas that yield the best results from communications by businesses.  </p>
+<p>Thanks for the ideas ... they are being incorporated ... and my goal will to ultimately build a class that allows us greater use of Google Maps from within FWH.</p>
+<p>Tim</p></div>
+    </div>
+  </div>
+  <div class="post" id="p199455">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Fri Mar 10, 2017 06:28 PM
+      </div>
+      <div class="content">The most important thing is that: I consider that the Anserkk example is the best way to do this work<br>
+But, I have another way of getting this data (latitude and longitude)<br>
+Then you can apply the function to draw the map<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+Static cUrl     := ""
+
+Function Main()
+
+   SET 3DLOOK OFF
+   VerMapa2( "", "Calle Gran Via", "17", "Madrid", "Madrid", "Spain" )
+   VerMapa2( "75007", "Avenue Anatole France", "5", "", "Paris", "France" )
+
+   
+Return nil
+
+//----------------------------------------------------------------------------//
+
+Function VerMapa2( cPostal_Code, cStreet, cNumber, cLocality, cState, cNation )
+   
+   Local cWeb  := "http://maps.google.es/maps/place/"
+   local cMap
+   local cRet  := ""
+   local oOle
+   local nPos1
+   local nPos2
+   local aCoor := { 0, 0, 0 }
+   cPostal_Code := StrTran( AllTrim( cPostal_Code ), ' ', '+' )
+   cStreet      := StrTran( AllTrim( cStreet ), ' ', '+' )
+   cNumber      := StrTran( AllTrim( cNumber ), ' ', '+' )
+   cLocality    := StrTran( AllTrim( cLocality ), ' ', '+' )
+   cState       := StrTran( AllTrim( cState ), ' ', '+' )
+   cNation      := StrTran( AllTrim( cNation ), ' ', '+' )
+   cMap     :=  AllTrim( cPostal_Code ) + "+" + AllTrim( cStreet ) + "+" + ;
+                AllTrim( cNumber ) + "+" + AllTrim( cLocality ) + "+" + ;
+                AllTrim( cState ) + "+" + AllTrim( cNation )
+   oOle  := CreateObject("Winhttp.WinHttpRequest.5.1")
+   oOle:Open( "GET", cWeb + AllTrim( cMap ), .F. )
+   oOle:Send()
+   cURL := oOle:ResponseText
+
+   nPos1  := At( "cacheResponse([[[", Left( cURL, 2048 ) )
+   if !Empty( nPos1 )
+      cRet   := Substr( Left( cURL, 1024 ), nPos1 + 17, 2048 - nPos1 )
+      nPos2  := At( "]", cRet )
+      if !Empty( nPos2 )
+         cRet   := Left( cRet, nPos2 - 1 )
+         aCoor  := hb_ATokens( cRet, "," )
+      endif
+   endif
+   XBrowse( aCoor )
+
+Return aCoor
+
+//----------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p199583">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Wed Mar 15, 2017 05:08 PM
+      </div>
+      <div class="content"><p>A few observations:</p>
+<p>1)  I built a utility to do just the geocode, and save the result to the database.  GOOGLE LIMITS ACTIVITY - a)  You need a key ( free ), and b) you still have a limit of the number of searches you can do in a 24 hour period.  Google says the key lets you do 25,000, but I find it only allows 2500.  I have to run the routine over several days before I can get results for the whole database.</p>
+<p>2)  It is very common to add to an address.  For example,  241 South St. Apt 6 Anytown, NY is submitted as 241+South+St.+Apt+6+Anytown,+NY and because of the apartment and number, this will not decode.  Make sure you use only the street number and name.</p>
+<p>3)  I wanted to plot many locations on the map to show where customers live.  I see this done a lot, but Google Maps has a limit of 15 points we can plot at one time.  They do have an alternative for clustering locations which shows one pin in an area.  </p>
+<p>Mapping is very popular now, and Google seems to be the main resource people use.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p199586">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Wed Mar 15, 2017 09:16 PM
+      </div>
+      <div class="content">My son, has recommended this lib<br>
+<br>
+<!-- m --><a class="postlink" href="http://leafletjs.com/index.html">http://leafletjs.com/index.html</a><!-- m --><br>
+<br>
+This is a sample<br>
+If you have the length and latitude, you do not need to run the function <strong>VerMapa2()</strong><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+Static cUrl     := ""
+
+Function Main()
+
+   Local aDatas := {}
+   SET 3DLOOK OFF
+
+   AAdd( aDatas, VerMapa2( "28850", "Calle Manuel Sandoval", "1", "Torrejon de Ardoz", "Madrid", "Spain" ) )
+   AAdd( aDatas, VerMapa2( "28850", "Calle Buenos Aires", "1", "Torrejon de Ardoz", "Madrid", "Spain" ) )
+   AAdd( aDatas, VerMapa2( "28850", "Calle Ferrocarril", "10", "Torrejon de Ardoz", "Madrid", "Spain" ) )
+   ViewLeafLet( aDatas )
+
+Return nil
+
+//----------------------------------------------------------------------------//
+
+Function VerMapa2( cPostal_Code, cStreet, cNumber, cLocality, cState, cNation )
+   
+   Local cWeb  := "http://maps.google.es/maps/place/"
+   local cMap
+   local cRet  := ""
+   local oOle
+   local nPos1
+   local nPos2
+   local aCoor := { 0, 0, 0 }
+   cPostal_Code := StrTran( AllTrim( cPostal_Code ), ' ', '+' )
+   cStreet      := StrTran( AllTrim( cStreet ), ' ', '+' )
+   cNumber      := StrTran( AllTrim( cNumber ), ' ', '+' )
+   cLocality    := StrTran( AllTrim( cLocality ), ' ', '+' )
+   cState       := StrTran( AllTrim( cState ), ' ', '+' )
+   cNation      := StrTran( AllTrim( cNation ), ' ', '+' )
+   cMap     :=  AllTrim( cPostal_Code ) + "+" + AllTrim( cStreet ) + "+" + ;
+                AllTrim( cNumber ) + "+" + AllTrim( cLocality ) + "+" + ;
+                AllTrim( cState ) + "+" + AllTrim( cNation )
+   oOle  := CreateObject("Winhttp.WinHttpRequest.5.1")
+   oOle:Open( "GET", cWeb + AllTrim( cMap ), .F. )
+   oOle:Send()
+   cURL := oOle:ResponseText
+
+   nPos1  := At( "cacheResponse([[[", Left( cURL, 2048 ) )
+   if !Empty( nPos1 )
+      cRet   := Substr( Left( cURL, 1024 ), nPos1 + 17, 2048 - nPos1 )
+      nPos2  := At( "]", cRet )
+      if !Empty( nPos2 )
+         cRet   := Left( cRet, nPos2 - 1 )
+         aCoor  := hb_ATokens( cRet, "," )
+      endif
+   endif
+   //XBrowse( aCoor )
+
+Return aCoor
+
+//----------------------------------------------------------------------------//
+
+Function ViewLeafLet(aData)
+   
+   local cMapFile   := "D:\fwh\fwhteam\samples\GMaps.htm"
+   local cHtmlContent1
+   local cHtmlContent2
+   local cHtmlContent3
+   local cInitMap   := "   var mymap = L.map('mapid').setView( [ "
+   local cAppendStr := "   L.polygon([" + CRLF
+   local oOle
+   local i
+
+   TEXT INTO cHtmlContent1
+   
+   &lt;!DOCTYPE html&gt;
+   &lt;html&gt;
+   &lt;head&gt;
+       &lt;title&gt;Quick Start - Leaflet&lt;/title&gt;
+
+       &lt;meta charset="utf-8" /&gt;
+       &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;
+    
+       &lt;link rel="shortcut icon" type="image/x-icon" href="docs/images/favicon.ico" /&gt;
+
+       &lt;link rel="stylesheet" href="https://unpkg.com/leaflet@1.0.3/dist/leaflet.css" /&gt;
+       &lt;script src="https://unpkg.com/leaflet@1.0.3/dist/leaflet.js"&gt;&lt;/script&gt;
+   &lt;/head&gt;
+   &lt;body&gt;
+      &lt;div id="mapid" style="width: 700px; height: 560px;"&gt;&lt;/div&gt;
+      &lt;script&gt;
+   ENDTEXT
+
+   cInitMap  += aData[ 1 ][ 3 ] + ", " + aData[ 1 ][ 2 ] + " ], 13);" + CRLF
+
+   TEXT INTO cHtmlContent2
+    L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw', {
+        maxZoom: 18,
+        attribution: 'Map data &amp;copy; &lt;a href="http://openstreetmap.org"&gt;OpenStreetMap&lt;/a&gt; contributors, ' +
+            '&lt;a href="http://creativecommons.org/licenses/by-sa/2.0/"&gt;CC-BY-SA&lt;/a&gt;, ' +
+            'Imagery © &lt;a href="http://mapbox.com"&gt;Mapbox&lt;/a&gt;',
+        id: 'mapbox.streets'
+    }).addTo(mymap);
+
+   ENDTEXT
+
+   For i := 1 to Len( aData )
+      cAppendStr += Space( 4 ) + "[ " + aData[ i ][ 3 ] + ", " + ;
+                    Ltrim( aData[ i ][ 2 ] )
+      if i &lt; Len( aData )
+         cAppendStr += "]," + CRLF
+      else
+         cAppendStr += "]" + CRLF      
+      endif
+   Next
+   cAppendStr += "]).addTo(mymap).bindPopup('I am a polygon.');" + CRLF + CRLF
+
+   For i := 1 to Len( aData )
+      cAppendStr += "L.marker( "
+      cAppendStr += "[ " + aData[ i ][ 3 ] + ", " + ;
+                    Ltrim( aData[ i ][ 2 ] ) + " ] )."
+      cAppendStr += "addTo(mymap).bindPopup('&lt;b&gt;Marker" + Str( i ) + " !&lt;/b&gt;&lt;br /&gt;I am a popup.').openPopup();" + CRLF + CRLF
+   Next
+   
+   TEXT INTO cHtmlContent3
+    var popup = L.popup();
+
+    function onMapClick(e) {
+        popup
+            .setLatLng(e.latlng)
+            .setContent("Position is: " + e.latlng.toString())
+            .openOn(mymap);
+    }
+
+   mymap.on('click', onMapClick);
+
+   &lt;/script&gt;
+
+   &lt;/body&gt;
+   &lt;/html&gt;
+
+   ENDTEXT
+
+   MEMOWRIT( cMapFile, cHtmlContent1 + cInitMap + cHtmlContent2 + cAppendStr + cHtmlContent3 )
+
+   oOle := CreateObject( "InternetExplorer.Application" )
+   oOle:Width     := 750
+   oOle:Height    := 650
+   oOle:Visible   := .T.     // Displays the Browser
+   oOle:ToolBar   := .F.     // Disables the toolbar
+   oOle:StatusBar := .F.     // Disables status bar
+   oOle:MenuBar   := .F.     // Disables the menu bar
+   oOle:Navigate( cMapFile ) // Open the Webpage
+   SysRefresh()
+   
+Return nil
+
+//----------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p199587">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Wed Mar 15, 2017 09:28 PM
+      </div>
+      <div class="content"><p>Thank you.  I will explore that resource.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p199591">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Thu Mar 16, 2017 12:22 PM
+      </div>
+      <div class="content"><p>Guys,</p>
+<p>Do you know if is possible show a text beside the mark for all locations plotted? Something Like tooltips.</p>
+<p>I know if I click in the mark, the text is shown, but i would like to show the text without be necessary to click in the mark. Is it possible?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p199595">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Thu Mar 16, 2017 01:35 PM
+      </div>
+      <div class="content"><p>Look, Is that something you need?</p>
+<!-- m -->
+<p><a class="postlink" href="http://leafletjs.com/examples/choropleth/">http://leafletjs.com/examples/choropleth/</a></p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p199601">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Thu Mar 16, 2017 02:39 PM
+      </div>
+      <div class="content">Cnavarro,<br>
+<br>
+No, is something like this:<br>
+<img src="http://i1122.photobucket.com/albums/l532/gibiteka/Mapa_zps9oyywepd.jpg" alt="" loading="lazy"><br>
+<br>
+But for to be shown for all points, without be necessary to do a click over them.</div>
+    </div>
+  </div>
+  <div class="post" id="p199603">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Thu Mar 16, 2017 03:14 PM
+      </div>
+      <div class="content">Yes, but I think you can not define popup and tooltip to the same marker<br>
+<br>
+<img src="https://s4.postimg.org/78c8vxn2l/leaflet1.png" alt="" loading="lazy"><br>
+<br>
+In my previous sample, replace<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   For i := 1 to Len( aData )
+      cAppendStr += "L.marker( "
+      cAppendStr += "[ " + aData[ i ][ 3 ] + ", " + ;
+                    Ltrim( aData[ i ][ 2 ] ) + " ] )."
+      cAppendStr += "addTo(mymap).bindPopup('&lt;b&gt;Marker" + Str( i ) + " !&lt;/b&gt;&lt;br /&gt;I am a popup.').openPopup();" + CRLF + CRLF
+   Next</code></pre></div><br>
+<br>
+with<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   For i := 1 to Len( aData )
+      cAppendStr += "L.marker( "
+      cAppendStr += "[ " + aData[ i ][ 3 ] + ", " + ;
+                    Ltrim( aData[ i ][ 2 ] ) + " ] ).addTo(mymap).bindTooltip('my tooltip text').openTooltip();" + CRLF + CRLF
+   Next</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p199604">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Thu Mar 16, 2017 03:55 PM
+      </div>
+      <div class="content">Change images for markers<br>
+<br>
+<img src="https://s11.postimg.org/mnu50yyf7/leaflet2.png" alt="" loading="lazy"><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   For i := 1 to Len( aData )
+      cAppendStr += "L.marker( "
+      cAppendStr += "[ " + aData[ i ][ 3 ] + ", " + ;
+                    Ltrim( aData[ i ][ 2 ] ) + " ], {icon: greenIcon} )."
+      cAppendStr += "addTo(mymap).bindPopup('&lt;b&gt;Marker" + Str( i ) + " !&lt;/b&gt;&lt;br /&gt;I am a popup.').openPopup();" + CRLF + CRLF
+   Next</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p199634">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Fri Mar 17, 2017 11:27 AM
+      </div>
+      <div class="content"><p>Cnavarro,</p>
+<p>You are creating the markers trough its address, isn't it ?<br>
+What i need to change for to do this trough lat/lng?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p199647">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Plotting locations on Google Maps</span><br>
+        Posted: Fri Mar 17, 2017 01:41 PM
+      </div>
+      <div class="content"><p>Sorry, I do not understand your question and your needs</p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-33729.html">1</a> <strong>2</strong> <a href="topic-33729-page-3.html">3</a> <a href="topic-33729-page-4.html">4</a> (49 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

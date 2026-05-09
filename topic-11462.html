@@ -1,0 +1,1626 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Scanner automation - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-11462">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Scanner automation</div>
+  <div class="post" id="p56499">
+    <div class="poster">
+      <div class="name" style="color:#105289">Patrick Mast</div>
+      <div class="rank">Posts: 246</div>
+      <div class="avatar"></div>
+      Joined: Sat Mar 03, 2007 08:42 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Scanner automation</span><br>
+        Posted: Fri Jun 06, 2008 05:40 PM
+      </div>
+      <div class="content"><p>Hello,</p>
+<p>I'd like to make a dialog with a button that instructs a scanner to start scanning and save the scanned document in a pre defined folder.</p>
+<p>Do you guys have ideas?</p>
+<p>Patrick</p></div>
+    </div>
+  </div>
+  <div class="post" id="p56500">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Scanner automation</span><br>
+        Posted: Fri Jun 06, 2008 06:22 PM
+      </div>
+      <div class="content">I found the following sample (not mine) but I don't know if it really work. Please test it and let me know:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "Fivewin.ch"
+
+
+FUNCTION MAIN()
+
+    LOCAL lUserInterface := .T.
+    LOCAL cFile :="TEMP.BMP"
+    LOCAL nResolution := 300
+
+    LOCAL oScn := Scanner():New()
+
+    oScn:Set( lUserInterface )
+
+    oScn:DigiToFile( cFile, nResolution )
+
+    oScn:End()
+
+    RETURN NIL
+
+
+#define TWAIN_DLL		"DMTwain.dll"
+
+
+CLASS Scanner
+	DATA	hWnd	AS NUMERIC	// Handle of the window
+	DATA	hDll	AS NUMERIC	// Handle of the DLL
+	DATA	lLoad	AS LOGICAL	//	.T. DLL &amp; Driver Loaded
+	DATA	hDib	AS NUMERIC	// Current Dib handle
+	*
+	METHOD New()			CONSTRUCTOR
+	METHOD End()
+	METHOD Set()				// Acquiring Dialog ON/OFF
+	METHOD Choose()			// Select Image Device Source
+	METHOD DigiToFile()		// Acquire Image and save to a file
+	METHOD DigiToClip()		// Acquire Image and copy to ClipBoard
+	METHOD SetResolution()	// Set Dpi for the scanner
+	*
+	PROTECTED :
+		METHOD Free()			// Release Dib's handle
+		METHOD IsActive()		// Twain Driver Loaded
+		METHOD Register()		// Register my application into Twain application
+		METHOD DibToFile()	// Write to file Dib's handle in BMP format
+END CLASS
+
+METHOD New(hWnd)
+// Constructor
+::hWnd := iif( ValType( hWnd ) == "N" , hWnd , 0 )
+::lLoad := .T.
+::hDLL := LoadLibrary( TWAIN_DLL )
+::hDib := 0
+if ::hDll &lt;= 21
+	::lLoad := .F.
+	MsgAlert( BuildError(::hDll) , TWAIN_DLL )
+	RETU Self
+end
+if ( ::lLoad := ::IsActive() )
+	::Register()
+end
+RETU Self
+
+METHOD End()
+// Destructor
+if ::hDib != 0
+	::Free( ::hDib )
+end
+FreeLibrary( ::hDll )
+RETU NIL
+
+METHOD DigiToFile( cFile , nRes )
+// Acquire Document &amp; save to file
+LOCAL nPixType := 0
+LOCAL cFarProc
+DEFAULT nRes := 100
+::SetResolution( nRes )
+
+if ::lLoad
+	cFarProc := GetProcAddress( ::hDLL, "TWAIN_AcquireNative",.T., WORD,WORD,_INT )
+	::hDib  := CallDLL( cFarProc,::hWnd,nPixType )
+	if ::hDib == 0
+		MsgInfo("Errore durante l'acquisizione dell'immagine","")
+	else
+		::DibToFile(::hDib,cFile)
+		::Free( ::hDib )
+	end
+end
+RETU Self
+
+METHOD DigiToClip()
+// Acquire document &amp; copy to ClipBoard
+LOCAL nPixType := 0
+LOCAL cFarProc
+LOCAL nResult
+if ::lLoad
+	cFarProc := GetProcAddress( ::hDLL, "TWAIN_AcquireToClipBoard",.T., _INT,WORD,_INT )
+	nResult  := CallDLL( cFarProc,::hWnd,nPixType )
+end
+RETU Self
+
+METHOD SetResolution( nDpi )
+// NEW
+LOCAL cFarProc
+LOCAL uResult
+DEFAULT nDpi := 100
+if ::lLoad
+	cFarProc := GetProcAddress( ::hDLL, "TWAIN_SetResolution",.T., VOID,_DOUBLE )
+	uResult  := CallDLL( cFarProc,nDpi )
+end
+RETU Self
+
+METHOD Set(lShow)
+// Show-Hide Scanner's Dialog Box
+LOCAL nHide := 0		// Default: Shows Scanner's Dialog Box
+LOCAL cFarProc
+LOCAL uResult
+DEFAULT lShow := .T.
+if ::lLoad
+	nHide := iif(lShow,0,1)
+	cFarProc := GetProcAddress( ::hDLL, "TWAIN_SetHideUI",.T., VOID,_INT )
+	uResult  := CallDLL( cFarProc,nHide )
+end
+RETU Self
+
+METHOD Choose()
+// Select Image Device Source
+LOCAL cFarProc
+LOCAL nResult
+if ::lLoad
+	cFarProc := GetProcAddress( ::hDLL, "TWAIN_SelectImageSource",.T., _INT,WORD )
+	nResult  := CallDLL( cFarProc,::hWnd )
+end
+RETU Self
+
+//---------- Protected Methods
+
+	METHOD Free(hDib)
+	// Release Dib's Handle
+	LOCAL cFarProc
+	LOCAL uResult
+	cFarProc := GetProcAddress( ::hDLL, "TWAIN_FreeNative",.T., VOID,WORD )
+	uResult  := CallDLL( cFarProc,hDib )
+	RETU NIL
+
+	METHOD DibToFile(hDib,cFile)
+	// Write to File From DIB's handle
+	LOCAL cFarProc
+	LOCAL nResult
+	LOCAL lRet
+	cFarProc := GetProcAddress( ::hDLL, "TWAIN_WriteNativeToFilename",.T., _INT,WORD,LPSTR)
+	lRet     := ( (nResult:=CallDLL( cFarProc,hDib,cFile ))==0 )
+	DO CASE
+		CASE nResult == -1
+			MsgInfo("Annullato dall'utente","File non registrato")
+		CASE nResult == -2
+			MsgInfo("Errore durante la scrittura sul file "+cFile,"File non registrato")
+		CASE nResult == -3
+			MsgInfo("Errore interno sul file DIB","File non registrato")
+		CASE nResult == -4
+			MsgInfo("Errore durante la scrittura sul file "+cFile+", probabile spazio insufficiente sul disco !","File non registrato")
+	ENDCASE
+	RETU lRet
+
+	METHOD IsActive()
+	// Is Twain driver loaded ?
+	LOCAL cFarProc
+	LOCAL nResult
+	cFarProc := GetProcAddress( ::hDLL, "TWAIN_IsAvailable",.T., _INT )
+	if ! (nResult 	:= CallDLL( cFarProc )) == 1
+		MsgAlert("Nessun driver per apparecchi TWAIN compatibili risulta disponibile !","Errore hardware")
+		// Messaggio inviato direttamente da TWAIN.DLL
+	end
+	RETU iif(nResult==1,.T.,.F.)
+
+	METHOD Register()
+	// Register my application into Twain application
+	LOCAL	nMaiorNum := 1
+	LOCAL nMinorNum := 0	// Result -&gt; 1.0
+	LOCAL nLanguage := 0
+	LOCAL nCountry  := 0
+	LOCAL cVersion  := "1.0"
+	LOCAL cManifact := "The Genius"
+	LOCAL cFamily   := "Digitizer"
+	LOCAL cProduct := StrTran(cFileName(GetModuleFileName(GetInstance())),".EXE","")
+	LOCAL cFarProc
+	LOCAL uResult
+	cFarProc := GetProcAddress( ::hDLL, "TWAIN_RegisterApp",.T.,;
+									VOID,_INT,_INT,_INT,_INT,LPSTR,LPSTR,LPSTR,LPSTR )
+	uResult  := CallDLL( cFarProc,nMaiorNum,nMinorNum,nLanguage,nCountry,cVersion,cManifact,cFamily,cProduct )
+	RETU NIL
+
+//---------- END Protected Methods
+
+STATIC FUNCTION BuildError(nError)
+LOCAL cRet := "Errore nella libreria dinamica"
+DO CASE
+	CASE nError == 0
+			cRet := "Memoria insufficiente ad eseguire il programma"
+	CASE nError == 2
+			cRet := "File non trovato"
+	CASE nError == 3
+			cRet := "Percorso non trovato"
+	CASE nError == 5
+			cRet := "Tentantivo di collegarsi dinamicamente ad un task o errore di condivisione"
+	CASE nError == 6
+			cRet := "La libreria richiede un segemento separato per ogni task"
+	CASE nError == 8
+			cRet := "Memoria insufficiente ad avviare l'applicazione"
+	CASE nError == 10
+			cRet := "Versione di MS Windows non corretta"
+	CASE nError == 11
+			cRet := "Libreria non valida oppure non Š un'applicazione MS Windows"
+	CASE nError == 12
+			cRet := "Applicazione disegnata per un sistema operativo diverso"
+	CASE nError == 13
+			cRet := "Applicazione disegnata per MS-DOS 4.0"
+	CASE nError == 14
+			cRet := "Tipo di file eseguibile sconosciuto"
+	CASE nError == 15
+			cRet := "Tentativo di caricare un'applicazione disegnata per funzionare in modalit… reale"
+	CASE nError == 16
+			cRet := "Tentativo di caricare una seconda istanza dell'applicazione contenente segmenti di dati multipli non marcati per la sola lettura"
+ENDCASE
+RETU OemToAnsi( cRet + "!" )</code></pre></div><br>
+<br>
+EMG</div>
+    </div>
+  </div>
+  <div class="post" id="p56518">
+    <div class="poster">
+      <div class="name" style="color:#105289">Patrick Mast</div>
+      <div class="rank">Posts: 246</div>
+      <div class="avatar"></div>
+      Joined: Sat Mar 03, 2007 08:42 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Scanner automation</span><br>
+        Posted: Sat Jun 07, 2008 08:42 AM
+      </div>
+      <div class="content"><blockquote><cite>Enrico Maria Giordano wrote:</cite>I found the following sample (not mine) but I don't know if it really work. Please test it and let me know:<br>
+EMG</blockquote><br>
+Thanks! Will give it a try.<br>
+<br>
+Patrick</div>
+    </div>
+  </div>
+  <div class="post" id="p56522">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jack</div>
+      <div class="rank">Posts: 300</div>
+      <div class="avatar"></div>
+      Joined: Wed Jul 11, 2007 11:06 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Scanner automation</span><br>
+        Posted: Sat Jun 07, 2008 10:49 AM
+      </div>
+      <div class="content"><p>There is a working sample in fivewin FW23</p></div>
+    </div>
+  </div>
+  <div class="post" id="p56523">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Scanner automation</span><br>
+        Posted: Sat Jun 07, 2008 10:57 AM
+      </div>
+      <div class="content"><p>What is the exact filename of the sample? I'm not able to locate it.</p>
+<p>EMG</p></div>
+    </div>
+  </div>
+  <div class="post" id="p56527">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marco Turco</div>
+      <div class="rank">Posts: 858</div>
+      <img class="avatar avatar-img" src="avatars/29.png" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 12:00 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Scanner automation</span><br>
+        Posted: Sat Jun 07, 2008 01:22 PM
+      </div>
+      <div class="content"><blockquote><cite>Patrick Mast wrote:</cite>Hello,<br>
+<br>
+I'd like to make a dialog with a button that instructs a scanner to start scanning and save the scanned document in a pre defined folder.<br>
+<br>
+Do you guys have ideas?<br>
+<br>
+Patrick</blockquote><br>
+<br>
+Hi Patrick,<br>
+I suggest you to use the Rafa Carmona's tscan class.<br>
+<br>
+It use the DOSADI dlls that are not free if you want to use them in a commercial app but it has the big feature that you can save the image in a lot of graphic formats (jpeg,png,bmp,tiff) and also pdf in a hardware indipendent mode (note that a lot of scanners can only acquire the image in the bmp format). <br>
+<br>
+<br>
+//  $Id: TSCAN.prg,v 1.1 2004/03/22 12:20:43 xthefull Exp $<br>
+// Example scanner, Class TSCAN32 and Wrappers for [x]Harbour<br>
+//    This program is free software; you can redistribute it and/or modify<br>
+//    it under the terms of the GNU General Public License as published by<br>
+//    the Free Software Foundation; either version 2 of the License, or<br>
+//    (at your option) any later version.<br>
+<br>
+//    This program is distributed in the hope that it will be useful,<br>
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of<br>
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the<br>
+//    GNU General Public License for more details.<br>
+<br>
+//    You should have received a copy of the GNU General Public License<br>
+//    along with this software; see the file COPYING.  If not, write to<br>
+//    the Free Software Foundation, Inc., 59 Temple Place, Suite 330,<br>
+//    Boston, MA 02111-1307 USA (or visit the web site <!-- m --><a class="postlink" href="http://www.gnu.org/">http://www.gnu.org/</a><!-- m -->).<br>
+<br>
+//    The exception is that, if you link the class Tscan32 and Wrappers C with other<br>
+//    files to produce an executable, this does not by itself cause the<br>
+//    resulting executable to be covered by the GNU General Public License.<br>
+//    Your use of that executable is in no way restricted on account of<br>
+//    linking the Tscan32 and Wrappers library code into it.<br>
+<br>
+// 2003(c)- Rafa Carmona( Thefull )<br>
+//<br>
+// interface to Dosadi EZTWAIN library by TheFull<br>
+// Interface para la libreria EZTWAIN de Dosadi por TheFull<br>
+// 32 bits<br>
+<br>
+// ATENTION. THIS LICENSE NOT APLICATTE A EZTWAIN.<br>
+// YOUR VIEW LICENSE EZTW32.DLL IN <!-- w --><a class="postlink" href="http://WWW.DOSADI.COM">WWW.DOSADI.COM</a><!-- w --><br>
+<br>
+#INCLUDE "HBCLASS.CH"<br>
+<br>
+<br>
+// Returns the TWAIN Protocol State per the spec.<br>
+#define TWAIN_PRESESSION		1	// source manager not loaded<br>
+#define TWAIN_SM_LOADED			2	// source manager loaded<br>
+#define TWAIN_SM_OPEN			3	// source manager open<br>
+#define TWAIN_SOURCE_OPEN		4	// source open but not enabled<br>
+#define TWAIN_SOURCE_ENABLED	5	// source enabled to acquire<br>
+#define TWAIN_TRANSFER_READY	6	// image ready to transfer<br>
+#define TWAIN_TRANSFERRING		7	// image in transit<br>
+<br>
+***************************************************************************<br>
+*<br>
+* CLASS TSCAN32<br>
+* 2003(c)- by Rafa Carmona ( TheFull )<br>
+* Beta 1.0<br>
+* Beta 2.0  New. Support Get ClipBoard to hDib.<br>
+*           New. ClipboardToFile( cFile ) -&gt; Save File Jpg into Clipboard.<br>
+*<br>
+* Beta 3.0  New. ReWrite Method End, conflict GPF's  <br>
+*<br>
+* Beta 4.0  Return parameters in format Logical. Change hb_retni() with hb_retl()<br>
+*<br>
+****************************************************************************<br>
+<br>
+CLASS TSCAN32<br>
+<br>
+      DATA hWnd<br>
+      DATA cFile<br>
+      DATA hDib<br>
+      DATA lError INIT .F.<br>
+      DATA nState<br>
+      DATA lBmp   INIT .F.<br>
+<br>
+      METHOD New( cFile, hWnd ) CONSTRUCTOR<br>
+      METHOD End()<br>
+      METHOD Register()<br>
+      MESSAGE FreeNative METHOD End()<br>
+      MESSAGE Close      METHOD End()<br>
+<br>
+      METHOD DigiToFile( cFile )<br>
+      METHOD DibToJpeg( cFile )  INLINE TW_DibWJpg( ::hDib, cFile )<br>
+      METHOD DibToBmp( cFile )   INLINE TW_DibWBmp( ::hDib, cFile )<br>
+      METHOD SetJpegQ( nQuality) INLINE TW_SetJpegQuality( nQuality )// 1..100 Default 75<br>
+<br>
+      METHOD Acquire()           INLINE TW_Acquire( ::hWnd )<br>
+      METHOD AcquireSingle(cFile) INLINE TW_AcquireToFilename( ::hWnd, cFile)<br>
+      METHOD AcquireMulti(cFile)  INLINE TW_AcquireMultipageFile( ::hWnd, cFile )<br>
+      METHOD AcquireClipBoard()  INLINE TW_AcquireToClipboard( ::hWnd , 0 )<br>
+<br>
+      METHOD OpenDefault()<br>
+      METHOD OpenSource()<br>
+      METHOD EnableSource()     INLINE TW_EnableSource( ::hWnd )<br>
+      METHOD Choose()           INLINE TW_SelectImageSource()<br>
+<br>
+      // **********    Basic TWAIN Inquiries **********************************<br>
+      METHOD IsAvailable()          INLINE TW_Avail()<br>
+      METHOD Version()              INLINE ( Str( TW_EasyVersion() / 100 ) )<br>
+      METHOD State()                INLINE (::nState := TW_State() )<br>
+      METHOD SourceName()           INLINE TW_SourceName()<br>
+      METHOD GetSourceName( cName ) INLINE TW_GetSourceName( cName )<br>
+<br>
+<br>
+      //************   Global Options *****************************************<br>
+      METHOD SetHide( lHide )     INLINE IIF( lHide , TW_SetHideUI(1), TW_SetHideUI(0) )<br>
+<br>
+<br>
+      //-*********** High-level Capability Negotiation Functions **************<br>
+      // These functions should only be called in State 4 (TWAIN_SOURCE_OPEN)<br>
+      METHOD PixelType( nType ) INLINE ( ::State(),;<br>
+                                if( ::nState &gt;= TWAIN_SOURCE_OPEN,;<br>
+                                                TW_SetCurrentPixelType( nType ),0 ) )<br>
+      METHOD SetRes( dRes )     INLINE ( ::State(),;<br>
+                                if( ::nState &gt;= TWAIN_SOURCE_OPEN,;<br>
+                                                TW_SetCurrentResolution( dRes ),0) )<br>
+      METHOD SetXRes( dRes )            INLINE TW_SetXResolution( dRes )<br>
+      METHOD SetYRes( dRes )            INLINE TW_SetYResolution( dRes )<br>
+      METHOD SetUnits( nUnits )         INLINE TW_SETCURRENTUNITS( nUnits )<br>
+      METHOD SetContrats( dContrats)    INLINE TW_SETCONTRATS( dContrats  )<br>
+      METHOD SetBright( dBright )       INLINE TW_SETBRIGHTNESS( dBright )<br>
+      METHOD SetPaper( nPaper )         INLINE TW_SETPAPERSIZE( nPaper )<br>
+      METHOD GetResolution()            INLINE TW_GETCURRENTRESOLUTION()<br>
+<br>
+<br>
+      //******** Image Layout (Region of Interest) **********************<br>
+      METHOD RegionSet( nLeft,nTop, nRigth, nBottom )  INLINE TW_SetImageLayout( nLeft,nTop, nRigth, nBottom )<br>
+      METHOD RegionReset()                             INLINE TW_ResetImageLayout()<br>
+      METHOD RegionGet( L,T,R,B )                      INLINE TW_GetImageLayout(@L,@T,@R,@B)<br>
+      METHOD RegionGetDefault( L,T,R,B )               INLINE TW_GetDefaultImageLayout(@L,@T,@R,@B)<br>
+<br>
+      METHOD ClipBoardToFile( cFile )<br>
+      METHOD DIB_GetFromClipboard() INLINE TW_DIB_GetFromClipboard()<br>
+<br>
+      // feeader<br>
+      METHOD HasFeeder()    INLINE TW_HasFeeder()<br>
+      METHOD IsFeederLoad() INLINE TW_IsFeederLoaded()<br>
+      METHOD IsAutoFeedOn() INLINE TW_IsAutoFeedon()<br>
+      METHOD SetAutoFedd( lOnOff )  INLINE TW_SetAutoFedd( lOnOff )<br>
+      METHOD SelectFeeder( lOnOff )  INLINE TW_SelectFeeder( lOnOff )<br>
+<br>
+ENDCLASS<br>
+<br>
+***********************************************************<br>
+***********************************************************<br>
+METHOD New( cFile, hWnd ) CLASS TSCAN32<br>
+<br>
+       IF Empty( hWnd )<br>
+          ::hWnd := GetActiveWindow()<br>
+       ENDIF<br>
+<br>
+       IF Empty( cFile )<br>
+          ::cFile := "TestTscan32.jpg"<br>
+       ELSE<br>
+          ::cFile := cFile<br>
+       ENDIF<br>
+<br>
+        tw_setapptitle("Software XP Office Packages")<br>
+        tw_setapplicationkey(00000000)<br>
+<br>
+       IF !::IsAvailable()<br>
+          ::lError := .T.<br>
+         // MsgStop( "TWAIN no found","Attention!") // Only Fivewin<br>
+       ENDIF<br>
+<br>
+       IF !::lError<br>
+          ::Register( 1,0,0,0,"1.0 Beta","by Rafa Carmona","Scan by Thefull","Software XP Office Packages" )<br>
+       ENDIF<br>
+       ::OpenSource()<br>
+       ::OpenDefault()<br>
+<br>
+RETURN Self<br>
+<br>
+**********************************************************************<br>
+* Comprueba que esta disponible TWAIN y cargalo<br>
+**********************************************************************<br>
+METHOD OpenSource() CLASS TSCAN32<br>
+   Local nResult := TW_LoadSourceManager()<br>
+<br>
+   DO CASE<br>
+      CASE nResult = -1<br>
+           ::lError := .T.<br>
+           // MsgStop("Error Driver TWAIN"," ¿ Insufficient Memory ?")<br>
+           Return Self<br>
+   ENDCASE<br>
+<br>
+Return Self<br>
+<br>
+***********************************************************************<br>
+*  Abre TWAIN el ultimo que fue seleccionado desde Select ..Dialog<br>
+* Si no puede cargarlo solicita seleccionar Source.<br>
+***********************************************************************<br>
+METHOD OpenDefault() CLASS TSCAN32<br>
+       Local nResult := TW_OpenDefaultSource()<br>
+<br>
+       DO CASE<br>
+          CASE nResult = 0<br>
+               ::Choose()<br>
+          CASE nResult = -1<br>
+               ::lError := .T.<br>
+          OTHERWISE<br>
+               ::lError := .F.<br>
+       ENDCASE<br>
+<br>
+Return Self<br>
+<br>
+**************************************************************************<br>
+* Liberamos hDib y cerramos el dispositivo<br>
+**************************************************************************<br>
+METHOD End() CLASS TSCAN32<br>
+<br>
+   if !Empty( ::hDib )<br>
+      TW_Free( ::hDib )<br>
+   endif<br>
+<br>
+   TW_CloseSourceManager( ::hWnd ) // Close para evitar GPF<br>
+<br>
+Return NIL<br>
+<br>
+***************************************************************************<br>
+* Registra la aplicacion<br>
+***************************************************************************<br>
+METHOD Register( nMajor ,nMinor,nLanguage,nCountry,cVersion,cName,cFamily,cProduct ) CLASS TSCAN32<br>
+<br>
+       TW_REGISTERAPP( nMajor ,nMinor,nLanguage,nCountry,;<br>
+                       cVersion,cName,cFamily,cProduct )<br>
+<br>
+Return Self<br>
+<br>
+***********************************************************<br>
+* Digitaliza hacia un fichero .jpg<br>
+***********************************************************<br>
+METHOD DigiToFile( cFile )<br>
+<br>
+       if EMPTY( cFile )<br>
+          cFile := ::cFile<br>
+       endif<br>
+<br>
+       IF !::lError<br>
+          ::hDib := ::Acquire()         // Importar<br>
+       ENDIF<br>
+<br>
+       IF !Empty( ::hDib )<br>
+          IF ::lBmp                      // Format bmp<br>
+             ::DibToBmp( cFile )       // Si no hacemos uso de BMP<br>
+          ELSE<br>
+             IF TW_IsJpg()              // Si puede hacer uso del JPG<br>
+                ::DibToJpeg( cFile )<br>
+             ELSE<br>
+                ::DibToBmp( cFile )       // Si no hacemos uso de BMP<br>
+             ENDIF<br>
+          ENDIF<br>
+       ENDIF<br>
+<br>
+Return Self<br>
+<br>
+<br>
+************************************************************************<br>
+* Save content clipboard into to file.jpg<br>
+************************************************************************<br>
+METHOD ClipBoardToFile( cFile ) CLASS TSCAN32<br>
+       Local hDib, nError<br>
+<br>
+       IF Empty( cFile )<br>
+          ::cFile := "TestTscan32.jpg"<br>
+       ELSE<br>
+          ::cFile := cFile<br>
+       ENDIF<br>
+<br>
+        hDib := ::DIB_GetFromClipboard()<br>
+<br>
+<br>
+       IF !Empty( hDib )<br>
+<br>
+           IF ::lBmp<br>
+              TW_DibWBmp(  hDib, ::cFile )<br>
+           ELSE<br>
+              IF TW_IsJpg()              // Si puede hacer uso del JPG<br>
+                 TW_DibWJpg( hDib,  ::cFile )<br>
+              ELSE<br>
+                 TW_DibWBmp(  hDib, ::cFile )<br>
+              ENDIF<br>
+           ENDIF<br>
+<br>
+           TW_Free( hDib )<br>
+<br>
+       ENDIF<br>
+<br>
+RETURN Self<br>
+/* -----------------------------------------------------------------<br>
+  Implementation Language C for [x]Harbour(WIN32)<br>
+  2003(c)- by Rafa Carmona ( TheFull )<br>
+<br>
+  Wrappers for EZTW32.DLL the DosAdi.<br>
+<br>
+-------------------------------------------------------------------- */<br>
+#pragma BEGINDUMP<br>
+<br>
+ #include &lt;windows.h&gt;<br>
+ #include "eztwain.h"<br>
+ #include "hbapi.h"<br>
+<br>
+<br>
+/*--------- Top-Level Calls -------------------------------------*/<br>
+<br>
+ HB_FUNC( TW_ACQUIRE )  // hWnd<br>
+ {<br>
+  hb_retnl( ( LONG )TWAIN_Acquire( ( HWND ) hb_parnl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_FREE )     // hDib<br>
+ {<br>
+  TWAIN_FreeNative( ( HANDLE ) hb_parnl( 1 ) );<br>
+  hb_ret();<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SELECTIMAGESOURCE )  // hWnd<br>
+ {<br>
+  hb_retni( TWAIN_SelectImageSource( ( HWND ) hb_parnl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_ACQUIRENATIVE )  // hWnd, nPixTypes<br>
+ {<br>
+  hb_retnl( ( LONG )TWAIN_AcquireNative( ( HWND ) hb_parnl( 1 ), (unsigned) hb_parni(2) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_ACQUIRETOCLIPBOARD )  // hWnd, nPixTypes<br>
+ {<br>
+  hb_retl( TWAIN_AcquireToClipboard( ( HWND ) hb_parnl( 1 ), (unsigned) hb_parni(2) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_ACQUIREMEMORY )  // hWnd<br>
+ {<br>
+  hb_retnl( ( LONG )TWAIN_AcquireMemory( ( HWND ) hb_parnl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_ACQUIRETOFILENAME )  // hWnd, cFileName<br>
+ {<br>
+  hb_retni( TWAIN_AcquireToFilename( ( HWND ) hb_parnl( 1 ), hb_parc( 2 ) ) );<br>
+ }<br>
+ HB_FUNC( TW_ACQUIREMULTIPAGEFILE )  // hWnd, cFileName<br>
+ {<br>
+  hb_retni( TWAIN_AcquireMultipageFile( ( HWND ) hb_parnl( 1 ), hb_parc( 2 ) ) );<br>
+ }<br>
+<br>
+<br>
+ HB_FUNC( TW_ACQUIREFILE )  // hWnd, nFF, cFileName<br>
+ {<br>
+  hb_retni( TWAIN_AcquireFile( ( HWND ) hb_parnl( 1 ), hb_parni( 2 ) ,hb_parc( 3 ) ) );<br>
+ }<br>
+<br>
+<br>
+//--------- Basic TWAIN Inquiries<br>
+<br>
+ HB_FUNC( TW_AVAIL )<br>
+ {<br>
+  hb_retl( TWAIN_IsAvailable()  );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_EASYVERSION)<br>
+ {<br>
+  hb_retni( TWAIN_EasyVersion()  );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_STATE )<br>
+ {<br>
+  hb_retni( TWAIN_State() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SOURCENAME )<br>
+ {<br>
+  hb_retc( TWAIN_SourceName() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETSOURCENAME )   // pzName<br>
+ {<br>
+  TWAIN_GetSourceName( (LPSTR) hb_parc( 1 ) );<br>
+  hb_ret();<br>
+ }<br>
+<br>
+<br>
+//--------- DIB handling utilities ---------<br>
+<br>
+ HB_FUNC( TW_DIBWJPG ) // hDib, cName<br>
+ {<br>
+  hb_parni( DIB_WriteToJpeg( ( HANDLE ) hb_parnl(1), hb_parc( 2 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_DIBWBMP ) // hDib, cName<br>
+ {<br>
+  hb_parni( DIB_WriteToBmp( ( HANDLE ) hb_parnl(1), hb_parc( 2 ) ) );<br>
+ }<br>
+<br>
+<br>
+//--------- File Read/Write<br>
+<br>
+ HB_FUNC( TW_ISJPG )<br>
+ {<br>
+  hb_retl( TWAIN_IsJpegAvailable() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETSAVEFORMAT )<br>
+ {<br>
+  hb_retni( TWAIN_SetSaveFormat( hb_parni( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETSAVEFORMAT )<br>
+ {<br>
+  hb_retni( TWAIN_GetSaveFormat() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETJPEGQUALITY ) // nQuality 1...100<br>
+ {<br>
+  TWAIN_SetJpegQuality( hb_parni( 1 ) );<br>
+  hb_ret();<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETJPEGQUALITY )<br>
+ {<br>
+  hb_retni( TWAIN_GetJpegQuality() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_WRITENATIVETOFILENAME )<br>
+ {<br>
+  hb_retni( TWAIN_WriteNativeToFilename( (HANDLE) hb_parnl(1), hb_parc(2) ));<br>
+ }<br>
+<br>
+ HB_FUNC( TW_LOADNATIVEFROMFILENAME )<br>
+ {<br>
+  hb_retnl( (LONG) TWAIN_LoadNativeFromFilename( hb_parc( 1 ) ) );<br>
+ }<br>
+<br>
+<br>
+<br>
+//--------- Global Options ----------------------------------------------<br>
+ HB_FUNC( TW_SETMULTITRANSFER )<br>
+ {<br>
+  TWAIN_SetMultiTransfer( hb_parni( 1 ) );<br>
+  hb_ret();<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETMULTITRANSFER )<br>
+ {<br>
+  hb_retni( TWAIN_GetMultiTransfer() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETHIDEUI  ) // nHide<br>
+ {<br>
+  TWAIN_SetHideUI( hb_parni( 1) );<br>
+  hb_ret();<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETHIDEUI  )<br>
+ {<br>
+  hb_retni( TWAIN_GetHideUI() );<br>
+ }<br>
+<br>
+<br>
+ HB_FUNC( TW_DISABLEPARENT )<br>
+ {<br>
+  TWAIN_DisableParent( hb_parni( 1 ) );<br>
+  hb_ret();<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETDISABLEPARENT )<br>
+ {<br>
+  hb_retni( TWAIN_GetDisableParent() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_REGISTERAPP )<br>
+ {<br>
+<br>
+ TWAIN_RegisterApp( hb_parni(1),hb_parni(2),hb_parni(3),hb_parni(4),<br>
+                    hb_parc(5), hb_parc(6),<br>
+                    hb_parc(7), hb_parc(8) );<br>
+ hb_ret();<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETAPPTITLE )<br>
+ {<br>
+  TWAIN_SetAppTitle( hb_parc( 1 ) );<br>
+  hb_ret();<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETAPPLICATIONKEY )<br>
+ {<br>
+  TWAIN_SetApplicationKey( hb_parni( 1 ) );<br>
+  hb_ret();<br>
+ }<br>
+<br>
+<br>
+<br>
+<br>
+//--------- TWAIN State Control ---------------------------------------<br>
+<br>
+ HB_FUNC( TW_LOADSOURCEMANAGER )<br>
+ {<br>
+  hb_retni( TWAIN_LoadSourceManager() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_OPENSOURCEMANAGER )  // hWnd<br>
+ {<br>
+  hb_retni( TWAIN_OpenSourceManager( ( HWND ) hb_parnl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_OPENDEFAULTSOURCE )<br>
+ {<br>
+  hb_retni( TWAIN_OpenDefaultSource() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETSOURCELIST )<br>
+ {<br>
+  hb_retni( TWAIN_GetSourceList() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETNEXTSOURCENAME )<br>
+ {<br>
+  hb_retni( TWAIN_GetNextSourceName( hb_parc( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETDEFAULTSOURCENAME )<br>
+ {<br>
+  hb_retni( TWAIN_GetDefaultSourceName( hb_parc( 1 ) ));<br>
+ }<br>
+<br>
+ HB_FUNC( TW_OPENSOURCE )<br>
+ {<br>
+  hb_retni( TWAIN_OpenSource( hb_parc( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_ENABLESOURCE )       // hWnd<br>
+ {<br>
+  hb_retni( TWAIN_EnableSource( ( HWND ) hb_parnl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_DISABLESOURCE )<br>
+ {<br>
+  hb_retni( TWAIN_DisableSource( ) );<br>
+<br>
+ }<br>
+<br>
+ HB_FUNC( TW_CLOSESOURCE )<br>
+ {<br>
+  hb_retni( TWAIN_CloseSource() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_CLOSESOURCEMANAGER )<br>
+ {<br>
+  hb_retni( TWAIN_CloseSourceManager( (HWND) hb_parnl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_UNLOADSOURCEMANEGER )<br>
+ {<br>
+  hb_retni( TWAIN_UnloadSourceManager() );<br>
+ }<br>
+<br>
+<br>
+<br>
+//--------- High-level Capability Negotiation Functions --------------<br>
+// These functions should only be called in State 4 (TWAIN_SOURCE_OPEN)<br>
+<br>
+ HB_FUNC( TW_GETCURRENTUNITS )<br>
+ {<br>
+  hb_retni( TWAIN_GetCurrentUnits() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETCURRENTUNITS ) // nUnits<br>
+ {<br>
+  hb_retni( TWAIN_SetCurrentUnits( hb_parni( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETBITDEPTH )<br>
+ {<br>
+  hb_retni( TWAIN_GetBitDepth() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETBITDEPTH )<br>
+ {<br>
+  hb_retni( TWAIN_SetBitDepth( hb_parni( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETPIXELTYPE )<br>
+ {<br>
+  hb_retni( TWAIN_GetPixelType() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETCURRENTPIXELTYPE )  // nBits<br>
+ {<br>
+  hb_retni( TWAIN_SetCurrentPixelType( hb_parni( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETCURRENTRESOLUTION )<br>
+ {<br>
+  hb_retnd( TWAIN_GetCurrentResolution());<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETYRESOLUTION )<br>
+ {<br>
+  hb_retnd( TWAIN_GetYResolution());<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETCURRENTRESOLUTION )  // dRes<br>
+ {<br>
+  hb_retni( TWAIN_SetCurrentResolution( hb_parnd( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETXRESOLUTION )<br>
+ {<br>
+  hb_retni( TWAIN_SetXResolution( hb_parnd( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETYRESOLUTION )<br>
+ {<br>
+  hb_retni( TWAIN_SetYResolution( hb_parnd( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETCONTRATS ) //dCon<br>
+ {<br>
+  hb_retni( TWAIN_SetContrast( hb_parnd( 1 ) ) ); // -1000....+1000<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETBRIGHTNESS ) //dBri<br>
+ {<br>
+  hb_retni( TWAIN_SetBrightness( hb_parnd( 1 ) ) ); // -1000....+1000<br>
+  }<br>
+<br>
+ HB_FUNC( TW_SETTHRESHOLD )<br>
+ {<br>
+  hb_retni( TWAIN_SetThreshold( hb_parnd( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETCURRENTTHRESHOLD )<br>
+ {<br>
+  hb_retnd( TWAIN_GetCurrentThreshold() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETXFERMECH )<br>
+ {<br>
+  hb_retni( TWAIN_SetXferMech( hb_parni( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_XFERMECH )<br>
+ {<br>
+  hb_retni( TWAIN_XferMech() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SUPPORTSFILEXFER )<br>
+ {<br>
+  hb_retni( TWAIN_SupportsFileXfer() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETPAPERSIZE ) // nTypePaper<br>
+ {<br>
+  hb_retni( TWAIN_SetPaperSize( hb_parni( 1 ) ) );<br>
+ }<br>
+<br>
+//-------- Document Feeder ---------------------------------<br>
+<br>
+ HB_FUNC( TW_HASFEEDER )<br>
+ {<br>
+  hb_retl( TWAIN_HasFeeder() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_ISFEEDERSELECTED )<br>
+ {<br>
+  hb_retl( TWAIN_IsFeederSelected() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SELECTFEEDER )<br>
+ {<br>
+  hb_retl( TWAIN_SelectFeeder( hb_parl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_ISAUTOFEEDON )<br>
+ {<br>
+  hb_retl( TWAIN_IsAutoFeedOn() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETAUTOFEDD )<br>
+ {<br>
+  hb_retl( TWAIN_SetAutoFeed( hb_parl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_ISFEEDERLOADED )<br>
+ {<br>
+  hb_retl( TWAIN_IsFeederLoaded() );<br>
+ }<br>
+<br>
+//-------- Duplex Scanning ------------------------------------------<br>
+ HB_FUNC( TW_GETDUPLEXSUPPORT )<br>
+ {<br>
+  hb_retni( TWAIN_GetDuplexSupport() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_ENABLEDUPLEX )<br>
+ {<br>
+  hb_retni( TWAIN_EnableDuplex( hb_parni( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_ISDUPLEXENABLED )<br>
+ {<br>
+  hb_retl( TWAIN_IsDuplexEnabled() );<br>
+ }<br>
+<br>
+//--------- Other 'exotic' capabilities --------<br>
+<br>
+ HB_FUNC( TW_HASCONTROLLABLEUI )<br>
+ {<br>
+  hb_retni( TWAIN_HasControllableUI() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETINDICATORS )<br>
+ {<br>
+  hb_retni( TWAIN_SetIndicators( hb_parl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_COMPRESSION )<br>
+ {<br>
+  hb_retni( TWAIN_Compression() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETCOMPRESSION )<br>
+ {<br>
+  hb_retni( TWAIN_SetCompression( hb_parni( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_TILED )<br>
+ {<br>
+  hb_retl( TWAIN_Tiled() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETTILED )<br>
+ {<br>
+  hb_retni( TWAIN_SetTiled( hb_parl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_PLANARCHUNKY )<br>
+ {<br>
+  hb_retni( TWAIN_PlanarChunky() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETPLANARCHUNKY )<br>
+ {<br>
+  hb_retni( TWAIN_SetPlanarChunky( hb_parni( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_PIXELFLAVOR )<br>
+ {<br>
+  hb_retni( TWAIN_PixelFlavor() );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETPIXELFLAVOR )<br>
+ {<br>
+  hb_retni( TWAIN_SetPixelFlavor( hb_parni( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETLIGHTPATH )<br>
+ {<br>
+  hb_retni( TWAIN_SetLightPath( hb_parl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETAUTOBRIGHT )<br>
+ {<br>
+  hb_retni( TWAIN_SetAutoBright( hb_parl( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETGAMMA )<br>
+ {<br>
+  hb_retni( TWAIN_SetGamma( hb_parnd( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETSHADOW )<br>
+ {<br>
+  hb_retni( TWAIN_SetShadow( hb_parnd( 1 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_SETHIGHLIGHT )<br>
+ {<br>
+  hb_retni( TWAIN_SetHighlight( hb_parnd( 1 ) ) );<br>
+ }<br>
+//--------- Image Layout (Region of Interest) --------<br>
+<br>
+<br>
+ HB_FUNC( TW_SETIMAGELAYOUT )   // left, top, right, bottom<br>
+ {<br>
+  hb_retni( TWAIN_SetImageLayout( hb_parnd( 1 ),hb_parnd( 2 ),hb_parnd( 3 ),hb_parnd( 4 ) ) );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_RESETIMAGELAYOUT )<br>
+ {<br>
+  TWAIN_ResetImageLayout();<br>
+  hb_ret();<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETIMAGELAYOUT )<br>
+ {<br>
+  double L,T,R,B;<br>
+  int nRet;<br>
+<br>
+  nRet = TWAIN_GetImageLayout( &amp;L,&amp;T,&amp;R,&amp;B );<br>
+<br>
+  hb_stornd( L, 1 );<br>
+  hb_stornd( T, 2 );<br>
+  hb_stornd( R, 3 );<br>
+  hb_stornd( B, 4 );<br>
+  hb_retni( nRet );<br>
+ }<br>
+<br>
+ HB_FUNC( TW_GETDEFAULTIMAGELAYOUT )<br>
+ {<br>
+  double L,T,R,B;<br>
+  int nRet;<br>
+<br>
+  nRet = TWAIN_GetDefaultImageLayout( &amp;L, &amp;T, &amp;R, &amp;B);<br>
+<br>
+  hb_stornd( L, 1 );<br>
+  hb_stornd( T, 2 );<br>
+  hb_stornd( R, 3 );<br>
+  hb_stornd( B, 4 );<br>
+  hb_retni( nRet );<br>
+ }<br>
+<br>
+//HANDLE EZTAPI DIB_GetFromClipboard(void);<br>
+HB_FUNC( TW_DIB_GETFROMCLIPBOARD )<br>
+{<br>
+ hb_retnl( (LONG) DIB_GetFromClipboard() );<br>
+}<br>
+<br>
+// para no depender de Five, y harbour poder el solito trabajar <br>
+ HB_FUNC ( GETACTIVEWINDOW )<br>
+ {<br>
+  hb_retnl( ( LONG ) GetActiveWindow() );<br>
+ }<br>
+<br>
+#pragma ENDDUMP<br>
+<br>
+<br>
+/*<br>
+  TWAIN.<br>
+  Bajo estas siglas se esconde la tecnologica de adquisicion de imagen<br>
+  desde cualquier tipo de dispositivo que cumpla dicho standar, como<br>
+  puede ser el dispositivo mas comun, el scanner, a otros como las camaras<br>
+  WebCam.<br>
+<br>
+  En este capitulo veremos las posibilidades qe tenemos nosotros , vil<br>
+  progrmador de Harbour&amp;Fivewin, de aprovecharnos.<br>
+<br>
+  He de decir que nosotros usaremos un 'atajo'. Dicho 'atajo' sera hacer<br>
+  uso de un par de DLL que a parte de cumplir nuestro requisito , que es<br>
+  ni mas ni menos que controlar un dispositivo que cumpla la norma TWAIN,<br>
+  nos hara la programacion muchisimo mas sencilla.<br>
+<br>
+  La primera DLL a usar sera EZTW32.DLL, de la compañia dosadi.<br>
+  Dicha DLL nos brinda la posibilidad de conectar con el standard TWAIN<br>
+  de  una forma mucho mas simple.<br>
+  He de decir que es perfectamente posible programar el TWAIN directamente,<br>
+  ahora bien, no creo que el esfuerzo invertido merezca la pena teniendo<br>
+  dicha DLL a nuestro alcance.<br>
+<br>
+  La segunda es ij11.dll de la casa Intel. Dicha libreria es usada por<br>
+  la dll EZTW32.DLL para guardar la imagen obtenido a un fichero JPEG.<br>
+  Si no tuvieramos dicha ij11.dll, simplemente se guardara en formato BMP.<br>
+<br>
+  Teniendo en cuenta todo esto, empezaremos a explicar la clase de mi<br>
+  creacion: TSCAN32.<br>
+<br>
+  El motivo principal a que me ha llevado a crear la interface con el<br>
+  driver TWAIN son dos:<br>
+<br>
+   1.- La clase TScan de 16 bits que viene con Fivewin, en determinados<br>
+       momentos no funciona como deberia de funcionar.<br>
+<br>
+   2.- La salida no era posible guardala como formato JPEG.<br>
+<br>
+   Asi que os podeis imaginar las mejoras de la nueva clase con respecto<br>
+   a la de 16 bits:<br>
+<br>
+   1.- 32 Bits<br>
+   2.- Interface en lenguaje C.<br>
+   3.- Graba en JPEGS o directamente al portapapeles!!!<br>
+   4.- Realmente funciona!!! <br>
+<br>
+   Veamos pues todo el entramado en codigo fuente.<br>
+<br>
+   Creacion de un objeto TScan y scaneando:<br>
+<br>
+      oScan := TScan32():New( cFile )<br>
+      oScan:DigiToFile()<br>
+<br>
+   Y esto es todo lo que tienes que escribir!!<br>
+   Realmente fantastico, no crees ?<br>
+<br>
+   Ahora bien, como es logico de suponer , quizas nos interese escoger<br>
+   que tipo de salida queremos, dimensiones, etc..., como por ejemplo:<br>
+<br>
+      oScan:PixelType( TWPT_GRAY  )  // TWPT_GRAY  = 1<br>
+<br>
+   con esta simple instruccion estamos definiendo que el dispositivo<br>
+   capture en Escala de Grises!<br>
+   Realmente esto no podria ser mas simple!<br>
+<br>
+   Teneis disponible un ejemplo donde vereis como podemos escanear y<br>
+   visualizar lo que hemos escaneado para que veais que con cuatro lineas<br>
+   de codigo podemos hacer cosas muy potente.<br>
+<br>
+   Ahora bien, os preguntareis como funciona el chiringuito, pues pasemos<br>
+   a ver como esta construido y el porque.<br>
+<br>
+   CLASE TSCAN32. Variables de Instancia y metodos.<br>
+<br>
+   La clase TScan32 te encapsula todo el funcionamiento interno para que<br>
+   a la hora de escribir tu aplicacion , el coste de implementacion sea<br>
+   minimo, y ya lo creo que es minimo!!! 2 Lineas de programacion y<br>
+   tienes tu aplicacion disponible para escanner desde scanners,webcam,etc...<br>
+<br>
+   Aqui detallare los metodos mas interesantes o mas comunes, aunque en<br>
+   la implementacion en C realice un largo y tedioso trabajo y esta el<br>
+   95% portada para que puedas hacer uso si ese es tu deseo.<br>
+<br>
+   DATAs:<br>
+      DATA hWnd<br>
+           Handle de la ventana padre.<br>
+      DATA cFile<br>
+           Nombre del fichero resultante.<br>
+      DATA hDib<br>
+           Handle del DIB<br>
+      DATA lError INIT .F.<br>
+           Indica si se ha producido un error<br>
+      DATA nState<br>
+           Indica en que estado se encuentra el dispositivo TWAIN<br>
+      DATA lBmp   INIT .F.<br>
+           Indica qe quiero salida BMP si es .T.<br>
+<br>
+<br>
+   METHODs:<br>
+<br>
+      New( cFile, hWnd ) CONSTRUCTOR<br>
+      Inicializa el dispositivo TWAIN.<br>
+         cFile := Nombre del Fichero resultante<br>
+          hWnd := Handle de la ventana padre<br>
+<br>
+      End(), FreeNative , Close<br>
+      Cierra el dispositivo TWAIN y libera hDib.<br>
+<br>
+      Register()<br>
+      Registra la aplicacion.<br>
+<br>
+      DigiToFile( cFile )<br>
+      Digitaliza directamente a un fichero.<br>
+         cFile := Fichero resultante opcional.<br>
+                  Por defecto es ::cFile<br>
+<br>
+      DibToJpeg( cFile )  y DibToBmp( cFile )<br>
+      Guarda el contenido del resultado de la adquisicion, hDib,<br>
+      en un fichero JPEG o BMP<br>
+<br>
+      SetJpegQ( nQuality)<br>
+      Calidad del JPEG. Por defecto es 75.<br>
+      El baremo es entre 1...100 , siendo 100 maxima calidad.<br>
+<br>
+      Acquire()<br>
+      Digilitaliza. Devuelve un DIB.<br>
+<br>
+      AcquireClipBoard()<br>
+      Digilitaliza directamente al portapapeles.<br>
+      Devuelve .T. o .F. dependiendo si hay error o no.<br>
+<br>
+      OpenDefault()<br>
+      Abre TWAIN el ultimo que fue seleccionado desde Select ..Dialog<br>
+      Si no puede cargarlo solicita seleccionar Source.<br>
+<br>
+      OpenSource()<br>
+      Comprueba que esta disponible TWAIN y cargalo si no estuviera cargado<br>
+<br>
+      Choose()<br>
+      Permite seleccionar la fuente desde donde vamos a adquirir.<br>
+<br>
+<br>
+      IsAvailable()<br>
+      Devuelve si esta o no disponible TWAIN en el sistema<br>
+<br>
+      Version()<br>
+      Devuelve Version de la DLL de DosAdi.<br>
+<br>
+      State()<br>
+      Devuelve el estado del dispositivo.<br>
+<br>
+<br>
+      SetHide( lHide )<br>
+      Oculta UI del escanner.<br>
+<br>
+<br>
+      Estos metodos solamente pueden ser llamados cuando el dispositvo TWAIN<br>
+      se encuentro en un Estado 4  (TWAIN_SOURCE_OPEN)<br>
+<br>
+      PixelType( nType )<br>
+      Tipo de scaneo del dispositivo.<br>
+        #define TWPT_BW          0  Blanco/Negro<br>
+        #define TWPT_GRAY        1  Escala de Grises<br>
+        #define TWPT_RGB         2  Color Real<br>
+        #define TWPT_PALETTE     3  Color Paleta.<br>
+<br>
+<br>
+      SetRes( dRes )<br>
+      Prepara resolucion a capturar en el dispositivo.<br>
+<br>
+      SetXRes( dRes )  y SetYRes( dRes )<br>
+      Prepara resolucion Horizontal y Vertical del dispositivo.<br>
+<br>
+      SetUnits( nUnits )<br>
+      Sistema de Medida. Atencion, no todos los dispositivos admiten<br>
+      alguna medida de estas, pero todos si que admiten inches.<br>
+        #define TWUN_INCHES      0<br>
+        #define TWUN_CENTIMETERS 1<br>
+        #define TWUN_PICAS       2<br>
+        #define TWUN_POINTS      3<br>
+        #define TWUN_TWIPS       4<br>
+        #define TWUN_PIXELS      5<br>
+<br>
+      SetContrats( dContrats)<br>
+      Contraste del dispositivo.<br>
+<br>
+      SetBright( dBright )<br>
+      Brillo del dispositivo.<br>
+<br>
+      SetPaper( nPaper )<br>
+      Seleccionar tipo de papel , tamaño, del dispositivo,<br>
+      Por poner unos pocos, si quieres mas tipo mirate  TWSS_* en TWAIN.H<br>
+         #define PAPER_A4LETTER    1<br>
+         #define PAPER_B5LETTER    2<br>
+         #define PAPER_USLETTER    3<br>
+         #define PAPER_USLEGAL     4<br>
+         #define PAPER_A5          5<br>
+         #define PAPER_B4          6<br>
+         #define PAPER_B6          7<br>
+         #define PAPER_USLEDGER    9<br>
+         #define PAPER_USEXECUTIVE 10<br>
+         #define PAPER_A3          11<br>
+         #define PAPER_B3          12<br>
+         #define PAPER_A6          13<br>
+         #define PAPER_C4          14<br>
+         #define PAPER_C5          15<br>
+         #define PAPER_C6          16<br>
+<br>
+      GetResolution()<br>
+      Devuelve que resolucion actualmente tiene el dispositivo.<br>
+<br>
+<br>
+      Con estos metodos que acontinuacion veremos , podemos seleccionar<br>
+      una porcion de la region a adquirir.<br>
+<br>
+      RegionSet( nLeft,nTop, nRigth, nBottom )<br>
+      Selecciona una region para adquirir.<br>
+<br>
+      METHOD RegionReset()<br>
+      Restaura a la region que habia por defecto, toda la superficie.<br>
+<br>
+      RegionGet( L,T,R,B )<br>
+      Devuelve en las variables la porciones de la region actualmente definidas.<br>
+      El uso es muy simple:<br>
+<br>
+      Local L,T,R,B  // Left,Top,Rigth y Bottom, logicamente <br>
+      oScan := oScan:New()<br>
+      oScan:RegionGet(@L,@T,@R,@B), obteniendo el resultado en las misma variables<br>
+      pasadas por referencia.<br>
+<br>
+      RegionGetDefault( L,T,R,B )<br>
+      Devuelve los valores de la region por defecto. El mismo ejemplo del method<br>
+      RegionGet es aplicable a este.<br>
+<br>
+<br>
+      Y para finalizar , un par de metodos muy utiles:<br>
+<br>
+      ClipBoardToFile( cFile )<br>
+      Guarda el contenido del portapapeles en un fichero.<br>
+<br>
+      DIB_GetFromClipboard()<br>
+      Coge el contenido del portapapeles ,DIB., y lo asigna a hDib.<br>
+<br>
+      Como podeis observar , esto es mas que suficiente para dotar a nuestras<br>
+      aplicaciones Fivewin&amp;Harbour de capacidades de TWAIN.<br>
+<br>
+      Otro aspecto a tener em cuenta son las funciones en C, pero que se<br>
+      escapan a la teoria de este libro.<br>
+<br>
+      Quien realemente esta mas interesado en saber sobre TWAIN, vaya a<br>
+      internet y realice una busqueda.<br>
+      Creo que para nosotros , programadores de Fivewin, esto es mucho<br>
+      mas que suficiente y ya les gustaria a mas de uno de otros lenguajes<br>
+      de programacion tener esto a su alcance tan facil como aqui he explicado.<br>
+<br>
+      Los wrappers en C los teneis disponibles junto en el fichero de la clase<br>
+      TSCAN32 para los que quieran ver el interior o modificarlo a su gusto.<br>
+<br>
+      Teneis portadas 90 funciones desde C para que hagais uso desde harbour.<br>
+<br>
+      Como comentario final, he de decir que a sido probado y con exito en<br>
+      scanners paralelos, usb y SCSI, asi como camaras WebCam.<br>
+<br>
+<br>
+   */<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+*/</div>
+    </div>
+  </div>
+  <div class="post" id="p56528">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Scanner automation</span><br>
+        Posted: Sat Jun 07, 2008 02:01 PM
+      </div>
+      <div class="content"><blockquote><cite>Marco Turco wrote:</cite>It use the DOSADI dlls that are not free if you want to use them in a commercial app but it has the big feature that you can save the image in a lot of graphic formats (jpeg,png,bmp,tiff) and also pdf in a hardware indipendent mode (note that a lot of scanners can only acquire the image in the bmp format).</blockquote><br>
+<br>
+You can use FreeImage.dll to save the BMP in other formats.<br>
+<br>
+EMG</div>
+    </div>
+  </div>
+  <div class="post" id="p56532">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marco Turco</div>
+      <div class="rank">Posts: 858</div>
+      <img class="avatar avatar-img" src="avatars/29.png" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 12:00 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Scanner automation</span><br>
+        Posted: Sat Jun 07, 2008 05:31 PM
+      </div>
+      <div class="content"><p>Yes, I know freeimage and I used it for some works<br>
+but in order to include a professional scanner feature in your app is very important to provide a PDF output and with DOSADI I can acquire the document in a PDF file directly without conversion.</p>
+<p>It is also very simply to acquire multipage documents in a single PDF/Tiff file and a OCR dll is also included.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

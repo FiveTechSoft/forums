@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>GetPrinters() and GetDefaultPrinter() - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-11567">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-11.html">FiveLinux / FiveDroid (Android)</a> GetPrinters() and GetDefaultPrinter()</div>
+  <div class="post" id="p57007">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">GetPrinters() and GetDefaultPrinter()</span><br>
+        Posted: Sat Jun 14, 2008 12:57 PM
+      </div>
+      <div class="content">Hi all<br>
+<br>
+Neither of these functions exist in the LInux version of xHarbour apparently.  I have just written such functions.  My Linux version of GetPrinters() supports the first parameter (lPortInfo) but not the second one (lLocalPrinters).  I have used the lpstat command to retrieve the necessary information.  The xHarbour code is as follows:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FUNCTION GetPrinters( xPortInfo )
+
+LOCAL sOSCommand
+LOCAL sPrinterInfo
+LOCAL iFileHandle
+LOCAL iEndOffset
+LOCAL sPrinterLine
+LOCAL sPrinterName
+LOCAL aPrinters
+LOCAL aPrinter
+
+IF PCOUNT() &lt; 1
+   lPortInfo := .F.
+  ELSE
+   lPortInfo := xPortInfo
+ENDIF 
+aPrinters := ARRAY( 0 )
+sOSCommand := "lpstat -s &gt; lpstat.txt"
+RUN ( sOSCommand )
+iFileHandle := FOpen( "lpstat.txt" )
+DO WHILE HB_FReadLine( iFileHandle, @sPrinterLine, CHR(10) ) = 0
+   sTest := SUBSTR( sPrinterLine, 1, 11 )
+   IF sTest = "device for "
+      sTest := SUBSTR( sPrinterLine, 12 )
+      iEndOffset := AT( ": ", sTest )
+      IF iEndOffset &gt; 0
+         sPrinterName := SUBSTR( sTest, 1, iEndOffset - 1 )
+         IF lPortInfo
+            sPrinterInfo := SUBSTR( sTest, iEndOffset + 2 )
+            aPrinter := ARRAY( 2 )
+            aPrinter[1] := sPrinterName
+            aPrinter[2] := sPrinterInfo
+            AAdd( aPrinters, aPrinter )
+           ELSE
+            AAdd( aPrinters, sPrinterName )
+         ENDIF       
+      ENDIF
+   ENDIF
+ENDDO
+FClose( iFileHandle )
+RETURN aPrinters
+
+
+FUNCTION GetDefaultPrinter()
+
+LOCAL sOSCommand
+LOCAL sPrinterInfo
+LOCAL iFileHandle
+LOCAL sPrinterLine
+LOCAL sPrinterName
+ 
+aPrinters := ARRAY( 0 )
+sOSCommand := "lpstat -s &gt; lpstat.txt"
+RUN ( sOSCommand )
+iFileHandle := FOpen( "lpstat.txt" )
+DO WHILE HB_FReadLine( iFileHandle, @sPrinterLine, CHR(10) ) = 0
+   sTest := SUBSTR( sPrinterLine, 1, 27 )
+   IF sTest = "system default destination:"
+      FClose( iFileHandle )
+      RETURN ALLTRIM( SUBSTR( sPrinterLine, 28 ) )
+   ENDIF
+ENDDO
+FClose( iFileHandle )
+
+RETURN ""</code></pre></div><br>
+<br>
+The above work fine on Ubuntu 8.04 (my system) but should work on most Linux systems I believe.  Having written the above it would be easy to create IsPrinter(), PrinterExists() and PrinterPortToName() functions if anyone needs them.<br>
+<br>
+Regards<br>
+xProgrammer</div>
+    </div>
+  </div>
+  <div class="post" id="p57030">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Using a PRINTERS Class</span><br>
+        Posted: Sun Jun 15, 2008 06:30 AM
+      </div>
+      <div class="content">Hi all<br>
+<br>
+The code in the above post gave a fairly high degree of compatability with the  Windows version of xHarbour but was a bit inefficient.  I reworked the logic into a PRINTERS class without trying to be call compatible with the Windows version.  This class is quite functional as it stands but doesn't include any error handling code.  It will probably later on get a printer selection dialog.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "hbclass.ch"
+
+CLASS PRINTERS
+
+DATA aNames          /** array of printer names */
+DATA aPorts          /** array of printer ports */
+DATA iCount          /** number of printers installed */
+DATA sDefault        /** name of default printer */
+DATA iDefault        /** number of default printer - index into aNames and aPorts */
+DATA lDefault        /** is there a default printer */
+DATA lExists         /** is any printer defined */
+
+METHOD New( plGetList ) CONSTRUCTOR
+METHOD GetList()
+
+ENDCLASS
+
+
+METHOD New( plGetList ) CLASS PRINTERS
+
+/** _syntax: PRINTERS():New( [&lt;lGetList&gt;] )
+    _arguments: 
+                  &lt;lGetList&gt; a logical value  
+                      If .T. the operating system is queried and printer lists and defaults are set as part of the object's initialisation.  
+                      Defaults to .T.
+    _returns:     the created PRINTERS object
+    _description: see METHOD GetList() for a description of how the operating system is queried  */
+
+IF PCOUNT() &lt; 1
+   lGetList := .T.
+  ELSE
+   lGetList := plGetList
+ENDIF
+
+IF lGetList
+   ::GetList()
+ENDIF
+
+RETURN self
+
+
+METHOD GetList() CLASS PRINTERS
+
+/** _syntax:      &lt;PRINTERS_object&gt;:GetList()
+    _arguments:   none
+    _returns:     nil
+    _description: Obtains information on installed printers from the operating system by RUNning lpstat -s &gt; lpstat.txt.
+                  Opens the redirected output of the above command and parses that file building a list of printernames (in ::aNames)
+                      and ports (in ::aPorts).
+                  Retrieves the name of the default printer (in ::sDefault) and determines its position (in ::iDefault)
+                  If there is no default printer ::lDefault is set to .F.
+                  Determines if there are any printers installed (in ::lExists) and how many are installed (in ::iCount) */
+
+
+LOCAL iFileHandle
+LOCAL sPrinterLine
+LOCAL sTest
+LOCAL iEndOffset
+LOCAL lDefaultFound
+LOCAL ii
+
+::aNames := ARRAY( 0 )
+::aPorts := ARRAY( 0 )
+::iCount := 0
+::sDefault := ""
+::iDefault := 0
+::lDefault := .F.
+::lExists := .F.
+
+RUN lpstat -s &gt; lpstat.txt
+iFileHandle := FOpen( "lpstat.txt" )
+DO WHILE HB_FReadLine( iFileHandle, @sPrinterLine, CHR(10) ) = 0
+   sTest := SUBSTR( sPrinterLine, 1, 11 )
+   IF sTest = "device for "
+      sTest := SUBSTR( sPrinterLine, 12 )
+      iEndOffset := AT( ": ", sTest )
+      IF iEndOffset &gt; 0
+         AAdd( ::aNames, ALLTRIM( SUBSTR( sTest, 1, iEndOffset - 1 ) ) )
+         AAdd( ::aPorts, SUBSTR( sTest, iEndOffset + 2 ) )
+         ::iCount += 1
+         ::lExists := .T.
+      ENDIF
+     ELSE
+      sTest := SUBSTR( sPrinterLine, 1, 27 )
+      IF sTest = "system default destination:"
+         ::sDefault := ALLTRIM( SUBSTR( sPrinterLine, 28 ) )
+         ::lDefault := .T.         
+      ENDIF
+   ENDIF
+ENDDO
+FClose( iFileHandle )
+IF ::lDefault
+   FOR ii = 1 TO ::iCount
+      IF ::aNames[ii] = ::sDefault
+         ::iDefault := ii
+         EXIT
+      ENDIF
+   NEXT
+ENDIF
+
+RETURN nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

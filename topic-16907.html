@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>TScanner() problem with FWH907+xHb_1.2.1 - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-16907">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> TScanner() problem with FWH907+xHb_1.2.1</div>
+  <div class="post" id="p87677">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">TScanner() problem with FWH907+xHb_1.2.1</span><br>
+        Posted: Fri Oct 02, 2009 10:59 AM
+      </div>
+      <div class="content">Dear all,<br>
+<br>
+I've used this code and work fine with FW804 and xHabour 1.1.0.  Now I upgrade to FWH907 with xHb 1.2.1.  It doesn't work and got GPF error.  Have anyone got this problem?<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*------------------------------------------------------------------------*
+     ฺฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฟ
+   ณ                                                                   ณ
+   ณ ProcName......: Scanner.prg                                       ณ
+   ณ Pourpose......: TWAIN standard device Class interface             ณ
+   ณ Date..........: 05-11-96                                          ณ
+   ณ Author........: (c),L.Gadaleta                                    ณ
+   ณ                                                                   ณ
+   ภฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤฤู
+   
+*------------------------------------------------------------------------*/
+#include "FiveWin.ch"
+#include "Image.ch"
+
+#define STAND_ALONE
+
+#define TWAIN_DLL             "EZTw32.dll"
+
+#define CBM_INIT 4    // for freeimage.dll
+
+#define DIB_RGB_COLORS 0 // for freeimage.dll
+
+STATIC hLib              // for freeimage.dll
+STATIC oWnd, oImage
+
+
+
+#ifdef STAND_ALONE
+
+*----------------------*
+FUNCTION ScanMe(cFileRes)
+LOCAL cFile, nRes, n
+
+Default cFileRes := 'TESTSCAN.JPG'
+
+cFile := cFileRes  
+nRes  := 100
+if !cFileRes == NIL
+   if ( n:=AT(",",cFileRes) ) &gt; 0
+      cFile := Alltrim(Substr(cFileRes,1,n-1))
+      nRes  := Val(Alltrim(Substr(cFileRes,n+1)))
+   end
+end
+
+CursorWait()
+
+DEFINE WINDOW oWnd FROM 1,1 TO 1,1
+        
+ACTIVATE WINDOW oWnd ON INIT (oWnd:Hide(), ;
+                              RunScan(cFile,oWnd:hWnd,nRes)) 
+
+if file( cFile )
+   SaveImage( cFile )
+end
+
+CursorArrow()
+
+RETURN NIL
+
+STATIC FUNCTION RunScan(cFile,hWnd,nRes)
+LOCAL oScanner := Scanner():New(hWnd)
+DEFAULT nRes := 100                                     // Scanner resolution in Dpi
+   oScanner:Choose()
+   oScanner:Set(.T.)                                       // Set User Interface Off
+   oScanner:DigiToFile(cFile,nRes)                         // Acquires
+   oScanner:End()
+   oWnd:End()
+RETURN NIL
+
+#endif
+
+CLASS Scanner
+   DATA   hWnd   AS NUMERIC   // Handle of the window
+   DATA   hDll   AS NUMERIC   // Handle of the DLL
+   DATA   lLoad  AS LOGICAL   //   .T. DLL &amp; Driver Loaded
+   DATA   hDib   AS NUMERIC   // Current Dib handle
+   *
+   METHOD New()         CONSTRUCTOR
+   METHOD End()
+        METHOD Set()                    // Acquiring Dialog ON/OFF
+   METHOD Choose()         // Select Image Device Source
+   METHOD DigiToFile()      // Acquire Image and save to a file
+   METHOD DigiToClip()      // Acquire Image and copy to ClipBoard
+        METHOD SetResolution()          // Set Dpi for the scanner
+   *
+   PROTECTED :
+      METHOD Free()         // Release Dib's handle
+      METHOD IsActive()      // Twain Driver Loaded
+      METHOD Register()      // Register my application into Twain application
+                METHOD DibToFile()              // Write to file Dib's handle in BMP format
+END CLASS
+
+METHOD New(hWnd)
+// Constructor
+::hWnd := iif( ValType( hWnd ) == "N" , hWnd , 0 )
+::lLoad := .T.
+::hDLL := LoadLibrary( TWAIN_DLL )
+::hDib := 0
+if ::hDll &lt;= 21
+   ::lLoad := .F.
+   MsgAlert( BuildError(::hDll) , TWAIN_DLL )
+   RETU Self
+end
+if ( ::lLoad := ::IsActive() )
+   ::Register()
+end
+RETU Self
+
+METHOD End()
+// Destructor
+if ::hDib != 0
+   ::Free( ::hDib )
+end
+FreeLibrary( ::hDll )
+RETU NIL
+
+METHOD DigiToFile( cFile , nRes )
+// Acquire Document &amp; save to file
+LOCAL nPixType := 0
+LOCAL cFarProc
+DEFAULT nRes := 100
+::SetResolution( nRes )
+
+if ::lLoad
+   cFarProc := GetProcAddress( ::hDLL, "TWAIN_AcquireNative",.T., WORD,WORD,_INT )
+   ::hDib  := CallDLL( cFarProc,::hWnd,nPixType )
+   if ::hDib == 0
+                MsgInfo("Cannot Load Image, Scanner not found","")
+   else
+      ::DibToFile(::hDib,cFile)
+      ::Free( ::hDib )
+   end
+end
+RETU Self
+
+METHOD DigiToClip()
+// Acquire document &amp; copy to ClipBoard
+LOCAL nPixType := 0
+LOCAL cFarProc
+LOCAL nResult
+if ::lLoad
+   cFarProc := GetProcAddress( ::hDLL, "TWAIN_AcquireToClipBoard",.T., _INT,WORD,_INT )
+   nResult  := CallDLL( cFarProc,::hWnd,nPixType )
+end
+RETU Self
+
+METHOD SetResolution( nDpi )
+// NEW
+LOCAL cFarProc
+LOCAL uResult
+DEFAULT nDpi := 100
+if ::lLoad
+   cFarProc := GetProcAddress( ::hDLL, "TWAIN_SetResolution",.T., VOID,_DOUBLE )
+   uResult  := CallDLL( cFarProc,nDpi )
+end
+RETU Self
+
+METHOD Set(lShow)
+// Show-Hide Scanner's Dialog Box
+LOCAL nHide := 0      // Default: Shows Scanner's Dialog Box
+LOCAL cFarProc
+LOCAL uResult
+DEFAULT lShow := .T.
+if ::lLoad
+   nHide := iif(lShow,0,1)
+   cFarProc := GetProcAddress( ::hDLL, "TWAIN_SetHideUI",.T., VOID,_INT )
+   uResult  := CallDLL( cFarProc,nHide )
+end
+RETU Self
+
+METHOD Choose()
+// Select Image Device Source
+LOCAL cFarProc
+LOCAL nResult
+if ::lLoad
+   cFarProc := GetProcAddress( ::hDLL, "TWAIN_SelectImageSource",.T., _INT,WORD )
+   nResult  := CallDLL( cFarProc,::hWnd )
+end
+RETU Self
+
+//---------- Protected Methods
+
+   METHOD Free(hDib)
+   // Release Dib's Handle
+   LOCAL cFarProc
+   LOCAL uResult
+   cFarProc := GetProcAddress( ::hDLL, "TWAIN_FreeNative",.T., VOID,WORD )
+   uResult  := CallDLL( cFarProc,hDib )
+   RETU NIL
+
+   METHOD DibToFile(hDib,cFile)
+   // Write to File From DIB's handle
+   LOCAL cFarProc
+   LOCAL nResult
+   LOCAL lRet
+   cFarProc := GetProcAddress( ::hDLL, "TWAIN_WriteNativeToFilename",.T., _INT,WORD,LPSTR)
+   lRet     := ( (nResult:=CallDLL( cFarProc,hDib,cFile ))==0 )
+   DO CASE
+      CASE nResult == -1
+         MsgInfo("Annullato dall'utente","File non registrato")
+      CASE nResult == -2
+         MsgInfo("Errore durante la scrittura sul file "+cFile,"File non registrato")
+      CASE nResult == -3
+         MsgInfo("Errore interno sul file DIB","File non registrato")
+      CASE nResult == -4
+         MsgInfo("Errore durante la scrittura sul file "+cFile+", probabile spazio insufficiente sul disco !","File non registrato")
+   ENDCASE
+   RETU lRet
+
+   METHOD IsActive()
+   // Is Twain driver loaded ?
+   LOCAL cFarProc
+   LOCAL nResult
+   cFarProc := GetProcAddress( ::hDLL, "TWAIN_IsAvailable",.T., _INT )
+   if ! (nResult    := CallDLL( cFarProc )) == 1
+      MsgAlert("Nessun driver per apparecchi TWAIN compatibili risulta disponibile !","Errore hardware")
+      // Messaggio inviato direttamente da TWAIN.DLL
+   end
+   RETU iif(nResult==1,.T.,.F.)
+
+   METHOD Register()
+   // Register my application into Twain application
+   LOCAL   nMaiorNum := 1
+   LOCAL nMinorNum := 0   // Result -&gt; 1.0
+   LOCAL nLanguage := 0
+   LOCAL nCountry  := 0
+   LOCAL cVersion  := "1.0"
+   LOCAL cManifact := "The Genius"
+   LOCAL cFamily   := "Digitizer"
+   LOCAL cProduct := StrTran(cFileName(GetModuleFileName(GetInstance())),".EXE","")
+   LOCAL cFarProc
+   LOCAL uResult
+   cFarProc := GetProcAddress( ::hDLL, "TWAIN_RegisterApp",.T.,;
+                           VOID,_INT,_INT,_INT,_INT,LPSTR,LPSTR,LPSTR,LPSTR )
+   uResult  := CallDLL( cFarProc,nMaiorNum,nMinorNum,nLanguage,nCountry,cVersion,cManifact,cFamily,cProduct )
+   RETU NIL
+
+//---------- END Protected Methods
+
+STATIC FUNCTION BuildError(nError)
+LOCAL cRet := "Errore nella libreria dinamica"
+DO CASE
+   CASE nError == 0
+         cRet := "Memoria insufficiente ad eseguire il programma"
+   CASE nError == 2
+         cRet := "File non trovato"
+   CASE nError == 3
+         cRet := "Percorso non trovato"
+   CASE nError == 5
+         cRet := "Tentantivo di collegarsi dinamicamente ad un task o errore di condivisione"
+   CASE nError == 6
+         cRet := "La libreria richiede un segemento separato per ogni task"
+   CASE nError == 8
+         cRet := "Memoria insufficiente ad avviare l'applicazione"
+   CASE nError == 10
+         cRet := "Versione di MS Windows non corretta"
+   CASE nError == 11
+         cRet := "Libreria non valida oppure non  un'applicazione MS Windows"
+   CASE nError == 12
+         cRet := "Applicazione disegnata per un sistema operativo diverso"
+   CASE nError == 13
+         cRet := "Applicazione disegnata per MS-DOS 4.0"
+   CASE nError == 14
+         cRet := "Tipo di file eseguibile sconosciuto"
+   CASE nError == 15
+         cRet := "Tentativo di caricare un'applicazione disegnata per funzionare in modalit… reale"
+   CASE nError == 16
+         cRet := "Tentativo di caricare una seconda istanza dell'applicazione contenente segmenti di dati multipli non marcati per la sola lettura"
+ENDCASE
+RETU OemToAnsi( cRet + "!" )
+
+
+
+//------------------ Freeimage.dll ------------------------//
+
+FUNCTION SaveImage( cFile )
+LOCAL nFormat, hDib, hInfoH, hInfo, hBits, hWnd, hDC, hBmp, lOk
+
+#ifdef __CLIPPER__ 
+    hLib = LOADLIB32( "freeimage.dll" ) 
+#else 
+    hLib = LOADLIBRARY( "freeimage.dll" ) 
+#endif 
+
+    if hLib &lt;= 32 
+        MsgStop( "Cannot load FreeImage.dll" ) 
+        return 0 
+    endif 
+
+    nFormat := FIGETFILETYPE( cFile, 0 )
+    hDib    := FILOAD( nFormat, cFile, 0 )
+    hInfoH  := FIGETINFOHEADER( hDib )
+    hInfo   := FIGETINFO( hDib )
+    hBits   := FIGETBITS( hDib )
+    hWnd    := GETDESKTOPWINDOW()
+
+#ifdef __CLIPPER__ 
+    hDC = GETDC32( hWnd ) 
+#else 
+    hDC = GETDC( hWnd ) 
+#endif 
+
+lOk := fiSave( 2 , hDib, cFile )
+
+hBmp = CREATEDIBITMAP( hDC, hInfoH, CBM_INIT, hBits, hInfo, DIB_RGB_COLORS ) 
+
+#ifdef __CLIPPER__ 
+    RELEASEDC32( hWnd, hDC ) 
+#else 
+    RELEASEDC( hWnd, hDC ) 
+#endif 
+
+FIUNLOAD( hDib ) 
+
+#ifdef __CLIPPER__ 
+    FREELIB32( hLib ) 
+#else 
+    FREELIBRARY( hLib ) 
+#endif 
+RETURN hBmp
+
+
+DLL32 STATIC FUNCTION FIGETFILETYPE( cFileName AS LPSTR, nSize AS LONG ) AS LONG; 
+      PASCAL FROM "_FreeImage_GetFileType@8" LIB hLib 
+
+DLL32 STATIC FUNCTION FILOAD( nFormat AS LONG, cFileName AS LPSTR, nFlags AS LONG ) AS LONG; 
+      PASCAL FROM "_FreeImage_Load@12" LIB hLib 
+
+DLL32 STATIC FUNCTION FIUNLOAD( hDib AS LONG ) AS VOID; 
+      PASCAL FROM "_FreeImage_Unload@4" LIB hLib 
+
+DLL32 STATIC FUNCTION FIGETINFOHEADER( hDib AS LONG ) AS LONG; 
+      PASCAL FROM "_FreeImage_GetInfoHeader@4" LIB hLib 
+
+DLL32 STATIC FUNCTION FIGETINFO( hDib AS LONG ) AS LONG; 
+      PASCAL FROM "_FreeImage_GetInfo@4" LIB hLib 
+
+DLL32 STATIC FUNCTION FIGETBITS( hDib AS LONG ) AS LONG; 
+      PASCAL FROM "_FreeImage_GetBits@4" LIB hLib 
+
+DLL32 STATIC FUNCTION FISAVE( nFormat AS LONG, hDib AS LONG, cFileName AS LPSTR, nFlags AS LONG ) AS BOOL;
+      PASCAL FROM "_FreeImage_Save@16" LIB hLib
+      
+DLL32 STATIC FUNCTION FIROTATE( hDib AS LONG, nAngle AS _DOUBLE ) AS LONG; 
+      PASCAL FROM "_FreeImage_RotateClassic@12" LIB hLib 
+
+DLL32 STATIC FUNCTION GETDC32( hWnd AS LONG ) AS LONG; 
+      PASCAL FROM "GetDC" LIB "user32.dll" 
+
+DLL32 STATIC FUNCTION RELEASEDC32( hWnd AS LONG ) AS LONG; 
+      PASCAL FROM "ReleaseDC" LIB "user32.dll" 
+
+DLL32 STATIC FUNCTION CREATEDIBITMAP( hDC AS LONG, hInfoH AS LONG, nFlags AS LONG, hBits AS LONG, hInfo AS LONG, nUsage AS LONG ) AS LONG; 
+      PASCAL FROM "CreateDIBitmap" LIB "gdi32.dll" 
+
+DLL32 FUNCTION WOWHANDLE16( nHandle AS LONG, nHandleType AS LONG ) AS LONG; 
+      PASCAL FROM "WOWHandle16" LIB "wow32.dll"</code></pre></div><br>
+<br>
+Regards,<br>
+Dutch</div>
+    </div>
+  </div>
+  <div class="post" id="p87703">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TScanner() problem with FWH907+xHb_1.2.1</span><br>
+        Posted: Fri Oct 02, 2009 07:33 PM
+      </div>
+      <div class="content"><p>Dear All,</p>
+<p>I got it, the problem is xHarbour 1.2.1.  Because when I change back to xHarbour 1.1.0 + FWH8.04, it is still working.  </p>
+<p>What I gonna do now?</p>
+<p>Regards,<br>
+Dutch</p></div>
+    </div>
+  </div>
+  <div class="post" id="p87704">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TScanner() problem with FWH907+xHb_1.2.1</span><br>
+        Posted: Fri Oct 02, 2009 07:42 PM
+      </div>
+      <div class="content"><p>Dear All,</p>
+<p>I got it, the problem is xHarbour 1.2.1 [::acquire()], it cannot press CANCEL after acquire.  If press CANCEL, the process will be running in Process (Task Manager).  When I change back to xHarbour 1.1.0 + FWH8.04, it is still working.  </p>
+<p>What I gonna do now?</p>
+<p>Regards,<br>
+Dutch</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

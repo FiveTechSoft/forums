@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>TFBuffer, una clase para acelerar la escritura en ficheros - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-35593">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> TFBuffer, una clase para acelerar la escritura en ficheros</div>
+  <div class="post" id="p211901">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">TFBuffer, una clase para acelerar la escritura en ficheros</span><br>
+        Posted: Sun May 06, 2018 07:51 AM
+      </div>
+      <div class="content">Aquí os dejo una clase para manejar un buffer de escritura a ficheros.<br>
+Acelera muchísimo el proceso.<br>
+La clase es muy simple de usar y con pocos métodos.<br>
+La dejo aquí para que todo el que la mejore la vaya dejando en este hilo.<br>
+<br>
+Ejemplo:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">procedure main
+
+    local hFile := FCreate( "prueba.txt" )
+    local o := TFBuffer():new( hFile )
+    local i, t
+
+    cls
+    
+    @ 10, 10 SAY "Espere, estoy procesando datos..."
+    
+    t := Seconds()
+    
+    for i := 1 to 10000000
+        o:addString( "Esta es la cadena numero: " )
+        o:addString( Str( i ) )
+        o:addString( " -&gt; " )
+        o:addString( Time() )
+        o:addString( ";" )
+        o:addString( hb_eol() )
+    next
+    
+    t := Seconds() - t
+    
+    o:free()
+
+    FClose( hFile )
+
+    // Para calcular el tamaño en kB
+    hFile := FOpen( "prueba.txt" )
+    i := FSeek( hFile, 0, 2 ) / 1024
+    FClose( hFile )
+    
+    Alert( "Ha tardado: " + AllTrim( Str( t ) ) + " segundos con un fichero de: " + AllTrim( Str( i ) ) + " kB")
+    
+return</code></pre></div><br>
+<br>
+En mi ordenador genera un fichero de 550.000.000 en solo casi 10 segundos (9.88).<br>
+<br>
+Y esta es la clase:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "hbclass.ch"
+
+#define FB_MAX_SIZE             65535
+
+CLASS TFBuffer
+    
+    DATA hFB  // Uso interno
+    
+    METHOD new( hFile, nLen ) CONSTRUCTOR
+    METHOD free() // Libera memoria
+    METHOD creaBuffer( hFile, nLen )  // Uso interno
+    METHOD addString( cString ) // añade cadena al buffer, hace el ::flush() automaticamente
+    METHOD flush() // Por si se quiere salvar a disco manualmente
+    
+END CLASS
+
+//------------------------------------------------------------------------------
+
+METHOD new( hFile, nLen ) CLASS TFBuffer
+
+    if ValType( hFile ) == 'N'      
+        if !( ValType( nLen ) == 'N' .and. nLen &gt; 0 .and. nLen &lt;= FB_MAX_SIZE )
+            nLen := FB_MAX_SIZE
+        endif
+        ::creaBuffer( hFile, nLen )
+    else
+        Alert( "Al menos deberías meter el manejador de un fichero abierto..." )
+    endif       
+    
+return self
+
+//------------------------------------------------------------------------------
+
+#pragma BEGINDUMP
+
+#include "hbapifs.h"
+#include "hbapiitm.h"
+#include "hbstack.h"
+
+/* Estructura del bufer */
+typedef struct
+{
+    unsigned char *pBuffer;
+    unsigned int uiLen;
+    unsigned int uiPos;
+    HB_FHANDLE hFile;
+} FBUFFER, *PFBUFFER;
+
+static void _flushFB( PFBUFFER pFB );
+
+//------------------------------------------------------------------------------
+// Metodo para crear la estructura  buffer
+
+HB_FUNC_STATIC( TFBUFFER_CREABUFFER )
+{
+    PHB_ITEM Self = hb_stackSelfItem();
+    PFBUFFER pFB = ( PFBUFFER ) hb_xgrab( sizeof( FBUFFER ) );
+
+    pFB-&gt;uiLen = hb_parnint( 2 );
+    pFB-&gt;pBuffer = ( unsigned char * ) hb_xgrab( pFB-&gt;uiLen );
+    pFB-&gt;uiPos = 0;
+    pFB-&gt;hFile = ( HB_FHANDLE ) hb_parnint( 1 );
+
+    hb_arraySetPtr( Self, 1, pFB );
+}
+
+//------------------------------------------------------------------------------
+// Metodo para liberar el buffer
+
+HB_FUNC_STATIC( TFBUFFER_FREE )
+{
+    PHB_ITEM Self = hb_stackSelfItem();
+    PFBUFFER pFB = hb_arrayGetPtr( Self, 1 );
+
+    if( pFB )   
+    {
+        _flushFB( pFB );
+
+        if( pFB-&gt;pBuffer )
+        {
+            hb_xfree( pFB-&gt;pBuffer );
+        }
+
+        hb_xfree( pFB );
+    }
+}
+
+//------------------------------------------------------------------------------
+// Metodo para añadir cadenas al buffer
+
+HB_FUNC_STATIC( TFBUFFER_ADDSTRING )
+{
+    PHB_ITEM Self = hb_stackSelfItem();
+    PFBUFFER pFB = hb_arrayGetPtr( Self, 1 );
+    PHB_ITEM pString = hb_param( 1, HB_IT_STRING  );
+    
+    if( pString )
+    {
+        unsigned int uiPos = 0;
+        const char *szString = hb_itemGetCPtr( pString );
+        unsigned int uiLen = hb_itemGetCLen( pString );
+
+        while( uiPos &lt; uiLen )
+        {
+            if( pFB-&gt;uiPos == pFB-&gt;uiLen )
+            {
+                _flushFB( pFB );
+            }
+            
+            pFB-&gt;pBuffer[ pFB-&gt;uiPos++ ] = ( unsigned char ) szString[ uiPos++ ];
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Metodo para forzar escritura en disco del buffer e inicia la posicion
+
+HB_FUNC_STATIC( TFBUFFER_FLUSH )
+{
+    PHB_ITEM Self = hb_stackSelfItem();
+    PFBUFFER pFB = hb_arrayGetPtr( Self, 1 );
+
+    _flushFB( pFB );
+}
+
+//------------------------------------------------------------------------------
+// Funcion de uso interno. Escribe en disco el buffer e inicia la posicion
+
+static void _flushFB( PFBUFFER pFB )
+{
+    if( pFB-&gt;uiPos &gt; 0 )
+    {
+        hb_fsWrite( pFB-&gt;hFile, pFB-&gt;pBuffer, pFB-&gt;uiPos );
+        pFB-&gt;uiPos = 0;
+    }
+}
+
+//------------------------------------------------------------------------------
+
+#pragma ENDDUMP</code></pre></div><br>
+<br>
+Como veis está escrita casi toda en lenguaje C<br>
+Los métodos son auto descriptivos.<br>
+<br>
+Si la mejoráis, ponerla aquí para que todos podamos usarla.</div>
+    </div>
+  </div>
+  <div class="post" id="p211905">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TFBuffer, una clase para acelerar la escritura en ficheros</span><br>
+        Posted: Sun May 06, 2018 05:06 PM
+      </div>
+      <div class="content"><p>Excellent.<br>
+Also, a very good example showing how to write methods in C language.<br>
+I have a few requests if you don't mind implementing.</p>
+<p>Now, we need to convert numbers and dates to string values before calling addstring(). These conversions at Harbour level are a bit less efficient than in C level. Can you handle these conversions inside the method automatically?<br>
+Also to reduce the number of calls, can we call<br>
+:AddString( c1, &quot;,&quot;, c2, &quot;,&quot;, c3, .... )</p></div>
+    </div>
+  </div>
+  <div class="post" id="p211909">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TFBuffer, una clase para acelerar la escritura en ficheros</span><br>
+        Posted: Sun May 06, 2018 06:11 PM
+      </div>
+      <div class="content"><p>Manu, muy buena, gracias, y una lección de la que todos aprenderemos como se programa en Harbour/C<br>
+Oye, para calcular el tamaño del fichero, por qué no utilizas Hb_FSize?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p211911">
+    <div class="poster">
+      <div class="name" style="color:#105289">Massimo Linossi</div>
+      <div class="rank">Posts: 512</div>
+      <img class="avatar avatar-img" src="avatars/163.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 10:38 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TFBuffer, una clase para acelerar la escritura en ficheros</span><br>
+        Posted: Sun May 06, 2018 06:41 PM
+      </div>
+      <div class="content"><p>Great !!!<br>
+Can it be used for buffering the write on DBF files too ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p211912">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TFBuffer, una clase para acelerar la escritura en ficheros</span><br>
+        Posted: Sun May 06, 2018 06:46 PM
+      </div>
+      <div class="content"><blockquote><cite>nageswaragunupudi wrote:</cite><br>
+Now, we need to convert numbers and dates to string values before calling addstring(). These conversions at Harbour level are a bit less efficient than in C level. Can you handle these conversions inside the method automatically?</blockquote><br>
+I would prefer to keep it as simple as posible, because all the winnings will be lost in the logic applied to EVERY call. It will be clearer for the class user, otherwise the complex or 'tricky' behavoir should be very well documented, so my vote to KISS.   <br>
+An alternative would be to have extra methods to every type, like AddDate, AddNumber, etc.<br>
+<br>
+I've run my own test in an more than 10 years laptop, and it is able to run the test in 44 secs, what is really amazing.<br>
+<br>
+Adhiero a la opinión de Cristobal, es una verdadera lección de como escribir métodos en C.</div>
+    </div>
+  </div>
+  <div class="post" id="p211917">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TFBuffer, una clase para acelerar la escritura en ficheros</span><br>
+        Posted: Mon May 07, 2018 07:40 AM
+      </div>
+      <div class="content">Buenos días a todos y todas,<br>
+<br>
+Vayamos por partes, como dijo el de York.<br>
+<br>
+1º Muchas gracias Manuel por tu trabajo. Aún no lo he probado, tengo que terminar primero mi issue y luego sigo probando la TBuffer que tan amablemente has hecho.<br>
+<br>
+2º Sería bueno que la TBuffer pudiera valer para más cosas aparte de crear ficheros .txt (o .csv.). Por ejemplo, yo uso mucho la concatenación para generar ficheros excel: primero acumulo en la variable String y luego pego su contenido (paste) en la hoja de cálculo; ahora mismo, tengo limitado el tamaño de la variable (copy) a 25.000 bytes porque con un buffer de 60.000 a veces genera GPF (errores de alloc), con lo que para este caso vendría de perlas tu clase.<br>
+<br>
+Yo propongo que o bien haya dos clases, o bien haya dos comportamientos o bien se vacie el buffer en una llamada a un codeblock que se use como parametro.<br>
+<br>
+Si haces dos clases, propongo que se llamen TBufferString, para tratamiento manual del buffer y TBufferFile, para volcado automático a ficheros de texto.<br>
+Si haces dos comportamientos dentro de la misma clase, el comportamiento String, el vaciado del buffer se haría externamente llamando al metodo flush.<br>
+Si lo haces con un codeblock, como lo tenía prototipado Carlos Mora, bien se le podría llamar bFlush, recibiría el parámetro de la cadena, a ser posible por referencia, para ganar en velocidad.<br>
+<br>
+<br>
+3º Estoy con Carlos Mora, en que habría que mantener la simplicidad del :AddString(), no sobrecargarlo ni con multiples parametros ni con conversiones. Si podrían haber, como indica Carlos, más metodos:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">    :addStringMultiple()
+   :addDate()
+   :addNumber()</code></pre></div><br>
+Saludos cordiales<br>
+<br>
+<br>
+<br>
+PD 1. Tengo una duda. Veo que la funcion Stuff() utiliza hb_xmemcpy(), que a su vez llama a la primitiva memcpy(). En cambio tu TBuffer copia byte a byte. ¿ Será suficientemente rápido el copiado caracter a caracter ? Es que en mi (gran) ignorancia no sé si existe alguna forma más rápida de copiar.<br>
+PD 2. Agradecería si mantuvieras la clase compatible con xHarbour.</div>
+    </div>
+  </div>
+  <div class="post" id="p211938">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TFBuffer, una clase para acelerar la escritura en ficheros</span><br>
+        Posted: Mon May 07, 2018 05:48 PM
+      </div>
+      <div class="content"><p>Paquito, en C todas las funciones de tratamiento de cadenas es carácter a carácter.<br>
+Seguro que el tratamiento de lo que haces tardará menos de 4 horas. Pero eso mejor pruébalo y salimos de dudas  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --> </p>
+<p>Esto es un StringBuffer para escribir en ficheros.</p>
+<p>La idea de Carlos me parce muy buena, me refiero a hacer una clase buffer desacoplada de ficheros.<br>
+Para eso sólo habría que cambiar dos cosas:<br>
+1.- El parámetro hFile<br>
+2. Y convertir el metodo ::flush() en Virtual y desarrollarlo en las clases heredadas y especializadas.</p>
+<p>Con esto conseguiríamos una clase TStringBuffer() independiente de donde se va a escribir y de esta se podría derivar otras clase especializadas como la TFBuffer() (TFileBuffer()) que es la que yo he hecho.</p>
+<p>Para los que quieran hacer que TFBuffer pueda funcionar con cualquier tipo de dato quiero deciros que existe una función que provee harbour llamada hb_itemString() que os puede servir.</p>
+<p>PD: gracias por vuestros comentarios  <!-- s:lol: --><img src="{SMILIES_PATH}/icon_lol.gif" alt=":lol:" title="Laughing" /><!-- s:lol: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p211940">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TFBuffer, una clase para acelerar la escritura en ficheros</span><br>
+        Posted: Mon May 07, 2018 07:41 PM
+      </div>
+      <div class="content">Al final he hecho la clase TFBuffer para que se le pueda pasar cualquier tipo de dato:<br>
+<br>
+Ejemplo:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">procedure main
+
+    local hFile := FCreate( "prueba.txt" )
+    local o := TFBuffer():new( hFile )
+    local i, t
+
+    set date format to "yyyy-mm-dd"
+    
+    cls
+    
+    @ 10, 10 SAY "Espere, estoy procesando datos..."
+    
+    t := Seconds()
+/*  
+    for i := 1 to 10000000
+        o:addString( "Esta es la cadena numero: " )
+        o:addString( Str( i ) )
+        o:addString( " -&gt; " )
+        o:addString( Time() )
+        o:addString( ";" )
+        o:addString( hb_eol() )
+    next
+*/
+    for i := 1 to 1000000
+        o:addValue( ( i % 2 ) == 0 )     // Logical
+        o:addValue( i )                  // Numeric
+        o:addValue( " &lt;&gt; " )             // String
+        o:addValue( date() )             // Date
+        o:addValue( " " )                // String
+        o:addValue( Time() )             // String
+        o:addValue( hb_eol() )           // String
+    next
+    
+    t := Seconds() - t
+    
+    o:free()
+
+    FClose( hFile )
+
+    // Para calcular el tamaño en kB
+    i := Hb_FSize( "prueba.txt" ) / 1024
+    
+    Alert( "Ha tardado: " + AllTrim( Str( t ) ) + " segundos con un fichero de: " + AllTrim( Str( i ) ) + " kB")
+    
+return</code></pre></div><br>
+<br>
+El nuevo método se llama addValue( uValue )<br>
+<br>
+Esta es la clase:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "hbclass.ch"
+
+#define FB_MAX_SIZE             65535
+
+CLASS TFBuffer
+    
+    DATA hFB  // Uso interno
+    
+    METHOD new( hFile, nLen ) CONSTRUCTOR
+    METHOD free() // Libera memoria
+    METHOD creaBuffer( hFile, nLen )  // Uso interno
+    METHOD addString( cString ) // añade cadena al buffer, hace el ::flush() automaticamente
+    METHOD addValue( value ) // convierte el valor en cadena y lo añade al buffer
+    METHOD flush() // Por si se quiere salvar a disco manualmente
+    
+END CLASS
+
+//------------------------------------------------------------------------------
+
+METHOD new( hFile, nLen ) CLASS TFBuffer
+
+    if ValType( hFile ) == 'N'      
+        if !( ValType( nLen ) == 'N' .and. nLen &gt; 0 .and. nLen &lt;= FB_MAX_SIZE )
+            nLen := FB_MAX_SIZE
+        endif
+        ::creaBuffer( hFile, nLen )
+    else
+        Alert( "Al menos deberías meter el manejador de un fichero abierto..." )
+    endif       
+    
+return self
+
+//------------------------------------------------------------------------------
+
+#pragma BEGINDUMP
+
+#include "hbapifs.h"
+#include "hbapiitm.h"
+#include "hbstack.h"
+
+/* Estructura del bufer */
+typedef struct
+{
+    unsigned char *pBuffer;
+    unsigned int uiLen;
+    unsigned int uiPos;
+    HB_FHANDLE hFile;
+} FBUFFER, *PFBUFFER;
+
+static void _flushFB( PFBUFFER pFB );
+
+//------------------------------------------------------------------------------
+// Metodo para crear la estructura  buffer
+
+HB_FUNC_STATIC( TFBUFFER_CREABUFFER )
+{
+    PHB_ITEM Self = hb_stackSelfItem();
+    PFBUFFER pFB = ( PFBUFFER ) hb_xgrab( sizeof( FBUFFER ) );
+
+    pFB-&gt;uiLen = hb_parnint( 2 );
+    pFB-&gt;pBuffer = ( unsigned char * ) hb_xgrab( pFB-&gt;uiLen );
+    pFB-&gt;uiPos = 0;
+    pFB-&gt;hFile = ( HB_FHANDLE ) hb_parnint( 1 );
+
+    hb_arraySetPtr( Self, 1, pFB );
+}
+
+//------------------------------------------------------------------------------
+// Metodo para liberar el buffer
+
+HB_FUNC_STATIC( TFBUFFER_FREE )
+{
+    PHB_ITEM Self = hb_stackSelfItem();
+    PFBUFFER pFB = hb_arrayGetPtr( Self, 1 );
+
+    if( pFB )   
+    {
+        _flushFB( pFB );
+
+        if( pFB-&gt;pBuffer )
+        {
+            hb_xfree( pFB-&gt;pBuffer );
+        }
+
+        hb_xfree( pFB );
+    }
+}
+
+//------------------------------------------------------------------------------
+// Metodo para añadir cadenas al buffer
+
+HB_FUNC_STATIC( TFBUFFER_ADDSTRING )
+{
+    PHB_ITEM Self = hb_stackSelfItem();
+    PFBUFFER pFB = hb_arrayGetPtr( Self, 1 );
+    PHB_ITEM pString = hb_param( 1, HB_IT_STRING  );
+    
+    if( pString )
+    {
+        unsigned int uiPos = 0;
+        const char *szString = hb_itemGetCPtr( pString );
+        unsigned int uiLen = hb_itemGetCLen( pString );
+
+        while( uiPos &lt; uiLen )
+        {
+            if( pFB-&gt;uiPos == pFB-&gt;uiLen )
+            {
+                _flushFB( pFB );
+            }
+            
+            pFB-&gt;pBuffer[ pFB-&gt;uiPos++ ] = ( unsigned char ) szString[ uiPos++ ];
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Metodo para añadir cadenas al buffer
+
+HB_FUNC_STATIC( TFBUFFER_ADDVALUE )
+{
+    PHB_ITEM Self = hb_stackSelfItem();
+    PFBUFFER pFB = hb_arrayGetPtr( Self, 1 );
+    PHB_ITEM pValue = hb_param( 1, HB_IT_ANY  );
+    
+    if( pValue )
+    {
+        unsigned int uiPos = 0;
+        HB_SIZE uiLen;
+        HB_BOOL fFree;
+        char *szString = hb_itemString( pValue, &amp;uiLen, &amp;fFree );
+
+        while( uiPos &lt; uiLen )
+        {
+            if( pFB-&gt;uiPos == pFB-&gt;uiLen )
+            {
+                _flushFB( pFB );
+            }
+            
+            pFB-&gt;pBuffer[ pFB-&gt;uiPos++ ] = ( unsigned char ) szString[ uiPos++ ];
+        }
+        
+        if( fFree )
+        {
+            hb_xfree( szString );
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Metodo para forzar escritura en disco del buffer e inicia la posicion
+
+HB_FUNC_STATIC( TFBUFFER_FLUSH )
+{
+    PHB_ITEM Self = hb_stackSelfItem();
+    PFBUFFER pFB = hb_arrayGetPtr( Self, 1 );
+
+    _flushFB( pFB );
+}
+
+//------------------------------------------------------------------------------
+// Funcion de uso interno. Escribe en disco el buffer e inicia la posicion
+
+static void _flushFB( PFBUFFER pFB )
+{
+    if( pFB-&gt;uiPos &gt; 0 )
+    {
+        hb_fsWrite( pFB-&gt;hFile, pFB-&gt;pBuffer, pFB-&gt;uiPos );
+        pFB-&gt;uiPos = 0;
+    }
+}
+
+//------------------------------------------------------------------------------
+
+#pragma ENDDUMP</code></pre></div><br>
+<br>
+Espero que te valga Paquito.<br>
+Mr. Rao creo que esto es lo que quería...<br>
+<br>
+Un saludo   <br>
+Manu Exposito</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

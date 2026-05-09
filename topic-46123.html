@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Web-based Cashbook – JSON version → DBF/Microservice or SQL - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46123">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-45.html">mod_harbour</a> Web-based Cashbook – JSON version → DBF/Microservice or SQL</div>
+  <div class="post" id="p282404">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Web-based Cashbook – JSON version → DBF/Microservice or SQL</span><br>
+        Posted: Mon Nov 17, 2025 01:30 AM
+      </div>
+      <div class="content"><r><p>I started with a very simple web-based cashbook in PHP where all data was stored in a local JSON file.<br/><br>
+Later I switched the backend to a DBF file via a microservice – and the same pattern would also work with SQL.</p><br>
+<br>
+<p>The nice part: the UI code did not change, only loadData().</p><br>
+<br>
+<LIST type="decimal"><LI><s>1. </s>Original JSON-based version<br/><br>
+// Old: JSON file "data.json" as backend<br/><br>
+// {<br/><br>
+//   "users": [...],<br/><br>
+//   "transactions": [...]<br/><br>
+// }</LI></LIST><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;function loadData() {
+    $file = __DIR__ . '/data.json';
+
+&lt;i&gt;    &lt;/i&gt;$data = json_decode(@file_get_contents($file), true);
+
+&lt;i&gt;    &lt;/i&gt;if (!is_array($data)) {
+&lt;i&gt;    &lt;/i&gt;    $data = ['users' =&gt; [], 'transactions' =&gt; []];
+&lt;i&gt;    &lt;/i&gt;}
+
+&lt;i&gt;    &lt;/i&gt;return $data;
+}
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>Everywhere else I just used:</p><br>
+<br>
+<p>$data = loadData();<br/><br>
+$transactions = $data['transactions'];</p><br>
+<br>
+<LIST type="decimal"><LI><s>2. </s>DBF backend via microservice (same UI)</LI></LIST><br>
+<br>
+<p>Now the data lives in a DBF file (Kasse.DBF).<br/><br>
+Instead of reading data.json, I call a microservice endpoint xWH_hub_readdbf.php which returns JSON.</p><br>
+<br>
+<p>2.1 Minimal helper to call the microservice</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;function hubRequest(string $endpoint, array $payload): array
+{
+    $url = $endpoint; // e.g. "xWH_hub_readdbf.php" in the same directory
+
+&lt;i&gt;    &lt;/i&gt;$context = stream_context_create([
+&lt;i&gt;    &lt;/i&gt;    'http' =&gt; [
+&lt;i&gt;    &lt;/i&gt;        'method'  =&gt; 'POST',
+&lt;i&gt;    &lt;/i&gt;        'header'  =&gt; "Content-Type: application/json\r\n",
+&lt;i&gt;    &lt;/i&gt;        'content' =&gt; json_encode($payload, JSON_UNESCAPED_UNICODE),
+&lt;i&gt;    &lt;/i&gt;        'timeout' =&gt; 30,
+&lt;i&gt;    &lt;/i&gt;    ]
+&lt;i&gt;    &lt;/i&gt;]);
+
+&lt;i&gt;    &lt;/i&gt;// For demo purposes: no error handling, expect valid JSON
+&lt;i&gt;    &lt;/i&gt;$response = file_get_contents($url, false, $context);
+
+&lt;i&gt;    &lt;/i&gt;return json_decode($response, true) ?? [];
+}&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>2.2 New loadData() using DBF field names 1:1</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;function loadData() {
+
+&lt;i&gt;    &lt;/i&gt;// DBF field names 1:1 – no mapping layer in PHP
+&lt;i&gt;    &lt;/i&gt;$payload = [
+&lt;i&gt;    &lt;/i&gt;    'databasePath' =&gt; 'x:\\xwhdaten\\datawin\\Kasse.DBF',
+&lt;i&gt;    &lt;/i&gt;    'start'        =&gt; 1,
+&lt;i&gt;    &lt;/i&gt;    'end'          =&gt; 500,
+&lt;i&gt;    &lt;/i&gt;    'fields'       =&gt; [
+&lt;i&gt;    &lt;/i&gt;        'TEXT',      // description
+&lt;i&gt;    &lt;/i&gt;        'EINNAHMEN', // income (N, 11,2)
+&lt;i&gt;    &lt;/i&gt;        'AUSGABEN',  // expense (N, 11,2)
+&lt;i&gt;    &lt;/i&gt;        'DATUM',     // date (D)
+&lt;i&gt;    &lt;/i&gt;        'USER',      // user code
+&lt;i&gt;    &lt;/i&gt;    ],
+&lt;i&gt;    &lt;/i&gt;];
+
+&lt;i&gt;    &lt;/i&gt;$response = hubRequest('xWH_hub_readdbf.php', $payload);
+
+&lt;i&gt;    &lt;/i&gt;// Adjust this key to your real microservice output: "records", "rows", "data", ...
+&lt;i&gt;    &lt;/i&gt;$rows = $response['records'] ?? [];
+
+&lt;i&gt;    &lt;/i&gt;// Keep the same structure the UI expects
+&lt;i&gt;    &lt;/i&gt;return [
+&lt;i&gt;    &lt;/i&gt;    'users'        =&gt; [],
+&lt;i&gt;    &lt;/i&gt;    'transactions' =&gt; $rows,
+&lt;i&gt;    &lt;/i&gt;];
+}
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>The HTML/JS part still works with $data['transactions'], so the UI does not care if the backend is JSON, DBF, or anything else – as long as the JSON shape is the same.</p><br>
+<br>
+<p><B><s><strong></s>3. Same pattern with an SQL-based microservice<e></strong></e></B></p><br>
+<br>
+<p>Architecturally, you can do exactly the same with an SQL backend:<br/><br>
+the PHP app doesn’t talk to the database directly; it calls a microservice that runs an SQL query and returns JSON.</p><br>
+<br>
+<p>Example: microservice endpoint xWH_hub_sql_select.php:</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;function loadData() {
+
+&lt;i&gt;    &lt;/i&gt;// The microservice will execute this SQL on its side
+&lt;i&gt;    &lt;/i&gt;$payload = [
+&lt;i&gt;    &lt;/i&gt;    'sql' =&gt; "
+&lt;i&gt;    &lt;/i&gt;        SELECT
+&lt;i&gt;    &lt;/i&gt;            text       AS TEXT,
+&lt;i&gt;    &lt;/i&gt;            income     AS EINNAHMEN,
+&lt;i&gt;    &lt;/i&gt;            expense    AS AUSGABEN,
+&lt;i&gt;    &lt;/i&gt;            booking_at AS DATUM,
+&lt;i&gt;    &lt;/i&gt;            username   AS USER
+&lt;i&gt;    &lt;/i&gt;        FROM cashbook
+&lt;i&gt;    &lt;/i&gt;        ORDER BY booking_at, id
+&lt;i&gt;    &lt;/i&gt;        LIMIT 500
+&lt;i&gt;    &lt;/i&gt;    "
+&lt;i&gt;    &lt;/i&gt;];
+
+&lt;i&gt;    &lt;/i&gt;$response = hubRequest('xWH_hub_sql_select.php', $payload);
+
+&lt;i&gt;    &lt;/i&gt;// Again: use whatever key your microservice returns
+&lt;i&gt;    &lt;/i&gt;$rows = $response['rows'] ?? [];
+
+&lt;i&gt;    &lt;/i&gt;return [
+&lt;i&gt;    &lt;/i&gt;    'users'        =&gt; [],
+&lt;i&gt;    &lt;/i&gt;    'transactions' =&gt; $rows,
+&lt;i&gt;    &lt;/i&gt;];
+}
+
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<p>From the UI perspective:</p><br>
+<br>
+<p>Old: JSON file → $data['transactions']</p><br>
+<br>
+<p>New: DBF/microservice → $data['transactions']</p><br>
+<br>
+<p>Alternative: SQL/microservice → $data['transactions']</p><br>
+<br>
+<p>Same structure, same rendering logic, just a different backend behind the microservice.</p></r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Excel - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-11079">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-2.html">FiveWin para CA-Clipper</a> Excel</div>
+  <div class="post" id="p54414">
+    <div class="poster">
+      <div class="name" style="color:#105289">Sebastián Almirón</div>
+      <div class="rank">Posts: 166</div>
+      <img class="avatar avatar-img" src="avatars/350.jpg" alt="" loading="lazy">
+      Joined: Mon Dec 12, 2005 09:56 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Excel</span><br>
+        Posted: Fri May 09, 2008 06:28 PM
+      </div>
+      <div class="content"><p>Hola a todos, perdonar por el tocho pero no se a quien recurrir.</p>
+<p>Tengo una clase Excel propia que, aunque en general funciona bien, a veces me está dando problemas. Lo que he notado es que por algún motivo los objetos de la memoria no se liberan como debería.</p>
+<p>A ver si me explico:</p>
+<p>Primero situaros en el entorno: Tengo unos 5.000 libros de cálculo, cada uno contiene unas 30 hojas de las de  400 filas x 30 columnas, cada libro tiene aproximadamente 1 Mega, de los cuales extraigo unos 400 datos para formar referencias y unidades con el fin de formar las estructuras de productos de una fábrica (los materiales y manos de obra que llevan).<br>
+Mediante una plantilla que modifican los usuarios y utilizando un lenguaje basado en la clase TScript más un montón de funciones creadas para tal fin, de vez en cuando hay que recalcular las estructuras de todos los productos, proceso que suele tardar unas 30 horas.</p>
+<p>El caso es que el proceso me suele dar problemas cuando lleva un buen rato, generalmente en forma de GPF o mediante un aviso del sistema indicándome que recursos insuficientes.</p>
+<p>el método para crear el objeto excel es así:<br>
+METHOD New() CLASS TExcel<br>
+         sysrefresh()<br>
+         ::OleExcel :=  CreateOleObject( "Excel.Application" )<br>
+         sysrefresh()<br>
+return Self</p>
+<p>Y para destruirlo así:<br>
+METHOD End() CLASS TExcel<br>
+if valtype(self) = 'O'<br>
+    OleSetProperty(::OleExcel,'DisplayAlerts',.f.)<br>
+    Oleinvoke(::OleExcel,'Quit')<br>
+    Super:End()<br>
+    OleUninitialize()<br>
+endif<br>
+return Nil</p>
+<p>Para abrir el libro así:<br>
+METHOD OpenXls( cFileXls, lreadonly, lmessage )  CLASS TExcel<br>
+local sal<br>
+    DEFAULT lreadonly := .f., lmessage := .t.<br>
+    cfilexls := alltrim(cfilexls)</p>
+<pre><code>if lmessage = .t.
+    if !file( lfn2sfn(cFileXls) )
+        MsgAlert('No existe el libro de cálculo '+cfilexls)
+        return .f.
+    endif
+else
+    if !file( lfn2sfn(cFileXls) )
+        return .f.
+    endif
+endif
+::OleXlss := OleGetProperty( ::OleExcel, 'Workbooks')
+OleInvoke(::OleXlss, 'Open', cfilexls,,lreadonly)
+::OleBook := OleGetProperty( ::OleExcel, 'ActiveWorkbook')
+if valtype( ::OleBook ) = 'N'
+    ::OleSheet := OleGetProperty( ::OleExcel, 'ActiveSheet')
+    ::OleSelect := OleGetProperty( ::OleExcel, 'Selection')
+    ::cFilexls := cFilexls
+    sal := .t.
+else
+    sal := .f.
+endif
+
+::cFont := "Arial"
+::nSize := 10
+::lBold := .F.
+::lItalic := .F.
+::lUnderLine := .F.
+::nAlign := 1
+</code></pre>
+<p>return sal</p>
+<p>Y para cerrarlo así:<br>
+METHOD CloseBook() CLASS TExcel<br>
+local obook<br>
+if valtype(::OleBook) = 'N'<br>
+    OleInvoke(::OleBook, 'Close', .f.)<br>
+    ::OleBook := OleGetProperty( ::OleExcel, 'ActiveWorkbook')<br>
+endif<br>
+sysrefresh()<br>
+return</p>
+<p>Primero, si creo un objeto Excel y voy abriendo, tomando datos y cerrando los libros, la memoria usada por el objeto excel (en el administrador de tarea) va subiendo, cosa que creo no debería pasar si cierro el libro (he probado dejando excel visible), hasta que da un error de recursos insuficientes ( a veces un GPF por utilizar un objeto que no se ha podido crear por falta de memoria)</p>
+<p>Pero es que además si ni siquiera abro libros, solamente:<br>
+oexcel := TExcel():New()<br>
+oexcel:End()</p>
+<p>Aparentemente funciona, del administrador de tareas desaparece Excel, pero cada vez que creo un objeto Excel nuevo se añade un Objeto de Usuario que luego no se libera (Una de las columnas que podemos poner visible en los procesos del administrador de tareas) a ntvdm.exe, que creo que son la causa de mis problemas. De hecho la memoria usada por ntvdm.exe va subiendo a medida que abro libros y luego no llega a liberarse del todo ni siquiera si destruyo el objeto excel, que he probado a destruirlo y volverlo a crear cada 20 libros, con lo cual se soluciona el problema de memoria de excel, pero no de ntvdm.exe</p>
+<p>Por supuesto esta clase me funciona bien en el resto de procesos, cuando lo normal es abrir una hoja o crearla para hacer un informe, etc. Incluso en el proceso descrito lo normal es que me dé el error cuando lleva el 50%, es decir después de haber procesado unos 2500 libros.</p>
+<p>Bueno, resumiendo y para los que no quieran tragarse el royo anterior:</p>
+<p>¿ Como hacer que un objeto Excel, creado con de OLE2 libere totalmente la memoria utilizada ¿ y como hacer que cuando se cierre un libro se libere también la memoria utilizada para ese libro ?</p>
+<p>¿Podéis alguno probar con la clase Excel que utilicéis a ver si la memoria de ntvdm.exe se queda igual tras crear y destruir unas cuantas veces un objeto excel ?</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p54465">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Excel</span><br>
+        Posted: Sat May 10, 2008 09:38 PM
+      </div>
+      <div class="content"><p>Sebastián,</p>
+<p>Tu aplicación esta en 16 bits ó en 32 bits ?</p>
+<p>Te lo pregunto pues has puesto tu pregunta en el foro de Clipper. Pero por tu código diría que es 32 bits.</p>
+<p>Y en caso de no ser de 32 bits, lo idóneo es que la pasaras a 32 bits, para evitar problemas de memoria.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p54508">
+    <div class="poster">
+      <div class="name" style="color:#105289">Sebastián Almirón</div>
+      <div class="rank">Posts: 166</div>
+      <img class="avatar avatar-img" src="avatars/350.jpg" alt="" loading="lazy">
+      Joined: Mon Dec 12, 2005 09:56 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Excel</span><br>
+        Posted: Mon May 12, 2008 08:49 AM
+      </div>
+      <div class="content"><p>Hola Antonio</p>
+<p>Esta es una aplicación de 16 bits.</p>
+<p>Por ser muy compleja (llevo 10 años trabajando en ella) no la he pasado a 32 bits ya que aunque se lo he propuesto al cliente,  me ha pedido que aproveche cuando me embarque en ello para pasar las bases de datos a Oracle. Y estoy, cuando tengo un poco de tiempo, mirando como solucionar algunos problemas con el AdoRDD (índices, migrar las bases de datos, modificar los dialogos que todos tienen controles Borland, etc.). Algunas aplicaciones más pequeñas ya las tengo en 32 bits, pero esta tiene más de 200 bases de datos, alrededor de 1500 cuadros de dialogo y más de 300.000 líneas de código... me dá pavor meterme a ello.</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

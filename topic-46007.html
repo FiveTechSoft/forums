@@ -1,0 +1,1288 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Zero-Runtime UI: HARBOURNO Preprocessor + Patcher — PRG → clean HTML/JS - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46007">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Zero-Runtime UI: HARBOURNO Preprocessor + Patcher — PRG → clean HTML/JS</div>
+  <div class="post" id="p281840">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Zero-Runtime UI: HARBOURNO Preprocessor + Patcher — PRG → clean HTML/JS</span><br>
+        Posted: Sat Oct 04, 2025 09:40 PM
+      </div>
+      <div class="content"><r>Zero-Runtime UI: HARBOURNO Preprocessor + Patcher — PRG → clean HTML/JS.<br/><br>
+Full write-up &amp; source in the German forum (link below).<br/><br>
+<br/><br>
+<br/><br>
+<URL url="https://forums.fivetechsupport.com/viewtopic.php?p=281838#p281838"><LINK_TEXT text="viewtopic.php?p=281838#p281838">https://forums.fivetechsupport.com/viewtopic.php?p=281838#p281838</LINK_TEXT></URL><br/><br>
+<IMG src="https://winhotel-sandbox.com/clipper2web/migration/harbourinotest.jpg"><s><img src="</s><URL url="https://winhotel-sandbox.com/clipper2web/migration/harbourinotest.jpg"><LINK_TEXT text="https://winhotel-sandbox.com/clipper2we ... notest.jpg">https://winhotel-sandbox.com/clipper2web/migration/harbourinotest.jpg</LINK_TEXT></URL><e>" alt="" loading="lazy"></e></IMG><br/><br>
+<br/><br>
+php -l hw_proc.php<br/><br>
+php hw_proc.php demo_proc.prg &gt; demo_abs.html<br/><br>
+php hw_proc.php demo_proc.prg --grid &gt; demo_grid.html<br/><br>
+Optional feintunen:<br/><br>
+php hw_proc.php demo_proc.prg --grid=16 --ch-per-col=5 &gt; demo_grid16.html</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281844">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Zero-Runtime UI: HARBOURNO Preprocessor + Patcher — PRG → clean HTML/JS</span><br>
+        Posted: Sun Oct 05, 2025 10:16 AM
+      </div>
+      <div class="content"><r>Update: PIXEL clause support<br/><br>
+<br/><br>
+The preprocessor now auto-detects PIXEL (in DEFINE DIALOG … PIXEL or @ … PIXEL) and switches to 1:1 absolute positioning:<br/><br>
+<br/><br>
+--ux: 1px, --uy: 1px (exact pixel mapping)<br/><br>
+<br/><br>
+SIZE w,h → px for GET, LISTBOX, BUTTON<br/><br>
+Compact defaults (~16px inputs/buttons)<br/><br>
+Backward-compatible: without PIXEL, the old grid/ch behavior remains<br/><br>
+<br/><br>
+Example<br/><br>
+<br/><br>
+DEFINE DIALOG oDlg PIXEL TITLE "ChatGPT"<br/><br>
+@ 5,5 SAY "ChatGPT" PIXEL SIZE 200,20<br/><br>
+@ 100,10 BUTTON "&amp;Yes" PIXEL SIZE 80,20 ACTION MsgInfo("You clicked Yes!")<br/><br>
+<br/><br>
+<br/><br>
+Build<br/><br>
+<br/><br>
+php hw_proc.php myform.prg &gt; out.html<br/><br>
+<br/><br>
+<br/><br>
+hw_proc.php<br/><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;
+&lt;?php
+/**
+ * Harbourino Procedural @ Parser – v0.3.4 (grid collision solver)
+ * ---------------------------------------------------------------
+ * - Grid mode: maps SIZE w (ch) → grid-column span AND prevents overlaps
+ *   via per-row interval packing (nudge right / wrap to next row if needed).
+ * - Absolute mode: keeps auto-height + overlap-guard from 0.3.2.
+ * - Inputs/select width 100% in grid cell; buttons keep natural width
+ *   (justify-self:start) and get a small default span.
+ *
+ * Usage:
+ *   php hw_proc.php demo_proc.prg &gt; demo_abs.html
+ *   php hw_proc.php demo_proc.prg --grid &gt; demo_grid.html
+ *   php hw_proc.php demo_proc.prg --grid=16 --ch-per-col=5 &gt; demo_grid16.html
+ */
+
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
+
+// --- CLI args ---------------------------------------------------------------
+$in = $argv[1] ?? null;
+if (!$in || !is_file($in)) {
+  fwrite(STDERR, "Usage: php hw_proc.php input.prg [--grid[=24]] [--grid-cols=24] [--ch-per-col=4]\n");
+  exit(1);
+}
+list($grid, $gridCols, $chPerCol) = parse_cli_flags($argv);
+
+$src = file_get_contents($in);
+$src = str_replace(["\r\n", "\r"], "\n", $src);
+$usesPixel = (bool) preg_match('/\bPIXEL\b/i', $src);
+if ($usesPixel) {
+  $grid = false; // absolute Positionierung verwenden
+}
+// --- PIXEL auto-detect + unit presets ---
+$usesPixel = (bool) preg_match('/\bPIXEL\b/i', $src);
+
+$UX   = $usesPixel ? '1px'  : '8px';
+$UY   = $usesPixel ? '1px'  : '20px';
+$ROW  = $usesPixel ? '16px' : '36px';
+$INH  = $usesPixel ? '16px' : '36px';
+$GAP  = $usesPixel ? '2px'  : '8px';
+$PAD  = $usesPixel ? '8px'  : '16px';
+
+
+
+// Strip includes / templating remnants
+$src = preg_replace('/#include\s+\"[^\"]*\"/i', '', $src);
+$src = preg_replace('/\{\%.*?\%\}/s', '', $src);
+
+// Title from DEFINE DIALOG ... TITLE
+$title = 'Harbourino Classic Form';
+if (preg_match('/DEFINE\s+DIALOG\s+\w+\s+TITLE\s+(\"([^\"]*)\"|\'([^\']*)\')/i', $src, $m)) {
+  $title = $m[2] !== '' ? $m[2] : $m[3];
+}
+
+// Defaults from LOCAL
+$varDefaults = parse_locals($src);
+
+// Parse @ lines
+$items = parse_items($src);
+
+// --- Placement --------------------------------------------------------------
+if ($grid) {
+  $placed = layout_grid($items, $gridCols, $chPerCol);
+} else {
+  $placed = layout_absolute($items); // keeps 0.3.2 nudge behaviour
+}
+
+// --- Emit HTML --------------------------------------------------------------
+$out = [];
+$out[] = '&lt;!doctype html&gt;';
+$out[] = '&lt;html lang="en"&gt;';
+$out[] = '&lt;head&gt;';
+$out[] = '  &lt;meta charset="utf-8"&gt;';
+$out[] = '  &lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;';
+$out[] = '  &lt;title&gt;' . h($title) . '&lt;/title&gt;';
+ 
+
+
+
+
+$out[] = '  &lt;style&gt;';
+$out[] = '    :root{';
+$out[] = '      --ux: ' . $UX . ';';
+$out[] = '      --uy: ' . $UY . ';';
+$out[] = '      --font: 12px/1.2 system-ui,Segoe UI,Roboto,Arial;';
+$out[] = '      --cols: ' . (int)$gridCols . ';';
+$out[] = '      --row-h: ' . $ROW . ';';
+$out[] = '      --input-h: ' . $INH . ';';
+$out[] = '    }';
+
+$out[] = '    *{';
+$out[] = '      box-sizing: border-box;';
+$out[] = '    }';
+
+$out[] = '    body{';
+$out[] = '      margin: 0;';
+$out[] = '      font: var(--font);';
+$out[] = '      background: #0e1116;';
+$out[] = '      color: #e9eef5;';
+$out[] = '    }';
+
+if ($grid) {
+  $out[] = '    .wrap{';
+  $out[] = '      display: grid;';
+  $out[] = '      grid-template-columns: repeat(var(--cols), minmax(0, 1fr));';
+  $out[] = '      grid-auto-rows: minmax(var(--row-h), auto);';
+  $out[] = '      gap: ' . $GAP . ';';
+  $out[] = '      align-items: center;';
+  $out[] = '      padding: ' . $PAD . ';';
+  $out[] = '    }';
+} else {
+  $out[] = '    .wrap{';
+  $out[] = '      position: relative;';
+  $out[] = '      min-height: 100px;';
+  $out[] = '      padding: ' . $PAD . ';';
+  $out[] = '    }';
+}
+
+$out[] = '    .item{';
+$out[] = '      position: ' . ($grid ? 'relative' : 'absolute') . ';';
+$out[] = '    }';
+
+$out[] = '    label{';
+$out[] = '      font-weight: 600;';
+$out[] = '    }';
+
+$out[] = '    input,select,button{';
+$out[] = '      font: inherit;';
+$out[] = '    }';
+
+$out[] = '    input[type=text],input[type=number],input[type=date]{';
+$out[] = '      background: #151a22;';
+$out[] = '      border: 1px solid #2a3240;';
+$out[] = '      color: #e9eef5;';
+$out[] = '      padding: 0 4px;';
+$out[] = '      border-radius: 4px;';
+$out[] = '      height: var(--input-h);';
+$out[] = '      line-height: var(--input-h);';
+$out[] = '    }';
+
+if ($grid) {
+  $out[] = '    input[type=text],input[type=number],input[type=date],select{';
+  $out[] = '      width: 100%;';
+  $out[] = '    }';
+}
+
+$out[] = '    select{';
+$out[] = '      background: #151a22;';
+$out[] = '      border: 1px solid #2a3240;';
+$out[] = '      color: #e9eef5;';
+$out[] = '      padding: 0 4px;';
+$out[] = '      border-radius: 4px;';
+$out[] = '      height: var(--input-h);';
+$out[] = '      line-height: var(--input-h);';
+$out[] = '    }';
+
+$out[] = '    select[multiple]{';
+$out[] = '      min-height: 80px;';
+$out[] = '    }';
+
+$out[] = '    button{';
+$out[] = '      background: #2a7de1;';
+$out[] = '      color: white;';
+$out[] = '      border: 0;';
+$out[] = '      padding: 0 6px;';
+$out[] = '      border-radius: 4px;';
+$out[] = '      cursor: pointer;';
+$out[] = '      min-height: var(--input-h);';
+$out[] = '      justify-self: start;';
+$out[] = '    }';
+
+$out[] = '    button.secondary{';
+$out[] = '      background: #3a3f46;';
+$out[] = '    }';
+
+$out[] = '  &lt;/style&gt;';
+
+
+
+
+
+
+
+
+
+
+
+
+$out[] = '&lt;/head&gt;';
+$out[] = '&lt;body&gt;';
+$out[] = '&lt;form id="frm"&gt;&lt;div class="wrap"&gt;';
+
+$pixel = isset($usesPixel) ? (bool)$usesPixel : false;
+
+foreach ($placed as $it) {
+  switch ($it['type']) {
+    case 'say':
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+      $out[] = '&lt;label class="item" style="' . $style . '"&gt;' . h($it['text']) . '&lt;/label&gt;';
+      break;
+
+    case 'get':
+      $val = value_for($it['var'], $varDefaults);
+      list($type, $extra) = input_type_and_mask($it['var'], $it['picture']);
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+
+      // WIDTH/HEIGHT mapping: ABSOLUTE → px wenn PIXEL, sonst ch
+      if (!$grid &amp;&amp; !empty($it['w'])) {
+        $style .= ' width:' . (int)$it['w'] . ($pixel ? 'px;' : 'ch;');
+      }
+      if (!$grid &amp;&amp; $pixel &amp;&amp; !empty($it['h'])) {
+        $style .= ' height:' . (int)$it['h'] . 'px; line-height:' . (int)$it['h'] . 'px;';
+      }
+
+      $colorCss = color_css($it['color']);
+      $attr = '';
+      if ($type === 'number') $attr .= ' inputmode="decimal"';
+      if (!empty($extra['step'])) $attr .= ' step="' . $extra['step'] . '"';
+      $valueAttr = $val !== null ? ' value="' . h($val) . '"' : '';
+      $out[] = '&lt;input class="item" style="' . $style . $colorCss . '" type="' . $type . '" name="' . h($it['var']) . '" id="' . h($it['var']) . '"' . $attr . $valueAttr . ' /&gt;';
+      break;
+
+    case 'checkbox':
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+      $checked = truthy(value_for($it['var'], $varDefaults)) ? ' checked' : '';
+      $label = h($it['prompt'] ?? '');
+      $name  = h($it['var']);
+      $out[] = '&lt;label class="item checkbox" style="' . $style . '"&gt;&lt;input type="checkbox" name="' . $name . '" id="' . $name . '"' . $checked . '&gt;' . $label . '&lt;/label&gt;';
+      break;
+
+    case 'radio':
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+      $horizontal = !empty($it['horizontal']);
+      $name = h($it['var']);
+      $default = value_for($it['var'], $varDefaults);
+      $cls = $horizontal ? 'radio-group horizontal' : 'radio-group';
+      $html = '&lt;div class="item ' . $cls . '" style="' . $style . '"&gt;';
+      foreach ($it['items'] as $idx =&gt; $text) {
+        $val = (string)($idx + 1);
+        $id  = $name . '_' . $val;
+        $sel = '';
+        if (is_numeric($default) &amp;&amp; (int)$default === ($idx + 1)) $sel = ' checked';
+        elseif (is_string($default) &amp;&amp; strcasecmp($default, $text) === 0) $sel = ' checked';
+        $html .= '&lt;label&gt;&lt;input type="radio" name="' . $name . '" id="' . h($id) . '" value="' . h($val) . '"' . $sel . '&gt; ' . h($text) . '&lt;/label&gt;';
+      }
+      $html .= '&lt;/div&gt;';
+      $out[] = $html;
+      break;
+
+    case 'listbox':
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+
+      // WIDTH/HEIGHT mapping: ABSOLUTE → px wenn PIXEL, sonst ch/size
+      if (!$grid &amp;&amp; !empty($it['w'])) {
+        $style .= ' width:' . (int)$it['w'] . ($pixel ? 'px;' : 'ch;');
+      }
+      if (!$grid &amp;&amp; $pixel &amp;&amp; !empty($it['h'])) {
+        $style .= ' height:' . (int)$it['h'] . 'px;';
+      }
+
+      $name  = h($it['var']);
+      $multi = !empty($it['multi']);
+      $default = value_for($it['var'], $varDefaults);
+      // size-Attribut nur im Nicht-PIXEL-Fall sinnvoll
+      $sizeAttr  = (!$pixel &amp;&amp; $it['h'] &amp;&amp; $it['h'] &gt; 1) ? ' size="' . (int)$it['h'] . '"' : '';
+      $multiAttr = $multi ? ' multiple' : '';
+      $html = '&lt;select class="item" style="' . $style . '" name="' . $name . '" id="' . $name . '"' . $sizeAttr . $multiAttr . '&gt;';
+      foreach ($it['items'] as $idx =&gt; $text) {
+        $isSel = false;
+        if (is_numeric($default) &amp;&amp; (int)$default === ($idx + 1)) $isSel = true;
+        elseif (is_string($default) &amp;&amp; strcasecmp($default, $text) === 0) $isSel = true;
+        $html .= '&lt;option value="' . h($text) . '"' . ($isSel ? ' selected' : '') . '&gt;' . h($text) . '&lt;/option&gt;';
+      }
+      $html .= '&lt;/select&gt;';
+      $out[] = $html;
+      break;
+
+    case 'button':
+      list($label, $access) = accesskey_from_amp($it['label']);
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+
+      // WIDTH/HEIGHT mapping: ABSOLUTE + PIXEL → px
+      if (!$grid &amp;&amp; $pixel) {
+        if (!empty($it['w'])) $style .= ' width:' . (int)$it['w'] . 'px;';
+        if (!empty($it['h'])) $style .= ' height:' . (int)$it['h'] . 'px; line-height:' . (int)$it['h'] . 'px;';
+      }
+
+      $typeBtn = $it['cancel'] ? 'button' : 'submit';
+      $cls  = $it['cancel'] ? 'secondary' : '';
+      $ak   = $access ? ' accesskey="' . h(strtolower($access)) . '"' : '';
+      $onclick = '';
+      if ($it['cancel']) { $onclick = ' onclick="history.back();"'; }
+      elseif (!empty($it['action'])) { $onclick = ' onclick="' . h(js_action($it['action'])) . '"'; $typeBtn = 'button'; }
+      $out[] = '&lt;button class="item ' . $cls . '" style="' . $style . '" type="' . $typeBtn . '"' . $ak . $onclick . '&gt;' . h($label) . '&lt;/button&gt;';
+      break;
+  }
+}
+
+
+$out[] = '&lt;/div&gt;&lt;/form&gt;';
+$out[] = '&lt;script&gt;document.getElementById("frm")?.addEventListener("submit", function(e){ e.preventDefault(); alert("Submitted!"); });&lt;/script&gt;';
+$out[] = '&lt;/body&gt;';
+$out[] = '&lt;/html&gt;';
+
+echo implode("\n", $out);
+
+// =============================== Layout =====================================
+function layout_grid(array $items, int $cols, int $chPerCol): array {
+  // Sort by row, then col
+  usort($items, function($a,$b){
+    if ($a['row'] == $b['row']) return $a['col'] &lt;=&gt; $b['col'];
+    return $a['row'] &lt;=&gt; $b['row'];
+  });
+  $ranges = []; // rowKey =&gt; [ [start,end], ... ]
+  $placed = [];
+  foreach ($items as $it) {
+    $r = (int)round($it['row']);
+    $start = max(1, (int)round($it['col']));
+    $span = grid_span_cols(default_width_ch_for_type($it['type'], $it), $cols, $chPerCol);
+    if ($it['type'] === 'button') $span = max(2, min($span, 4)); // small default span for buttons
+    // SAY does not occupy span
+    if ($it['type'] !== 'say') {
+      while (true) {
+        $conflict = conflict_in_row($ranges[$r] ?? [], $start, $start + $span - 1);
+        if (!$conflict) break;
+        $start = $conflict[1] + 1; // move right after the conflicting block
+        if ($start + $span - 1 &gt; $cols) { // wrap
+          $r += 1; $start = 1; // next row, from column 1
+        }
+      }
+      // register interval
+      if (!isset($ranges[$r])) $ranges[$r] = [];
+      $ranges[$r][] = [$start, $start + $span - 1];
+    }
+    $it['render_row'] = $r;
+    $it['render_col'] = $start;
+    $it['grid_span']  = $span;
+    $placed[] = $it;
+  }
+  return $placed;
+}
+
+function conflict_in_row(array $intervals, int $start, int $end) {
+  foreach ($intervals as $iv) {
+    if (!($end &lt; $iv[0] || $start &gt; $iv[1])) return $iv; // overlap
+  }
+  return null;
+}
+
+function layout_absolute(array $items): array {
+  // Keep simple same-row nudge as 0.3.2
+  $rowRanges = []; $MARGIN = 2; $placed = [];
+  foreach ($items as $it) {
+    $it['render_col'] = $it['col'];
+    $rowKey = row_key($it['row']);
+    $wCols = approx_width_cols($it);
+    if ($wCols &gt; 0) {
+      if (!isset($rowRanges[$rowKey])) $rowRanges[$rowKey] = [];
+      $newCol = $it['render_col'];
+      foreach ($rowRanges[$rowKey] as $span) {
+        if ($newCol &gt;= $span[0] &amp;&amp; $newCol &lt; $span[1]) { $newCol = $span[1] + $MARGIN; }
+      }
+      $it['render_col'] = $newCol;
+      $rowRanges[$rowKey][] = [ $it['render_col'], $it['render_col'] + $wCols ];
+    }
+    $placed[] = $it;
+  }
+  return $placed;
+}
+
+// =============================== Parsers ====================================
+function parse_items(string $src): array {
+  $items = [];
+  $lines = explode("\n", $src);
+  foreach ($lines as $line) {
+    if (!preg_match('/^\s*\@/', $line)) continue;
+    $L = $line;
+    if (!preg_match('/\@\s*([0-9]+(?:\.[0-9]+)?)\s*,\s*([0-9]+(?:\.[0-9]+)?)/', $L, $rc)) continue;
+    $row = (float)$rc[1]; $col = (float)$rc[2];
+
+    if (preg_match('/SAY\s+(?:\w+\s+)?(?:PROMPT\s+)?("([^"]*)"|\'([^\']*)\')/i', $L, $m)) {
+      $text = $m[2] !== '' ? $m[2] : $m[3];
+      $items[] = ['type'=&gt;'say','row'=&gt;$row,'col'=&gt;$col,'text'=&gt;$text];
+      continue;
+    }
+    
+    if (preg_match('/GET\s+\w+\s+VAR\s+(\w+)(.*)$/i', $L, $m)) {
+      $var=$m[1]; $rest=$m[2]; list($w,$h)=parse_size($rest); $color=parse_color($rest); $picture=parse_picture($rest);
+      $items[] = ['type'=&gt;'get','row'=&gt;$row,'col'=&gt;$col,'var'=&gt;$var,'w'=&gt;$w,'h'=&gt;$h,'color'=&gt;$color,'picture'=&gt;$picture];
+      continue;
+    }
+    if (preg_match('/CHECKBOX\s+VAR\s+(\w+)(.*)$/i', $L, $m)) {
+      $var=$m[1]; $rest=$m[2]; list($w,$h)=parse_size($rest); $prompt=parse_prompt($rest);
+      $items[] = ['type'=&gt;'checkbox','row'=&gt;$row,'col'=&gt;$col,'var'=&gt;$var,'w'=&gt;$w,'h'=&gt;$h,'prompt'=&gt;$prompt];
+      continue;
+    }
+    if (preg_match('/RADIO\s+VAR\s+(\w+)(.*)$/i', $L, $m)) {
+      $var=$m[1]; $rest=$m[2]; list($w,$h)=parse_size($rest); $itemsList=parse_items_list($rest); $horizontal=(bool)preg_match('/\bHORIZONTAL\b/i',$rest);
+      $items[] = ['type'=&gt;'radio','row'=&gt;$row,'col'=&gt;$col,'var'=&gt;$var,'w'=&gt;$w,'h'=&gt;$h,'items'=&gt;$itemsList,'horizontal'=&gt;$horizontal];
+      continue;
+    }
+    if (preg_match('/LISTBOX\s+VAR\s+(\w+)(.*)$/i', $L, $m)) {
+      $var=$m[1]; $rest=$m[2]; list($w,$h)=parse_size($rest); $itemsList=parse_items_list($rest); $multi=(bool)preg_match('/\bMULTI\b/i',$rest);
+      $items[] = ['type'=&gt;'listbox','row'=&gt;$row,'col'=&gt;$col,'var'=&gt;$var,'w'=&gt;$w,'h'=&gt;$h,'items'=&gt;$itemsList,'multi'=&gt;$multi];
+      continue;
+    }
+   // BUTTON [oVar] PROMPT "Label" ... [ACTION ...] [CANCEL]
+if (preg_match('/BUTTON\s+(?:\w+\s+)?(?:PROMPT\s+)?("([^"]*)"|\'([^\']*)\')(.*)$/i', $L, $m)) {
+  $labelRaw = $m[2] !== '' ? $m[2] : $m[3];
+  $rest     = $m[4];
+  list($w,$h) = parse_size($rest);
+  $action   = parse_action($rest);
+  $cancel   = (bool) preg_match('/\bCANCEL\b/i', $rest);
+  $items[]  = ['type'=&gt;'button','row'=&gt;$row,'col'=&gt;$col,'label'=&gt;$labelRaw,'w'=&gt;$w,'h'=&gt;$h,'action'=&gt;$action,'cancel'=&gt;$cancel];
+  continue;
+}
+
+  }
+  return $items;
+}
+
+function parse_locals(string $src): array {
+  $defs = [];
+  if (preg_match_all('/LOCAL\s+([^\n]+)/i', $src, $ml, PREG_SET_ORDER)) {
+    foreach ($ml as $line) {
+      $chunk = $line[1]; $parts = preg_split('/\s*,\s*/', $chunk);
+      foreach ($parts as $p) {
+        $p = trim($p); if ($p==='') continue;
+        if (strpos($p,':=')!==false){ [$name,$val] = explode(':=',$p,2); $name = preg_replace('/\s+.*/','',trim($name)); $defs[$name] = parse_literal(trim($val)); }
+      }
+    }
+  }
+  return $defs;
+}
+
+function parse_size(string $rest){ $w=null; $h=null; if (preg_match('/SIZE\s+(\d+)\s*,\s*(\d+)/i',$rest,$mm)){ $w=(int)$mm[1]; $h=(int)$mm[2]; } return [$w,$h]; }
+function parse_color(string $rest){ if (preg_match('/COLOR\s+(\"([^\"]*)\"|\'([^\']*)\')/i',$rest,$mm)) return $mm[2]!==''?$mm[2]:$mm[3]; return null; }
+function parse_picture(string $rest){ if (preg_match('/PICTURE\s+(\"([^\"]*)\"|\'([^\']*)\')/i',$rest,$mm)) return $mm[2]!==''?$mm[2]:$mm[3]; return null; }
+function parse_prompt(string $rest){ if (preg_match('/PROMPT\s+(\"([^\"]*)\"|\'([^\']*)\')/i',$rest,$mm)) return $mm[2]!==''?$mm[2]:$mm[3]; return null; }
+function parse_items_list(string $rest){ $items=[]; if (preg_match('/ITEMS\s+(.*)$/i',$rest,$m)){ $tail=$m[1]; if (preg_match_all('/\"([^\"]*)\"|\'([^\']*)\'/',$tail,$mm,PREG_SET_ORDER)){ foreach($mm as $q){ $items[] = $q[1]!==''?$q[1]:$q[2]; } } } return $items; }
+function parse_action(string $rest){ if (preg_match('/ACTION\s+([^\s].*?)(?:\s+CANCEL|$)/i',$rest,$mm)) return trim($mm[1]); return null; }
+
+// =============================== Helpers ====================================
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES); }
+function truthy($v){ return $v===true || $v===1 || $v==='1' || (is_string($v) &amp;&amp; preg_match('/^(true|.T.)$/i',$v)); }
+function row_key($row){ return sprintf('%.1f', round($row,1)); }
+
+function approx_width_cols($it){
+  switch ($it['type']){
+    case 'get': return $it['w'] ?? 24;
+    case 'listbox': return $it['w'] ?? 20;
+    case 'radio': return max(12, (isset($it['items'])?count($it['items']):1)*8);
+    case 'checkbox': return 12;
+    case 'button': return 8;
+    default: return 0;
+  }
+}
+
+function grid_span_cols($wCh, $cols, $chPerCol=4){ if ($wCh===null) $wCh=24; $span=(int)ceil($wCh/max(1,(int)$chPerCol)); return max(1, min($span,(int)$cols)); }
+function default_width_ch_for_type($type,$it){
+  switch ($type){
+    case 'get': return $it['w'] ?? 24;
+    case 'listbox': return $it['w'] ?? 20;
+    case 'radio': return max(12,(isset($it['items'])?count($it['items']):1)*8);
+    case 'checkbox': return 12;
+    case 'button': return 10;
+    default: return 12;
+  }
+}
+
+function style_for($it, $grid, $cols, $chPerCol){
+  if ($grid){
+    $cStart = max(1,(int)round($it['render_col']));
+    $rStart = max(1,(int)round($it['render_row'] ?? $it['row']));
+    $span   = $it['grid_span'] ?? grid_span_cols(default_width_ch_for_type($it['type'],$it), $cols, $chPerCol);
+    // listbox taller rows
+    $rSpan  = ($it['type']==='listbox' &amp;&amp; !empty($it['h']) &amp;&amp; $it['h']&gt;1) ? max(1,(int)round($it['h']/2)) : 1;
+    return 'grid-column: '.$cStart.' / span '.$span.'; grid-row: '.$rStart.' / span '.$rSpan.';';
+  }
+  // absolute
+  return 'left:calc(var(--ux)*'.round($it['render_col'] ?? $it['col'],2).'); top:calc(var(--uy)*'.round($it['row'],2).');';
+}
+
+function parse_literal($v){ $v=trim($v); $v=preg_replace('/\s*\/\/.*$/','',$v); if ($v==='Date()') return date('Y-m-d'); if ($v==='.T.'||strtoupper($v)==='TRUE') return true; if ($v==='.F.'||strtoupper($v)==='FALSE') return false; if ($v!=='' &amp;&amp; ($v[0]=='"' || $v[0]=="'")) return trim($v,"'\""); if (is_numeric($v)) return 0+$v; return null; }
+function value_for($name,$defs){ if(!array_key_exists($name,$defs)) return null; $v=$defs[$name]; if($v instanceof DateTimeInterface) return $v-&gt;format('Y-m-d'); if (preg_match('/^d[A-Z0-9_]*$/',$name) &amp;&amp; is_string($v)) { $t=strtotime($v); if($t) return date('Y-m-d',$t);} if(is_bool($v)) return $v?'1':'0'; return $v; }
+function input_type_and_mask($var,$picture){ $var=(string)$var; $pic=(string)$picture; $type='text'; $extra=[]; if($pic &amp;&amp; preg_match('/9/',$pic)){ $type='number'; if (strpos($pic,'.')!==false) $extra['step']='0.01'; } elseif($pic &amp;&amp; preg_match('/@E|@D/i',$pic)){ $type='date'; } elseif(preg_match('/^n[A-Z0-9_]*$/',$var)){ $type='number'; } elseif(preg_match('/^d[A-Z0-9_]*$/',$var)){ $type='date'; } return [$type,$extra]; }
+function color_css($c){ if(!$c) return ''; $parts=explode('/',$c); $fg=strtoupper(trim($parts[0]??'')); $bg=strtoupper(trim($parts[1]??'')); $map=['W'=&gt;'#ffffff','B'=&gt;'#000000','G'=&gt;'#2e7d32','R'=&gt;'#c62828','Y'=&gt;'#fdd835']; $fgc=$map[$fg]??null; $bgc=$map[$bg]??null; $css=''; if($bgc) $css.=' background:'.$bgc.';'; if($fgc) $css.=' color:'.$fgc.';'; return $css; }
+function accesskey_from_amp($label){ $pos=strpos($label,'&amp;'); if($pos===false || $pos===strlen($label)-1) return [str_replace('&amp;','',$label),null]; $key=substr($label,$pos+1,1); $clean=substr($label,0,$pos).$key.substr($label,$pos+2); return [$clean,$key]; }
+ 
+
+function js_action($s){
+  $inner = trim($s);
+  if ($inner !== '' &amp;&amp; $inner[0] === '(') $inner = trim($inner, "() \t");
+  if (preg_match('/MsgInfo\s*\(\s*(["\'])(.*?)\1\s*\)/i', $inner, $mm)) {
+    return 'alert('.json_encode($mm[2]).')';
+  }
+  return $inner ?: '';
+}
+
+
+function parse_cli_flags($argv){ $grid=false; $cols=24; $ch=4; foreach($argv as $arg){ if($arg==='--grid'){ $grid=true; } elseif(strpos($arg,'--grid=')===0){ $grid=true; $val=(int)substr($arg,7); if($val&gt;0) $cols=$val; } elseif(strpos($arg,'--grid-cols=')===0){ $val=(int)substr($arg,13); if($val&gt;0) $cols=$val; } elseif(strpos($arg,'--ch-per-col=')===0){ $val=(int)substr($arg,13); if($val&gt;0) $ch=$val; } } return [$grid,$cols,$ch]; }
+
+
+&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p281850">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Zero-Runtime UI: HARBOURNO Preprocessor + Patcher — PRG → clean HTML/JS</span><br>
+        Posted: Sun Oct 05, 2025 08:13 PM
+      </div>
+      <div class="content"><r>Fivewin - testdlg.prg from the FW samples -&gt; Web<br/><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;
+// ListBox use sample
+
+#include "FiveWin.ch"
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oWnd, oLbx, oSay
+   local cItem := "Two"
+
+   DEFINE WINDOW oWnd FROM 1, 1 TO 20, 60 ;
+      TITLE "Testing a ListBox" ;
+      COLOR "W+/B"
+
+   @ 2, 2 LISTBOX oLbx VAR cItem ;
+      ITEMS { "One", "Two", "Three", "Four", "Five" } ;
+      OF oWnd SIZE 200, 150 ;
+      COLOR "W+/BG" ;
+      ON CHANGE oSay:Refresh() ;
+      MESSAGE "Please select an Item"
+      // VALID ( MsgInfo( "Just testing valid clause..." ), .t. )
+
+   @ 2, 40 SAY oSay VAR cItem SIZE 80, 20 OF oWnd
+
+   @ 8, 42 BUTTON "&amp;Add" SIZE 80, 20 OF oWnd ;
+      MESSAGE "Add a new item to the listbox" ;
+      ACTION ( oLbx:Add( Time() ), MsgInfo( Len( oLbx:aItems ) ) )
+
+   @ 11, 42 BUTTON "&amp;End" SIZE 80, 20 OF oWnd ;
+      ACTION oWnd:End() ;
+      MESSAGE "Press me to end this test"
+
+   SET MESSAGE OF oWnd TO "Testing a ListBox"
+
+   ACTIVATE WINDOW oWnd
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<br/><br>
+Update:<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;&lt;?php
+/**
+ * Harbourino Procedural @ Parser – v0.3.4 (grid collision solver + PIXEL + SAY/LISTBOX fixes)
+ * -------------------------------------------------------------------------------------------
+ * - PIXEL auto-detect → absolute positioning, 1px mapping, SIZE w/h in px
+ * - Grid mode: maps SIZE w (ch) → grid-column span AND prevents overlaps
+ * - SAY VAR &lt;cVar&gt; supported (binds to variable, auto-updates with LISTBOX)
+ * - LISTBOX [oLbx] VAR &lt;cVar&gt; … supported (optional object name)
+ * - Title from DEFINE DIALOG/WINDOW … TITLE "…"
+ *
+ * Usage:
+ *   php hw_proc.php demo_proc.prg &gt; demo_abs.html
+ *   php hw_proc.php demo_proc.prg --grid &gt; demo_grid.html
+ *   php hw_proc.php demo_proc.prg --grid=16 --ch-per-col=5 &gt; demo_grid16.html
+ */
+
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
+
+// --- CLI args ---------------------------------------------------------------
+$in = $argv[1] ?? null;
+if (!$in || !is_file($in)) {
+  fwrite(STDERR, "Usage: php hw_proc.php input.prg [--grid[=24]] [--grid-cols=24] [--ch-per-col=4]\n");
+  exit(1);
+}
+list($grid, $gridCols, $chPerCol) = parse_cli_flags($argv);
+
+// --- Load &amp; normalize source ------------------------------------------------
+$src = file_get_contents($in);
+$src = str_replace(["\r\n", "\r"], "\n", $src);
+
+// Join continued lines ending with ';' (FiveWin style)
+$__raw = explode("\n", $src);
+$__lines = [];
+$__buf = '';
+foreach ($__raw as $__ln) {
+  $__ln = rtrim($__ln);
+  $__buf = ($__buf === '') ? $__ln : ($__buf . ' ' . ltrim($__ln));
+  if (!preg_match('/;\s*$/', $__ln)) { $__lines[] = $__buf; $__buf = ''; }
+}
+if ($__buf !== '') $__lines[] = $__buf;
+$src = implode("\n", $__lines);
+
+// PIXEL auto-detect and grid override
+$usesPixel = (bool) preg_match('/\bPIXEL\b/i', $src);
+if ($usesPixel) { $grid = false; } // absolute positioning for PIXEL
+
+// Unit presets
+$UX  = $usesPixel ? '1px'  : '8px';
+$UY  = $usesPixel ? '1px'  : '20px';
+$ROW = $usesPixel ? '16px' : '36px';
+$INH = $usesPixel ? '16px' : '36px';
+$GAP = $usesPixel ? '2px'  : '8px';
+$PAD = $usesPixel ? '8px'  : '16px';
+
+// Strip includes / templating remnants
+$src = preg_replace('/#include\s+\"[^\"]*\"/i', '', $src);
+$src = preg_replace('/\{\%.*?\%\}/s', '', $src);
+
+// Title from DEFINE DIALOG/WINDOW ... TITLE "..."
+$title = 'Harbourino Classic Form';
+if (preg_match('/DEFINE\s+(?:DIALOG|WINDOW)\s+\w+(?:\s+PIXEL)?\s+TITLE\s+(\"([^\"]*)\"|\'([^\']*)\')/i', $src, $m)) {
+  $title = $m[2] !== '' ? $m[2] : $m[3];
+}
+
+// Defaults from LOCAL
+$varDefaults = parse_locals($src);
+
+// Parse @ lines
+$items = parse_items($src);
+
+// --- Placement --------------------------------------------------------------
+if ($grid) {
+  $placed = layout_grid($items, $gridCols, $chPerCol);
+} else {
+  $placed = layout_absolute($items); // keeps 0.3.2 nudge behaviour
+}
+
+// --- Emit HTML --------------------------------------------------------------
+$out = [];
+$out[] = '&lt;!doctype html&gt;';
+$out[] = '&lt;html lang="en"&gt;';
+$out[] = '&lt;head&gt;';
+$out[] = '  &lt;meta charset="utf-8"&gt;';
+$out[] = '  &lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;';
+$out[] = '  &lt;title&gt;' . h($title) . '&lt;/title&gt;';
+
+$out[] = '  &lt;style&gt;';
+$out[] = '    :root{';
+$out[] = '      --ux: ' . $UX . ';';
+$out[] = '      --uy: ' . $UY . ';';
+$out[] = '      --font: 12px/1.2 system-ui,Segoe UI,Roboto,Arial;';
+$out[] = '      --cols: ' . (int)$gridCols . ';';
+$out[] = '      --row-h: ' . $ROW . ';';
+$out[] = '      --input-h: ' . $INH . ';';
+$out[] = '    }';
+$out[] = '    *{';
+$out[] = '      box-sizing: border-box;';
+$out[] = '    }';
+$out[] = '    body{';
+$out[] = '      margin: 0;';
+$out[] = '      font: var(--font);';
+$out[] = '      background: #0e1116;';
+$out[] = '      color: #e9eef5;';
+$out[] = '    }';
+if ($grid) {
+  $out[] = '    .wrap{';
+  $out[] = '      display: grid;';
+  $out[] = '      grid-template-columns: repeat(var(--cols), minmax(0, 1fr));';
+  $out[] = '      grid-auto-rows: minmax(var(--row-h), auto);';
+  $out[] = '      gap: ' . $GAP . ';';
+  $out[] = '      align-items: center;';
+  $out[] = '      padding: ' . $PAD . ';';
+  $out[] = '    }';
+} else {
+  $out[] = '    .wrap{';
+  $out[] = '      position: relative;';
+  $out[] = '      min-height: 100px;';
+  $out[] = '      padding: ' . $PAD . ';';
+  $out[] = '    }';
+}
+$out[] = '    .item{';
+$out[] = '      position: ' . ($grid ? 'relative' : 'absolute') . ';';
+$out[] = '    }';
+$out[] = '    label{';
+$out[] = '      font-weight: 600;';
+$out[] = '    }';
+$out[] = '    input,select,button{';
+$out[] = '      font: inherit;';
+$out[] = '    }';
+$out[] = '    input[type=text],input[type=number],input[type=date]{';
+$out[] = '      background: #151a22;';
+$out[] = '      border: 1px solid #2a3240;';
+$out[] = '      color: #e9eef5;';
+$out[] = '      padding: 0 4px;';
+$out[] = '      border-radius: 4px;';
+$out[] = '      height: var(--input-h);';
+$out[] = '      line-height: var(--input-h);';
+$out[] = '    }';
+if ($grid) {
+  $out[] = '    input[type=text],input[type=number],input[type=date],select{';
+  $out[] = '      width: 100%;';
+  $out[] = '    }';
+}
+$out[] = '    select{';
+$out[] = '      background: #151a22;';
+$out[] = '      border: 1px solid #2a3240;';
+$out[] = '      color: #e9eef5;';
+$out[] = '      padding: 0 4px;';
+$out[] = '      border-radius: 4px;';
+$out[] = '      height: var(--input-h);';
+$out[] = '      line-height: var(--input-h);';
+$out[] = '    }';
+$out[] = '    select[multiple]{';
+$out[] = '      min-height: 80px;';
+$out[] = '    }';
+$out[] = '    button{';
+$out[] = '      background: #2a7de1;';
+$out[] = '      color: white;';
+$out[] = '      border: 0;';
+$out[] = '      padding: 0 6px;';
+$out[] = '      border-radius: 4px;';
+$out[] = '      cursor: pointer;';
+$out[] = '      min-height: var(--input-h);';
+$out[] = '      justify-self: start;';
+$out[] = '    }';
+$out[] = '    button.secondary{';
+$out[] = '      background: #3a3f46;';
+$out[] = '    }';
+$out[] = '  &lt;/style&gt;';
+
+$out[] = '&lt;/head&gt;';
+$out[] = '&lt;body&gt;';
+$out[] = '&lt;form id="frm"&gt;&lt;div class="wrap"&gt;';
+
+$pixel = (bool)$usesPixel;
+
+// --- Render -----------------------------------------------------------------
+foreach ($placed as $it) {
+  switch ($it['type']) {
+
+    case 'say': {
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+      // Support SAY VAR &lt;cVar&gt;
+      if (!empty($it['bindVar'])) {
+        $id  = 'say_' . h($it['bindVar']);
+        $val = value_for($it['bindVar'], $varDefaults);
+        $txt = ($val !== null) ? (string)$val : '';
+        $out[] = '&lt;label class="item" style="' . $style . '" id="' . $id . '"&gt;' . h($txt) . '&lt;/label&gt;';
+      } else {
+        $out[] = '&lt;label class="item" style="' . $style . '"&gt;' . h($it['text'] ?? '') . '&lt;/label&gt;';
+      }
+      break;
+    }
+
+    case 'get': {
+      $val = value_for($it['var'], $varDefaults);
+      list($type, $extra) = input_type_and_mask($it['var'], $it['picture']);
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+      if (!$grid &amp;&amp; !empty($it['w'])) $style .= ' width:' . (int)$it['w'] . ($pixel ? 'px;' : 'ch;');
+      if (!$grid &amp;&amp; $pixel &amp;&amp; !empty($it['h'])) $style .= ' height:' . (int)$it['h'] . 'px; line-height:' . (int)$it['h'] . 'px;';
+      $colorCss = color_css($it['color']);
+      $attr = '';
+      if ($type === 'number') $attr .= ' inputmode="decimal"';
+      if (!empty($extra['step'])) $attr .= ' step="' . $extra['step'] . '"';
+      $valueAttr = $val !== null ? ' value="' . h($val) . '"' : '';
+      $out[] = '&lt;input class="item" style="' . $style . $colorCss . '" type="' . $type . '" name="' . h($it['var']) . '" id="' . h($it['var']) . '"' . $attr . $valueAttr . ' /&gt;';
+      break;
+    }
+
+    case 'checkbox': {
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+      $checked = truthy(value_for($it['var'], $varDefaults)) ? ' checked' : '';
+      $label = h($it['prompt'] ?? '');
+      $name  = h($it['var']);
+      $out[] = '&lt;label class="item checkbox" style="' . $style . '"&gt;&lt;input type="checkbox" name="' . $name . '" id="' . $name . '"' . $checked . '&gt;' . $label . '&lt;/label&gt;';
+      break;
+    }
+
+    case 'radio': {
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+      $horizontal = !empty($it['horizontal']);
+      $name = h($it['var']);
+      $default = value_for($it['var'], $varDefaults);
+      $cls = $horizontal ? 'radio-group horizontal' : 'radio-group';
+      $html = '&lt;div class="item ' . $cls . '" style="' . $style . '"&gt;';
+      foreach ($it['items'] as $idx =&gt; $text) {
+        $val = (string)($idx + 1);
+        $id  = $name . '_' . $val;
+        $sel = '';
+        if (is_numeric($default) &amp;&amp; (int)$default === ($idx + 1)) $sel = ' checked';
+        elseif (is_string($default) &amp;&amp; strcasecmp($default, $text) === 0) $sel = ' checked';
+        $html .= '&lt;label&gt;&lt;input type="radio" name="' . $name . '" id="' . h($id) . '" value="' . h($val) . '"' . $sel . '&gt; ' . h($text) . '&lt;/label&gt;';
+      }
+      $html .= '&lt;/div&gt;';
+      $out[] = $html;
+      break;
+    }
+
+    case 'listbox': {
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+      if (!$grid &amp;&amp; !empty($it['w'])) $style .= ' width:' . (int)$it['w'] . ($pixel ? 'px;' : 'ch;');
+      if (!$grid &amp;&amp; $pixel &amp;&amp; !empty($it['h'])) $style .= ' height:' . (int)$it['h'] . 'px;';
+      $name  = h($it['var']);
+      $multi = !empty($it['multi']);
+      $default = value_for($it['var'], $varDefaults);
+      $sizeAttr  = (!$pixel &amp;&amp; $it['h'] &amp;&amp; $it['h'] &gt; 1) ? ' size="' . (int)$it['h'] . '"' : '';
+      $multiAttr = $multi ? ' multiple' : '';
+      // If a SAY is bound to the same VAR, update it on change
+      $sayId = 'say_' . $name;
+      $onChange = ' onchange="(function(el){var t=document.getElementById(\'' . $sayId . '\'); if(t){t.textContent = el.value;}})(this)"';
+      $html = '&lt;select class="item" style="' . $style . '" name="' . $name . '" id="' . $name . '"' . $sizeAttr . $multiAttr . $onChange . '&gt;';
+      foreach ($it['items'] as $idx =&gt; $text) {
+        $isSel = false;
+        if (is_numeric($default) &amp;&amp; (int)$default === ($idx + 1)) $isSel = true;
+        elseif (is_string($default) &amp;&amp; strcasecmp($default, $text) === 0) $isSel = true;
+        $html .= '&lt;option value="' . h($text) . '"' . ($isSel ? ' selected' : '') . '&gt;' . h($text) . '&lt;/option&gt;';
+      }
+      $html .= '&lt;/select&gt;';
+      $out[] = $html;
+      break;
+    }
+
+    case 'button': {
+      list($label, $access) = accesskey_from_amp($it['label']);
+      $style = style_for($it, $grid, $gridCols, $chPerCol);
+      if (!$grid &amp;&amp; $pixel) {
+        if (!empty($it['w'])) $style .= ' width:' . (int)$it['w'] . 'px;';
+        if (!empty($it['h'])) $style .= ' height:' . (int)$it['h'] . 'px; line-height:' . (int)$it['h'] . 'px;';
+      }
+      $typeBtn = $it['cancel'] ? 'button' : 'submit';
+      $cls  = $it['cancel'] ? 'secondary' : '';
+      $ak   = $access ? ' accesskey="' . h(strtolower($access)) . '"' : '';
+      $onclick = '';
+      if ($it['cancel']) { $onclick = ' onclick="history.back();"'; }
+      elseif (!empty($it['action'])) { $onclick = ' onclick="' . h(js_action($it['action'])) . '"'; $typeBtn = 'button'; }
+      $out[] = '&lt;button class="item ' . $cls . '" style="' . $style . '" type="' . $typeBtn . '"' . $ak . $onclick . '&gt;' . h($label) . '&lt;/button&gt;';
+      break;
+    }
+  }
+}
+
+$out[] = '&lt;/div&gt;&lt;/form&gt;';
+$out[] = '&lt;script&gt;document.getElementById("frm")?.addEventListener("submit", function(e){ e.preventDefault(); alert("Submitted!"); });&lt;/script&gt;';
+$out[] = '&lt;/body&gt;';
+$out[] = '&lt;/html&gt;';
+
+echo implode("\n", $out);
+
+// =============================== Layout =====================================
+function layout_grid(array $items, int $cols, int $chPerCol): array {
+  // Sort by row, then col
+  usort($items, function($a,$b){
+    if ($a['row'] == $b['row']) return $a['col'] &lt;=&gt; $b['col'];
+    return $a['row'] &lt;=&gt; $b['row'];
+  });
+  $ranges = []; // rowKey =&gt; [ [start,end], ... ]
+  $placed = [];
+  foreach ($items as $it) {
+    $r = (int)round($it['row']);
+    $start = max(1, (int)round($it['col']));
+    $span = grid_span_cols(default_width_ch_for_type($it['type'], $it), $cols, $chPerCol);
+    if ($it['type'] === 'button') $span = max(2, min($span, 4)); // small default span for buttons
+    // SAY does not occupy span
+    if ($it['type'] !== 'say') {
+      while (true) {
+        $conflict = conflict_in_row($ranges[$r] ?? [], $start, $start + $span - 1);
+        if (!$conflict) break;
+        $start = $conflict[1] + 1; // move right after the conflicting block
+        if ($start + $span - 1 &gt; $cols) { // wrap
+          $r += 1; $start = 1; // next row, from column 1
+        }
+      }
+      // register interval
+      if (!isset($ranges[$r])) $ranges[$r] = [];
+      $ranges[$r][] = [$start, $start + $span - 1];
+    }
+    $it['render_row'] = $r;
+    $it['render_col'] = $start;
+    $it['grid_span']  = $span;
+    $placed[] = $it;
+  }
+  return $placed;
+}
+
+function conflict_in_row(array $intervals, int $start, int $end) {
+  foreach ($intervals as $iv) {
+    if (!($end &lt; $iv[0] || $start &gt; $iv[1])) return $iv; // overlap
+  }
+  return null;
+}
+
+function layout_absolute(array $items): array {
+  // Keep simple same-row nudge as 0.3.2
+  $rowRanges = []; $MARGIN = 2; $placed = [];
+  foreach ($items as $it) {
+    $it['render_col'] = $it['col'];
+    $rowKey = row_key($it['row']);
+    $wCols = approx_width_cols($it);
+    if ($wCols &gt; 0) {
+      if (!isset($rowRanges[$rowKey])) $rowRanges[$rowKey] = [];
+      $newCol = $it['render_col'];
+      foreach ($rowRanges[$rowKey] as $span) {
+        if ($newCol &gt;= $span[0] &amp;&amp; $newCol &lt; $span[1]) { $newCol = $span[1] + $MARGIN; }
+      }
+      $it['render_col'] = $newCol;
+      $rowRanges[$rowKey][] = [ $it['render_col'], $it['render_col'] + $wCols ];
+    }
+    $placed[] = $it;
+  }
+  return $placed;
+}
+
+// =============================== Parsers ====================================
+function parse_items(string $src): array {
+  $items = [];
+  $lines = explode("\n", $src);
+  foreach ($lines as $line) {
+    if (!preg_match('/^\s*\@/', $line)) continue;
+    $L = $line;
+    if (!preg_match('/\@\s*([0-9]+(?:\.[0-9]+)?)\s*,\s*([0-9]+(?:\.[0-9]+)?)/', $L, $rc)) continue;
+    $row = (float)$rc[1]; $col = (float)$rc[2];
+
+    // SAY VAR &lt;bind&gt; (optional object before VAR)
+    if (preg_match('/SAY\s+(?:\w+\s+)?VAR\s+(\w+)/i', $L, $m)) {
+      $items[] = ['type'=&gt;'say','row'=&gt;$row,'col'=&gt;$col,'text'=&gt;null,'bindVar'=&gt;$m[1]];
+      continue;
+    }
+    // SAY "text" or PROMPT "text"
+    if (preg_match('/SAY\s+(?:\w+\s+)?(?:PROMPT\s+)?("([^"]*)"|\'([^\']*)\')/i', $L, $m)) {
+      $text = $m[2] !== '' ? $m[2] : $m[3];
+      $items[] = ['type'=&gt;'say','row'=&gt;$row,'col'=&gt;$col,'text'=&gt;$text];
+      continue;
+    }
+
+    if (preg_match('/GET\s+\w+\s+VAR\s+(\w+)(.*)$/i', $L, $m)) {
+      $var=$m[1]; $rest=$m[2]; list($w,$h)=parse_size($rest); $color=parse_color($rest); $picture=parse_picture($rest);
+      $items[] = ['type'=&gt;'get','row'=&gt;$row,'col'=&gt;$col,'var'=&gt;$var,'w'=&gt;$w,'h'=&gt;$h,'color'=&gt;$color,'picture'=&gt;$picture];
+      continue;
+    }
+
+    if (preg_match('/CHECKBOX\s+VAR\s+(\w+)(.*)$/i', $L, $m)) {
+      $var=$m[1]; $rest=$m[2]; list($w,$h)=parse_size($rest); $prompt=parse_prompt($rest);
+      $items[] = ['type'=&gt;'checkbox','row'=&gt;$row,'col'=&gt;$col,'var'=&gt;$var,'w'=&gt;$w,'h'=&gt;$h,'prompt'=&gt;$prompt];
+      continue;
+    }
+
+    if (preg_match('/RADIO\s+VAR\s+(\w+)(.*)$/i', $L, $m)) {
+      $var=$m[1]; $rest=$m[2]; list($w,$h)=parse_size($rest); $itemsList=parse_items_list($rest); $horizontal=(bool)preg_match('/\bHORIZONTAL\b/i',$rest);
+      $items[] = ['type'=&gt;'radio','row'=&gt;$row,'col'=&gt;$col,'var'=&gt;$var,'w'=&gt;$w,'h'=&gt;$h,'items'=&gt;$itemsList,'horizontal'=&gt;$horizontal];
+      continue;
+    }
+
+    // LISTBOX [oLbx] VAR &lt;cVar&gt; ...
+    if (preg_match('/LISTBOX\s+(?:\w+\s+)?VAR\s+(\w+)(.*)$/i', $L, $m)) {
+      $var=$m[1]; $rest=$m[2]; list($w,$h)=parse_size($rest); $itemsList=parse_items_list($rest); $multi=(bool)preg_match('/\bMULTI\b/i',$rest);
+      $items[] = ['type'=&gt;'listbox','row'=&gt;$row,'col'=&gt;$col,'var'=&gt;$var,'w'=&gt;$w,'h'=&gt;$h,'items'=&gt;$itemsList,'multi'=&gt;$multi];
+      continue;
+    }
+
+    // BUTTON [oVar] PROMPT "Label" ... [ACTION ...] [CANCEL]
+    if (preg_match('/BUTTON\s+(?:\w+\s+)?(?:PROMPT\s+)?("([^"]*)"|\'([^\']*)\')(.*)$/i', $L, $m)) {
+      $labelRaw = $m[2] !== '' ? $m[2] : $m[3];
+      $rest     = $m[4];
+      list($w,$h) = parse_size($rest);
+      $action   = parse_action($rest);
+      $cancel   = (bool) preg_match('/\bCANCEL\b/i', $rest);
+      $items[]  = ['type'=&gt;'button','row'=&gt;$row,'col'=&gt;$col,'label'=&gt;$labelRaw,'w'=&gt;$w,'h'=&gt;$h,'action'=&gt;$action,'cancel'=&gt;$cancel];
+      continue;
+    }
+  }
+  return $items;
+}
+
+function parse_locals(string $src): array {
+  $defs = [];
+  if (preg_match_all('/LOCAL\s+([^\n]+)/i', $src, $ml, PREG_SET_ORDER)) {
+    foreach ($ml as $line) {
+      $chunk = $line[1]; $parts = preg_split('/\s*,\s*/', $chunk);
+      foreach ($parts as $p) {
+        $p = trim($p); if ($p==='') continue;
+        if (strpos($p,':=')!==false){ [$name,$val] = explode(':=',$p,2); $name = preg_replace('/\s+.*/','',trim($name)); $defs[$name] = parse_literal(trim($val)); }
+      }
+    }
+  }
+  return $defs;
+}
+
+function parse_size(string $rest){ $w=null; $h=null; if (preg_match('/SIZE\s+(\d+)\s*,\s*(\d+)/i',$rest,$mm)){ $w=(int)$mm[1]; $h=(int)$mm[2]; } return [$w,$h]; }
+function parse_color(string $rest){ if (preg_match('/COLOR\s+(\"([^\"]*)\"|\'([^\']*)\')/i',$rest,$mm)) return $mm[2]!==''?$mm[2]:$mm[3]; return null; }
+function parse_picture(string $rest){ if (preg_match('/PICTURE\s+(\"([^\"]*)\"|\'([^\']*)\')/i',$rest,$mm)) return $mm[2]!==''?$mm[2]:$mm[3]; return null; }
+function parse_prompt(string $rest){ if (preg_match('/PROMPT\s+(\"([^\"]*)\"|\'([^\']*)\')/i',$rest,$mm)) return $mm[2]!==''?$mm[2]:$mm[3]; return null; }
+function parse_items_list(string $rest){ $items=[]; if (preg_match('/ITEMS\s+(.*)$/i',$rest,$m)){ $tail=$m[1]; if (preg_match_all('/\"([^\"]*)\"|\'([^\']*)\'/',$tail,$mm,PREG_SET_ORDER)){ foreach($mm as $q){ $items[] = $q[1]!==''?$q[1]:$q[2]; } } } return $items; }
+function parse_action(string $rest){ if (preg_match('/ACTION\s+([^\s].*?)(?:\s+CANCEL|$)/i',$rest,$mm)) return trim($mm[1]); return null; }
+
+// =============================== Helpers ====================================
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES); }
+function truthy($v){ return $v===true || $v===1 || $v==='1' || (is_string($v) &amp;&amp; preg_match('/^(true|.T.)$/i',$v)); }
+function row_key($row){ return sprintf('%.1f', round($row,1)); }
+
+function approx_width_cols($it){
+  switch ($it['type']){
+    case 'get': return $it['w'] ?? 24;
+    case 'listbox': return $it['w'] ?? 20;
+    case 'radio': return max(12, (isset($it['items'])?count($it['items']):1)*8);
+    case 'checkbox': return 12;
+    case 'button': return 8;
+    default: return 0;
+  }
+}
+
+function grid_span_cols($wCh, $cols, $chPerCol=4){ if ($wCh===null) $wCh=24; $span=(int)ceil($wCh/max(1,(int)$chPerCol)); return max(1, min($span,(int)$cols)); }
+function default_width_ch_for_type($type,$it){
+  switch ($type){
+    case 'get': return $it['w'] ?? 24;
+    case 'listbox': return $it['w'] ?? 20;
+    case 'radio': return max(12,(isset($it['items'])?count($it['items']):1)*8);
+    case 'checkbox': return 12;
+    case 'button': return 10;
+    default: return 12;
+  }
+}
+
+function style_for($it, $grid, $cols, $chPerCol){
+  global $usesPixel;
+  if ($grid){
+    $cStart = max(1,(int)round($it['render_col']));
+    $rStart = max(1,(int)round($it['render_row'] ?? $it['row']));
+    $span   = $it['grid_span'] ?? grid_span_cols(default_width_ch_for_type($it['type'],$it), $cols, $chPerCol);
+    // listbox taller rows: map px height to row spans if available
+    if ($it['type']==='listbox' &amp;&amp; !empty($it['h'])) {
+      $rowPx = $usesPixel ? 16 : 36;
+      $rSpan = max(1, (int)ceil($it['h'] / $rowPx));
+    } else {
+      $rSpan = 1;
+    }
+    return 'grid-column: '.$cStart.' / span '.$span.'; grid-row: '.$rStart.' / span '.$rSpan.';';
+  }
+  // absolute
+  return 'left:calc(var(--ux)*'.round($it['render_col'] ?? $it['col'],2).'); top:calc(var(--uy)*'.round($it['row'],2).');';
+}
+
+function parse_literal($v){ $v=trim($v); $v=preg_replace('/\s*\/\/.*$/','',$v); if ($v==='Date()') return date('Y-m-d'); if ($v==='.T.'||strtoupper($v)==='TRUE') return true; if ($v==='.F.'||strtoupper($v)==='FALSE') return false; if ($v!=='' &amp;&amp; ($v[0]=='"' || $v[0]=="'")) return trim($v,"'\""); if (is_numeric($v)) return 0+$v; return null; }
+function value_for($name,$defs){ if(!array_key_exists($name,$defs)) return null; $v=$defs[$name]; if($v instanceof DateTimeInterface) return $v-&gt;format('Y-m-d'); if (preg_match('/^d[A-Z0-9_]*$/',$name) &amp;&amp; is_string($v)) { $t=strtotime($v); if($t) return date('Y-m-d',$t);} if(is_bool($v)) return $v?'1':'0'; return $v; }
+function input_type_and_mask($var,$picture){ $var=(string)$var; $pic=(string)$picture; $type='text'; $extra=[]; if($pic &amp;&amp; preg_match('/9/',$pic)){ $type='number'; if (strpos($pic,'.')!==false) $extra['step']='0.01'; } elseif($pic &amp;&amp; preg_match('/@E|@D/i',$pic)){ $type='date'; } elseif(preg_match('/^n[A-Z0-9_]*$/',$var)){ $type='number'; } elseif(preg_match('/^d[A-Z0-9_]*$/',$var)){ $type='date'; } return [$type,$extra]; }
+function color_css($c){ if(!$c) return ''; $parts=explode('/',$c); $fg=strtoupper(trim($parts[0]??'')); $bg=strtoupper(trim($parts[1]??'')); $map=['W'=&gt;'#ffffff','B'=&gt;'#000000','G'=&gt;'#2e7d32','R'=&gt;'#c62828','Y'=&gt;'#fdd835']; $fgc=$map[$fg]??null; $bgc=$map[$bg]??null; $css=''; if($bgc) $css.=' background:'.$bgc.';'; if($fgc) $css.=' color:'.$fgc.';'; return $css; }
+function accesskey_from_amp($label){ $pos=strpos($label,'&amp;'); if($pos===false || $pos===strlen($label)-1) return [str_replace('&amp;','',$label),null]; $key=substr($label,$pos+1,1); $clean=substr($label,0,$pos).$key.substr($label,$pos+2); return [$clean,$key]; }
+
+function js_action($s){
+  $inner = trim($s);
+  if ($inner !== '' &amp;&amp; $inner[0] === '(') $inner = trim($inner, "() \t");
+  if (preg_match('/MsgInfo\s*\(\s*(["\'])(.*?)\1\s*\)/i', $inner, $mm)) {
+    return 'alert('.json_encode($mm[2]).')';
+  }
+  return $inner ?: '';
+}
+
+function parse_cli_flags($argv){ $grid=false; $cols=24; $ch=4; foreach($argv as $arg){ if($arg==='--grid'){ $grid=true; } elseif(strpos($arg,'--grid=')===0){ $grid=true; $val=(int)substr($arg,7); if($val&gt;0) $cols=$val; } elseif(strpos($arg,'--grid-cols=')===0){ $val=(int)substr($arg,13); if($val&gt;0) $cols=$val; } elseif(strpos($arg,'--ch-per-col=')===0){ $val=(int)substr($arg,13); if($val&gt;0) $ch=$val; } } return [$grid,$cols,$ch]; }
+
+
+&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

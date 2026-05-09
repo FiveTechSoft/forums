@@ -1,0 +1,1837 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>rpreview - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-36329">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> rpreview</div>
+  <div class="post" id="p216713">
+    <div class="poster">
+      <div class="name" style="color:#105289">surGom</div>
+      <div class="rank">Posts: 652</div>
+      <div class="avatar"></div>
+      Joined: Wed Oct 19, 2005 12:03 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">rpreview</span><br>
+        Posted: Thu Nov 08, 2018 02:49 PM
+      </div>
+      <div class="content">Hola compañeros tengo el siguiente problema con la clase rpreview modificada por adhemar<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+#define DEVICE      oWnd:cargo
+
+#define GO_POS      0
+#define GO_UP       1
+#define GO_DOWN     2
+#define GO_LEFT     1
+#define GO_RIGHT    2
+#define GO_PAGE    .T.
+
+#define VSCROLL_RANGE  20 * ::nZFactor
+#define HSCROLL_RANGE  20 * ::nZFactor
+
+#define TXT_FIRST    LoadString( GetResources(), 07 )
+#define TXT_PREVIOUS LoadString( GetResources(), 08 )
+#define TXT_NEXT     LoadString( GetResources(), 09 )
+#define TXT_LAST     LoadString( GetResources(), 10 )
+#define TXT_ZOOM     LoadString( GetResources(), 11 )
+#define TXT_UNZOOM   LoadString( GetResources(), 12 )
+#define TXT_TWOPAGES LoadString( GetResources(), 13 )
+#define TXT_ONEPAGE  LoadString( GetResources(), 14 )
+#define TXT_PRINT    LoadString( GetResources(), 15 )
+#define TXT_EXIT     LoadString( GetResources(), 16 )
+#define TXT_FILE     LoadString( GetResources(), 17 )
+#define TXT_PAGE     LoadString( GetResources(), 18 )
+#define TXT_PREVIEW  LoadString( GetResources(), 03 )
+#define TXT_PAGENUM  LoadString( GetResources(), 19 )
+
+#define TXT_A_WINDOW_PREVIEW_IS_ALLREADY_RUNNING ;
+        LoadString( GetResources(), 20 )
+#define TXT_GOTO_FIRST_PAGE ;
+        LoadString( GetResources(), 21 )
+#define TXT_GOTO_PREVIOUS_PAGE ;
+        LoadString( GetResources(), 22 )
+#define TXT_GOTO_NEXT_PAGE ;
+        LoadString( GetResources(), 23 )
+#define TXT_GOTO_LAST_PAGE ;
+        LoadString( GetResources(), 24 )
+#define TXT_ZOOM_THE_PREVIEW ;
+        LoadString( GetResources(), 25 )
+#define TXT_UNZOOM_THE_PREVIEW ;
+        LoadString( GetResources(), 26 )
+#define TXT_PREVIEW_ON_TWO_PAGES ;
+        LoadString( GetResources(), 27 )
+#define TXT_PREVIEW_ON_ONE_PAGE ;
+        LoadString( GetResources(), 28 )
+#define TXT_PRINT_CURRENT_PAGE ;
+        LoadString( GetResources(), 29 )
+#define TXT_EXIT_PREVIEW ;
+        LoadString( GetResources(), 30 )
+#define TXT_FACTOR ;
+        LoadString( GetResources(), 31 )
+#define TXT_ZOOM_FACTOR ;
+        LoadString( GetResources(), 32 )
+
+#define MK_MBUTTON            16
+
+static l2007 := .T.
+Static cPRTDefault:="",lCambioPRT:=.F.
+
+//----------------------------------------------------------------------------//
+
+CLASS TPreview
+
+   DATA   oWnd, oBar, oFont, oImageList
+   DATA   oDevice
+   DATA   oHand, oCursor
+   DATA   oMeta1, oMeta2, oSay, oFactor
+   DATA   oPage, oTwoPages, oZoom
+   DATA   oMenuZoom, oMenuTwoPages, oMenuUnZoom, oMenuOnePage
+   DATA   cResFile
+   DATA   aFactor, nPage, nZFactor
+   DATA   lTwoPages, lZoom, lExit
+   DATA   cPageNum
+
+   CLASSDATA oWndMain
+
+   METHOD New( oDevice )
+   METHOD Activate()
+   METHOD BuildButtonBar()
+   METHOD BuildWindow()
+   METHOD BuildMenu()
+   METHOD PaintMeta()
+   METHOD NextPage()
+   METHOD PrevPage()
+   METHOD TopPage()
+   METHOD BottomPage()
+   METHOD TwoPages( lMenu )
+   METHOD Zoom( lMenu )
+   METHOD VScroll( nType, lPage, nSteps )
+   METHOD HScroll( nType, lPage, nSteps )
+   METHOD SetOrg1( nX, nY )
+   METHOD SetOrg2( nX, nY )
+   METHOD CheckKey( nKey, nFlags )
+   METHOD CheckMouseWheel( nKeys, nDelta, nXPos, nYPos )
+   METHOD SetFactor( nValue )
+   METHOD PrintPage()
+   METHOD PrintPrv( oDlg, nOption, nPageIni, nPageEnd )
+
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( oDevice ) CLASS TPreview
+
+   if oDevice == nil
+      PRINTER oDevice PREVIEW
+         PAGE
+         ENDPAGE
+         MsgInfo( oDevice:aMeta[ 1 ] )
+      // ENDPRINTER
+   endif
+
+ /*    #ifdef __CLIPPER__
+        cResFile := "Preview.dll"
+     #else
+        if ! IsWin64()
+           cResFile := "Preview.dll"
+        else
+           cResFile = "Prev64.dll"
+        endif
+     #endif   */
+
+
+   ::oDevice   := oDevice
+   ::nPage     := 1
+   ::nZFactor  := 1
+   ::lTwoPages := .F.
+   ::lZoom     := .F.
+   ::lExit     := .F.
+
+   ::BuildWindow()
+
+
+
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD Activate() CLASS TPreview
+
+   ACTIVATE WINDOW ::oWnd MAXIMIZED ;
+      ON RESIZE    ::PaintMeta()                  ;
+      ON UP        ::VScroll( GO_UP )             ;
+      ON DOWN      ::VScroll( GO_DOWN )           ;
+      ON PAGEUP    ::VScroll( GO_UP, GO_PAGE)     ;
+      ON PAGEDOWN  ::VScroll( GO_DOWN, GO_PAGE)   ;
+      ON LEFT      ::HScroll( GO_LEFT )           ;
+      ON RIGHT     ::HScroll( GO_RIGHT )          ;
+      ON PAGELEFT  ::HScroll( GO_LEFT, GO_PAGE )  ;
+      ON PAGERIGHT ::HScroll( GO_RIGHT, GO_PAGE ) ;
+      VALID        ( ::oWnd:oIcon := nil       ,;
+                     ::oFont:End()             ,;
+                     ::oMeta1:End()            ,;
+                     ::oMeta2:End()            ,;
+                     ::oDevice:End()           ,;
+                     ::oHand:End()             ,;
+                     ::oWnd := nil             ,;
+                     If( IsAppThemed() .and. ! l2007, ::oImageList:End(),),;
+                     ::lExit := .T.,PRTDefault(),.T. )
+
+     if ::oDevice:lPrvModal
+        StopUntil( { || ::lExit } )
+     endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD BuildButtonBar() CLASS TPreview
+   local oCbx,cCbx:=PrnGetName()
+   local oImageList, oReBar, oBar, oHand, oWndMain
+   local l97Look  := ::oWndMain != nil .and. ::oWndMain:oBar != nil .and. ;
+                     Len( ::oWndMain:oBar:aControls ) &gt; 0 .and. ;
+                     ::oWndMain:oBar:aControls[ 1 ]:l97Look
+   local oFont
+
+   DEFINE FONT oFont NAME GetSysFont() SIZE 0,-12
+   DEFINE CURSOR ::oHand HAND
+
+   if WndMain() != nil
+      if WndMain():oBar != nil
+         oBar = WndMain():oBar
+         if oBar != nil .and. Upper( oBar:ClassName() ) == "TBAR" .and. oBar:l2007
+            l2007 = .T.
+         endif
+      endif
+   endif
+
+   if IsAppThemed() .and. ! l2007
+      DEFINE IMAGELIST oImageList SIZE 16, 16
+
+      oImageList:AddMasked( TBitmap():Define( "top2",, ::oWnd ), nRGB( 192, 192, 192 ) )
+      oImageList:AddMasked( TBitmap():Define( "previous2",, ::oWnd ), nRGB( 192, 192, 192 ) )
+      oImageList:AddMasked( TBitmap():Define( "next2",, ::oWnd ), nRGB( 192, 192, 192 ) )
+      oImageList:AddMasked( TBitmap():Define( "bottom2",, ::oWnd ), nRGB( 192, 192, 192 ) )
+      oImageList:AddMasked( TBitmap():Define( "zoom2",, ::oWnd ), nRGB( 192, 192, 192 ) )
+      oImageList:AddMasked( TBitmap():Define( "two_pages2",, ::oWnd ), nRGB( 192, 192, 192 ) )
+      oImageList:AddMasked( TBitmap():Define( "printer2",, ::oWnd ), nRGB( 255, 0, 255 ) )
+      oImageList:AddMasked( TBitmap():Define( "exit2",, ::oWnd ), nRGB( 192, 192, 192 ) )
+      oImageList:AddMasked( TBitmap():Define( "unzoom2",, ::oWnd ), nRGB( 192, 192, 192 ) )
+      oImageList:AddMasked( TBitmap():Define( "one_page2",, ::oWnd ), nRGB( 192, 192, 192 ) )
+      ::oImageList = oImageList
+
+      oReBar = TReBar():New( ::oWnd )
+
+      DEFINE TOOLBAR oBar OF oReBar SIZE 25, 25 IMAGELIST oImageList
+
+      ::oBar = oBar
+      oReBar:InsertBand( oBar )
+
+      oBar:nHeight -= 2
+
+      DEFINE TBBUTTON OF oBar ;
+         ACTION  ( ::oWnd:End() ) ;
+         TOOLTIP Strtran( TXT_EXIT, "&amp;", "" ) ;
+         MESSAGE TXT_EXIT_PREVIEW
+
+      DEFINE TBBUTTON OF oBar ;
+         ACTION  ::TopPage() ;
+         TOOLTIP Strtran( TXT_FIRST, "&amp;", "" ) ;
+         MESSAGE TXT_GOTO_FIRST_PAGE
+
+      DEFINE TBBUTTON OF oBar ;
+         ACTION  ::PrevPage() ;
+         TOOLTIP Strtran( TXT_PREVIOUS, "&amp;", "" ) ;
+         MESSAGE TXT_GOTO_PREVIOUS_PAGE
+
+      DEFINE TBBUTTON OF oBar ;
+         ACTION  ::NextPage() ;
+         TOOLTIP Strtran( TXT_NEXT, "&amp;", "" ) ;
+         MESSAGE TXT_GOTO_NEXT_PAGE
+
+      DEFINE TBBUTTON OF oBar ;
+         ACTION  ::BottomPage() ;
+         TOOLTIP Strtran( TXT_LAST, "&amp;", "" ) ;
+         MESSAGE TXT_GOTO_LAST_PAGE
+
+      DEFINE TBSEPARATOR OF oBar
+
+      DEFINE TBBUTTON OF oBar ;
+         ACTION  ::Zoom() ;
+         TOOLTIP Strtran( TXT_ZOOM, "&amp;", "" ) ;
+         MESSAGE TXT_ZOOM_THE_PREVIEW
+
+      DEFINE TBBUTTON OF oBar ;
+         ACTION  ::TwoPages() ;
+         TOOLTIP StrTran( Strtran( TXT_TWOPAGES, "&amp;", "" ), "á", "a" ) ;
+         MESSAGE TXT_PREVIEW_ON_TWO_PAGES
+
+      DEFINE TBSEPARATOR OF oBar
+
+       @3,219 COMBOBOX oCbx VAR cCbx PROMPTS aGetPrinters() OF oBar FONT oFont PIXEL SIZE 200,120 ON CHANGE CambiaPRT(cCbx)
+         cPRTDefault := GetProfString( "windows", "device" , "" )
+
+      DEFINE TBBUTTON OF oBar ;
+         ACTION  ::PrintPage() ;
+         TOOLTIP Strtran(TXT_PRINT,"&amp;","") ;
+         MESSAGE TXT_PRINT_CURRENT_PAGE
+
+      DEFINE TBSEPARATOR OF oBar
+
+   else
+
+      if oBar != nil .and. oBar:l2007
+         DEFINE BUTTONBAR oBar SIZE 26, If( LargeFonts(), 30, 26 ) OF ::oWnd 2007
+         oBar:bPainted = { || oBar:Say( 7, 462, "Factor:",,, ::oFont, .T., .T. ),;
+                              If( Len( ::oDevice:aMeta ) &gt; 1,;
+                              oBar:Say( 7, 580, ::cPageNum + LTrim( Str( ::nPage, 4, 0 ) ) + " de " + ;
+                              LTrim( Str( Len( ::oDevice:aMeta ) ) ),,, ::oFont, .T., .T. ),;
+                              oBar:Say( 7, 580, ::cPageNum + LTrim( Str( ::nPage, 4, 0 ) ),;
+                              ,,, ::oFont, .T., .T. ) ) }
+      else
+         DEFINE BUTTONBAR oBar _3D SIZE 26, If( LargeFonts(), 30, 26 ) OF ::oWnd
+      endif
+
+      ::oBar = oBar
+
+      if l97Look
+
+         DEFINE BUTTON RESOURCE "Exit" OF oBar GROUP ;
+            MESSAGE TXT_EXIT_PREVIEW               ;
+            ACTION  (::oWnd:End() )        ;
+            TOOLTIP Strtran( TXT_EXIT, "&amp;", "" ) NOBORDER
+
+         DEFINE BUTTON RESOURCE "Top" OF oBar ;
+            MESSAGE TXT_GOTO_FIRST_PAGE     ;
+            ACTION  ::TopPage()                ;
+            TOOLTIP Strtran( TXT_FIRST, "&amp;", "" ) NOBORDER
+
+         DEFINE BUTTON RESOURCE "Previous" OF oBar ;
+            MESSAGE TXT_GOTO_PREVIOUS_PAGE       ;
+            ACTION  ::PrevPage()                 ;
+            TOOLTIP Strtran( TXT_PREVIOUS, "&amp;", "" ) NOBORDER
+
+         DEFINE BUTTON RESOURCE "Next" OF oBar ;
+            MESSAGE TXT_GOTO_NEXT_PAGE       ;
+            ACTION  ::NextPage()             ;
+            TOOLTIP Strtran( TXT_NEXT, "&amp;", "" ) NOBORDER
+
+         DEFINE BUTTON RESOURCE "Bottom" OF oBar ;
+            MESSAGE TXT_GOTO_LAST_PAGE         ;
+            ACTION  ::BottomPage()             ;
+            TOOLTIP Strtran( TXT_LAST, "&amp;", "" ) NOBORDER
+
+         DEFINE BUTTON ::oZoom RESOURCE "Zoom" OF oBar GROUP ;
+            MESSAGE TXT_ZOOM_THE_PREVIEW                 ;
+            ACTION  ::Zoom()                             ;
+            TOOLTIP Strtran( TXT_ZOOM, "&amp;", "" ) NOBORDER
+
+         DEFINE BUTTON ::oTwoPages RESOURCE "Two_Pages" OF oBar  ;
+            MESSAGE TXT_PREVIEW_ON_TWO_PAGES       ;
+            ACTION  ::TwoPages()                   ;
+            TOOLTIP Strtran( TXT_TWOPAGES, "&amp;", "" ) NOBORDER
+
+         @3,219 COMBOBOX oCbx VAR cCbx PROMPTS aGetPrinters() OF oBar FONT oFont PIXEL SIZE 200,120 ON CHANGE CambiaPRT(cCbx)
+         cPRTDefault := GetProfString( "windows", "device" , "" )
+
+         DEFINE BUTTON RESOURCE "Printer" OF oBar GROUP ;
+            MESSAGE TXT_PRINT_CURRENT_PAGE            ;
+            ACTION  ::PrintPage()                     ;
+            TOOLTIP Strtran( TXT_PRINT, "&amp;", "" ) NOBORDER
+
+    else
+         DEFINE BUTTON RESOURCE "Exit2" OF oBar GROUP ;
+            MESSAGE TXT_EXIT_PREVIEW               ;
+            ACTION  (::oWnd:End() ) ;
+            TOOLTIP Strtran( TXT_EXIT, "&amp;", "" )
+
+         DEFINE BUTTON RESOURCE "Top2" OF oBar GROUP;
+            MESSAGE TXT_GOTO_FIRST_PAGE     ;
+            ACTION  ::TopPage()             ;
+            TOOLTIP Strtran( TXT_FIRST, "&amp;", "" )
+
+         DEFINE BUTTON RESOURCE "Previous2" OF oBar ;
+            MESSAGE TXT_GOTO_PREVIOUS_PAGE       ;
+            ACTION  ::PrevPage()                 ;
+            TOOLTIP Strtran( TXT_PREVIOUS, "&amp;", "" )
+
+         DEFINE BUTTON RESOURCE "Next2" OF oBar ;
+            MESSAGE TXT_GOTO_NEXT_PAGE       ;
+            ACTION  ::NextPage()             ;
+            TOOLTIP Strtran( TXT_NEXT, "&amp;", "" )
+
+         DEFINE BUTTON RESOURCE "Bottom2" OF oBar ;
+            MESSAGE TXT_GOTO_LAST_PAGE         ;
+            ACTION  ::BottomPage()             ;
+            TOOLTIP Strtran( TXT_LAST, "&amp;", "" )
+
+         DEFINE BUTTON ::oZoom RESOURCE "Zoom2" OF oBar GROUP ;
+            MESSAGE TXT_ZOOM_THE_PREVIEW                 ;
+            ACTION  ::Zoom()                             ;
+            TOOLTIP Strtran( TXT_ZOOM, "&amp;", "" )
+
+         DEFINE BUTTON ::oTwoPages RESOURCE "Two_Pages2" OF oBar GROUP ;
+            MESSAGE TXT_PREVIEW_ON_TWO_PAGES       ;
+            ACTION  ::TwoPages()                   ;
+            TOOLTIP Strtran( TXT_TWOPAGES, "&amp;", "" )
+
+         @3,219 COMBOBOX oCbx VAR cCbx PROMPTS aGetPrinters() OF oBar FONT oFont PIXEL SIZE 200,120 ON CHANGE CambiaPRT(cCbx)
+         cPRTDefault := GetProfString( "windows", "device" , "" )
+
+         DEFINE BUTTON RESOURCE "Printer2" OF oBar GROUP ;
+            MESSAGE TXT_PRINT_CURRENT_PAGE            ;
+            ACTION  ::PrintPage()                  ;
+            TOOLTIP Strtran( TXT_PRINT, "&amp;", "" )
+
+     endif
+
+     AEval( oBar:aControls, { | o | o:oCursor := ::oHand } )
+   endif
+
+return nil
+*
+Function PRTDefault()  //Function agregada por Adhemar
+   If !Empty(cPRTDefault)
+     WriteProfString( "windows", "device", cPRTDefault)
+     PrinterInit()
+     SysRefresh()
+   Endi
+Retu Nil
+//----------------------------------------------------------------------------//
+
+METHOD BuildWindow() CLASS TPreview
+
+   local oIcon, cTitle := "Vista previa", oCursor
+   local hOldRes := GetResources(), oThis := Self
+
+   DEFAULT ::oWndMain := WndMain()
+
+   if ! File( ::cResFile )
+
+      #ifdef __CLIPPER__
+         ::cResFile := "Preview.dll"
+      #else
+         if ! IsWin64()
+            ::cResFile := "Prev32.dll"
+         else
+            ::cResFile = "Prev64.dll"
+         endif
+      #endif
+
+   endif
+  /* #ifdef __CLIPPER__
+      ::cResFile := "Preview.dll"
+   #else
+      if ! IsWin64()
+         ::cResFile := "Prev32.dll"
+      else
+         ::cResFile = "d:\fivehme\Prev64.dll"    //"Prev64.dll"
+      endif
+   #endif    */
+
+   if SetResources( ::cResFile ) &lt; 32
+      MsgStop( ::cResFile + " not found, imposible to continue",;
+               "FiveWin Printing Error" )
+      return nil
+   endif
+
+   if ::oDevice != nil
+      cTitle = ::oDevice:cDocument
+   endif
+
+   if ::oWndMain != nil
+      oIcon = ::oWndMain:oIcon
+   else
+      DEFINE ICON oIcon RESOURCE "Print"
+   endif
+
+   DEFINE FONT ::oFont NAME GetSysFont() SIZE 0, -12
+
+   if ::oWndMain != nil .and. Upper( ::oWndMain:ClassName() ) == "TMDIFRAME"
+      DEFINE WINDOW ::oWnd ;
+         TITLE cTitle ;
+         COLOR CLR_BLACK,CLR_LIGHTGRAY      ;
+         ICON  oIcon                        ;
+         VSCROLL HSCROLL                                                            // MDICHILD
+   else
+      DEFINE WINDOW ::oWnd FROM 0, 0 TO 24, 80  ;
+         TITLE cTitle ;
+         COLOR CLR_BLACK,CLR_LIGHTGRAY      ;
+         ICON  oIcon                        ;
+         VSCROLL HSCROLL MENU ::BuildMenu()
+   endif
+
+   ::oWnd:SetFont( ::oFont )
+
+   ::oWnd:oVScroll:SetRange( 0, 0 )
+   ::oWnd:oHScroll:SetRange( 0, 0 )
+
+   ::cPageNum = "Página: " //TXT_PAGENUM
+   ::BuildButtonBar()
+
+   #ifdef __CLIPPER__
+      SET MESSAGE OF ::oWnd TO TXT_PREVIEW CENTERED ;
+         NOINSET CLOCK DATE KEYBOARD
+   #else
+      if l2007
+         SET MESSAGE OF ::oWnd TO TXT_PREVIEW CENTERED ;
+            NOINSET CLOCK DATE KEYBOARD 2007
+      else
+         DEFINE STATUSBAR OF ::oWnd PROMPT "  " + TXT_PREVIEW
+      endif
+   #endif
+
+   ::oMeta1 := TMetaFile():New( 0, 0, 0, 0,;
+                                ::oDevice:aMeta[ 1 ],;
+                                ::oWnd,;
+                                CLR_BLACK,;
+                                CLR_WHITE,;
+                                ::oDevice:nHorzRes(),;
+                                ::oDevice:nVertRes() )
+
+   DEFINE CURSOR ::oCursor RESOURCE "Lupa"
+
+   ::oMeta1:oCursor := ::oCursor
+   ::oMeta1:blDblClick := { | nRow, nCol, nKeyFlags | ;
+                            ::SetOrg1( nCol, nRow, nKeyFlags ) }
+
+   ::oMeta1:bKeyDown := { | nKey, nFlags | ::CheckKey( nKey, nFlags ) }
+   ::oMeta1:bMouseWheel := { | nKeys, nDelta, nXPos, nYPos | ;
+                             ::CheckMouseWheel( nKeys, nDelta, nXPos, nYPos ) }
+
+   #ifndef __XPP__ // XBPP bug. Warning: don't change this into #ifdef __CLIPPER__
+      ::oMeta2 := TMetaFile():New( 0, 0, 0, 0, "",;
+                                   ::oWnd, CLR_BLACK, CLR_WHITE, ::oDevice:nHorzRes(),;
+                                   ::oDevice:nVertRes() )
+   #else
+      ::oMeta2 := TMetaFile():New():_New( 0, 0, 0, 0, "",;
+                                          ::oWnd, CLR_BLACK, CLR_WHITE, ::oDevice:nHorzRes(),;
+                                          ::oDevice:nVertRes() )
+   #endif
+
+   ::oMeta2:oCursor = ::oCursor
+   ::oMeta2:blDblClick := { | nRow, nCol, nKeyFlags | ::SetOrg2( nCol, nRow, nKeyFlags ) }
+
+   ::oMeta2:hide()
+
+   ::SetFactor()
+
+   if ! l2007
+      @ 7, 462 SAY ::oSay PROMPT "Factor:" SIZE 45, 15 PIXEL OF ::oBar FONT ::oFont
+       ::oSay:lTransparent = .T.
+   endif
+
+   @ 3, 500 COMBOBOX ::oFactor VAR ::nZFactor ;
+      ITEMS {"100 %","110 %","120 %","130 %","140 %","150 %","160 %","170 %","180 %","190 %","200 %"} ;
+      OF ::oBar FONT ::oFont PIXEL SIZE 55,180 ON CHANGE oThis:SetFactor( oThis:nZFactor )
+
+   if ! l2007
+
+      if Len( ::oDevice:aMeta ) &gt; 1
+
+         @ 7, 580 SAY ::oPage PROMPT TXT_PAGENUM+ LTrim( Str( ::nPage, 4, 0 ) ) + " de " + ;
+            LTrim( Str( Len( ::oDevice:aMeta ) ) ) SIZE 180, 15 PIXEL OF ::oBar FONT ::oFont
+      else
+         @ 7,580 SAY ::oPage PROMPT TXT_PAGENUM+ LTrim( Str( ::nPage, 4, 0 ) ) ;
+            SIZE 180, 15 PIXEL OF ::oBar FONT ::oFont
+      endif
+      ::oPage:lTransparent = .T.
+   endif
+
+   if IsAppThemed() .or. l2007
+      FixSays( ::oBar:hWnd )
+   endif
+
+   #ifndef __XPP__
+      ::oFactor:Set3dLook()
+   #endif
+
+   SetResources( hOldRes )
+
+   ::oWnd:oHScroll:bPos := { | nPos | ::HScroll( GO_POS, .f., nPos ) }
+   ::oWnd:oVScroll:bPos := { | nPos | ::VScroll( GO_POS, .f., nPos ) }
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD BuildMenu() CLASS TPreview
+
+   local nFor, oMenu
+   local lThemed := IsAppThemed()
+   local cPrinter   := If( lThemed, "Printer2", "Printer" )
+   local cTop       := If( lThemed, "Top2", "Top" )
+   local cPrevious  := If( lThemed, "Previous2", "Previous" )
+   local cNext      := If( lThemed, "Next2", "Next" )
+   local cBottom    := If( lThemed, "Bottom2", "Bottom" )
+   local cZoom      := If( lThemed, "Zoom2", "Zoom" )
+   local cUnZoom    := If( lThemed, "UnZoom2", "UnZoom" )
+   local cOne_Page  := If( lThemed, "One_page2", "One_page" )
+   local cTwo_Pages := If( lThemed, "Two_pages2", "Two_pages" )
+   local cExit      := If( lThemed, "Exit2", "Exit" )
+
+   ::aFactor := Array( 9 )
+
+   MENU oMenu
+      MENUITEM "&amp;Archivo" //TXT_FILE
+      MENU
+         MENUITEM TXT_PRINT ACTION ::PrintPage() ;
+            MESSAGE TXT_PRINT_CURRENT_PAGE RESOURCE cPrinter
+
+         SEPARATOR
+
+         MENUITEM TXT_EXIT ACTION (::oWnd:End() ) ;
+            MESSAGE TXT_EXIT_PREVIEW RESOURCE cExit
+      ENDMENU
+
+      MENUITEM TXT_PAGE
+      MENU
+         MENUITEM TXT_FIRST ACTION ::TopPage() ;
+            MESSAGE TXT_GOTO_FIRST_PAGE RESOURCE cTop
+
+         MENUITEM TXT_PREVIOUS ACTION ::PrevPage() ;
+            MESSAGE TXT_GOTO_PREVIOUS_PAGE RESOURCE cPrevious
+
+         MENUITEM TXT_NEXT ACTION ::NextPage() ;
+            MESSAGE TXT_GOTO_NEXT_PAGE RESOURCE cNext
+
+         MENUITEM TXT_LAST ACTION ::BottomPage() ;
+            MESSAGE TXT_GOTO_LAST_PAGE RESOURCE cBottom
+
+         SEPARATOR
+
+         MENUITEM ::oMenuZoom PROMPT TXT_ZOOM ACTION ::Zoom( .T. ) ;
+            MESSAGE TXT_ZOOM_THE_PREVIEW RESOURCE cZoom
+
+         MENUITEM ::oMenuUnZoom PROMPT TXT_UNZOOM ACTION ::Zoom( .T. ) ;
+            MESSAGE TXT_UNZOOM_THE_PREVIEW RESOURCE cUnZoom
+
+           MENUITEM  "&amp;Factor"  MESSAGE TXT_ZOOM_FACTOR
+               MENU
+               FOR nFor := 1 TO len(::aFactor)
+                    MENUITEM ::aFactor[nFor]                         ;
+                     PROMPT STR(VAL('1'+ltrim(str(nFor))+'0')-10)+' %';
+                         MESSAGE "Factor " + LTrim( Str( nFor ) )  ;
+                         ACTION ( oFactor:Set( oMenuItem:nHelpId ),Eval( oFactor:bChange ) )
+               NEXT
+
+         ENDMENU
+
+         SEPARATOR
+
+         MENUITEM ::oMenuTwoPages PROMPT TXT_TWOPAGES ACTION ::TwoPages( .T. ) ;
+            ENABLED ;
+            MESSAGE TXT_PREVIEW_ON_TWO_PAGES RESOURCE cTwo_Pages
+
+         MENUITEM ::oMenuOnePage PROMPT TXT_ONEPAGE ACTION ::TwoPages(.T.) ;
+            MESSAGE TXT_PREVIEW_ON_ONE_PAGE RESOURCE cOne_Page
+
+      ENDMENU
+   ENDMENU
+
+   ::oMenuUnZoom:Disable()
+   ::oMenuOnePage:Disable()
+
+return oMenu
+
+//----------------------------------------------------------------------------//
+
+METHOD PaintMeta() CLASS TPreview
+
+   local oCoors1, oCoors2
+   local aFiles := ::oDevice:aMeta  // DEVICE
+   local nWidth, nHeight, nFactor, nMetaWidth
+
+   if ::oWnd != nil .and. IsIconic( ::oWnd:hWnd )
+      return nil
+   endif
+
+   do case
+      case ! ::lTwoPages
+
+           if ! ::lZoom
+
+             if ::oDevice:nHorzSize() &gt;= ;   // landscape (apaisado)  // DEVICE
+                ::oDevice:nVertSize()
+                nFactor := .8 // .4
+             else
+                nFactor := .40 // .25
+             endif
+
+          else
+             nFactor := .47
+          endif
+
+          if ::oWnd != nil
+             nWidth  = ::oWnd:nWidth() - If( ::lZoom, 20, 0 )
+             nHeight = ::oWnd:nHeight() - If( ::lZoom .and. ::nZFactor &gt; 1, 20, 0 ) - 10 - ;
+                       If( LargeFonts(), 100, 80 )
+
+             if ! ::lZoom
+                nMetaWidth = ( nHeight - 40 ) * nFactor
+             else
+                nMetaWidth = nWidth * nFactor
+             endif
+
+             oCoors1 := TRect():New( 40,;
+                                     Max( ( nWidth / 2 ) - nMetaWidth, 10 ),;
+                                     nHeight,;
+                                     Min( ( nWidth / 2 ) + nMetaWidth, nWidth - 20 ) )
+
+             ::oMeta2:Hide()
+             ::oMeta1:SetCoors( oCoors1 )
+             ::oMeta1:Refresh()
+          endif
+
+      case ::lTwoPages
+
+          nFactor := .4
+          aFiles  := ::oDevice:aMeta  // DEVICE
+
+          nWidth  := ::oWnd:nWidth()
+          nHeight := ::oWnd:nHeight() - 10 - If( LargeFonts(), 100, 80 )
+
+          nMetaWidth = Min( ( nHeight - 40 ) * nFactor, ( nWidth - 60 ) / 4 )
+
+          oCoors1 := TRect():New( 40,;
+                                  ( nWidth / 4 ) - nMetaWidth,;
+                                  nHeight,;
+                                  ( nWidth / 4 ) + nMetaWidth )
+          oCoors2 := TRect():New( 40,;
+                                  ( nWidth / 4 ) - nMetaWidth + ( nWidth / 2 ),;
+                                  nHeight,;
+                                  ( nWidth / 4 ) + nMetaWidth + ( nWidth / 2 ) )
+
+          if ::nPage == Len( aFiles )
+             ::oMeta2:SetFile( "" )
+          else
+             ::oMeta2:SetFile( aFiles[ ::nPage + 1 ] )
+          endif
+
+          ::oMeta1:SetCoors( oCoors1 )
+          ::oMeta2:SetCoors( oCoors2 )
+          ::oMeta1:Refresh()
+          ::oMeta2:Show()
+
+   endcase
+
+   ::oMeta1:SetFocus()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD NextPage() CLASS TPreview
+
+   local hOldRes := GetResources()
+   local aFiles  := ::oDevice:aMeta  // DEVICE
+
+   if ::nPage &gt;= Len( aFiles )
+      MsgBeep()
+      return nil
+   endif
+
+   ::nPage++
+
+   SET RESOURCES TO ::cResFile
+
+   ::oMeta1:SetFile( aFiles[ ::nPage ] )
+   if ! l2007
+      ::oPage:SetText( TXT_PAGENUM + LTrim( Str( ::nPage, 4, 0 ) ) + " de " + ;
+                                     LTrim( Str( Len( aFiles ) ) ) )
+   endif
+
+   ::oBar:Refresh()
+   ::oMeta1:Refresh()
+
+   if ::lTwoPages
+      if Len( aFiles ) &gt;= ::nPage + 1
+         ::oMeta2:SetFile( aFiles[ ::nPage + 1 ] )
+      else
+         ::oMeta2:SetFile( "" )
+      endif
+      ::oMeta2:Refresh()
+   endif
+
+   ::oMeta1:SetFocus()
+   SetResources( hOldRes )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD PrevPage() CLASS TPreview
+
+   local hOldRes := GetResources()
+   local aFiles  := ::oDevice:aMeta  // DEVICE
+
+   if ::nPage == 1
+      MsgBeep()
+      return nil
+   endif
+
+   ::nPage--
+
+   SET RESOURCES TO ::cResFile
+
+   ::oMeta1:SetFile( aFiles[ ::nPage ] )
+   if ! l2007
+      ::oPage:SetText( TXT_PAGENUM + LTrim( Str( ::nPage, 4, 0 ) ) + " de " + ;
+                                     LTrim( Str( Len( aFiles ) ) ) )
+   endif
+   ::oBar:Refresh()
+   ::oMeta1:Refresh()
+
+   if ::lTwoPages
+      if Len( aFiles ) &gt;= ::nPage + 1
+         ::oMeta2:SetFile( aFiles[ ::nPage + 1 ] )
+      else
+         ::oMeta2:SetFile( "" )
+      endif
+      ::oMeta2:Refresh()
+   endif
+
+   ::oMeta1:SetFocus()
+   SetResources( hOldRes )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD TopPage() CLASS TPreview
+
+   local hOldRes := GetResources()
+   local aFiles  := ::oDevice:aMeta  // DEVICE
+
+   if ::nPage == 1
+      MsgBeep()
+      return nil
+   endif
+
+   ::nPage = 1
+
+   SET RESOURCES TO ::cResFile
+
+   ::oMeta1:SetFile( aFiles[ ::nPage ] )
+   if ! l2007
+      ::oPage:SetText( TXT_PAGENUM + LTrim( Str( ::nPage, 4, 0 ) ) + " de " + ;
+                                     LTrim( Str( Len( aFiles ) ) ) )
+   endif
+   ::oBar:Refresh()
+   ::oMeta1:Refresh()
+
+   if ::lTwoPages
+      if Len( aFiles ) &gt;= ::nPage + 1
+         ::oMeta2:SetFile( aFiles[ ::nPage + 1 ] )
+      else
+         ::oMeta2:SetFile( "" )
+      endif
+      ::oMeta2:Refresh()
+   endif
+
+   ::oMeta1:SetFocus()
+   SetResources( hOldRes )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD BottomPage() CLASS TPreview
+
+   local hOldRes := GetResources()
+   local aFiles  := ::oDevice:aMeta  // DEVICE
+
+   if ::nPage == Len( aFiles )
+      MsgBeep()
+      return nil
+   endif
+
+   ::nPage = Len( aFiles )
+
+   SET RESOURCES TO ::cResFile
+
+   ::oMeta1:SetFile( aFiles[ ::nPage ] )
+   if ! l2007
+      ::oPage:SetText( TXT_PAGENUM + LTrim( Str( ::nPage, 4, 0 ) ) + " de " + ;
+                                     LTrim( Str( Len( aFiles ) ) ) )
+   endif
+   ::oBar:Refresh()
+   ::oMeta1:Refresh()
+
+   if ::lTwoPages
+      ::oMeta2:SetFile( "" )
+      ::oMeta2:Refresh()
+   endif
+
+   ::oMeta1:SetFocus()
+   SetResources( hOldRes )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD TwoPages( lMenu ) CLASS TPreview
+
+   local hOldRes := GetResources()
+
+   SET RESOURCES TO ::cResFile
+
+   DEFAULT lMenu := .F.
+
+   ::lTwoPages := ! ::lTwoPages
+
+   if ::lTwoPages
+
+      if Len( ::oDevice:aMeta) == 1 // solo hay una pagina   // DEVICE
+         ::lTwoPages := ! ::lTwoPages
+         MsgBeep()
+         SetResources( hOldRes )
+         return nil
+      endif
+
+      if ::oDevice:nHorzSize() &gt;= ;        // Apaisado  // DEVICE
+         ::oDevice:nVertSize()  // DEVICE
+         ::lTwoPages := ! ::lTwoPages
+         MsgBeep()
+         SetResources( hOldRes )
+         return nil
+      endif
+
+      if ::lZoom
+         ::Zoom( .T. )
+      endif
+
+      if ! IsAppThemed() .or. Upper( ::oBar:ClassName() ) == "TBAR"
+         ::oTwoPages:FreeBitmaps()
+         ::oTwoPages:LoadBitmaps( "One_Page2" )
+         ::oTwoPages:cMsg := TXT_PREVIEW_ON_ONE_PAGE
+         ::oTwoPages:cTooltip := StrTran( TXT_ONEPAGE, "&amp;", "" )
+      else
+         ::oBar:ChangeBitmap( 6, 10 )
+         ::oBar:SetTooltip( 6, StrTran( TXT_ONEPAGE, "&amp;", "" ) )
+         ::oBar:SetMessage( 6, TXT_PREVIEW_ON_ONE_PAGE )
+      endif
+
+      if ::oWnd:oMenu != nil
+         ::oMenuTwoPages:Disable()
+         ::oMenuOnePage:Enable()
+      endif
+
+   else
+
+      if ! IsAppThemed() .or. Upper( ::oBar:ClassName() ) == "TBAR"
+         ::oTwoPages:FreeBitmaps()
+         ::oTwoPages:LoadBitmaps( "Two_Pages2" )
+         ::oTwoPages:cMsg := TXT_PREVIEW_ON_TWO_PAGES
+         ::oTwoPages:cTooltip := StrTran( TXT_TWOPAGES, "&amp;", "" )
+      else
+         ::oBar:ChangeBitmap( 6, 6 )
+         ::oBar:SetTooltip( 6, StrTran( TXT_TWOPAGES, "&amp;", "" ) )
+         ::oBar:SetMessage( 6, TXT_PREVIEW_ON_TWO_PAGES )
+      endif
+
+      if ::oWnd:oMenu != nil
+         ::oMenuTwoPages:Enable()
+         ::oMenuOnePage:Disable()
+      endif
+
+   endif
+
+   if lMenu .and. ! IsAppThemed()
+      ::oTwoPages:Refresh()
+   endif
+
+   ::oWnd:Refresh()
+   ::PaintMeta()
+   SetResources( hOldRes )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD Zoom( lMenu ) CLASS TPreview
+
+   local hOldRes := GetResources()
+
+   SET RESOURCES TO ::cResFile
+
+   DEFAULT lMenu := .F.
+
+   ::lZoom := ! ::lZoom
+
+   if ::lZoom
+
+      if ::lTwoPages
+         ::TwoPages( .T. )
+      endif
+
+      if ! IsAppThemed() .or. l2007
+         ::oZoom:FreeBitmaps()
+         ::oZoom:LoadBitmaps( "Unzoom2" )
+         ::oZoom:cMsg := TXT_UNZOOM_THE_PREVIEW
+         ::oZoom:cTooltip := StrTran( TXT_UNZOOM, "&amp;", "" )
+      else
+         ::oBar:ChangeBitmap( 5, 9 )
+         ::oBar:SetTooltip( 5, StrTran( TXT_UNZOOM, "&amp;", "" ) )
+         ::oBar:SetMessage( 5, TXT_UNZOOM_THE_PREVIEW )
+      endif
+
+      if ::oWnd:oMenu != nil
+         ::oMenuZoom:Disable()
+         ::oMenuUnZoom:Enable()
+      endif
+
+      ::oWnd:oVScroll:SetRange( 1, VSCROLL_RANGE )
+
+      if ::nZFactor &gt; 1
+         ::oWnd:oHScroll:SetRange( 1, HSCROLL_RANGE )
+      endif
+
+      ::oMeta1:ZoomIn()
+
+   else
+
+      if ! IsAppThemed() .or. l2007
+         ::oZoom:FreeBitmaps()
+         ::oZoom:LoadBitmaps( "Zoom2" )
+         ::oZoom:cMsg := TXT_ZOOM_THE_PREVIEW
+         ::oZoom:cTooltip := StrTran( TXT_ZOOM, "&amp;", "" )
+      else
+         ::oBar:ChangeBitmap( 5, 5 )
+         ::oBar:SetTooltip( 5, StrTran( TXT_ZOOM, "&amp;", "" ) )
+         ::oBar:SetMessage( 5, TXT_ZOOM_THE_PREVIEW )
+      endif
+
+      if ::oWnd:oMenu != nil
+         ::oMenuZoom:Enable()
+         ::oMenuUnZoom:Disable()
+      endif
+
+      ::oWnd:oVScroll:SetRange( 0, 0 )
+      ::oWnd:oHScroll:SetRange( 0, 0 )
+
+      ::oMeta1:ZoomOut()
+      ::nZFactor = 1
+      if ::oWnd:oMenu != nil
+         AEval( ::aFactor, { | val, elem | val:SetCheck( ( elem == 1 ) ) } )
+      endif
+      ::oFactor:Set( 1 )
+
+   endif
+
+   if lMenu .and. ! IsAppThemed()
+      ::oZoom:Refresh()
+   endif
+
+   ::PaintMeta()
+   SetResources( hOldRes )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD VScroll( nType, lPage, nSteps ) CLASS TPreview
+
+   local nYfactor, nYorig, nStep
+
+   DEFAULT lPage := .F.
+
+   if nType == GO_UP
+      if ::oWnd:oVScroll:GetPos() &lt;= ::oWnd:oVScroll:nMin
+         return nil
+      endif
+   else
+      if ::oWnd:oVScroll:GetPos() &gt; ::oWnd:oVScroll:nMax
+         return nil
+      endif
+   endif
+
+   nYfactor := Int( ::oDevice:nVertRes() / ::oWnd:oVScroll:nMax )  // DEVICE
+
+   if nSteps != nil
+      nStep := nSteps
+   elseif lPage
+      nStep := ::oWnd:oVScroll:nMax / 10
+   else
+      nStep := 1
+   endif
+
+   if nType == GO_UP
+      nStep := -nStep
+   elseif nType == GO_POS
+      ::oWnd:oVscroll:SetPos( nSteps )
+      nStep := 0
+   endif
+
+   nYorig := nYfactor * ( ::oWnd:oVScroll:GetPos() + nStep - 1 )
+
+   if nYorig &gt; ::oDevice:nVertRes()    // DEVICE
+      nYorig := ::oDevice:nVertRes()   // DEVICE
+   endif
+
+   if nYorig &lt; 0
+      nYorig := 0
+   endif
+
+   #ifdef __CLIPPER__
+      ::oMeta1:SetOrg( nil, nYorig )
+   #else
+      ::oMeta1:SetOrg( nil, nYorig / ::oDevice:nVertRes() * 10 )  // DEVICE
+   #endif
+
+   ::oMeta1:Refresh()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD HScroll( nType, lPage, nSteps ) CLASS TPreview
+
+   local nXfactor, nXorig, nStep
+
+   DEFAULT lPage := .F.
+
+   if nType == GO_UP
+      if ::oWnd:oHScroll:GetPos() &lt;= ::oWnd:oHScroll:nMin
+         return nil
+      endif
+   else
+      if ::oWnd:oHScroll:GetPos() &gt; ::oWnd:oHScroll:nMax
+         return nil
+      endif
+   endif
+
+   nXfactor := Int( ::oDevice:nHorzRes() / ::oWnd:oHScroll:nMax )  // DEVICE
+
+   if nSteps != nil
+      nStep := nSteps
+   elseif lPage
+      nStep := ::oWnd:oHScroll:nMax/10
+   else
+      nStep := 1
+   endif
+
+   if nType == GO_LEFT
+      nStep := -nStep
+   elseif nType == GO_POS
+      ::oWnd:oHscroll:SetPos( nSteps )
+      nStep := 0
+   endif
+
+   nXorig := nXfactor * ( ::oWnd:oHScroll:GetPos() + nStep - 1 )
+
+   if nXorig &gt; ::oDevice:nHorzRes()     // DEVICE
+      nXorig := ::oDevice:nHorzRes()    // DEVICE
+   endif
+
+   if nXorig &lt; 0
+      nXorig := 0
+   endif
+
+   #ifdef __CLIPPER__
+      ::oMeta1:SetOrg( nXorig, nil )
+   #else
+      ::oMeta1:SetOrg( nXorig / ::oDevice:nHorzRes() * 10, nil )  // DEVICE
+   #endif
+
+   ::oMeta1:Refresh()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD SetOrg1( nX, nY ) CLASS TPreview
+
+   local oCoors
+   local nXStep, nYStep, nXFactor, nYFactor,;
+         nWidth, nHeight, nXOrg
+
+   if ::lZoom
+      ::Zoom( .T. )
+      return nil
+   endif
+
+   oCoors   := ::oMeta1:GetRect()
+   nWidth   := oCoors:nRight - oCoors:nLeft + 1
+   nHeight  := oCoors:nBottom - oCoors:nTop + 1
+
+   if .f.
+      nXStep   := Max( Int( nX / nWidth * HSCROLL_RANGE ) - 9, 0 )
+      nXFactor := Int( ::oDevice:nHorzRes() / HSCROLL_RANGE )  // DEVICE
+   endif
+
+   if .f.
+      nYStep   := Max( Int( nY / nHeight * VSCROLL_RANGE ) - 9, 0 )
+      nYFactor := Int( ::oDevice:nVertRes() / VSCROLL_RANGE )  // DEVICE
+   endif
+
+   ::Zoom( .T. )
+
+   if ! Empty( nXStep )
+      ::HScroll( 2,, nxStep )
+      ::oWnd:oHScroll:SetPos( nxStep )
+   endif
+
+   if ! Empty( nYStep )
+      ::VScroll( 2,, nyStep )
+      ::oWnd:oVScroll:SetPos( nyStep )
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD SetOrg2( nX, nY ) CLASS TPreview
+
+   local oCoors
+   local aFiles
+   local nXStep, nYStep, nXFactor, nYFactor,;
+         nWidth, nHeight, nXOrg
+
+   if ::oMeta2:cCaption == ""
+      return nil
+   endif
+
+   if ::lZoom
+      ::Zoom( .T. )
+      return nil
+   endif
+
+   oCoors := ::oMeta2:GetRect()
+   nWidth   := oCoors:nRight - oCoors:nLeft + 1
+   nHeight  := oCoors:nBottom - oCoors:nTop + 1
+
+   if .f.
+      nXStep   := Max( Int( nX / nWidth * HSCROLL_RANGE ) - 9, 0 )
+      nXFactor := Int( ::oDevice:nHorzRes() / HSCROLL_RANGE )
+   endif
+
+   if .f.
+      nYStep   := Max( Int( nY / nHeight * VSCROLL_RANGE ) - 9, 0 )
+      nYFactor := Int( ::oDevice:nVertRes() / VSCROLL_RANGE )  // DEVICE
+   endif
+
+   ::oMeta1:SetFile( ::oMeta2:cCaption )
+
+   aFiles := ::oDevice:aMeta  // DEVICE
+
+   if ::nPage = Len( aFiles )
+      ::oMeta2:SetFile( "" )
+   else
+      ::oMeta2:SetFile( aFiles[ ++::nPage ] )
+   endif
+
+   *::oPage:Refresh()
+
+   ::Zoom( .T. )
+
+   if ! Empty( nXStep )
+      ::HScroll( 2,, nxStep )
+      ::oWnd:oHScroll:SetPos( nxStep )
+   endif
+
+   if ! Empty( nYStep )
+      ::VScroll( 2,, nyStep )
+      ::oWnd:oVScroll:SetPos( nyStep )
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD CheckKey( nKey, nFlags ) CLASS TPreview
+
+   if ! ::lZoom
+      do case
+         case nKey == VK_HOME
+              ::TopPage()
+
+         case nKey == VK_END
+              ::BottomPage()
+
+         case nKey == VK_PRIOR
+              ::PrevPage()
+
+         case nKey == VK_NEXT
+              ::NextPage()
+
+      endcase
+   else
+      do case
+         case nKey == VK_UP
+              ::oWnd:oVScroll:GoUp()
+
+         case nKey == VK_PRIOR
+              ::oWnd:oVScroll:PageUp()
+
+         case nKey == VK_DOWN
+              ::oWnd:oVScroll:GoDown()
+
+         case nKey == VK_NEXT
+              ::oWnd:oVScroll:PageDown()
+
+         case nKey == VK_LEFT
+              ::oWnd:oHScroll:GoUp()
+
+         case nKey == VK_RIGHT
+              if ::oWnd:oHScroll != nil .and. ::oWnd:oHScroll:nMax &gt; 0
+                 ::oWnd:oHScroll:GoDown()
+              endif
+
+         case nKey == VK_HOME
+              ::oWnd:oVScroll:GoTop()
+              ::oWnd:oHScroll:GoTop()
+              ::oMeta1:SetOrg( 0, 0 )
+              ::oMeta1:Refresh()
+
+         case nKey == VK_END
+              ::oWnd:oVScroll:GoBottom()
+              ::oWnd:oHScroll:GoBottom()
+              ::oMeta1:SetOrg( .8 * ::oDevice:nHorzRes(), .8 * ::oDevice:nVertRes() )  // DEVICE
+              ::oMeta1:Refresh()
+      endcase
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD CheckMouseWheel( nKeys, nDelta, nXPos, nYPos ) CLASS TPreview
+
+   if ! ::lZoom
+      if lAnd( nKeys, MK_MBUTTON )
+         if nDelta &gt; 0
+            ::TopPage()
+         else
+            ::BottomPage()
+         endif
+      else
+         if nDelta &gt; 0
+            ::PrevPage()
+         else
+            ::NextPage()
+         endif
+      endif
+   else
+      if lAnd( nKeys, MK_MBUTTON )
+         if nDelta &gt; 0
+            if ::oWnd:oVScroll:GetPos() &gt; ::oWnd:oVScroll:nMin
+               ::oWnd:oVScroll:PageUp()
+            endif
+         else
+            if ::oWnd:oVScroll:GetPos() &lt; ::oWnd:oVScroll:nMax
+               ::oWnd:oVScroll:PageDown()
+            endif
+         endif
+      else
+         if nDelta &gt; 0
+            if ::oWnd:oVScroll:GetPos() &gt; ::oWnd:oVScroll:nMin
+               ::oWnd:oVScroll:GoUp()
+            endif
+         else
+            if ::oWnd:oVScroll:GetPos() &lt; ::oWnd:oVScroll:nMax
+               ::oWnd:oVScroll:GoDown()
+            endif
+         endif
+      endif
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD SetFactor( nValue ) CLASS TPreview
+   Local lInit := .F.,n
+
+   if nValue == nil .and. ::oWnd:oMenu != nil
+      AEval( ::aFactor, { | v, e | v:nHelpId := e } )
+      nValue := ::nZFactor
+      lInit  := .T.
+   endif
+
+   if ::oWnd:oMenu != nil
+      AEval( ::aFactor, { | val, elem | val:SetCheck( elem == nValue ) } )
+   endif
+
+   if nValue == nil
+     nValue:=1
+   endif
+
+   n := 1 + ( nValue - 1 ) * 0.1
+   ::oMeta1:SetZoomFactor( n, 2 * n  )
+
+   if ::lZoom
+      ::oWnd:oVScroll:SetRange( 1, VSCROLL_RANGE )
+      if ::nZFactor &gt; 1
+         ::oWnd:oHScroll:SetRange( 1, HSCROLL_RANGE )
+      else
+         ::oWnd:oHScroll:SetRange( 0, 0 )
+      endif
+   endif
+
+   ::oMeta1:SetFocus()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD PrintPage() CLASS TPreview
+
+   local hOldRes := GetResources()
+   local hMeta   := ::oMeta1:hMeta
+   local oDlg, oRad, oPageIni, oPageFin
+   local nOption := 1, nFirst := 1, nLast := Len( ::oDevice:aMeta )  // DEVICE
+   local oThis := Self
+
+   if nLast == 1
+      ::PrintPrv( nil, nOption, nFirst, nLast )
+      return nil
+   endif
+
+   SET RESOURCES TO ::cResFile
+
+   DEFINE DIALOG oDlg RESOURCE "PRINT"
+
+   REDEFINE BUTTON ID 101 OF oDlg ;
+      ACTION oThis:PrintPrv( oDlg, nOption, nFirst, nLast )
+
+   REDEFINE BUTTON ID 102 OF oDlg ACTION oDlg:End()
+
+   REDEFINE RADIO oRad VAR nOption ID 103, 104, 105 OF oDlg ;
+      ON CHANGE If( nOption==3 ,;
+                    ( oPageIni:Enable(), oPageFin:Enable() ),;
+                    ( oPageIni:Disable(), oPageFin:Disable() ) )
+
+   REDEFINE GET oPageIni ;
+      VAR nFirst ID 106 PICTURE "@K 99999" ;
+      VALID If( nFirst &lt; 1 .or. nFirst &gt; nLast, ( MsgBeep(), .F. ), .T. ) ;
+      OF oDlg
+
+   REDEFINE GET oPageFin ;
+      VAR nLast ID 107 PICTURE "@K 99999" ;
+      VALID If( nLast &lt; nFirst .or. nLast &gt; Len( ::oDevice:aMeta ), ;  // DEVICE
+                ( MsgBeep(),.F. ), .T.) OF oDlg
+
+   oPageIni:Disable()
+   oPageFin:Disable()
+
+   SetResources( hOldRes )
+
+   ACTIVATE DIALOG oDlg
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD PrintPrv( oDlg, nOption, nPageIni, nPageEnd ) CLASS TPreview
+
+   local oDevice := ::oDevice   // DEVICE
+   local aFiles  := oDevice:aMeta
+   local hMeta   := ::oMeta1:hMeta
+   local nFor
+
+   CursorWait()
+
+   If lCambioPRT
+      PrinterInit()
+      SysRefresh()
+      oDevice:hDC:=GetPrintDefault(GetActiveWindow())
+      SysRefresh()
+   Endi
+
+   StartDoc( oDevice:hDC, oDevice:cDocument )
+
+   do case
+
+      case nOption == 1                           // All
+
+          for nFor := 1 to Len( aFiles )
+              #ifdef __CLIPPER__
+                 StartPage( oDevice:hDC )
+                 hMeta := GetMetaFile( aFiles[ nFor ] )
+                 PlayMetaFile( oDevice:hDC, hMeta )
+                 DeleteMetafile( hMeta )
+                 EndPage( oDevice:hDC )
+              #else
+                 StartPage( oDevice:hDC )
+                 hMeta := GetEnhMetaFile( aFiles[ nFor ] )
+                 PlayEnhMetaFile( oDevice:hDC, hMeta,, .t. )
+                 DeleteEnhMetafile( hMeta )
+                 EndPage( oDevice:hDC )
+              #endif
+          next
+
+     case nOption == 2                           // Current page
+
+          StartPage( oDevice:hDC )
+          hMeta := ::oMeta1:hMeta
+          #ifdef __CLIPPER__
+             PlayMetaFile( oDevice:hDC, hMeta )
+          #else
+             PlayEnhMetaFile( oDevice:hDC, hMeta,, .t. )
+          #endif
+          EndPage( oDevice:hDC )
+
+     case nOption == 3                           // Range
+
+          for nFor := nPageIni to nPageEnd
+               StartPage( oDevice:hDC )
+               #ifdef __CLIPPER__
+                  hMeta := GetMetaFile( aFiles[ nFor ] )
+                  PlayMetaFile( oDevice:hDC, hMeta )
+                  DeleteMetafile( hMeta )
+               #else
+                  hMeta := GetEnhMetaFile( aFiles[ nFor ] )
+                  PlayEnhMetaFile( oDevice:hDC, hMeta,, .t. )
+                  DeleteEnhMetafile( hMeta )
+               #endif
+               EndPage( oDevice:hDC )
+          next
+
+     endcase
+
+     EndDoc( oDevice:hDC )
+
+     CursorArrow()
+
+     if oDlg != nil
+        oDlg:End()
+     endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function RPreview( oDevice )
+
+   local oPreview := TPreview():New( oDevice )
+
+   oPreview:Activate()
+
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+#ifdef __CLIPPER__
+
+static function IsAppThemed()
+
+return .f.
+
+static function TToolBar()
+
+return nil
+
+static function TRebar()
+
+return nil
+
+#endif
+
+//----------------------------------------------------------------------------//
+Function CambiaPRT(cCbx) //Function agregada por Adhemar
+
+WriteProfString( "windows", "device", cCbx+",winspool,Ne0:" )
+
+lCambioPRT:=.T.
+
+Return nil</code></pre></div><br>
+<br>
+Cuando cambio de impresora sigue imprimiendo por la predeterminada de windows. Este lo utilizo en una sola máquina en las demás uso el nativo de fivewin.<br>
+Me orientarían en lo que hay que cambiar??<br>
+<br>
+Luis</div>
+    </div>
+  </div>
+  <div class="post" id="p216719">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: rpreview</span><br>
+        Posted: Thu Nov 08, 2018 05:44 PM
+      </div>
+      <div class="content">Mira si es esto:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FUNCTION DefaultPrinter() // MODIFIQUEI A PRINTER.PRG E FUNCIONA...
+
+   LOCAL nPrn, nRet
+
+   // Abre a tela para a seleção da impressora
+   /*
+   GetPrintDC( GetActiveWindow() )
+
+   // Coloca a impressora selecionada como Default do Windows
+   SetDefaultPrinter( PRNGETNAME() )
+   */
+
+   nRet := PrinterSetUp()
+
+   nPrn := PrnGetName()
+
+   IF( nRet # 0 )
+
+      SetDefaultPrinter( PRNGETNAME() ) // MUDA O DEFAULT DA IMPRESSORA
+
+      MsgInfo( OemToAnsi( "Aten‡Æo Usu rio:                        " )+CRLF+ ;
+               OemToAnsi( "Sua Impressora DEFAULT(PadrÆo) ‚:       " )+CRLF+ ;
+                        ( "-&gt; " + nPrn                               ),      ;
+               OemToAnsi( "Sua Impressora DEFAULT(PadrÆo) ‚...     " ) )
+
+      sGetDefaultPrinter := GetDefaultPrinter()
+
+      // ? PrnStatus( sGetDefaultPrinter )
+
+      IF PrnStatus( sGetDefaultPrinter ) = 4096
+
+         // Verifica se SPOOLER esta desligado e tenta liga-lo
+         MsgRun( sGetDefaultPrinter +": "+isprint( GetDefaultPrinter() ) + ;
+                         " ou Spooler Desligado.", "Status da Impressora", ;
+                 {|| WinExec( "NET START SPOOLER", 7 ) } )
+
+      ENDIF
+
+      //? GetPrinter()
+
+   ELSE
+
+      MsgInfo( OemToAnsi( "ATEN€ÇO USUµRIO:                         " )+CRLF+ ;
+               OemToAnsi( "VERIFIQUE SUA IMPRESSORA SE ESTµ LIGADA. " )+CRLF+ ;
+               OemToAnsi( "OU SE ESTµ INSTALADA CORRETAMENTE...     " )+CRLF+ ;
+               OemToAnsi( "TEM ALGUMA COISA ERRADA COM A IMPRESSORA?" )+CRLF+ ;
+               OemToAnsi( "TECLE &lt;ENTER&gt; PARA CONTINUAR...          " ),      ;
+               OemToAnsi( "VERIFIQUE SUA IMPRESSORA SE ESTµ LIGADA. " ) )
+
+      RETURN( .F. )
+
+   ENDIF
+
+RETURN NIL</code></pre></div><br>
+<br>
+Saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p216720">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: rpreview</span><br>
+        Posted: Thu Nov 08, 2018 05:53 PM
+      </div>
+      <div class="content">Cambios en PRINTER.PRG<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD End() CLASS TPrinter
+
+   if ::hDC != 0
+      if ! ::lMeta
+         if ::lStarted
+            EndDoc(::hDC)
+         endif
+      else
+         Aeval(::aMeta,{|val| ferase(val) })
+         ::aMeta  := {}
+         ::hDCOut := 0
+      endif
+      if ::nOrient != nil
+         if ::nOrient == DMORIENT_PORTRAIT
+            ::SetPortrait()
+         else
+            ::SetLandscape()
+         endif
+      endif
+
+      // 01/03/2018 (Oscar): Tirei essa linha para que ele mantenha a
+      // impressora selecionada no GetPrintDC() sem mudar a impressora
+      // Default do Windows.
+      // PrinterEnd()
+
+      DeleteDC( ::hDC )
+      ::hDC := 0
+   endif
+
+   if ::oFont != nil
+      ::oFont:End()
+   endif
+
+   oPrinter := nil
+
+return nil</code></pre></div><br>
+<br>
+Saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p216721">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: rpreview</span><br>
+        Posted: Thu Nov 08, 2018 05:56 PM
+      </div>
+      <div class="content"><a href="http://fivewin.com.br/index.php?/topic/27487-uso-do-getprintdc/#comment-282097" rel="noopener">http&#58;//fivewin&#46;com&#46;br/index&#46;php?/topic/27487-uso-do-getprintdc/#comment-282097</a></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

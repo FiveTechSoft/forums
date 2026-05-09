@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>HDO. Fuente de la clase que gestiona las RDL... - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-33269">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> HDO. Fuente de la clase que gestiona las RDL...</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-33269-page-2.html">2</a> (19 posts)</div>  <div class="post" id="p196017">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Thu Dec 01, 2016 07:37 PM
+      </div>
+      <div class="content">Algunos me habeis pedido a modo de estudio algún fuente de HDO.<br>
+Os dejo el codigo completo de la clase THDORDL que se encarga de la gestion de la RDL es com la RDDRegister de las RDD.<br>
+Como todas las clase de HDO está hecha en C completamente.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/***
+ * Proyecto: Harbour Data Objects (HDO)
+ * Fichero: hdoRDL.c
+ * Descripcion: Gestion de de RDLs
+ * Autor: Manu Exposito 2015-16
+ * Fecha: 10/01/2016
+ */
+
+/*
+ * Notas:
+ * Solo tiene una DATA de solo lectura con una tabla Hash
+ * { NOMBRE_RDL =&gt; PUNTERO_FUNCION_METODOS }
+ */
+
+#include "hdoRDL.h"
+
+/***
+ * Definicion de la clase con atributos y metodos
+ */
+
+CREATE_CLASS( "THDORDL", THDORDL, THDORDL_IVARCOUNT )
+{
+    /* Metodos */
+    METHOD( "NEW",              THDORDL_NEW )
+    METHOD( "REGISTER",         THDORDL_REGISTER )
+    METHOD( "LIST",             THDORDL_LIST )
+    METHOD( "ISREGISTERED",     THDORDL_ISREGISTERED )
+    METHOD( "GETPOS",           THDORDL_GETPOS )
+    METHOD( "GETNAME",          THDORDL_GETNAME )
+    METHOD( "GETPFUNCBYNAME",   THDORDL_GETPFUNCBYNAME )
+}
+END_CLASS
+
+/***
+ * Metodo: NEW
+ * Uso: Constructor de la clase
+ * Parametros: Ninguno
+ * Devuelve: Self, un objeto inicializado
+ */
+
+HB_METHOD( THDORDL_NEW )
+{
+    PHB_ITEM pSelf = hb_pSelf();
+
+    PHB_ITEM pd = hb_hashNew( NULL );
+    PHB_ITEM pKey = hb_itemNew( NULL );
+    PHB_ITEM pValue = hb_itemNew( NULL );
+
+    hb_hashClearFlags( pd, HB_HASH_BINARY );
+    hb_hashSetFlags( pd, HB_HASH_IGNORECASE | HB_HASH_RESORT );
+
+    hdo_listRDL( pd, pKey, pValue );
+
+    hb_itemRelease( pKey );
+    hb_itemRelease( pValue );
+
+    hb_arraySetForward( pSelf, IVAR_HASHRDL, pd );
+
+    hb_itemRelease( pd );
+
+    /* Devuelve SELF */
+    hb_itemReturnRelease( pSelf );
+}
+
+/***
+ * Metodo: LIST
+ * Uso: Consulta de RDL registrados
+ * Parametros: Ninguno
+ * Devuelve: Array con los RDLs registrados
+ */
+
+HB_METHOD( THDORDL_LIST )
+{
+    PHB_ITEM pd = hb_getHRDL();
+
+    if( pd )
+    {
+        hb_itemReturnRelease( hb_hashGetKeys( pd ) );
+    }
+    else
+    {
+        hb_ret();
+    }
+}
+
+/***
+ * Metodo: REGISTER
+ * Uso: Registra un RDL si no existe
+ * Parametros: El nombre del RDL y un puntero a la funcion del RDL
+ * Devuelve: Nada
+ */
+
+HB_METHOD( THDORDL_REGISTER )
+{
+    PHB_ITEM pd = hb_getHRDL();
+
+    if( pd )
+    {
+        PHB_ITEM pKey = hb_param( 1, HB_IT_STRING );
+        PHB_ITEM pValue = hb_param( 2, HB_IT_POINTER );
+
+        if( pKey )
+        {
+            hb_hashAdd( pd, pKey, pValue );
+        }
+    }
+}
+
+/***
+ * Metodo: ISREGISTERED
+ * Uso: Comprueba si un RDL esta registrado
+ * Parametros: Nombre del RDL
+ * Devuelve: Valor logico indicando si existe o no
+ */
+
+HB_METHOD( THDORDL_ISREGISTERED )
+{
+    PHB_ITEM pd = hb_getHRDL();
+    HB_BOOL bRet = HB_FALSE;
+
+    if( pd )
+    {
+        PHB_ITEM pKey = hb_param( 1, HB_IT_STRING );
+
+        if( pKey )
+        {
+            bRet = ( hb_hashGetCItemPos( pd, pKey ) != 0 );
+        }
+    }
+
+    hb_retl( bRet );
+}
+
+/***
+ * Metodo: GETPOS
+ * Uso: Comprueba la posicion que ocupa un RDL
+ * Parametros: Nombre del RDL
+ * Devuelve: La posicion o 0 encaso de no estar registrado
+ */
+
+HB_METHOD( THDORDL_GETPOS )
+{
+    PHB_ITEM pd = hb_getHRDL();
+    HB_SIZE nRet = 0;
+
+    if( pd )
+    {
+        PHB_ITEM pKey = hb_param( 1, HB_IT_STRING );
+
+        if( pKey )
+        {
+            nRet = hb_hashGetCItemPos( pd, pKey );
+
+        }
+    }
+
+    hb_retni( nRet );
+}
+
+/***
+ * Metodo: GETNAME
+ * Uso: Consultar el nombre de un RDL por la posicion que ocupa
+ * Parametros: Entero positivo
+ * Devuelve: El nombre del RDL si esta registrado o NULL si no lo esta
+ */
+
+HB_METHOD( THDORDL_GETNAME )
+{
+    PHB_ITEM pd = hb_getHRDL();
+    PHB_ITEM pRet = NULL;
+
+    if( pd )
+    {
+        HB_USHORT nPos = hb_parni( 1 );
+
+        if( nPos &gt;= 1 )          /* Controlar el LEN del array */
+        {
+            pRet = hb_hashGetKeyAt( pd, nPos );
+        }
+    }
+
+    hb_itemReturnRelease( pRet );
+}
+
+/***
+ * Metodo: GETPFUNCBYNAME
+ * Uso: Comprueba la posicion que ocupa un RDL
+ * Parametros: Nombre del RDL
+ * Devuelve: La posicion o 0 encaso de no estar registrado
+ */
+
+HB_METHOD( THDORDL_GETPFUNCBYNAME )
+{
+    PHB_ITEM pd = hb_getHRDL();
+    PHB_ITEM pValue = NULL;
+
+    if( pd )
+    {
+        PHB_ITEM pKey = hb_param( 1, HB_IT_STRING );
+
+        if( pKey )
+        {
+            pValue = hb_hashGetItemPtr( pd, pKey, HB_HASH_AUTOADD_ACCESS );
+        }
+    }
+
+    hb_itemReturn( pValue );
+}</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p196028">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ariel</div>
+      <div class="rank">Posts: 389</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 29, 2006 01:51 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Fri Dec 02, 2016 09:01 AM
+      </div>
+      <div class="content"><p>Hola Manuel,<br>
+pregunta, los fuentes de la clase (sean .c o .prg o .loquesea), estaran disponibles para todos como la TDolphin?, en caso de que no, la clase tiene algun costo?, en caso de que no tenga costo... pues porque no liberas los fuentes?<br>
+Gracias.<br>
+Saludos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196439">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Wed Dec 14, 2016 11:20 PM
+      </div>
+      <div class="content"><!-- s:D -->
+<p><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p196461">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ariel</div>
+      <div class="rank">Posts: 389</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 29, 2006 01:51 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Thu Dec 15, 2016 10:35 AM
+      </div>
+      <div class="content"><p>???</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196473">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Thu Dec 15, 2016 04:11 PM
+      </div>
+      <div class="content"><p>Hay algun sentido en pagar o tener una clase cerrada si FWH ya da soporte a MySQL, MariaDB y MSSQL ? Incluso con xHarbour puyedes conectar a otros motores como PostgreSQL ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196515">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Fri Dec 16, 2016 08:23 AM
+      </div>
+      <div class="content"><blockquote><cite>Compuin wrote:</cite>Hay algun sentido en pagar o tener una clase cerrada si FWH ya da soporte a MySQL, MariaDB y MSSQL ? Incluso con xHarbour puyedes conectar a otros motores como PostgreSQL ?</blockquote><br>
+<br>
+Si mucho, si lo que te ofrecen es un controlador <span style="text-decoration:underline"><strong>multi base de datos</strong> </span>y además con una tremenda <span style="text-decoration:underline"><strong>velocidad</strong></span>.</div>
+    </div>
+  </div>
+  <div class="post" id="p196530">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Fri Dec 16, 2016 01:09 PM
+      </div>
+      <div class="content"><p>Si el soporte va a ser como Eagle1, no gracias</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196543">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Fri Dec 16, 2016 10:05 PM
+      </div>
+      <div class="content"><p>Alguien ha tenido algún problema con Eagle1? <br>
+He contestado a todo el mundo, he implementado todo lo que me han ido pidiendo... eso ha hecho grande a E1.<br>
+Incluso me he puesto a hacer partes de los proyectos de los usuarios. <!-- s:shock: --><img src="{SMILIES_PATH}/icon_eek.gif" alt=":shock:" title="Shocked" /><!-- s:shock: -->  <!-- s:shock: --><img src="{SMILIES_PATH}/icon_eek.gif" alt=":shock:" title="Shocked" /><!-- s:shock: --> <br>
+El mantenimiento ha sido continuado (no por 6 meses o un año sino para siempre) por el foro de E1, por email particulares y por llamadas de telefono a la gente de España.<br>
+Hay usurios de E1 por todo el mundo y a mi nadie se me ha quejado... <br>
+Hay aplicaciones hechas con FWH y E1 funcionando a tope por todo el mundo en bufetes de abogados, cadenas de gasolineras, tiendas de neumaticos, talleres, contabilidades, facturaciones etc etc...<br>
+Así que no sé qué quieres decir <!-- s:( --><img src="{SMILIES_PATH}/icon_sad.gif" alt=":(" title="Sad" /><!-- s:( --> </p>
+<p>He hecho campañas de venta de E1 que consistían en que me mandaran una copia de un donativo a alguna institución de niños huerfanos o con algún problema.<br>
+He regalado E1 a la gente que me ha dicho que no lo podía pagar...</p>
+<p>Sé que E1 ha servido de modelo a otros proyectos...</p>
+<p>Por otro lado,  en este foro creo he ayudado a los compañeros que lo han necesitado todo lo que he podido y la gente que me conoce lo sabe.</p>
+<p>Cuando me enfrasco en un proyecto lo hago con mucho esfuerzo para que sea util a todo el que lo usa y tengan buenas exeriencias.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196547">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Fri Dec 16, 2016 10:27 PM
+      </div>
+      <div class="content"><p>Lo que quise decir, y me disculpo porque me hice mal interpretar, es que el soporte con E1 en mi caso no fue satisfactorio. Reconozco que el costo es irrisorio, pero el tema del soporte es lo que me inquieta</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196554">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Sat Dec 17, 2016 09:57 AM
+      </div>
+      <div class="content"><p>Pues tendré que cambiar esos fallos y mejorar... a ver que nos innovamos.<br>
+Gracias por tu aportación.  <!-- s:oops: --><img src="{SMILIES_PATH}/icon_redface.gif" alt=":oops:" title="Embarassed" /><!-- s:oops: -->  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p196559">
+    <div class="poster">
+      <div class="name" style="color:#105289">russimicro</div>
+      <div class="rank">Posts: 409</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 31, 2010 03:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Sat Dec 17, 2016 11:54 AM
+      </div>
+      <div class="content"><p>Buen día...</p>
+<p>Uso E1, por mas de 10 años, sincronizo 35 puntos de ventas (DBF -&gt;MYSQL ..... MYSQL -&gt; DBF), en segundos tengo actualizados todos mis puntos locales-DBF, nunca me he quedado varado. Si un producto es bueno y te genera ingresos,,,, por que no pagar.</p>
+<p>Saludos </p>
+<p>JOHNSON RUSSI <br>
+Colombia</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196562">
+    <div class="poster">
+      <div class="name" style="color:#105289">csincuir</div>
+      <div class="rank">Posts: 476</div>
+      <div class="avatar"></div>
+      Joined: Sat Feb 03, 2007 06:36 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Sat Dec 17, 2016 12:27 PM
+      </div>
+      <div class="content"><p>Hola,<br>
+Yo he usado E1 por mas de 12 años ya, y con la ayuda y soporte que recibi de Manu al inicio, y su trabajo con E1, me sirvio de mucho para cambiar mi sistema que usaba DBF's a MySQL y adentrarme al mundo del SQL.<br>
+Hasta el dia de hoy no he necesitado de otra herramienta o clase, para acceder a MySQL o MariaDB desde FWH, E1 hace todo lo que necesito.</p>
+<p>Saludos desde Guatemala.</p>
+<p>Carlos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196575">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Sun Dec 18, 2016 12:29 AM
+      </div>
+      <div class="content"><p>Como lo dije para los amigos que no leyeron bien, el tema no es costo, el tema es soporte.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196593">
+    <div class="poster">
+      <div class="name" style="color:#105289">russimicro</div>
+      <div class="rank">Posts: 409</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 31, 2010 03:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Sun Dec 18, 2016 02:20 PM
+      </div>
+      <div class="content"><p>Uso E1, por mas de 10 años, y solo lo he llamado para consignarle el valor de las actualizaciones, nunca he requerido soporte para el funcionamiento</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196652">
+    <div class="poster">
+      <div class="name" style="color:#105289">lucasdebeltran</div>
+      <div class="rank">Posts: 1303</div>
+      <img class="avatar avatar-img" src="avatars/1765.jpg" alt="" loading="lazy">
+      Joined: Tue Jul 21, 2009 08:12 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO. Fuente de la clase que gestiona las RDL...</span><br>
+        Posted: Tue Dec 20, 2016 09:29 AM
+      </div>
+      <div class="content"><p>Pero sigue sin responder a lo fundamental: si los fuentes vienen incluidos o no, y qué precio tienen...</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-33269-page-2.html">2</a> (19 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

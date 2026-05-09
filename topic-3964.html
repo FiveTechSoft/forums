@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Funcion para actualizacion a traves de internet - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-3964">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Funcion para actualizacion a traves de internet</div>
+  <div class="post" id="p17505">
+    <div class="poster">
+      <div class="name" style="color:#105289">George</div>
+      <div class="rank">Posts: 729</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 18, 2005 06:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Funcion para actualizacion a traves de internet</span><br>
+        Posted: Tue Aug 22, 2006 02:36 PM
+      </div>
+      <div class="content">Esto lo desarolle para las actualizaciones automaticas a taves de internet.<br>
+Si algun compañero del foro le quiere hacer alguna mejora bienvenido.<br>
+<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FUNCTION Main()
+// En este ejemplo el nombre de nuestro programa es 'MyProgram.exe'
+// el nombre de la nueva version a bajar del server es '_MyProgram.exe'
+
+  //Añadir al inicio del programa
+
+  // Nombre de la aplicacion que esta corriendo, incluyendo la ruta
+  cPathAppliName := 	alltrim(hb_argv( 0 ))
+  nLen := len(cPathAppliName)
+  nAtNum := atnum( "\", cPathAppliName)
+  nPos := nLen - nAtNum
+
+  // Nombre de la aplicacion que esta corriendo unicamente
+  // Puede ser 'MyProgram.exe' o "_MyProgram.exe"
+  cAppliName := right(cPathAppliName, nPos)
+
+  // Nombre original de mi programa
+  cOrigAppli := alltrim(cAppliDir) + "\MyProgram.exe"
+
+  // Ck si esta corriendo el update recien bajado
+	IF upper((cPathAppliName)) &lt;&gt; upper((cOrigAppli))
+		 // Esta corriendo la nueva version
+
+		 // Borrar la version original 'MyProgram.exe'
+		 ferase(cOrigAppli) &lt;&gt; 0
+		 syswait(1)
+
+		 // Renombrar la nueva version con el nombre de mi programa original
+		 RENAME  "_MyProgram.exe" TO "MyProgram.exe"
+	ENDIF
+
+	/*
+
+	Su codigo de su programa
+
+	*/
+
+
+RETURN (.T.)
+
+
+FUNCTION CkUpdate()
+	// Esta es la funcion que se debe ejecutar para
+	//verificar si existe una nueva version del programa
+
+	dbselectarea("PATHFILE")                     // Archivo donde estan los parametros del server
+	cAlias := alias()
+	GO 1
+
+	cServFtp := alltrim((cAlias)-&gt;SERVER) // Direccion del server
+	cUserFTp := alltrim((cAlias)-&gt;USER)   // User  Name
+	cPassFTp := alltrim((cAlias)-&gt;PASSW)   // Password
+	cServPath := alltrim((cAlias)-&gt;SERPATH) // Ruta del server donde esta '_MyProgram.exe'
+	cVersion2 := (cAlias)-&gt;VERSION          // Version actual de 'MyProgram.exe'
+
+	Dbcloseall()
+
+	// Ir al server a bajar la informacion de la nueva version, si existe
+	IF !GetUpdateFromServer(cServFtp, cUserFTp, cPassFTp, cServPath, cVersion2 )
+		// No existe nueva version o la conexion al server fallo
+		RETURN .F.
+	ENDIF
+
+	// Se bajo del server la nueva version '_MyProgram.exe'
+	cFileExe := (cAppliDir) + "\_MyProgram.exe"
+
+	OpenFiles() // Funcion para abrir los archivos (tablas) de la base de datos
+
+	// Correr la nueva version bajada del server ''_MyProgram.exe'
+	WinExec("_MyProgram.exe")
+
+	// 'Matar' el programa actual 'MyProgram.exe'
+	PostQuitMessage(0)
+	__Quit()
+
+RETURN (.T.)
+
+
+Function GetUpdateFromServer( cServFtp, cUserFTp, cPassFTp, cServPath, cVersion2 )
+
+	Local oInternet, oFtp, oMeter, oText
+	Local cTitle := "Connecting to SDN Server", lExistAlt := .F.
+	LOCAL hInternet, hConnect, cAlias, cAlias1, cNewTitle, lGetFileAll := .F.
+
+	PRIVATE oSay
+
+	// Dialogo con un mensaje indicando la conexion al server
+	DEFINE DIALOG oDlg RESOURCE "DIALOG_13";
+		TITLE cTitle
+
+	REDEFINE SAY oSay ID 55 of oDlg
+
+	ACTIVATE DIALOG oDlg NOWAIT
+
+	oSay:SetText ("Checking for update....")
+
+	hLib = LOADLIBRARY( "wininet.dll" )
+
+	hInternet = INETOPEN( "Anystring", INTERNET_OPEN_TYPE_DIRECT, 0, 0, 0 )
+
+	hConnect = INETCONNECT( hInternet, cServFtp, INTERNET_INVALID_PORT_NUMBER,;
+		cUserFTp, cPassFTp, INTERNET_SERVICE_FTP, 0, 0 )
+
+	IF hConnect = 0
+		MsgAlert("Connection to server failed!" + chr(13)+;
+			"Please check your internet connection and try later.")
+		oDlg:end()
+		OpenFiles()  // Funcion para abrir los archivos (tablas) de la base de datos
+		RETURN .F.
+	ENDIF
+
+
+	// P_VERS.DBF es un archivo con un campo con el No. de la version
+	cDownUPD := cAppliDir + "\P_VERS.DBF"
+	cLastUPD := cServPath + "/P_VERS.DBF"
+
+	lGetLastUPD := FTPGETFILE( hConnect, cLastUPD, cDownUPD, 0, FILE_ATTRIBUTE_ARCHIVE, 0, 0 )
+
+	IF !lGetLastUPD
+		MsgAlert("P_VERS Downloaded failed!" + chr(13) +;
+			"Please check your internet connection!")
+		INETCLOSEHANDLE( hConnect )
+		INETCLOSEHANDLE( hInternet )
+		FREELIBRARY( hLib )
+		OpenFiles()
+		oDlg:End()
+		RETURN .F.
+	ENDIF
+
+	OpenFiles()
+
+	dbselectarea("P_VERS")
+	cAlias := alias()
+	GO 1
+	cVersion1 := (cAlias)-&gt;VERSION
+
+	dbcloseall()
+
+	// Se compara el No. de la version del programa corriendo
+	// con el No. de la version del programa en el server
+	IF alltrim(cVersion1) == alltrim(cVersion2)
+
+		// Si es el mismo numero no se baja la version del programa que esta en el Server
+		Msginfo(" You already have the most recent version.")
+		INETCLOSEHANDLE( hConnect )
+		INETCLOSEHANDLE( hInternet )
+		FREELIBRARY( hLib )
+		OpenFiles()
+		oDlg:End()
+		RETURN .F.
+	ENDIF
+
+
+	// Si son diferentes se baja la version del programa que esta en el Server
+	cDataSDN := cServPath + "/_MyProgram.exe"
+	cPathDir := cAppliDir + "\_MyProgram.exe"
+
+	oDlg:End()
+
+	MsgRun( "Downloading Update Files Please Wait...", "My Program",;
+		{ || lGetFileAll := FTPGETFILE( hConnect, cDataSDN, cPathDir, 0, FILE_ATTRIBUTE_ARCHIVE, 0, 0 ) } )
+
+	IF !lGetFileAll
+		MsgAlert("File Downloaded failed!" + chr(13) +;
+			"Please check your internet connection!")
+		INETCLOSEHANDLE( hConnect )
+		INETCLOSEHANDLE( hInternet )
+		FREELIBRARY( hLib )
+		OpenFiles()
+		RETURN .F.
+	ENDIF
+
+	INETCLOSEHANDLE( hConnect )
+	INETCLOSEHANDLE( hInternet )
+	FREELIBRARY( hLib )
+
+	oDlg:end()
+RETURN .T.</code></pre></div><br>
+<br>
+<br>
+George</div>
+    </div>
+  </div>
+  <div class="post" id="p17514">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurilio Viana</div>
+      <div class="rank">Posts: 252</div>
+      <img class="avatar avatar-img" src="avatars/217.gif" alt="" loading="lazy">
+      Joined: Tue Oct 25, 2005 02:48 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Funcion para actualizacion a traves de internet</span><br>
+        Posted: Tue Aug 22, 2006 04:34 PM
+      </div>
+      <div class="content"><p>Muchas gracias, George!!!</p>
+<p>Saludos de Brasil<br>
+Maurilio</p></div>
+    </div>
+  </div>
+  <div class="post" id="p17518">
+    <div class="poster">
+      <div class="name" style="color:#105289">George</div>
+      <div class="rank">Posts: 729</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 18, 2005 06:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Funcion para actualizacion a traves de internet</span><br>
+        Posted: Tue Aug 22, 2006 05:17 PM
+      </div>
+      <div class="content">A tu orden Maurilio<br>
+<br>
+Aqui estan unos DEFINES que necesita para el manejo de transferencia de archivos a traves de internet. Hice varias pruebas y estas funciones me trabajan perfectamente en FWH 2.5 + xHarbour builder FEB 2005. <br>
+<br>
+Elimine los dbcloseall() y los openfiles(). Ahora solo cierro el area de P_VERS  que es la que se sobreescribe con el nuevo numero de la version.<br>
+<br>
+<br>
+George <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//
+// File attributes
+//
+
+#define FILE_ATTRIBUTE_READONLY  1
+#define FILE_ATTRIBUTE_HIDDEN    2
+#define FILE_ATTRIBUTE_SYSTEM    4
+#define FILE_ATTRIBUTE_DIRECTORY 16
+#define FILE_ATTRIBUTE_ARCHIVE   32
+#define FILE_ATTRIBUTE_NORMAL    128
+#define FILE_ATTRIBUTE_TEMPORARY 256
+
+
+//
+// access types for InternetOpen()
+//
+
+#define INTERNET_OPEN_TYPE_PRECONFIG                    0   // use registry configuration
+#define INTERNET_OPEN_TYPE_DIRECT                       1   // direct to net
+#define INTERNET_OPEN_TYPE_PROXY                        3   // via named proxy
+#define INTERNET_OPEN_TYPE_PRECONFIG_WITH_NO_AUTOPROXY  4   // prevent using java/script/INS
+
+
+//
+// manifests
+//
+
+#define INTERNET_INVALID_PORT_NUMBER    0           // use the protocol-specific default
+
+#define INTERNET_DEFAULT_FTP_PORT       21      // default for FTP servers
+#define INTERNET_DEFAULT_GOPHER_PORT    70      //    "     " gopher "
+#define INTERNET_DEFAULT_HTTP_PORT      80      //    "     " HTTP   "
+#define INTERNET_DEFAULT_HTTPS_PORT     443     //    "     " HTTPS  "
+#define INTERNET_DEFAULT_SOCKS_PORT     1080    // default for SOCKS firewall servers.
+
+
+//
+// service types for InternetConnect()
+//
+
+#define INTERNET_SERVICE_FTP     1
+#define INTERNET_SERVICE_GOPHER  2
+#define INTERNET_SERVICE_HTTP    3
+
+//
+// flags for FTP
+//
+
+#define INTERNET_FLAG_TRANSFER_ASCII  1
+#define INTERNET_FLAG_TRANSFER_BINARY 2</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p17520">
+    <div class="poster">
+      <div class="name" style="color:#105289">Frafive</div>
+      <div class="rank">Posts: 189</div>
+      <div class="avatar"></div>
+      Joined: Wed Apr 05, 2006 09:48 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Funcion para actualizacion a traves de internet</span><br>
+        Posted: Tue Aug 22, 2006 06:10 PM
+      </div>
+      <div class="content"><p>Muy bueno George</p>
+<p>Y para subir un archivo a un sitio ftp, como se haria  ?</p>
+<p>Un saludo y gracias desde ya</p></div>
+    </div>
+  </div>
+  <div class="post" id="p17533">
+    <div class="poster">
+      <div class="name" style="color:#105289">George</div>
+      <div class="rank">Posts: 729</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 18, 2005 06:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Funcion para actualizacion a traves de internet</span><br>
+        Posted: Tue Aug 22, 2006 07:55 PM
+      </div>
+      <div class="content">Aqui tienes la funcion para el upload y tambien los wrapper de las funciones que necesitas para manejar las transferencias<br>
+Todo esto combinado con los codigo anteriores te permite la transferencia de archivos y la actualizaciones de tu aplicacion * EN TIEMPO REAL * y sin tener abortar la aplicacion ni usar batch, a traves de internet.<br>
+<br>
+Quizas unos de los guru del foro se anima y basado en estas funciones hace una clase que podamos integrar facilmente en nuestra aplicaciones.<br>
+<br>
+George<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FUNCTION SendToFtp()
+
+    LOCAL hInternet, hConnect
+
+    hLib = LOADLIBRARY( "wininet.dll" )
+
+    hInternet = INETOPEN( "Anystring", INTERNET_OPEN_TYPE_DIRECT, 0, 0, 0 )
+
+    hConnect = INETCONNECT( hInternet, "ftp address", INTERNET_INVALID_PORT_NUMBER,;
+    	 "userid", "password", INTERNET_SERVICE_FTP, 0, 0 )
+
+    ? FTPPUTFILE( hConnect, "local file name", "remote file name", 0, 0 )
+
+    INETCLOSEHANDLE( hConnect )
+
+    INETCLOSEHANDLE( hInternet )
+
+    FREELIBRARY( hLib )
+
+    RETURN NIL
+
+
+DLL32 FUNCTION INETOPEN( cAgent AS LPSTR, nAccessType AS DWORD, cProxyName AS LPSTR, cProxyBypass AS LPSTR, nFlags AS DWORD ) AS LONG;
+      PASCAL FROM "InternetOpenA" LIB hLib
+
+DLL32 FUNCTION INETCLOSEHANDLE( hInternet AS LONG ) AS BOOL;
+      PASCAL FROM "InternetCloseHandle" LIB hLib
+
+DLL32 FUNCTION INETCONNECT( hInternet AS LONG, cServerName AS LPSTR,;
+nServerPort AS LONG, cUserName AS LPSTR, cPassword AS LPSTR, nService AS DWORD, nFlags AS DWORD, @nContext AS PTR ) AS LONG;
+      PASCAL FROM "InternetConnectA" LIB hLib
+
+DLL32 FUNCTION FTPGETFILE( hConnect AS LONG, cRemoteFile AS LPSTR, cNewFile AS LPSTR,;
+	 nFailIfExists AS LONG, nFlagsAndAttribs AS DWORD, nFlags AS DWORD, @nContext AS PTR ) AS BOOL;
+      PASCAL FROM "FtpGetFileA" LIB hLib
+
+DLL32 FUNCTION FTPPUTFILE( hConnect AS LONG, cLocalFile AS LPSTR, cNewRemoteFile AS LPSTR,;
+	 nFlags AS DWORD, @nContext AS PTR ) AS BOOL;
+      PASCAL FROM "FtpPutFileA" LIB hLib</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

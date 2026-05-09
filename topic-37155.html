@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>TDatabase: Relating Tables - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-37155">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> TDatabase: Relating Tables</div>
+  <div class="post" id="p221800">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">TDatabase: Relating Tables</span><br>
+        Posted: Fri May 10, 2019 05:32 PM
+      </div>
+      <div class="content">All of us are familiar with setting relationships between tables, both for one-to-one relationship and master-child relationship.<br>
+<br>
+One-to-one relationship:<br>
+SET RELATION TO &lt;exp&gt; INTO &lt;other_table_alias&gt;<br>
+<br>
+One-to-many (parent-child) relationship:<br>
+SET RELATION TO &lt;exp&gt; INTO &lt;child_table_alias&gt; SCOPED<br>
+<br>
+All may not be very familiar with setting relationships between two database objects using TDatabase. The intent of this post is to explain this in detail with examples and comparing with RDD level relations.<br>
+<br>
+For the purpose of this discussion, we use \fwh\samples\customer.dbf and \fwh\samples\states.dbf. We know that the field &quot;STATE&quot; in customer.dbf corresponds to the field &quot;CODE&quot; in the states.dbf. <br>
+<br>
+<strong><span style="font-size:150%">1) ONE-TO-ONE RELATIONSHIP:<br>
+</span></strong><br>
+Every record in customer.dbf has one corresponding record in states.dbf where customer-state = states-&gt;code.<br>
+<br>
+Syntax for RDD &amp; TDatabase<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// RDD
+SELECT CUSTOMER
+SET RELATION TO STATE INTO STATES
+
+// TDatabase
+oCustomers:SetRelation( oStates, "STATE" )</code></pre></div><br>
+<br>
+This sample shows usage first for RDD and then TDatabase, achieving the same results:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+REQUEST DBFCDX
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   RDDSETDEFAULT( "DBFCDX" )
+   SET DELETED ON
+
+   // Make sure the tables are indexed
+   FERASE( "STATES.CDX" )
+   USE STATES
+   FW_CdxCreate()
+   CLOSE STATES
+
+   FERASE( "CUSTOMER.CDX" )
+   USE CUSTOMER
+   FW_CdxCreate()
+   CLOSE CUSTOMER
+   //
+
+   // Now, the actual code
+   RelateRDD_OneToOne()
+   RelateTDatabase_OneToOne()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function RelateRDD_OneToOne()
+
+   field STATE
+
+   USE STATES NEW SHARED
+   SET ORDER TO TAG CODE
+
+   USE CUSTOMER NEW SHARED
+   SET RELATION TO STATE INTO STATES
+   GO TOP
+
+   XBROWSER "CUSTOMER" COLUMNS "First AS FirstName", "City", "STATES-&gt;NAME AS StateName"
+
+   CLOSE DATA
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function RelateTDatabase_OneToOne()
+
+   local oStates, oCustomers
+
+   oStates     := TDataBase():Open( nil, "STATES", "DBFCDX", .t. )
+   oStates:SetOrder( "CODE" )
+
+   oCustomers  := TDataBase():Open( nil, "CUSTOMER", "DBFCDX", .t. )
+   oCustomers:SetRelation( oStates, "STATE" )
+   oCustomers:GoTop()
+
+#if FW_VersionNo &lt; 19040
+   oStates:load()
+   oCustomers:AddCol( "StateName", { || oStates:Load(), oStates:Name } )
+#else
+   oCustomers:AddCol( "StateName", { || oStates:Name } ) // Simplified in FWH1904
+#endif
+
+   XBROWSER oCustomers COLUMNS "First AS FirstName", "City", "StateName"
+
+   oCustomers:Close()
+   oStates:Close()
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+<a href="https://imageshack.com/i/pnKT7mwyp" rel="noopener"><img src="https://imagizer.imageshack.com/v2/xq90/923/KT7mwy.png" alt="" loading="lazy"></a><br>
+<br>
+<strong><span style="font-size:150%">ONE-TO-MANY RELATIONSHIP</span><br>
+(also called PARENT-CHILD/MASTER-CHILD)<br>
+<br>
+Also called SCOPED RELATIONSHIP in DBF terminology.</strong><br>
+<br>
+In this case, one record in the master table corresponds to one or more records in the child table.<br>
+<br>
+In our example, for every record in the states.dbf there are many records in the customer.dbf with the same state code. When we move from one record to another in the states.dbf, we want to retrieve only and all records in customer.dbf having the state code.<br>
+<br>
+Syntax:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// RDD
+SELECT STATES
+SET RELATION TO CODE INTO CUSTOMER SCOPED
+
+// TDatabase
+oStates:SetRelation( oCustomers, "CODE", .T. ) // 3rd parameter .T. for scoped</code></pre></div><br>
+<br>
+This sample shows usage first for RDD and then TDatabase, achieving the same results:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+REQUEST DBFCDX
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   RDDSETDEFAULT( "DBFCDX" )
+   SET DELETED ON
+
+   // Make sure the tables are indexed
+   FERASE( "STATES.CDX" )
+   USE STATES
+   FW_CdxCreate()
+   CLOSE STATES
+
+   FERASE( "CUSTOMER.CDX" )
+   USE CUSTOMER
+   FW_CdxCreate()
+   CLOSE CUSTOMER
+   //
+
+   // Now, the actual code
+   RelateRDD_Scoped()
+   RelateTDatabase_Scoped()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function RelateRDD_Scoped()
+
+   field CODE
+
+   local oDlg, oFont, oBrwStates, oBrwCust
+
+   USE CUSTOMER NEW SHARED
+   SET ORDER TO TAG STATE
+
+   USE STATES NEW SHARED
+   SET RELATION TO CODE INTO CUSTOMER SCOPED
+   GO TOP
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-14
+   DEFINE DIALOG oDlg SIZE 800,600 PIXEL TRUEPIXEL FONT oFont
+
+   @ 20,20 XBROWSE oBrwStates SIZE 250,-20 PIXEL OF oDlg ;
+      DATASOURCE "STATES" AUTOCOLS ;
+      CELL LINES NOBORDER
+
+   WITH OBJECT oBrwStates
+      :AutoFit()
+      :bChange    := { || oBrwCust:GoTop() }
+      //
+      :CreateFromCode()
+   END
+
+   @ 20,250 XBROWSE oBrwCust SIZE -20,-20 PIXEL OF oDlg ;
+      DATASOURCE "CUSTOMER" COLUMNS "FIRST","CITY","STATE" ;
+      CELL LINES NOBORDER
+
+   WITH OBJECT oBrwCust
+      //
+      :CreateFromCode()
+   END
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oFont
+
+   CLOSE DATA
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function RelateTDatabase_Scoped()
+
+   local oStates, oCustomers
+   local oDlg, oFont, oBrwStates, oBrwCust
+
+   oCustomers  := TDataBase():Open( nil, "CUSTOMER", "DBFCDX", .t. )
+   oCustomers:SetOrder( "STATE" )
+
+   oStates     := TDataBase():Open( nil, "STATES", "DBFCDX", .t. )
+   oStates:SetRelation( oCustomers, "CODE", .T. )
+   oStates:GoTop()
+   oCustomers:Load()
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-14
+   DEFINE DIALOG oDlg SIZE 800,600 PIXEL TRUEPIXEL FONT oFont
+
+   @ 20,20 XBROWSE oBrwStates SIZE 250,-20 PIXEL OF oDlg ;
+      DATASOURCE oStates AUTOCOLS ;
+      CELL LINES NOBORDER
+
+   WITH OBJECT oBrwStates
+      :AutoFit()
+      :bChange    := { || oBrwCust:GoTop() }
+      //
+      :CreateFromCode()
+   END
+
+   @ 20,250 XBROWSE oBrwCust SIZE -20,-20 PIXEL OF oDlg ;
+      DATASOURCE oCustomers COLUMNS "FIRST","CITY","STATE" ;
+      CELL LINES NOBORDER
+
+   WITH OBJECT oBrwCust
+      //
+      :CreateFromCode()
+   END
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oFont
+
+   oStates:Close()
+   oCustomers:Close()
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+<a href="https://imageshack.com/i/pl8r6Vqdp" rel="noopener"><img src="https://imagizer.imageshack.com/v2/xq90/921/8r6Vqd.png" alt="" loading="lazy"></a></div>
+    </div>
+  </div>
+  <div class="post" id="p221831">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TDatabase: Relating Tables</span><br>
+        Posted: Fri May 10, 2019 10:53 PM
+      </div>
+      <div class="content"><p>THANKSSSSS</p></div>
+    </div>
+  </div>
+  <div class="post" id="p221848">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TDatabase: Relating Tables</span><br>
+        Posted: Sat May 11, 2019 07:22 PM
+      </div>
+      <div class="content"><p>Thank you very much for this guide !!</p>
+<p>I can do thinks much easier if I do it this way...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241662">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: TDatabase: Relating Tables</span><br>
+        Posted: Fri May 28, 2021 02:34 PM
+      </div>
+      <div class="content">Can this also work with multiple dbf's linked ?<br>
+<br>
+I believe that only 1 set relation to... scoped can be active at a time... (Not sure)<br>
+<br>
+I want a one Xbrowse with 4 dbf linked by a product_id (See a line with product ID and prices from 4 different dbf's)<br>
+<br>
+set relation to nofoto-&gt;id into ean scoped<br>
+set relation to nofoto-&gt;id into tododbf scoped<br>
+<br>
+//  Will only keep the last live...<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   aVelden2 :=  { ;
+   { "ID"       , "Id"      ,nil,  90 }, ;
+   { "shoptrad" , "Shop"    ,nil,  35 }, ;
+   { "naam"     , "Benaming",nil, 300 }, ;
+   { "Prijs"    , "Verkoop",nil,   90 }, ;
+   {  { |x| If( x == nil, tododbf-&gt;bruto, tododbf-&gt;bruto ) },"Lev_Bruto",nil,90 }, ;
+   {  { |x| If( x == nil, ean-&gt;bruto, ean-&gt;bruto ) },"Ean_Bruto",nil,90 }, ;
+   { "gewicht"  , "Gewicht" ,nil, 100 }, ;
+   { "samenstel", "Samenstelling" ,nil, 150 }, ;
+   { "fabrikan" , "Merk"    ,nil, 100 }, ;
+   { "pagina"   , "Pag"     ,nil,  50 }, ;
+   { "reflev"   , "RefLev"  ,nil,  70 }, ;
+   { "memotxt"  , "Memotxt" ,nil, 250 }}
+
+
+   @ 0,0 XBROWSE oBrw2 size -10,-10 PIXEL OF  oFld:aDialogs[ 2 ] font oFont ;
+      DATASOURCE "nofoto";
+      COLUMNS aVelden2;
+      AUTOSORT CELL LINES NOBORDER FOOTERS</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

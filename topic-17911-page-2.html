@@ -1,0 +1,1016 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Interfacing with Dicom sistems - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-17911">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Interfacing with Dicom sistems</div>
+<div class="pagination">Page: <a href="topic-17911.html">1</a> <strong>2</strong> <a href="topic-17911-page-3.html">3</a> (42 posts)</div>  <div class="post" id="p93800">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Wed Jan 27, 2010 10:20 AM
+      </div>
+      <div class="content">Hi all (and especially Massimo)<br>
+<br>
+Whilst I don't have access to a DICOM based camera just at the moment (but will have soon), I have started writing some code with a view to making a start on this project.<br>
+<br>
+I have written a base class (TDicomVR) for a DICOM value representation (VR).  I would intend deriving classes for the various types (27 ?) of value representations from this base class.<br>
+<br>
+To date I have written three such derived classes: TDicomVRUI (unique identifier), TDicomVRUL (unsigned long) and TDicomVRUS (unsigned short).  These were picked to enable me to build a C-Echo Request class (TEchoReqBody).<br>
+<br>
+I have not yet written any code to actually send this request out on the LAN/WAN nor to capture and decode the expected response.<br>
+<br>
+The following code includes the above classes and uses them to build a C-Echo Request as per the book referenced in above posts and the string it builds matches that given in a table in the book with the exception of 1 byte which I think represents an error in the book.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// dicom.prg
+
+// initial experimental code aiming for DICOM capabilities from software written in [x]Harbour.
+
+#include "hbclass.ch"
+
+FUNCTION Main()
+
+  obj_ThisBody := TCEchoReqBody():New( "0020" )
+  ShowByteStream( obj_ThisBody:ByteStream() )
+  InKey( 0 )
+  QUIT
+
+/**************************************************************\
+*                                                              *
+*    CLASS TCEchoReqBody - DICOM C-Echo Request (DICOM-ping)   *
+*                                                              *
+*  Used to verify one DICOM AE is connected to another         *
+*                                                              *
+\**************************************************************/
+
+CLASS TCEchoReqBody
+
+  DATA obj_GroupLength
+  DATA obj_AffServClassUID 
+  DATA obj_CommandField    
+  DATA obj_MessageID       
+  DATA obj_DataSetType     
+
+  METHOD New( var_ID )
+  METHOD ByteStream()
+
+ENDCLASS
+
+METHOD New( var_ID ) CLASS TCEchoReqBody
+
+  LOCAL int_GroupLength
+
+  ::obj_AffServClassUID := TDicomVRUI():New( "0000", "0002", "1.2.840.10008.1.1" )
+  ::obj_CommandField    := TDicomVRUS():New( "0000", "0100", "0030" )
+  ::obj_MessageID       := TDicomVRUS():New( "0000", "0110", var_ID )
+  ::obj_DataSetType     := TDicomVRUS():New( "0000", "0800", "0101" )
+  int_GroupLength := ::obj_AffServClassUID:Length() + ::obj_CommandField:Length() + ::obj_MessageID:Length() + ::obj_DataSetType:Length()
+  ::obj_GroupLength     := TDicomVRUL():New( "0000", "0000", int_GroupLength )
+
+  RETURN self
+
+METHOD ByteStream() CLASS TCEchoReqBody
+
+  RETURN ::obj_GroupLength:ByteStream() + ::obj_AffServClassUID:ByteStream() + ::obj_CommandField:ByteStream() + ;
+    ::obj_MessageID:ByteStream() + ::obj_DataSetType:ByteStream()
+
+/**************************************************************\
+*                                                              *
+*         CLASS TDicomVR - DICOM Value Representation          *
+*                                                              *
+*  This is the base class from which the various DICOM value   *
+*  representations (there are currently 27 defined) are        *
+*  derived.                                                    *
+*                                                              *
+\**************************************************************/
+
+CLASS TDicomVR
+
+  DATA str_Group
+  DATA str_Element
+  DATA str_DataLength
+  DATA str_Data
+
+  METHOD New() CONSTRUCTOR
+  METHOD SetGroupHex( str_HexGroup )
+  METHOD SetElementHex( str_HexElement ) 
+  METHOD SetLength( int_Length )
+  METHOD ByteStream()
+  METHOD Length() 
+
+ENDCLASS
+
+METHOD New() CLASS TDicomVR
+
+  RETURN self
+
+METHOD SetGroupHex( str_HexGroup ) CLASS TDicomVR
+
+  LOCAL int_Group
+
+  int_Group := HexToNum( str_HexGroup )
+  ::str_Group := Chr( int_Group % 256 ) + Chr( Int( int_Group / 256 ) )
+
+  RETURN nil
+
+METHOD SetElementHex( str_HexElement ) CLASS TDicomVR
+
+  LOCAL int_Element
+
+  int_Element := HexToNum( str_HexElement )
+  ::str_Element := Chr( int_Element % 256 ) + Chr( Int( int_Element / 256 ) )
+
+  RETURN nil
+
+METHOD SetLength( int_Length ) CLASS TDicomVR
+
+  LOCAL int_ThisByte 
+
+  int_ThisByte := int_Length % 256
+  ::str_DataLength := Chr( int_ThisByte )
+  int_Length := ( int_length - int_ThisByte ) / 256
+  int_ThisByte := int_Length % 256
+  ::str_DataLength += Chr( int_ThisByte )
+  int_Length := ( int_length - int_ThisByte ) / 256
+  int_ThisByte := int_Length % 256
+  ::str_DataLength += Chr( int_ThisByte )
+  int_Length := ( int_length - int_ThisByte ) / 256
+  int_ThisByte := int_Length % 256
+  ::str_DataLength += Chr( int_ThisByte )
+
+  RETURN nil
+
+METHOD ByteStream() CLASS TDicomVR
+
+  RETURN ::str_Group + ::str_Element + ::str_DataLength + ::str_Data
+
+METHOD Length() CLASS TDicomVR
+
+  RETURN 8 + Len( ::str_Data )
+
+/******************************************************************\
+*                                                                 *
+* CLASS TDicomVRUI - DICOM Value Representation Unique Identifier *
+*                                                                 *
+* A character string containing a UID that is used to uniquely    *
+* identify a wide variety of items.                               *
+*                                                                 *
+\******************************************************************/
+
+CLASS TDicomVRUI FROM TDicomVR
+
+  METHOD New( str_Data )
+
+ENDCLASS
+
+METHOD New( str_Group, str_Element, str_Data ) CLASS TDicomVRUI
+
+  LOCAL int_Length 
+
+  ::SetGroupHex( str_Group )
+  ::SetElementHex( str_Element )
+
+  // maximum acceptable length for data in a UI is 64 characters
+  int_Length := Len( str_Data )
+  IF int_Length &gt; 64
+    str_Data := SubStr( str_Data, 1, 64 )
+    int_Length := 64
+  ENDIF
+
+  // data must be an even number of bytes - if odd pad with 0x00
+  IF int_Length % 2 == 1
+    str_Data += Chr( 0 )
+    int_Length += 1
+  ENDIF
+
+  // set data and length
+  ::str_Data := str_Data
+  ::SetLength( int_Length )
+
+  RETURN self
+
+/**************************************************************\
+*                                                              *
+*  CLASS TDicomVRUL - DICOM Value Representation Unsigned Long *
+*                                                              *
+*  Unsigned binary integer 32 bits (4 bytes) in length         *
+*                                                              *
+\**************************************************************/
+
+CLASS TDicomVRUL FROM TDicomVR
+
+  METHOD New( str_Group, str_Element, var_Data ) CONSTRUCTOR
+  METHOD Length()
+
+ENDCLASS
+
+METHOD New( str_Group, str_Element, var_Data ) CLASS TDicomVRUL
+
+  LOCAL int_Data
+
+  ::SetGroupHex( str_Group )
+  ::SetElementHex( str_Element )
+  ::SetLength( 4 )  
+  IF ValType( var_Data ) == "C"
+    int_Data := HexToNum( var_Data )
+   ELSE
+    int_Data := var_Data
+  ENDIF
+  int_ThisByte := int_Data % 256
+  ::str_Data := Chr( int_ThisByte )
+  int_Data := ( int_Data - int_ThisByte ) / 256
+  int_ThisByte := int_Data % 256
+  ::str_Data += Chr( int_ThisByte )
+  int_Data := ( int_Data - int_ThisByte ) / 256
+  int_ThisByte := int_Data % 256
+  ::str_Data += Chr( int_ThisByte )
+  int_Data := ( int_Data - int_ThisByte ) / 256
+  int_ThisByte := int_Data % 256
+  ::str_Data += Chr( int_ThisByte )
+
+  RETURN self
+
+METHOD Length() CLASS TDicomVRUL
+
+  RETURN 12
+
+/**************************************************************\
+*                                                              *
+* CLASS TDicomVRUS - DICOM Value Representation Unsigned Short *
+*                                                              *
+*  Unsigned binary integer 16 bits (2 bytes) in length         *
+*                                                              *
+\**************************************************************/
+
+CLASS TDicomVRUS FROM TDicomVR
+
+  METHOD New( str_Group, str_Element, var_Data ) CONSTRUCTOR
+  METHOD Length()
+
+ENDCLASS
+
+METHOD New( str_Group, str_Element, var_Data ) CLASS TDicomVRUS
+
+  LOCAL int_Data 
+
+  ::SetGroupHex( str_Group )
+  ::SetElementHex( str_Element )
+  ::SetLength( 2 )  
+  IF ValType( var_Data ) == "C"
+    int_Data := HexToNum( var_Data )
+   ELSE
+    int_Data := var_Data
+  ENDIF
+  ::str_Data := Chr( int_Data % 256 ) + Chr( Int( int_Data / 256 ) )
+
+  RETURN self
+
+METHOD Length() CLASS TDicomVRUS
+
+  RETURN 10
+  
+FUNCTION ShowByteStream( str_Stream ) 
+
+  LOCAL int_StreamLength
+
+  int_StreamLength := Len( str_Stream )
+  FOR ii = 1 TO int_StreamLength
+    ? "Byte", Str( ii, 3, 0 ), "=&gt;", Str( Asc( str_Stream[ii] ), 3, 0), "Decimal or", NumToHex( Asc( str_Stream[ii] ), 2 ), "hex"
+  NEXT</code></pre></div><br>
+<br>
+Any comments / suggestions happily received.</div>
+    </div>
+  </div>
+  <div class="post" id="p93801">
+    <div class="poster">
+      <div class="name" style="color:#105289">Massimo Linossi</div>
+      <div class="rank">Posts: 512</div>
+      <img class="avatar avatar-img" src="avatars/163.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 10:38 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Wed Jan 27, 2010 10:36 AM
+      </div>
+      <div class="content"><p>Wow !!! You're really fast. Now i must ask if there is a way to go in that<br>
+clinic where there is a Dicom system and to go near the machine.<br>
+Maybe I can make some tests in a Pc connected in the net and assign it as a <br>
+fake server, not the main one.<br>
+I'll keep you informed if there are some possibilities to make this experiment.<br>
+Thanks a lot.<br>
+Massimo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p93804">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Wed Jan 27, 2010 11:36 AM
+      </div>
+      <div class="content">Hi Massimo<br>
+<br>
+I have some classes from my applications that access my [x]Harbour based client-server data base server that should adapt fairly easily to sending such a request and waiting for a reply, I think.  But I need to know a bit more about the DICOM setup of the camera that I will have access to such as IP address (should be easy enough), port number(s).  There may well be other setup details needed as well - I have to do more research in that area.<br>
+<br>
+That code (as used to access data base server - that is not yet adapted to our prupose) is as follows:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Socket.prg
+
+#include "hbclass.ch"
+
+CLASS TSocket
+
+  CLASSDATA log_Initialised INIT .F.
+  DATA str_IPAddress
+  DATA int_PortNumber
+  DATA pSocket
+  DATA log_Connected
+  DATA str_Data
+
+  METHOD New() CONSTRUCTOR
+  METHOD SetIP( str_IPAddress )
+  METHOD SetPort( int_PortNumber )
+  METHOD CreateQueryObject()
+  METHOD Connect()
+  METHOD Send( cMessage )
+  METHOD Receive()
+  METHOD Close()
+  METHOD SendReceive( cMessage )
+  METHOD CleanUp()
+
+ENDCLASS
+
+METHOD New() CLASS TSocket
+
+  ::str_IPAddress := "127.0.0.1"
+  ::int_PortNumber := 1800
+  IF !::log_Initialised
+     INetInit()
+     ::log_Initialised := .T.
+  ENDIF
+
+  RETURN self
+
+METHOD SetIP( str_IPAddress ) CLASS TSocket
+
+  ::str_IPAddress := AllTrim( str_IPAddress )
+
+  RETURN nil
+
+
+METHOD SetPort( int_PortNumber ) CLASS TSocket
+
+  ::int_PortNumber := int_PortNumber
+
+  RETURN nil
+
+
+METHOD CreateQueryObject()
+
+  RETURN( TQuery():New( self ) )
+
+
+METHOD Connect() CLASS TSocket
+
+  LOCAL log_OK
+  LOCAL log_Retry
+
+  log_Retry := .T.
+  DO WHILE log_Retry
+    log_OK := .T.
+    TRY
+      ::pSocket := INetConnect( ::str_IPAddress, ::int_PortNumber )
+    CATCH
+      MsgInfo( "Unable to connect to data server" )
+      log_OK := .F.
+    END
+    IF log_OK
+      IF INetErrorCode( ::pSocket ) == 0
+        ::log_Connected := .T.
+        RETURN .T.
+       ELSE
+        ? "Socket error:", INetErrorDesc( ::pSocket )
+      ENDIF
+    ENDIF
+    log_OK := .F.
+    ::log_Connected := .F.
+    // ? "Press [Esc] to exit, [Enter] to retry"
+    // IF InKey( 0 ) == 27
+    IF !MsgYesNo( "Emphasis can't communicate with the data server. Do you want to retry?", "Communication Error" ) 
+      INetCleanUp()
+      log_OK := .F.
+      ProgExit()
+    ENDIF
+  ENDDO
+
+
+METHOD Send( var_Message ) CLASS TSocket
+
+  INetSend( ::pSocket, var_Message )
+
+  RETURN nil
+
+
+METHOD Receive() CLASS TSocket
+
+  LOCAL str_Buffer
+  LOCAL int_Bytes
+
+  INetSetTimeOut( ::pSocket, 1000 )
+  ::str_Data := ""
+  int_Bytes := 1
+  DO WHILE int_Bytes &gt; 0
+    ? "in loop"
+    str_Buffer := Space( 1024 )
+    int_Bytes := INetRecv( ::pSocket, @str_Buffer )
+    ? int_Bytes
+    ::str_Data += Left( str_Buffer, int_Bytes )
+  ENDDO
+
+  RETURN nil
+
+
+METHOD Close() CLASS TSocket
+
+  INetClose( ::pSocket )
+
+  RETURN nil
+
+
+METHOD SendReceive( cMessage ) CLASS TSocket
+
+  ::Send( cMessage )
+  ::Receive()
+  ::Close()
+
+  RETURN ::cData
+
+
+METHOD CleanUp() CLASS TSocket
+
+  RETURN InetCleanUp()</code></pre></div><br>
+<br>
+and<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Query.prg
+
+/*
+added property oSocket to this class to support an application passing
+queries to multiple servers
+*/
+
+#include "hbclass.ch"
+#include "rapids.ch"
+
+CLASS TQuery
+
+DATA arr_Request
+DATA arr_Translated
+DATA int_ErrorLevel
+DATA log_Remote
+DATA obj_Socket
+
+METHOD New() CONSTRUCTOR
+METHOD Execute()
+METHOD ErrorText( int_ErrorNumber )
+METHOD ErrorList()
+
+ENDCLASS
+
+METHOD New( obj_Socket ) CLASS TQuery
+
+::obj_Socket := obj_Socket
+::arr_Request := Array( 2 )
+::arr_Request[1] := Array( 2 )
+::arr_Request[1][2] := obj_User:str_Key
+::log_Remote := .T.
+
+RETURN self
+
+METHOD Execute( int_Query, arr_Parameters) CLASS TQuery
+
+  LOCAL log_Retry
+  // LOCAL tStart
+  // LOCAL tEnd
+
+  // tStart := Seconds()
+  ::int_ErrorLevel := 1
+  ::arr_Request[1][1] := int_Query
+  // ? "Query", iQuery
+  ::arr_Request[2] := arr_Parameters
+  DO WHILE ::int_ErrorLevel = dberrorclass_RETRY_OK
+    IF ::log_Remote
+      ::obj_Socket:Connect()
+      ? "about to send"
+      ::obj_Socket:Send( HB_Serialize( ::arr_Request) ) 
+      ? "waiting to receive"  
+      ::obj_Socket:Receive()
+      ? "closing socket"
+      ::obj_Socket:Close()
+      ::arr_Translated := HB_Deserialize( ::obj_Socket:str_Data )
+     ELSE
+      // ::arr_Translated := MakeLocalQuery( ::arr_Request )
+    ENDIF
+    ::int_ErrorLevel := ::arr_Translated[1][1]
+    // ? "Return value", ::int_ErrorLevel
+    DO CASE
+      CASE ::int_ErrorLevel = dberrorclass_RETRY_OK
+        log_Retry := MsgYesNo( "Unable to write to database.  Do you want to retry?" )
+        IF log_Retry 
+          ::int_ErrorLevel := dberrorclass_GAVE_UP
+        ENDIF
+      CASE ::int_ErrorLevel = dberrorclass_NO_RETRY
+         MsgInfo( "The database server has reported the following error(s):" + CRLF + ::ErrorList() )
+    ENDCASE
+  ENDDO
+  // time_End := Seconds()
+  // ? "start at", time_Start, "end at", time_End
+
+  RETURN ::int_ErrorLevel
+
+METHOD ErrorText( int_ErrorNumber ) CLASS TQuery
+
+  DO CASE
+    CASE int_ErrorNumber = dberror_NO_ERROR
+      RETURN "No error has occurred"
+    CASE int_ErrorNumber = dberror_CANNOT_LOCK_RECORD        
+      RETURN "Unable to obtain a record lock"
+    CASE int_ErrorNumber = dberror_CANNOT_APPEND_RECORD  
+      RETURN "Unable to append to table"     
+    CASE int_ErrorNumber = dberror_CANNOT_LOCK_FILE  
+      RETURN "Unable to obtain a table lock"       
+    CASE int_ErrorNumber = dberror_INVALID_KEY_ALLOCATOR      
+      RETURN "Invalid key allocator specified"
+    CASE int_ErrorNumber = dberror_CANNOT_LOCK_LASTKEY_FILE   
+      RETURN "Cannot obtain a lock on the key allocation table"
+    CASE int_ErrorNumber = dberror_NO_SUCH_KEY_VALUE          
+      RETURN "No such key value"
+    CASE int_ErrorNumber = dberror_KEY_NOT_A_STRING          
+      RETURN "The search value was not a string"
+    CASE int_ErrorNumber = dberror_NO_SUCH_QUERY_DEFINED     
+      RETURN "No such query defined on this server"
+    CASE int_ErrorNumber = dberror_QUERY_IS_NOT_AN_ARRAY     
+      RETURN "The query was received in an invalid (non-array) format"
+    CASE int_ErrorNumber = dberror_RECORD_HAS_CHANGED        
+      RETURN "The record has been altered by another user"
+    CASE int_ErrorNumber = dberror_NO_ASSIGNED_KEY_ALLOCATOR 
+      RETURN "No assigned key allocator"
+    OTHERWISE
+      RETURN "Unknown error"
+  ENDCASE
+
+METHOD ErrorList() CLASS TQuery
+
+LOCAL arr_Messages
+LOCAL int_NumMessages
+LOCAL str_Text
+LOCAL int_MsgNum
+
+arr_Messages := ::arr_Translated[1][2]
+int_NumMessages := LEN( arr_Messages )
+str_Text := ""
+FOR int_MsgNum = 1 TO int_NumMessages
+   str_Text += "ERROR " + Str( arr_Messages[int_MsgNum] ) + ": " + ::ErrorText( arr_Messages[int_MsgNum] ) + CRLF 
+NEXT
+
+RETURN str_Text</code></pre></div><br>
+<br>
+Obviously this code needs reworking for our current purposes, but it gives a rough idea of where we may be headed to get C-Echo Requests (and later DICOM requests) working.<br>
+<br>
+I also remember that when I ran this code in a Windows environment (I use Linux almost exclusively) I had to make a small change to the way the software looped when receiving a reply.<br>
+<br>
+Regards<br>
+xProgrammer</div>
+    </div>
+  </div>
+  <div class="post" id="p93818">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Wed Jan 27, 2010 07:59 PM
+      </div>
+      <div class="content">Hi all<br>
+<br>
+At this stage, presumably, the emphasis is on &quot;proof of concept&quot; - that is showing that we can interact successfully with other devices that implement DICOM from software written in [x]Harbour - rather than the elegance, efficiency and flexibility of our code.  Nonetheless, perhaps we should start thinking about some of our goals in these regards.  Some of my thoughts follow.<br>
+<br>
+Some of the DICOM Value Representations have specific rules about what they should contain.  To what extent should we check this and what should we do if the data passed in is non-conformant?  Take the DA (Date) VR, a class for which might look like the following code (which was written quickly for this discussion and has not been tested) :<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/**************************************************************\
+*                                                              *
+*    CLASS TDicomVRDA - DICOM Value Representation Date        *
+*                                                              *
+*  A date in the format YYYYMMDD                               *
+*                                                              *
+\**************************************************************/
+
+CLASS TDicomVRDA FROM TDicomVR
+
+  METHOD New( str_Group, str_Element, var_Data ) CONSTRUCTOR
+  METHOD Length()
+
+ENDCLASS
+
+METHOD New( str_Group, str_Element, var_Data ) CLASS TDicomVRDA
+
+  LOCAL int_Data 
+
+  ::SetGroupHex( str_Group )
+  ::SetElementHex( str_Element )
+  ::SetLength( 2 )  
+  IF ValType( var_Data ) == "D"
+    ::str_Data := DToS( var_Data )
+   ELSE
+    // string must be 8 characters long
+    // it should be in the format YYYYMMDD
+    ::Str_Data := PadR( var_Data, 8 )
+  ENDIF
+
+  RETURN self
+
+METHOD Length() CLASS TDicomVRDA
+
+  RETURN 16</code></pre></div><br>
+<br>
+If the date is passed in as an [x]Harbour date we don't have an issue here.  But we probably want the flexibiity to pass in dates as character strings in the YYYYMMDD format which can be used directly.  Length of the data is critical in DICOM, and we can ensure that is correct with the PadR function.  But if the length is not 8 our code setting up the DICOM VR is presumably faulty.  Should we rather return an error somehow to the requesting code?<br>
+<br>
+And if we are going to check for errors do we check the string for only containing the characters [0-9]?  And for being a valid date?<br>
+<br>
+If a string being passed to one of the text VRs is over length do we just trim it to the maximum length or flag this as an error?  Should such behaviour be optional and controlled by some parameter?<br>
+<br>
+Regards<br>
+xProgrammer</div>
+    </div>
+  </div>
+  <div class="post" id="p93819">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Wed Jan 27, 2010 08:05 PM
+      </div>
+      <div class="content"><p>Hi all</p>
+<p>Please note that whilst this project will, if successful, become important to me, I have lots of higher priority tasks to attend to, so I have to fit it into odd times in the evenings or mornings mostly.  Also access to DICOM systems, whilst it will be available, will be limited, especially during early testing, as we can't afford to crash cameras or processing stations whilst they are being used for medical purposes.  So don't expect too much too soon.</p>
+<p>Regards<br>
+xProgrammer</p></div>
+    </div>
+  </div>
+  <div class="post" id="p93826">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Wed Jan 27, 2010 10:31 PM
+      </div>
+      <div class="content"><p>Hi all</p>
+<p>If and when we manage to get C-Echo-Rq working, the next thing to try is probably C-Find-Rq, partly because of its function, and partly because a detailed, worked example is given in appendix A.3 (page 359 on)</p>
+<p>Regards<br>
+xProgrammer</p></div>
+    </div>
+  </div>
+  <div class="post" id="p93828">
+    <div class="poster">
+      <div class="name" style="color:#105289">LEADTOOLS Support</div>
+      <div class="rank">Posts: 1</div>
+      <div class="avatar"></div>
+      Joined: Wed Jan 27, 2010 04:12 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Wed Jan 27, 2010 11:25 PM
+      </div>
+      <div class="content"><blockquote><cite>Massimo Linossi wrote:</cite>Thanks Frose.<br>
+I'm reading the file you linked. I don't really know how this can be<br>
+implemented in a Xharbour program. I'm looking at the Leadtools<br>
+forum and there are the 99% of the questions that are about the<br>
+imaging process and not the patients study database. <br>
+I'll look around in the web this weekend trying to find a solution.<br>
+Thanks again.</blockquote><br>
+<br>
+<br>
+Massimo,<br>
+<br>
+I am not sure when the last time you have used LEADTOOLS was, but we have a complete toolkit for DICOM and DICOM communication. Some of our latest additions provide high level components that handle all of the DICOM specific communication for you, so you only have to write the integration portion. There are many fully functional demos to help you get started as well.<br>
+ <br>
+I urge you to visit us at the below link, and download an evaluation.<br>
+<br>
+<!-- m --><a class="postlink" href="http://leadtools.com/sdk/pacs-imaging.htm">http://leadtools.com/sdk/pacs-imaging.htm</a><!-- m --><br>
+<!-- m --><a class="postlink" href="http://support.leadtools.com/SupportPortal/CS/forums/17/ShowForum.aspx">http://support.leadtools.com/SupportPor ... Forum.aspx</a><!-- m --><br>
+<br>
+LEADTOOLS Support<br>
+LEAD Technologies Inc.<br>
+<!-- m --><a class="postlink" href="http://www.leadtools.com/">http://www.leadtools.com/</a><!-- m --><br>
+<!-- m --><a class="postlink" href="http://support.leadtools.com/cs/forums/">http://support.leadtools.com/cs/forums/</a><!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p93830">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Thu Jan 28, 2010 12:56 AM
+      </div>
+      <div class="content"><p>My understanding is that Leadtools is platform (ie Windows) dependant so that being the case it wouldn't be an option that I would consider (as my application runs on Linux), but it might suit others.</p>
+<p>Regards<br>
+xProgrammer</p></div>
+    </div>
+  </div>
+  <div class="post" id="p93860">
+    <div class="poster">
+      <div class="name" style="color:#105289">Massimo Linossi</div>
+      <div class="rank">Posts: 512</div>
+      <img class="avatar avatar-img" src="avatars/163.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 10:38 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Thu Jan 28, 2010 02:32 PM
+      </div>
+      <div class="content"><p>I looked into the forum, and I didn't found a solution for answering a Dicom<br>
+request for the patients list. There are a lot of examples about the imaging and<br>
+other problems. Xprogrammer, I think your approach is much better, for having<br>
+something that can work in different OS. And easy to change too, if the customer<br>
+ask you to add some different features. If I can help you in some way I'm here.<br>
+Thanks a lot.<br>
+Massimo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p93883">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Fri Jan 29, 2010 12:59 AM
+      </div>
+      <div class="content"><p>Hi Massimo</p>
+<p>Last night I started on code to send the DICOM messages and receive replies.  Maybe 2 weeks before I have an opportunity to test.  Will also start on code to decipher replies (which I should be able to test using a dummy reply).</p>
+<p>Regards<br>
+xProgrammer</p></div>
+    </div>
+  </div>
+  <div class="post" id="p93892">
+    <div class="poster">
+      <div class="name" style="color:#105289">Massimo Linossi</div>
+      <div class="rank">Posts: 512</div>
+      <img class="avatar avatar-img" src="avatars/163.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 10:38 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Fri Jan 29, 2010 07:29 AM
+      </div>
+      <div class="content"><p>It's a pity that you are so far, otherwise we can go to work in my customer's clinic.<br>
+If you can make a little test program for receiving the request for the patients<br>
+worklist and then send it back to the Dicom machine, I can make some debug<br>
+and eventually rearrange the code for that specific procedure.<br>
+Thanks again.<br>
+Massimo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p93962">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Sun Jan 31, 2010 08:34 AM
+      </div>
+      <div class="content"><p>Hi Massimo</p>
+<p>I've planned out some changes to my DICOM classes to allow the one object to handle both received and transmitted data, as the originator or the respondent.  But this week coming up is very busy for me with high priority jobs so don't expect much progress for a week.</p>
+<p>Regards<br>
+xProgrammer</p></div>
+    </div>
+  </div>
+  <div class="post" id="p95568">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Mon Mar 01, 2010 03:04 AM
+      </div>
+      <div class="content"><p>Hi Massimo</p>
+<p>Installation of new DICOM workstation was delayed - expected within the next two weeks - will keep you informed of any progress.</p>
+<p>Regards<br>
+xProgrammer</p></div>
+    </div>
+  </div>
+  <div class="post" id="p119212">
+    <div class="poster">
+      <div class="name" style="color:#105289">IVAN TRACHTA</div>
+      <div class="rank">Posts: 44</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 03, 2006 06:42 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Wed Sep 14, 2011 08:44 PM
+      </div>
+      <div class="content"><p>Hi<br>
+Are there any developments regarding this topic?</p>
+<p>I need to develop an interface between my patient administration software and equipment based on DICOM.<br>
+The mechanism appears to be using HL7 but do not know how to deploy.<br>
+The idea is to export the data from patients directly to DICOM equipment.<br>
+Appreciate to know what's new. Thanks in advance</p>
+<p>Iván</p></div>
+    </div>
+  </div>
+  <div class="post" id="p119219">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Interfacing with Dicom sistems</span><br>
+        Posted: Thu Sep 15, 2011 12:37 AM
+      </div>
+      <div class="content"><p>Hi Ivan</p>
+<p>I haven't touched my DICOM code for some time now as other projects took priority.  When I last used it I had it correctly requesting a session, processing the reply, requesting a session close and getting the acknowledgment.</p>
+<p>I wasn't getting a response to a request for a list of scans so there must have been some little problem there somewhere.</p>
+<p>Happy to share what I have.  And I will get back to it some time in the not too distant future.</p>
+<p>As it so happens I now need (as a higher priority) to write some code to generate HL7.  For this application it just needs to be written as a file and dumped into a designated folder for another application to pick up and process.  But note that this has to be HL7 version 2.3.1 with the modifications made by Standards Australia.  I have only just started writing this code and it has to be on a very much part time basis but I would be happy to share any code and any experiences.</p>
+<p>There are later 2.x versions of the HL7 standard plus version 3 which is XML based.</p>
+<p>The particular message I need to deal with (at this stage) is a REF.  I have just started coding for the PID segment of that message.  Whilst my primary need is to generate HL7 I will be writing code to both generate it and parse it.</p>
+<p>I also note that it looks as if this application will have to switch to HL7 version 3 sometime in 2012.</p>
+<p>I'm not sure from your message whether you need HL7 code or DICOM code or both.</p>
+<p>Regards<br>
+xProgrammer</p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-17911.html">1</a> <strong>2</strong> <a href="topic-17911-page-3.html">3</a> (42 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

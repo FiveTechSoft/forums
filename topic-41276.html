@@ -1,0 +1,1426 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Enviar por POST a webservice - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-41276">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Enviar por POST a webservice</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-41276-page-2.html">2</a> (20 posts)</div>  <div class="post" id="p247183">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cmsoft</div>
+      <div class="rank">Posts: 1344</div>
+      <img class="avatar avatar-img" src="avatars/294.jpg" alt="" loading="lazy">
+      Joined: Wed Nov 16, 2005 09:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Enviar por POST a webservice</span><br>
+        Posted: Thu Jan 06, 2022 12:21 PM
+      </div>
+      <div class="content"><r><p>Estimados:<br/><br>
+Estoy intentando crear una clase para poder subir datos a un especie de webservice mediante POST<br/><br>
+Digo "una especie" porque el "webservice" lo estoy haciendo yo.<br/><br>
+Aclaro que no soy experto en ninguna de las dos cosas.<br/><br>
+El tema es que funciona bien todo, EXCEPTO como graba la imagen en el servidor.<br/><br>
+Los datos de campos y fichero de texto plano (el .prg) está siendo enviado bien y lo puedo ver perfectamente en el servidor<br/><br>
+Pero la imagen no es leíble (también me paso con un archivo zip). Intuyo que debe ser la codificación pero no le encuentro la vuelta<br/><br>
+Dejo el código por si algún experto me puede dar una mano.</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;#include "Fivewin.ch"
+FUNCTION Main()
+LOCAL oPost 
+oPost := TPostHtml():New()
+oPost:AddFile("file", "miimagen.jpg", "c:\fwh\bitmaps\olga1.jpg")
+oPost:AddFile("file1", "miprg.prg", "c:\fwh\samples\atest.prg")
+oPost:AddField("campo1","valor1")
+oPost:AddField("campo2","valor2")
+oPost:SendReq("https://miweb/webservice")
+MsgInfo(oPost:Status)
+oPost:End()
+RETURN nil&lt;e&gt;</code></pre></div></e></CODE><br>
+<p>La clase es esta:</p><br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;CLASS TPostHtml
+
+   DATA   cDelimitador
+   DATA   cDelimitador_base
+   DATA   oStream
+   DATA   Status
+
+   METHOD New( ) CONSTRUCTOR
+
+   METHOD AddField(cField, cValue)
+
+   METHOD AddFile(cFieldName, cFileName, cFilePath)
+
+   METHOD SendReq(cURL)
+
+   METHOD End() INLINE ::Close
+ENDCLASS
+
+METHOD New( ) CLASS TPostHtml
+
+        ::cDelimitador_base := Replicate( "-",6) +"1234567890"
+        ::cDelimitador      := "--" + ::cDelimitador_base
+        ::oStream  := CreateObject("ADODB.Stream")
+        ::Mode := 3
+        ::Charset := "Windows-1252"
+        ::Open()
+        ::Status  := nil
+
+return Self
+
+METHOD AddField(cField, cValue ) CLASS TPostHtml
+::WriteText(::cDelimitador+CHR(10) + ;
+            'Content-Disposition: form-data; name="'+ cField + '";'+ CHR(10) + CHR(10)+;
+            cValue + CHR(10))
+RETURN nil
+
+METHOD AddFile(cFieldName, cFileName, cFilePath) CLASS TPostHtml
+    LOCAL oByteArray, oStream
+    oStream := CreateObject("ADODB.Stream")
+        //Objeto ADODB stream usado para leer archivo binario
+        WITH OBJECT oStream
+            :Charset := "Windows-1252"
+            :Type := 1
+            :Mode := 3
+            :Open()
+            :LoadFromFile(cFilePath)
+            //oByteArray := :Read()
+        END                
+        // Escribe datos binarios sobre stream de salida
+        WITH OBJECT ::oStream
+            :WriteText(::cDelimitador + CHR(10))
+            :WriteText('Content-Disposition: form-data; name="'+ cFieldName + '"; filename="'+ cFileName + '"' +  CHR(10))
+            :WriteText('Content-Type: "'+ GetContentType(cFileName) + '"' + CHR(10) + CHR(10))
+            :Position := 0
+            :Type := 1
+            :Position := :Size()
+            oStream:CopyTo(::oStream)
+            :Position := 0
+            :Type := 2
+            :Position := :Size()
+            :WriteText(CHR(10))
+        End
+RETURN nil            
+
+METHOD SendReq(cURL) CLASS TPostHtml
+LOCAL oXmlHttp, bytData
+
+        //Add end boundary and read as byte array Agregar final de delimitador y leer array de bytes
+        ::WriteText(::cDelimitador+ "--")
+        ::Position := 0
+        ::Type := 1
+        bytData := ::Read()
+
+        oXmlHttp := Createobject("MSXML2.ServerXMLHTTP")
+        oXmlHttp:SetTimeouts(0, 60000, 300000, 300000)
+        oXmlHttp:Open("POST",cURL,.f.)
+        oXmlHttp:SetRequestHeader("Content-type", "multipart/form-data; boundary=" + ::cDelimitador_base)
+        oXMLHTTP:setRequestHeader("Connection", "close")
+        oXMLHTTP:setRequestHeader("Content-length", ::Size)
+        oXmlHttp:Send( bytData)
+        ::Status := oXMLHTTP:statusText
+
+        oXmlHttp := nil
+
+RETURN nil
+
+
+STATIC function GetContentType(cFileName)
+LOCAL cExt := SUBSTR(cFileName,At(".",cFileName)+1,LEN(cFilename) - At(".",cFileName)-1) ,;
+      aTipeFile := {;
+                { "php", "application/x-php"},;
+                { "vbs", "application/x-vbs"},;
+                { "jpe", "image/jpeg"},;
+                { "jpg", "image/jpeg"},;
+                { "jpeg", "image/jpeg"},;
+                { "gif", "image/gif"},;
+                { "png", "image/png"},;
+                { "bmp", "image/bmp"},;
+                { "ico", "image/x-icon"},;
+                { "svg", "image/svg+xml"},;
+                { "svgz", "image/svg+xml"},;
+                { "tif", "image/tiff"},;
+                { "tiff", "image/tiff"},;
+                { "pct", "image/x-pict"},;
+                { "psd", "image/vnd.adobe.photoshop"},;
+                { "aac", "audio/x-aac"},;
+                { "aif", "audio/x-aiff"},;
+                { "flac", "audio/x-flac"},;
+                { "m4a", "audio/x-m4a"},;
+                { "m4b", "audio/x-m4b"},;
+                { "mid", "audio/midi"},;
+                { "midi", "audio/midi"},;
+                { "mp3", "audio/mpeg"},;
+                { "mpa", "audio/mpeg"},;
+                { "mpc", "audio/x-musepack"},;
+                { "oga", "audio/ogg"},;
+                { "ogg", "audio/ogg"},;
+                { "ra", "audio/vnd.rn-realaudio"},;
+                { "ram", "audio/vnd.rn-realaudio"},;
+                { "snd", "audio/x-snd"},;
+                { "wav", "audio/x-wav"},;
+                { "wma", "audio/x-ms-wma"},;
+                { "avi", "video/x-msvideo"},;
+                { "divx", "video/divx"},;
+                { "flv", "video/x-flv"},;
+                { "m4v", "video/mp4"},;
+                { "mkv", "video/x-matroska"},;
+                { "mov", "video/quicktime"},;
+                { "mp4", "video/mp4"},;
+                { "mpeg", "video/mpeg"},;
+                { "mpg", "video/mpeg"},;
+                { "ogm", "application/ogg"},;
+                { "ogv", "video/ogg"},;
+                { "rm", "application/vnd.rn-realmedia"},;
+                { "rmvb", "application/vnd.rn-realmedia-vbr"},;
+                { "smil", "application/x-smil"},;
+                { "webm", "video/webm"},;
+                { "wmv", "video/x-ms-wmv"},;
+                { "xvid", "video/x-msvideo"},;
+                { "js", "application/javascript"},;
+                { "xml", "text/xml"},;
+                { "html", "text/html"},;
+                { "css", "text/css"},;
+                { "txt", "text/plain"},;
+                { "py", "text/x-python"},;
+                { "pdf", "application/pdf"},;
+                { "xhtml", "application/xhtml+xml"},;
+                { "zip", "application/x-zip-compressed, application/zip"},;
+                { "rar", "application/x-rar-compressed"},;
+                { "cmd", "application/cmd"},;
+                { "bat", "application/x-bat, application/x-msdos-program"},;
+                { "exe", "application/exe, application/x-ms-dos-executable"},;
+                { "msi", "application/x-msi"},;
+                { "bin", "application/x-binary"},;
+                { "crt", "application/x-x509-ca-cert"},;
+                { "crl", "application/x-pkcs7-crl"},;
+                { "pfx", "application/x-pkcs12"},;
+                { "p12", "application/x-pkcs12"},;
+                { "odc", "application/vnd.oasis.opendocument.chart"},;
+                { "odf", "application/vnd.oasis.opendocument.formula"},;
+                { "odb", "application/vnd.oasis.opendocument.database"},;
+                { "odg", "application/vnd.oasis.opendocument.graphics"},;
+                { "odi", "application/vnd.oasis.opendocument.image"},;
+                { "odp", "application/vnd.oasis.opendocument.presentation"},;
+                { "ods", "application/vnd.oasis.opendocument.spreadsheet"},;
+                { "odt", "application/vnd.oasis.opendocument.tex"},;
+                { "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},;
+                { "dotx", "application/vnd.openxmlformats-officedocument.wordprocessingml.template"},;
+                { "potx", "application/vnd.openxmlformats-officedocument.presentationml.template"},;
+                { "ppsx", "application/vnd.openxmlformats-officedocument.presentationml.slideshow"},;
+                { "pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"},;
+                { "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},;
+                { "xltx", "application/vnd.openxmlformats-officedocument.spreadsheetml.template"},;
+                { "ppam", "application/vnd.ms-powerpoint.addin.macroEnabled.12"},;
+                { "ppa", "application/vnd.ms-powerpoint"},;
+                { "potm", "application/vnd.ms-powerpoint.template.macroEnabled.12"},;
+                { "ppsm", "application/vnd.ms-powerpoint.slideshow.macroEnabled.12"},;
+                { "xlsm", "application/vnd.ms-excel.sheet.macroEnabled.12"},;
+                { "pptm", "application/vnd.ms-powerpoint.presentation.macroEnabled.12"},;
+                { "dotm", "application/vnd.ms-word.template.macroEnabled.12"},;
+                { "docm", "application/vnd.ms-word.document.macroEnabled.12"},;
+                { "doc", "application/msword"},;
+                { "dot", "application/msword"},;
+                { "pps", "application/mspowerpoint"},;
+                { "ppt", "application/mspowerpoint,application/powerpoint,application/vnd.ms-powerpoint,application/x-mspowerpoint"},;
+                { "xls", "application/vnd.ms-excel"},;
+                { "xlt", "application/vnd.ms-excel"}}, i, cTipo :=  "text/plain"
+FOR i := 1 TO LEN(aTipeFile)
+    IF(aTipeFile[i,1] = cExt)
+       cTipo := aTipeFile[i,2]                
+    ENDIF   
+NEXT i
+RETURN cTipo
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<p>Agradezco cualquier sugerencia</p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p247184">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">leandro</div>
+      <div class="rank">Posts: 1816</div>
+      <img class="avatar avatar-img" src="avatars/228.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 26, 2005 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Thu Jan 06, 2022 01:53 PM
+      </div>
+      <div class="content"><r><p>Amigo como vas?</p><br>
+<br>
+<p>Nosotros hacemos de la siguiente manera, del lado del cliente convertimos el archivo a texto, apoyándonos en la funciones mime; luego en el servidor, mediante php, hacemos la conversión del mismo para que este quede legible.</p><br>
+<br>
+<p>Esto lo podemos hacer, cuando tenemos el control en los dos lados, tanto en el cliente como en el servidor, para poder hacer la conversión de texto a archivo y viceversa, pero desconozco como se haría cuando necesitemos subir el archivo en su formato original  <E>:</E></p> <br>
+<br>
+<p>Espero sea de utilidad</p><br>
+<br>
+<p>Del lado del cliente...</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;//CONVERTIMOS EL PDF A CADENA DE TEXTO
+fMimeEnc( ::cNombrePDF, rutaTXT )
+cText := MemoRead( rutaTXT )
+::hDocumento["nomina"]["encabezado"]["contenidopdf"] := STRTRAN(cText,CRLF,'')
+::cdnaJson := hb_jsonEncode( ::hDocumento ) //Lo guardamos en un json
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>Del lado del servidor</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;
+//recogemos los datos que vienen en el json
+$datos = json_decode(file_get_contents("php://input"),true);
+.....
+
+$cntpdf = $datos["nomina"]["encabezado"]["contenidopdf"];
+....
+$nmarchivo = 'pdf_'.$consec.'_'.$ambient.'.pdf';
+$rtarchivo = $rta_pdfs.$nmarchivo;
+file_put_contents($rtarchivo, base64_decode($cntpdf)); //Esta función se encarga de restaurar el archivo
+
+ &lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p247187">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Thu Jan 06, 2022 04:50 PM
+      </div>
+      <div class="content">Cesar, Maybe you can take a look at sendfile from Charly's TWeb samples.<br>
+This code works.<br>
+Best regards,<br>
+Otto<br>
+<br>
+<a href="http://forums.fivetechsupport.com/viewtopic.php?f=45&amp;t=39667&amp;p=236656&amp;hilit=upload.prg&amp;sid=f4158e8f5f5942f281e5d5e57c0e3d6c&amp;sid=8d4137fa35fdb6bdeb6bc0645f02f015#p236656" rel="noopener">http&#58;//forums&#46;fivetechsupport&#46;com/viewtopic&#46;php?f=45&amp;t=39667&amp;p=236656&amp;hilit=upload&#46;prg&amp;sid=f4158e8f5f5942f281e5d5e57c0e3d6c&amp;sid=8d4137fa35fdb6bdeb6bc0645f02f015#p236656</a></div>
+    </div>
+  </div>
+  <div class="post" id="p247188">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cmsoft</div>
+      <div class="rank">Posts: 1344</div>
+      <img class="avatar avatar-img" src="avatars/294.jpg" alt="" loading="lazy">
+      Joined: Wed Nov 16, 2005 09:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Thu Jan 06, 2022 05:02 PM
+      </div>
+      <div class="content"><p>Gracias por las respuestas!<br>
+Leandro:<br>
+Si tengo el control de ambos lados, aunque del lado del servidor uso Laravel, y no estoy pudiendo reconvertir el archivo, pero sigo intentando.<br>
+Igualmente quería hacer algo mas genérico para llenar un formulario por post que pudiera servir para cualquier situación.<br>
+Otto:<br>
+He visto el código pero no veo la forma de convertir el archivo subido.<br>
+Muchas gracias a ambos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p247189">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Thu Jan 06, 2022 05:44 PM
+      </div>
+      <div class="content">César,<br>
+<br>
+Estos son los ejemplos incluidos con mod_harbour para enviar un fichero y luego salvarlo:<br>
+<br>
+<a href="https://github.com/FiveTechSoft/mod_harbour/blob/master/samples/sendfile.prg" rel="noopener">https&#58;//github&#46;com/FiveTechSoft/mod_harbour/blob/master/samples/sendfile&#46;prg</a><br>
+<br>
+<a href="https://github.com/FiveTechSoft/mod_harbour/blob/master/samples/upload.prg" rel="noopener">https&#58;//github&#46;com/FiveTechSoft/mod_harbour/blob/master/samples/upload&#46;prg</a></div>
+    </div>
+  </div>
+  <div class="post" id="p247198">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Thu Jan 06, 2022 07:40 PM
+      </div>
+      <div class="content"><p>Cesar,</p>
+<p>As I said, I built my sample without using the complete TWeb. I extracted all the functions and built a standalone upload.prg.</p>
+<p>I think you need GetMsgUpload() from  twebapache.prg.</p>
+<p>Charly: I don't know it we are allowed to repost TWeb source code? </p>
+<p>Best regards,<br>
+Otto</p></div>
+    </div>
+  </div>
+  <div class="post" id="p247202">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Thu Jan 06, 2022 08:00 PM
+      </div>
+      <div class="content"><blockquote><cite>Otto wrote:</cite>Cesar,<br>
+<br>
+As I said, I built my sample without using the complete TWeb. I extracted all the functions and built a standalone upload.prg.<br>
+<br>
+I think you need GetMsgUpload() from  twebapache.prg.<br>
+<br>
+Charly: I don't know it we are allowed to repost TWeb source code? <br>
+<br>
+Best regards,<br>
+Otto</blockquote><br>
+<br>
+Please, feel free for help others. Any code of mine has to serve to help.<br>
+<br>
+Thanks.<br>
+C.</div>
+    </div>
+  </div>
+  <div class="post" id="p247203">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Thu Jan 06, 2022 08:17 PM
+      </div>
+      <div class="content"><r><p>Hello Cesar,<br/><br>
+thanks to the  generosity of Charly I may upload the source.<br/><br>
+Charly, thank you so much.<br/><br>
+Best regards,<br/><br>
+Otto</p><br>
+<br>
+<p>You have to create a folder with a subfolder "upload"<br/><br>
+Copy both files to the new folder and if you have installed mod harbour all should work fine.</p><br>
+<br>
+<p>TWebupload.prg</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;REQUEST DBFCDX
+REQUEST DBFFPT
+
+function main
+
+TEMPLATE
+
+&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+&lt;head&gt;
+    &lt;title&gt;Button Upload&lt;/title&gt;
+    &lt;meta charset="ISO-8859-1"&gt;
+    &lt;meta http-equiv="X-UA-Compatible" content="IE=edge"&gt;
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0"&gt;
+    &lt;link rel="shortcut icon" type="image/png" href="lib/tweb/images/tweb.png"/&gt;
+    &lt;script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"&gt;&lt;/script&gt;
+    &lt;script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"&gt;&lt;/script&gt;
+    &lt;link href="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.css" rel="stylesheet"/&gt;
+    &lt;script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js" integrity="sha384-b/U6ypiBEHpOf/4+1nzFpr53nxSS+GLCkfwBdFNTxtclqqenISfwAzpKaMNFNmj4" crossorigin="anonymous"&gt;&lt;/script&gt;
+    &lt;link href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" rel="stylesheet"&gt;
+    &lt;script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"&gt;&lt;/script&gt;
+    &lt;link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.2/css/all.css" integrity="sha384-oS3vJWv+0UjzBfQzYUhtDYW+Pj2yciDJxpsK1OYPAYjqT085Qq/1cq5FLXAZQ7Ay" crossorigin="anonymous"&gt;
+    &lt;link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.7.2/animate.min.css" rel="stylesheet"&gt;
+    &lt;script src="lib/tweb/lightbox/lightbox.js"&gt;&lt;/script&gt;
+    &lt;link href="lib/tweb/lightbox/css/lightbox.css" rel="stylesheet" &gt;
+    &lt;script src="lib/tweb/notify/bootstrap-notify.js"&gt;&lt;/script&gt;
+    &lt;script src="lib/tweb/bootbox/bootbox.all.min.js"&gt;&lt;/script&gt;
+    &lt;link href="lib/tweb/tweb.css" rel="stylesheet"&gt;
+    &lt;style&gt;
+        .thumbnailUpload{
+            height: 100px;
+            margin: 10px;
+            display: inline-block;
+        }
+        
+        
+    &lt;/style&gt;
+    &lt;div class="alert alert-dark form_title" role="alert"&gt;
+        &lt;h5 style="margin:0px;"&gt;
+            &lt;i class="far fa-share-square"&gt;&lt;/i&gt; Test Button Upload
+        &lt;/h5&gt;
+    &lt;/div&gt;
+    &lt;div class="container" &gt;&lt;div class="col-6" &gt;
+        &lt;input type="file" id="myupload" style="display:none;" accept="image/*" capture/&gt;
+        
+        
+        &lt;button type="button" class="btn btn-primary  btn-primary" onclick="UploadFile()" id="_myupload" name="_myupload" value=""  &gt;
+            Upload&lt;/button&gt;
+        &lt;/div&gt;  
+        
+        &lt;img class="thumbnailUpload" id="blah" src="#" alt="your image" /&gt; 
+&lt;!--  
+
+        &lt;div class="modal-footer"&gt;
+            &lt;button type="button" class="btn btn-secondary mr-auto" data-dismiss="modal"&gt;Close&lt;/button&gt;
+            &lt;!--&lt;button type="button" class="btn btn-primary"&gt;Save changes&lt;/button&gt;--&gt;
+            &lt;button type="button" id="processButton" class="btn btn-primary disabled" data-toggle="modal" href="#confirmModal"&gt;Upload
+            &lt;/button&gt;
+        &lt;/div&gt;
+        --&gt; 
+        &lt;script&gt;
+            
+            function UploadFile() {             
+                
+                var o = new TWebUpload( 'myupload', 'srv_upload.prg', Post_UploadFile )
+                
+                o.Init()                    
+            }
+            
+            function Post_UploadFile( dat ) {
+                
+                console.log( 'Post_UploadFile', dat )
+                
+                alert( 'File uploaded' )
+            }
+            
+            function TWebUpload( cId, cUrl, callback, oData ) {
+                
+                this.cId        = ( typeof( cId ) === 'string') ? cId : '';
+                this.cUrl       = ( typeof( cUrl ) === 'string') ? cUrl : '';
+                this.callback   = ( typeof( callback ) === 'function') ? callback : null;
+                this.onprogress  
+                this.onloadstart
+                this.onloadend
+                this.onreading
+                this.oData      = oData
+                
+                var Self    = this 
+                var reader  = null 
+                
+                this.Init = function() {            
+                    
+                    //  Solo crearemos una vez el evento al id del DOM, sino dispararia una pila
+                    //  del evento tantas veces como ejecutemos
+                    
+                    if (document.getElementById( this.cId ).getAttribute('listener') !== 'true') {          
+                        document.getElementById( this.cId ).addEventListener('change',this.handleFileSelect, false);
+                        document.getElementById( this.cId ).setAttribute('listener', 'true');   
+                        
+                    }
+                    
+                    $( '#' + this.cId ).trigger('click')        
+                }
+                
+                this.errorHandle = function(evt) {
+                    switch(evt.target.error.code) {
+                        case evt.target.error.NOT_FOUND_ERR:
+                        console.log('File Not Found!');
+                        break;
+                        case evt.target.error.NOT_READABLE_ERR:
+                        console.log('File is not readable');
+                        break;
+                        case evt.target.error.ABORT_ERR:
+                        break; // noop
+                        default:
+                        console.log('An error occurred reading this file.');
+                    };
+                }   
+                
+                
+                this.handleFileSelect = function(evt) {     
+                    
+                    reader = new FileReader();
+                    
+                    reader.onerror      = this.errorHandle;
+                    
+                    reader.onprogress   = function(e) {
+                        
+                        if ( typeof Self.onreading === "function") {
+                            var n100 = Math.floor(e.loaded / e.total * 100); 
+                            Self.onreading.apply(null, [e, n100] );                         
+                        }
+                    };
+                    
+                    reader.onabort      = function(e) {
+                        //console.log('File read cancelled');
+                    };
+                    
+                    reader.onloadend = function(e) {
+                        
+                        if ( typeof Self.onloadend === "function") {
+                            Self.onloadend.apply(null, [e] );                           
+                        }
+                    };
+                    
+                    reader.onloadstart = function(e) {          
+                        
+                        if ( typeof Self.onloadstart === "function") {
+                            Self.onloadstart.apply(null, [e] );                         
+                        }                                   
+                    };
+                    
+                    reader.onload = function(e) {   
+                        
+                        var file    = evt.target.files[0]           
+                        
+                        console.log( 'oData', $.type( Self.oData ) )
+                        
+                        var formData = new FormData();  
+                        $('#blah').attr('src', e.target.result);
+                        //alert("upload")
+                        
+                        /*
+                        if ( $.type( Self.oData ) == 'object' ) {                       
+                            $.each(Self.oData, function (key, val) {            
+                                formData.append( key, val )              
+                            })                      
+                        }           
+                        */
+                        
+                        var blob = new Blob( [e.target.result], {type: "application/octet-stream"} );           
+                        
+                        var y = new Object()                    
+                        y[ 'name' ] = file.name
+                        y[ 'size' ] = file.size
+                        y[ 'type' ] = file.type
+                        
+                        var z = new Object()
+                        z[ 'var1' ] = 1234
+                        z[ 'var2' ] = 'Maria de la O'
+                        
+                        formData.append( 'blob', blob );
+                        console.log( 'blob data', blob);    
+                        
+                        formData.append( 'file', JSON.stringify(y) );   
+                        
+                        if ( $.type( oData ) == 'object' )          
+                        formData.append( 'data', JSON.stringify(oData) );    
+                        
+                        $.ajax({
+                            url: Self.cUrl,
+                            data: formData,
+                            processData: false,
+                            // This will override the content type header, 
+                            // regardless of whether content is actually sent.
+                            // Defaults to 'application/x-www-form-urlencoded'
+                            contentType: 'multipart/form-data',
+                            beforeSend: function(xhr) { 
+                                xhr.setRequestHeader('Content-Type', 'multipart/form-data');
+                            },          
+                            type: 'POST',
+                            success: function ( dat ) {                 
+                                
+                                if ( typeof Self.callback === "function") { 
+                                    
+                                    Self.callback.apply(null, [dat] );
+                                    
+                                } else { 
+                                    
+                                    if ( typeof dat == 'object' )
+                                    if ( dat.success )
+                                    MsgInfo(dat.html, 'My Message')
+                                    else
+                                    MsgError(dat.error)
+                                    else
+                                    MsgError(dat)                       
+                                }                                   
+                                
+                            },
+                            error: function(data, textStatus, jqXHR) {
+                                
+                                console.log( 'Error data', data);           
+                                console.log( 'Error textStatus', textStatus);
+                                console.log( 'Error XHR', jqXHR);
+                            },              
+                            xhr: function() {
+                                var xhr = $.ajaxSettings.xhr();
+                                
+                                xhr.upload.onprogress = function(e) {
+                                    
+                                    //  Sending file...
+                                    
+                                    var n100 = Math.floor(e.loaded / e.total *100); 
+                                    
+                                    if ( typeof Self.onprogress === "function") {
+                                        Self.onprogress.apply(null, [e, n100] );                            
+                                    }                       
+                                }
+                                
+                                return xhr;
+                            }                               
+                            
+                        });    
+                    }
+                    
+                    // Read in the image file as a binary string.
+                    reader.readAsDataURL( evt.target.files[0] )     
+                    
+                    /*
+                    for (i = 0; i &lt; evt.target.files.length; i++) {
+                        reader.readAsDataURL( evt.target.files[i] )     
+                    }
+                    */
+                    
+                } 
+            }
+            
+            
+            
+            
+            
+            
+            
+        &lt;/script&gt;       
+    &lt;/div&gt; 
+    
+    
+    ENDTEXT
+    
+    return 
+    
+    INIT PROCEDURE PrgInit
+    
+    SET CENTURY ON
+    SET EPOCH TO YEAR(DATE())-98
+    
+    SET DELETED ON
+    SET EXCLUSIVE OFF
+    
+    REQUEST HB_Lang_DE
+    
+    HB_LangSelect("DE")
+    
+    SET DATE TO GERMAN
+    
+    rddsetdefault( "DBFCDX" )
+    
+    EXTERN DESCEND
+    
+    RETURN
+    
+    //----------------------------------------------------------------------------//
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<br>
+<p>srv_upload.prg</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;
+
+/*  ---------------------------------------------------------------------------
+GetMsgUpload() devuelve la informacion de subida de un fichero en un hash:
+blob - Fichero decodificado
+file - hash con info de fichero: name, type, size, ext
+data - hash con variables adicionales que se han enviado junto al fichero
+--------------------------------------------------------------------------- */
+
+#include "hbclass.ch"
+
+function main()
+
+local cPath     := hb_getenv( 'PRGPATH' ) + '/upload/'
+local h         := GetMsgUpload()   
+local lSuccess  := .f.
+local cFile     
+AP_SetContentType( "application/json" )     
+
+cFile       := cPath + h[ 'file' ][ 'name' ]            
+
+
+
+lSuccess    := hb_MemoWrit( cFile , h[ 'blob' ] )   
+
+?? hb_jsonencode( { 'success' =&gt; lSuccess, 'info' =&gt; h[ 'file' ], 'data' =&gt; h[ 'data' ] } ) 
+
+retu nil
+
+
+
+/*  ---------------------------------------------------------------------------
+GetMsgUpload() devuelve la informacion de subida de un fichero en un hash:
+blob - Fichero decodificado
+file - (opcional) hash con info de fichero: name, type, size, ext
+data - (opcional) hash con variables adicionales que se han enviado junto al fichero
+--------------------------------------------------------------------------- */
+
+function GetMsgUpload()
+
+local hParam    := ZAP_BodyPairs()  
+local h         := {=&gt;}
+
+h[ 'blob' ]     := Hb_Base64Decode( hParam[ 'blob' ] )
+
+if HB_HHasKey( hParam, 'file' )
+h[ 'file' ]             := hb_jsonDecode( hParam[ 'file' ] )    
+h[ 'file' ][ 'ext' ]    := lower( cFileExt( h[ 'file' ][ 'name' ]  ) )
+else
+h[ 'file' ]             := nil
+endif
+
+if HB_HHasKey( hParam, 'data' )
+h[ 'data' ]     := hb_jsonDecode( hParam[ 'data' ] ) 
+else
+h[ 'data' ]     := nil
+endif
+
+
+retu h
+
+
+
+#define TAG_DISPOSITION     'Content-Disposition: form-data;'
+#define TAG_END             '------'
+
+function ZAP_BodyPairs()
+local oError
+local bLastHandler := Errorblock( {|oError| MyError( oError ), Break(oError) } )
+local o             
+
+o := BodyPairs():New()  
+
+ErrorBlock(bLastHandler) // Restore handler   
+
+retu o:hData
+
+function MyError( oError )
+//? 'Error'
+//? '====='
+//? oError 
+retu nil
+
+
+CLASS BodyPairs
+
+DATA hData      INIT {=&gt;}
+
+METHOD New()
+
+METHOD Extract()
+METHOD ProcData()
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( cData ) CLASS BodyPairs
+
+local cPart := ''
+
+DEFAULT cData TO AP_Body()      //AP_PostPairs()    
+//DEFAULT cData := GetData()
+
+while ::Extract( @cData, @cPart )
+
+::ProcData( cPart )
+
+end
+
+RETU Self
+
+
+
+METHOD Extract( cData, cPart ) CLASS BodyPairs
+
+local nIni      := hb_At( TAG_DISPOSITION , cData )
+local nEnd      
+local lFound    
+local cStrIni, cStrFi
+
+DEFAULT cData TO ''
+DEFAULT cPart TO ''
+
+if nIni == 0
+retu .f.
+endif
+
+nEnd    := hb_At( TAG_END, cData, nIni )
+lFound  := ( nIni &gt; 0 .and. nEnd &gt; 0 )
+
+if lFound
+
+cPart   := alltrim(Substr( cData, ( nIni + len( TAG_DISPOSITION ) ), ( nEnd - nIni - len( TAG_DISPOSITION ) - 2 ) ))
+
+cStrIni := Substr( cData, 1, nIni-1 ) 
+cStrFi  := Substr( cData, nEnd ) 
+cData   := cStrIni + cStrFi 
+
+endif
+
+retu lFound
+
+METHOD ProcData( cPart ) CLASS BodyPairs
+
+local nStart, nEnd, cVarName
+
+DEFAULT cPart TO ''
+
+//  check name var
+
+if ( nStart := hb_At( 'name="', cPart ) ) == 0
+retu nil
+endif
+
+if ( nEnd   := hb_At( '"', cPart, nStart + 7 ) ) == 0
+retu nil
+endif
+
+
+cVarName := Alltrim(Substr( cPart, nStart + 6 , nEnd - (nStart+6) ))
+
+
+//  check si file upload
+
+if ( nStart := hb_At( "base64,", cPart ) ) &gt; 0          
+::hData[ cVarName ] := Substr( cPart, nStart + 7 )                      
+else        
+::hData[ cVarName ] := Alltrim( Substr( cPart, nEnd + 1 ))          
+endif
+
+retu nil
+
+
+
+//----------------------------------------------------------------------------//
+/*  Example de quan enviem formdata amb molt de contingut....
+
+"------WebKitFormBoundaryf5o7two9i5wUlZtv\r\n
+Content-Disposition: form-data; name": "clip.png"; filename="blob"
+Content-Type: application/octet-stream
+
+data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAAGa2tLEAAAAAXNSR0IArs4c6QAAADBQTFRFgAAAAAAAAIAAgIAAAACAgACAAICAgICAwMDA/wAAAP8A//8AAAD//wD/AP//////tw+rZwAAAAF0Uk5TAEDm2GYAAAAJcEhZcwAACxMAAAsTAQCanBgAAAAHdElNRQfeCw4KOyB5pNv7AAAAL0lEQVQI12NgQAICDPgAuziMxcgIJAQFMQkBkAQj1BhBAZhqRhhNkMEuwCCOZCUAYNoBPf68fOsAAAAASUVORK5CYII=
+------WebKitFormBoundaryf5o7two9i5wUlZtv
+Content-Disposition: form-data; name="database.png"; filename="blob"
+Content-Type: application/octet-stream
+
+data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAAGa2tLEAAAAAXNSR0IArs4c6QAAADBQTFRFgAAAAAAAAIAAgIAAAACAgACAAICAgICAwMDA/wAAAP8A//8AAAD//wD/AP//////tw+rZwAAAAF0Uk5TAEDm2GYAAAAJcEhZcwAACxMAAAsTAQCanBgAAAAHdElNRQfeCw4KOyB5pNv7AAAAL0lEQVQI12NgQAICDPgAuziMxcgIJAQFMQkBkAQj1BhBAZhqRhhNkMEuwCCOZCUAYNoBPf68fOsAAAAASUVORK5CYII=
+------WebKitFormBoundaryf5o7two9i5wUlZtv
+Content-Disposition: form-data; name="test11"
+
+hola guapu
+------WebKitFormBoundaryf5o7two9i5wUlZtv
+Content-Disposition: form-data; name="test22"
+
+Adios Baby
+------WebKitFormBoundaryf5o7two9i5wUlZtv--
+"
+*/
+
+
+
+function cFileExt( cPathMask ) // returns the ext of a filename
+
+local cExt := AllTrim( cFileNoPath( cPathMask ) )
+local n    := RAt( ".", cExt )
+
+return AllTrim( If( n &gt; 0 .and. Len( cExt ) &gt; n,;
+Right( cExt, Len( cExt ) - n ), "" ) )
+
+//----------------------------------------------------------------------------//
+
+
+
+function cFileNoPath( cPathMask )  // returns just the filename no path
+
+local n := RAt( "/", cPathMask )
+
+return If( n &gt; 0 .and. n &lt; Len( cPathMask ),;
+Right( cPathMask, Len( cPathMask ) - n ),;
+If( ( n := At( ":", cPathMask ) ) &gt; 0,;
+Right( cPathMask, Len( cPathMask ) - n ),;
+cPathMask ) )          
+
+
+
+
+ &lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p247227">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cmsoft</div>
+      <div class="rank">Posts: 1344</div>
+      <img class="avatar avatar-img" src="avatars/294.jpg" alt="" loading="lazy">
+      Joined: Wed Nov 16, 2005 09:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Fri Jan 07, 2022 11:38 AM
+      </div>
+      <div class="content"><p>Gracias a todos por las respuestas.<br>
+He analizado los códigos que me pasaron, pero no he sido capaz de hacer que pueda enviar el formulario con el archivo de imagen comprensible del lado del servidor.<br>
+Sigo investigando...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p247228">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cmsoft</div>
+      <div class="rank">Posts: 1344</div>
+      <img class="avatar avatar-img" src="avatars/294.jpg" alt="" loading="lazy">
+      Joined: Wed Nov 16, 2005 09:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Fri Jan 07, 2022 12:17 PM
+      </div>
+      <div class="content"><r><p>Después de unas pruebas y gracias a la ayuda del foro, he logrado enviar y recibir los datos correctamente<br/><br>
+Seguí los pasos que me sugirió Leandro, ya que tenía control de ambos lados del asunto.<br/><br>
+La clase quedó así al final</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;CLASS TPostHtml
+
+   DATA   cDelimitador
+   DATA   cDelimitador_base
+   DATA   oStream
+   DATA   Status
+   DATA   aExtraRequestHeader INIT {}
+   DATA   cCharSet INIT "Windows-1252"
+
+   METHOD New( ) CONSTRUCTOR
+
+   METHOD AddField(cField, cValue)
+
+   METHOD AddFile(cFieldName, cFileName, cFilePath)
+
+   METHOD AddExtraRequest(cClave,cValor)
+
+   METHOD SendReq(cURL)
+
+   METHOD End() INLINE ::Close
+ENDCLASS
+
+METHOD New( cCharSet ) CLASS TPostHtml
+DEFAULT cCharSet := ::cCharSet
+        ::cDelimitador_base := Replicate( "-",6) +"1234567890"
+        ::cDelimitador      := "--" + ::cDelimitador_base
+        ::oStream  := CreateObject("ADODB.Stream")
+        ::Mode := 3
+        ::Charset := cCharSet
+        ::Open()
+        ::Status  := nil
+
+return Self
+
+METHOD AddField(cField, cValue ) CLASS TPostHtml
+::WriteText(::cDelimitador+CHR(10) + ;
+            'Content-Disposition: form-data; name="'+ cField + '";'+ CHR(10) + CHR(10)+;
+            cValue + CHR(10))
+RETURN nil
+
+METHOD AddFile(cFieldName, cFileName, cFilePath) CLASS TPostHtml
+    LOCAL oByteArray, oStream, cText
+fMimeEnc( cFilePath, '.\prueba.txt' )   
+cText := MemoRead( '.\prueba.txt' )
+cText := STRTRAN(cText,CRLF,'')
+cText := hb_jsonEncode(cText)
+memowrit( ".\prueba", cText )
+    oStream := CreateObject("ADODB.Stream")
+        //Objeto ADODB stream usado para leer archivo binario
+        WITH OBJECT oStream
+            :Charset := ::cCharSet
+            :Type := 1
+            :Mode := 3
+            :Open()
+            :LoadFromFile('.\prueba.txt')
+            //oByteArray := :Read()
+        END                
+        // Escribe datos binarios sobre stream de salida
+        WITH OBJECT ::oStream
+            :WriteText(::cDelimitador + CHR(10))
+            :WriteText('Content-Disposition: form-data; name="'+ cFieldName + '"; filename="'+ cFileName + '"' +  CHR(10))
+            :WriteText('Content-Type: "'+ GetContentType(cFileName) + '"' + CHR(10) + CHR(10))
+            :Position := 0
+            :Type := 1
+            :Position := :Size()
+            oStream:CopyTo(::oStream)
+            :Position := 0
+            :Type := 2
+            :Position := :Size()
+            :WriteText(CHR(10))
+        End
+RETURN nil   
+
+
+METHOD AddExtraRequest(cClave,cValor) CLASS TPostHtml
+
+AADD(::aExtraRequestHeader,{cClave,cValor})
+
+RETURN nil         
+
+METHOD SendReq(cURL) CLASS TPostHtml
+LOCAL oXmlHttp, bytData, i
+
+        //Add end boundary and read as byte array Agregar final de delimitador y leer array de bytes
+        ::WriteText(::cDelimitador+ "--")
+        ::Position := 0
+        ::Type := 1
+        bytData := ::Read()
+
+        oXmlHttp := Createobject("MSXML2.ServerXMLHTTP")
+        oXmlHttp:SetTimeouts(0, 60000, 300000, 300000)
+        oXmlHttp:Open("POST",cURL,.f.)
+        oXmlHttp:SetRequestHeader("Content-type", "multipart/form-data; boundary=" + ::cDelimitador_base)
+        FOR i := 1 TO LEN(::aExtraRequestHeader)
+            oXmlHttp:SetRequestHeader(::aExtraRequestHeader[i,1],::aExtraRequestHeader[i,2])
+        NEXT i
+        oXMLHTTP:setRequestHeader("Connection", "close")
+        oXMLHTTP:setRequestHeader("Content-length", ::Size)
+        oXmlHttp:Send( bytData)
+        ::Status := oXMLHTTP:statusText
+        memowrit( "post.txt", bytData )
+        oXmlHttp := nil
+
+RETURN nil
+
+
+STATIC function GetContentType(cFileName)
+LOCAL cExt := SUBSTR(cFileName,At(".",cFileName)+1,LEN(cFilename) - At(".",cFileName)-1) ,;
+      aTipeFile := {;
+                { "php", "application/x-php"},;
+                { "vbs", "application/x-vbs"},;
+                { "jpe", "image/jpeg"},;
+                { "jpg", "image/jpeg"},;
+                { "jpeg", "image/jpeg"},;
+                { "gif", "image/gif"},;
+                { "png", "image/png"},;
+                { "bmp", "image/bmp"},;
+                { "ico", "image/x-icon"},;
+                { "svg", "image/svg+xml"},;
+                { "svgz", "image/svg+xml"},;
+                { "tif", "image/tiff"},;
+                { "tiff", "image/tiff"},;
+                { "pct", "image/x-pict"},;
+                { "psd", "image/vnd.adobe.photoshop"},;
+                { "aac", "audio/x-aac"},;
+                { "aif", "audio/x-aiff"},;
+                { "flac", "audio/x-flac"},;
+                { "m4a", "audio/x-m4a"},;
+                { "m4b", "audio/x-m4b"},;
+                { "mid", "audio/midi"},;
+                { "midi", "audio/midi"},;
+                { "mp3", "audio/mpeg"},;
+                { "mpa", "audio/mpeg"},;
+                { "mpc", "audio/x-musepack"},;
+                { "oga", "audio/ogg"},;
+                { "ogg", "audio/ogg"},;
+                { "ra", "audio/vnd.rn-realaudio"},;
+                { "ram", "audio/vnd.rn-realaudio"},;
+                { "snd", "audio/x-snd"},;
+                { "wav", "audio/x-wav"},;
+                { "wma", "audio/x-ms-wma"},;
+                { "avi", "video/x-msvideo"},;
+                { "divx", "video/divx"},;
+                { "flv", "video/x-flv"},;
+                { "m4v", "video/mp4"},;
+                { "mkv", "video/x-matroska"},;
+                { "mov", "video/quicktime"},;
+                { "mp4", "video/mp4"},;
+                { "mpeg", "video/mpeg"},;
+                { "mpg", "video/mpeg"},;
+                { "ogm", "application/ogg"},;
+                { "ogv", "video/ogg"},;
+                { "rm", "application/vnd.rn-realmedia"},;
+                { "rmvb", "application/vnd.rn-realmedia-vbr"},;
+                { "smil", "application/x-smil"},;
+                { "webm", "video/webm"},;
+                { "wmv", "video/x-ms-wmv"},;
+                { "xvid", "video/x-msvideo"},;
+                { "js", "application/javascript"},;
+                { "xml", "text/xml"},;
+                { "html", "text/html"},;
+                { "css", "text/css"},;
+                { "txt", "text/plain"},;
+                { "py", "text/x-python"},;
+                { "pdf", "application/pdf"},;
+                { "xhtml", "application/xhtml+xml"},;
+                { "zip", "application/x-zip-compressed, application/zip"},;
+                { "rar", "application/x-rar-compressed"},;
+                { "cmd", "application/cmd"},;
+                { "bat", "application/x-bat, application/x-msdos-program"},;
+                { "exe", "application/exe, application/x-ms-dos-executable"},;
+                { "msi", "application/x-msi"},;
+                { "bin", "application/x-binary"},;
+                { "crt", "application/x-x509-ca-cert"},;
+                { "crl", "application/x-pkcs7-crl"},;
+                { "pfx", "application/x-pkcs12"},;
+                { "p12", "application/x-pkcs12"},;
+                { "odc", "application/vnd.oasis.opendocument.chart"},;
+                { "odf", "application/vnd.oasis.opendocument.formula"},;
+                { "odb", "application/vnd.oasis.opendocument.database"},;
+                { "odg", "application/vnd.oasis.opendocument.graphics"},;
+                { "odi", "application/vnd.oasis.opendocument.image"},;
+                { "odp", "application/vnd.oasis.opendocument.presentation"},;
+                { "ods", "application/vnd.oasis.opendocument.spreadsheet"},;
+                { "odt", "application/vnd.oasis.opendocument.tex"},;
+                { "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},;
+                { "dotx", "application/vnd.openxmlformats-officedocument.wordprocessingml.template"},;
+                { "potx", "application/vnd.openxmlformats-officedocument.presentationml.template"},;
+                { "ppsx", "application/vnd.openxmlformats-officedocument.presentationml.slideshow"},;
+                { "pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"},;
+                { "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},;
+                { "xltx", "application/vnd.openxmlformats-officedocument.spreadsheetml.template"},;
+                { "ppam", "application/vnd.ms-powerpoint.addin.macroEnabled.12"},;
+                { "ppa", "application/vnd.ms-powerpoint"},;
+                { "potm", "application/vnd.ms-powerpoint.template.macroEnabled.12"},;
+                { "ppsm", "application/vnd.ms-powerpoint.slideshow.macroEnabled.12"},;
+                { "xlsm", "application/vnd.ms-excel.sheet.macroEnabled.12"},;
+                { "pptm", "application/vnd.ms-powerpoint.presentation.macroEnabled.12"},;
+                { "dotm", "application/vnd.ms-word.template.macroEnabled.12"},;
+                { "docm", "application/vnd.ms-word.document.macroEnabled.12"},;
+                { "doc", "application/msword"},;
+                { "dot", "application/msword"},;
+                { "pps", "application/mspowerpoint"},;
+                { "ppt", "application/mspowerpoint,application/powerpoint,application/vnd.ms-powerpoint,application/x-mspowerpoint"},;
+                { "xls", "application/vnd.ms-excel"},;
+                { "xlt", "application/vnd.ms-excel"}}, i, cTipo :=  "text/plain"
+FOR i := 1 TO LEN(aTipeFile)
+    IF(aTipeFile[i,1] = cExt)
+       cTipo := aTipeFile[i,2]                
+    ENDIF   
+NEXT i
+RETURN cTipo
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<p>Muchas gracias a todos por la ayuda</p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p247244">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Fri Jan 07, 2022 06:49 PM
+      </div>
+      <div class="content"><p>César,</p>
+<p>gracias por compartirla!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p251893">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ruth</div>
+      <div class="rank">Posts: 179</div>
+      <img class="avatar avatar-img" src="avatars/1247.jpg" alt="" loading="lazy">
+      Joined: Fri Dec 07, 2007 01:26 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Fri Jul 22, 2022 10:34 AM
+      </div>
+      <div class="content"><blockquote><cite>Antonio Linares wrote:</cite>César,<br>
+<br>
+Estos son los ejemplos incluidos con mod_harbour para enviar un fichero y luego salvarlo:<br>
+<br>
+<a href="https://github.com/FiveTechSoft/mod_harbour/blob/master/samples/sendfile.prg" rel="noopener">https&#58;//github&#46;com/FiveTechSoft/mod_harbour/blob/master/samples/sendfile&#46;prg</a><br>
+<br>
+<a href="https://github.com/FiveTechSoft/mod_harbour/blob/master/samples/upload.prg" rel="noopener">https&#58;//github&#46;com/FiveTechSoft/mod_harbour/blob/master/samples/upload&#46;prg</a></blockquote><br>
+<br>
+Dear Antonio, <br>
+<br>
+please can you help me with the sendfile.prg &amp; upload.prg example above. <br>
+When I open my uploaded img file it seems to be corrupt and it seems to have another encoding as the original jpg offline. <br>
+<a href="https://onedrive.live.com/?cid=A2B81CE57637B150&amp;id=A2B81CE57637B150%2163656&amp;parId=root&amp;parQt=sharedby&amp;o=OneUp" rel="noopener">https&#58;//onedrive&#46;live&#46;com/?cid=A2B81CE57637B150&amp;id=A2B81CE57637B150%2163656&amp;parId=root&amp;parQt=sharedby&amp;o=OneUp</a><br>
+<img src="https://onedrive.live.com/?cid=A2B81CE57637B150&amp;id=A2B81CE57637B150%2163656&amp;parId=root&amp;parQt=sharedby&amp;o=OneUp" alt="" loading="lazy"><br>
+<br>
+Many thanks in advance and kind regards <br>
+Ruth</div>
+    </div>
+  </div>
+  <div class="post" id="p251898">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Fri Jul 22, 2022 02:17 PM
+      </div>
+      <div class="content">Dear Ruth,<br>
+<br>
+The url that you have provided is not working. Could you send it to me by email using <a href="https://wormhole.app/" rel="noopener">https&#58;//wormhole&#46;app/</a> ? many thanks<br>
+<br>
+Also, please send me the image that you are testing,<br>
+<br>
+best regards</div>
+    </div>
+  </div>
+  <div class="post" id="p251904">
+    <div class="poster">
+      <div class="name" style="color:#105289">joseluisysturiz</div>
+      <div class="rank">Posts: 2064</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 06, 2006 09:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Fri Jul 22, 2022 04:34 PM
+      </div>
+      <div class="content"><p>Saludos, tengo una propuesta de un cliente para desarrollar un WEBSERVICE, queria saber sus recomendaciones con FW, si es que es posible usar este lenguaje en dicho desarrollo, algun POST o la informacion para iniciar , gracias...  <!-- s:shock: --><img src="{SMILIES_PATH}/icon_eek.gif" alt=":shock:" title="Shocked" /><!-- s:shock: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p251906">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ruth</div>
+      <div class="rank">Posts: 179</div>
+      <img class="avatar avatar-img" src="avatars/1247.jpg" alt="" loading="lazy">
+      Joined: Fri Dec 07, 2007 01:26 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Enviar por POST a webservice</span><br>
+        Posted: Fri Jul 22, 2022 04:54 PM
+      </div>
+      <div class="content"><p>Dear Antonio, </p>
+<p>many thanks for your kind attention. I sent the file to you with email.<br>
+I am looking forward very much to your answer ... your sendfile-sample is so nice and slim and I already learned so much from it.<br>
+Thank you again <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>and kind regards<br>
+Ruth</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-41276-page-2.html">2</a> (20 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

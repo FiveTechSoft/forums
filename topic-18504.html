@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>HowTo. Indexacion MutiThread - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-18504">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> HowTo. Indexacion MutiThread</div>
+  <div class="post" id="p96942">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">HowTo. Indexacion MutiThread</span><br>
+        Posted: Tue Apr 06, 2010 04:50 PM
+      </div>
+      <div class="content">Amigos, aquí tenéis una implementación de una indexacion multihilo, en este caso, me centro en NTX, que es lo que tengo que usar.<br>
+Funciona solamente con Harbour, no con xHarbour.<br>
+<br>
+Para compilarlo , hbmk2 test -mt<br>
+ejecutar test 1 // Crea las dbfs de prueba<br>
+<br>
+<strong>NOTA:</strong>Atentos, es un concepto de implementación, <span style="text-decoration:underline">NO os pongais a crear hilos a cascoporro</span><br>
+<br>
+Espero que veáis lo curioso que resulta ver el experimento <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+   Example multiThreads index.
+   One thread by table , and one thread by index.
+   2010 Rafa Carmona
+
+   Thread Main
+        |---------&gt;  Thhread child table for test.dbf
+        |                        |----&gt; Thread child index fname
+        |                        |
+        |                        |-----&gt;Thread child index fcode
+        |
+        |---------&gt;  Thhread child table for test2.dbf
+                                |-----&gt;Thread child index fname2
+
+
+ */
+#include "hbthread.ch"
+
+proc Main( uCreate )
+    Local nSeconds
+    Local aFiles  := { "test", "test2" }        // Arrays files dbf
+    Local aNtx    := { { "fname", "fcode" },;   // files index for test
+                       { "fName2" } }           // files index for test2
+    Local aExpr   := { { "name", "code" },;
+                       { "dtos(fecha)+str(code)" }  }     // Expresions
+    Local cDbf
+
+    if empty( lCreate )
+       lCreate := "0"
+    endif
+
+    setmode( 25,80 )
+    cls
+
+    if uCreate = "1"
+       ? "Create test.dbf and test2.dbf"
+       dbCreate("test",{ {"name","C",1,0 },{"code","N",7,0 } } )
+       use test
+       while lastRec() &lt; 1000000
+             dbAppend()
+             field-&gt;name := chr( recno() )
+             field-&gt;code := recno()
+       enddo
+       close
+       dbCreate("test2",{ {"fecha","D",8,0 },{"code","N",7,0 } } )
+       use test2
+       while lastRec() &lt; 1000000
+             dbAppend()
+             field-&gt;fecha := date() + recno()
+             field-&gt;code := recno()
+       enddo
+       close
+    endif
+
+    cls
+    // Threads
+    nSeconds := Seconds()
+    for each cDbf in aFiles
+       ? "Procesando..: " + cDbf
+       hb_threadStart( @aCreateIndexe(), cDbf, aNtx[ cDbf:__enumindex ], aExpr[ cDbf:__enumindex ], cDbf:__enumindex  )
+    next
+
+    ? "Esperando a los hilos ...."
+    hb_threadWaitForAll()
+
+    ? hb_valTostr( Seconds() - nSeconds )
+
+    ? "Salgo"
+
+return
+
+function aCreateIndexe( cFile, aNtx, aExpr, nPosDbf )
+       Local nContador := 1
+       Local cFileNtx, cExpr
+       Local nLong := Len( aNtx )
+       Local aThreads := {}
+       Local cAlias
+
+       use ( cFile )
+       cAlias := alias()
+       hb_dbDetach( cAlias )  // Libero el alias
+
+       for each cFileNtx in aNtx
+           cExpr  := aExpr[ cFileNtx:__enumindex ]
+           nContador := 1
+           nPos := cFileNtx:__enumindex
+           aadd( aThreads, hb_threadStart( @crea(), cAlias,cExpr, cFileNtx, nPos, nPosDbf ) )
+       next
+
+       aEval( aThreads, { |x| hb_threadJoin( x ) } )  // Espera que termine los hilos hijos
+       hb_dbRequest( cAlias, , , .T.)  // Restaura el alias
+       close
+
+RETURN NIL
+
+proc crea( cAlias, cExpr, cFileNtx, nPos, nPosDbf )
+      Local nContador := 1
+
+       hb_dbRequest( cAlias, , , .T.)  // Restaura el alias
+
+       INDEX ON &amp;(cExpr) TO &amp;(cFileNtx) ;
+             EVAL {|| hb_dispOutAt( nPosDbf, iif( nPos = 1, 20, 40 ), alltrim( hb_valtostr( nContador) ), "GR+/N" ), nContador += INT( LASTREC() / 100 ) , .T. } ;
+             EVERY INT( LASTREC() / 100 )
+
+       hb_dbDetach( cAlias )          // Libera el alias
+
+
+return</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p96944">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HowTo. Indexacion MutiThread</span><br>
+        Posted: Tue Apr 06, 2010 06:42 PM
+      </div>
+      <div class="content"><p>Hola Rafa, cuanto tiempo ! <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>Yo creo q en estos tipo de procesos NO tiene mucho sentido usar threads, es mas, no se hasta que punto puede ser incluso mas lento !. Quizas en los tipicos procesos de server si, porque puedes estar ejecutando un thread con muchas carga y paralelamente ir vaciando otras peticiones....</p>
+<p>Encantant de veuret per aqui...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p96946">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marcelo Via Giglio</div>
+      <div class="rank">Posts: 1088</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 03:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HowTo. Indexacion MutiThread</span><br>
+        Posted: Tue Apr 06, 2010 08:21 PM
+      </div>
+      <div class="content"><p>Carles,</p>
+<p>como que no?, si tienes varios TAG (como creo que es el ejemplo en el caso de NTX indices) cada uno va por  un thread, y claro que sera mas eficiente, ahora no se que estructura de datos son los inideces? B-tree o algo asi, alli mismo se podria utilizar thread al estilo de un QuickSOrt, claro de esto ultimo depende de la estructura.</p>
+<p>No estoy seguro pero creo que ya han optimizado la creacion de indices, que en lugar de hacer una pasada por indice o tag, solo hacen una y los crean al mismo tiempo, por lo menos creo que asi lo hace ADS.</p>
+<p>Interesante el tema gracias por compartir, y claro Carles puede que me equivoque en ese caso mis disculpas</p>
+<p>solo una opinion</p>
+<p>Marcelo</p></div>
+    </div>
+  </div>
+  <div class="post" id="p96948">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HowTo. Indexacion MutiThread</span><br>
+        Posted: Tue Apr 06, 2010 08:52 PM
+      </div>
+      <div class="content"><p>Marcelo,</p>
+<p>Quizas me equivoque yo  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D -->. El ejemplo es interesante y muy bueno para ver el uso de los threads (gràcies Rafa), tan solo he comentado que en harbour y en la creacion de indices quizas no tiene sentido y ganes en velocidad de ejecucion. Yo hice unas pruebas hace tiempo y no consegui optimizar el codigo en velocidad  <!-- s:roll: --><img src="{SMILIES_PATH}/icon_rolleyes.gif" alt=":roll:" title="Rolling Eyes" /><!-- s:roll: --> . Quizas ahora tenga mas sentido y el uso de threads en la creacion de indices sea  bueno. A veces la gente tiende a confundir q el uso de threads duplica, triplica, ... la velocidad de ejecucions de los procesos y creo q no es asi... (al menos en Harbour)  </p>
+<p>Es otra opinion  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --> y si me equivoco, lo siento tambien  <!-- s:lol: --><img src="{SMILIES_PATH}/icon_lol.gif" alt=":lol:" title="Laughing" /><!-- s:lol: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p96950">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HowTo. Indexacion MutiThread</span><br>
+        Posted: Tue Apr 06, 2010 09:35 PM
+      </div>
+      <div class="content"><p>Gusto verte por aquí Carles.</p>
+<p>Por las pruebas que yo he realizado , hasta en la maquina virtual es más rápido el uso de 2 threads indexando , que uno a unoi.<br>
+Mi idea estaba enfocada hacia servidores, Xeon/AMD64 con 4 o más núcleos, y te aseguro que en estas máquinas es donde se nota el rendimiento y el uso de los threads.</p>
+<p>Lógicamente, el crear 2000 hilos no te hace más rápido ni eficiente, pero , por las pruebas que he realizado, sobre 7 hilos y 2 nucleos , se nota, y mucho.<br>
+Ahora si tengo 2000 procesadores, pues creo 2000 hilos, y que el S.O se busque la vida <!-- s;-) --><img src="{SMILIES_PATH}/icon_wink.gif" alt=";-)" title="Wink" /><!-- s;-) --></p>
+<p>Además ahí tienes la base para hacer tus propias pruebas, aunque eso si, es MUY MEJORABLE, como limite de hilos por tabla y limite de hilos por indice, eso lo dejo como ejercicio</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>CUMPLIENDO IMPRESORA FISCAL BEMATECH - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-23777">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> CUMPLIENDO IMPRESORA FISCAL BEMATECH</div>
+  <div class="post" id="p127941">
+    <div class="poster">
+      <div class="name" style="color:#105289">joseluisysturiz</div>
+      <div class="rank">Posts: 2064</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 06, 2006 09:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Fri Mar 30, 2012 04:37 AM
+      </div>
+      <div class="content">Saludos, como decimos en mi pais, &quot;lo prometido es deuda&quot;, aca anexo la adaptacion para usar impresora fiscal, en este caso la BEMATECH MP-4000 TH FI. Muchas gracias a <span style="color:#4000FF">QAZWSX2K</span> que dio casi el 100% de la ayuda en este tema ya que su codigo compartido fue el inicio de todo lo hecho, a <span style="color:#0000FF">mag071 </span>por su disposicion y respuestas a los correos y al pana <span style="color:#0000FF">COMPUBRION </span>por las pruebas y ensayos que nos ayudo a finiquito de lo presente, bueno, sin mas protocolo aca el .PRG final con ciertas adaptaciones a mis necesidades pero que son de facil entendimiento, igual cualquier duda estoy a la orden, gracias, saludos...  <br>
+<br>
+Tema original:<br>
+<!-- l --><a class="postlink-local" href="http://forums.fivetechsupport.com/viewtopic.php?f=6&amp;t=23641&amp;hilit=BEMATECH">viewtopic.php?f=6&amp;t=23641&amp;hilit=BEMATECH</a><!-- l --><br>
+<br>
+Linker de la libreria, el emulador para windows y la ayuda de las funciones:<br>
+<!-- m --><a class="postlink" href="http://www.bematech.com/es/support/default.asp">http://www.bematech.com/es/support/default.asp</a><!-- m --><br>
+<!-- m --><a class="postlink" href="http://www.posvenezuela.com/index.php?option=com_docman&amp;task=cat_view&amp;gid=14&amp;Itemid=38">http://www.posvenezuela.com/index.php?o ... &amp;Itemid=38</a><!-- m --><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// GRACIAS A MI DIOS ANTE TODO Y A MI MADRE QUERIDA...
+// NOMBRE DEL PROGRAMA: BEMATECH.PRG
+// FUNCION: IMPRESION EN FACTURA FISCAL BEMATECH MOD.MP-4000 TH FI
+// ULTIMA FECHA DE TRABAJO 29/03/2012
+
+#include "FiveWin.ch"
+#include "DLL.CH"
+
+#xTranslate As Integer =&gt; AS LONG // ALFREDO CRUZ
+
+MEMVAR oDatos // VAR QUE USO PARA MANEJO DEL IMPUESTO(iva)
+
+PROCEDURE imp_fiscal( aDatCli, aItems, nMtoRecibido, nFormaPago ) // RECIBE DATOS CLIENTE Y PRODUCTOS - JLY
+
+   LOCAL nFor := 0
+
+// EXTRAIGO LA BASE IMPONIBLE DEL PVP YA QUE TIENE EL IVA INCLUIDO
+   FOR nFor := 1 TO LEN( aItems )
+      aItems[nFor,3] := ( 100 * aItems[nFor,3] ) / ( 100 + oDatos:oQryCnf:cnf_poriva )
+   NEXT
+
+// TIPO DE RIF LLEGA NUMERICO Y LO PASO A "V" O "J"
+   IIF( aDatCli[1] == 1, aDatCli[1] := "V", aDatCli[1] := "J" )
+
+   IIF( nFormaPago == 1, nFormaPago := "Efectivo", nFormaPago := "Debito" )
+
+// LISTO PARA DAR SALIDA EN LA IMPRESORA FISCAL BEMATECH
+   graba_fac( aDatCli, aItems, STR( nMtoRecibido ), nFormaPago )
+
+RETURN
+
+
+FUNCTION ini_impre() // GRABA ALICUOTAS BERMATECH(no se uso ya que la impresora tiene IVA grabado en Venezuela)
+
+   LOCAL NRETORNO := 0 ,;
+         MENSAJE := ""
+
+*   NRetorno = BemaProgAlicuota("1200",0) // ORIGINAL
+*   nRetorno = BemaProgAlicuota("1200")
+   nRetorno = Bematech_FI_ProgramaAlicuota("1200", 0)
+
+   IF nRetorno != 1
+      MENSAJE:="ERROR GRABANDO ALICUOTA"+str(nRetorno)+" " +CHR(13)
+
+   ENDIF
+
+   IF LEN(MENSAJE)&lt;&gt;0
+      MSGINFO(MENSAJE)
+      imprime_Z()
+   ENDIF
+
+*   imprime_Z()
+
+RETURN NIL
+
+
+FUNCTION graba_fac( aDatCli, aItems, cMtoRecibido, cFPago ) // GRABA DATOS A LA IMPRESORA
+
+   LOCAL cRif    := aDatCli[1] + "-" + ALLTRIM( STR( aDatCli[2] ) ) ,;
+         cNombre := ALLTRIM( aDatCli[3] ) ,;
+         cDire   := ALLTRIM( aDatCli[4] ) ,;
+         MENSAJE := "" ,;
+         nRetorno := 0 ,;
+         nFor := 0
+
+*   nRetorno:=Bematech_FI_AbreComprobanteDeVenta(cRif, cNombre)
+   nRetorno:=Bematech_FI_AbreComprobanteDeVentaEx(cRif, cNombre, cDire)
+
+   If nRetorno != 1
+      MENSAJE:="ERROR ABRIENDO COMPROBANTE"+CHR(13)
+
+   ENDIF
+
+// CICLO DE IMPRESION DE LOS ITEM FACTURADOS
+   FOR nFor := 1 to LEN( aItems ) // JLY
+
+      nRetorno:=0
+      nRetorno:=Bematech_FI_VendeArticulo( aItems[nFor, 5], aItems[nFor, 1], "1200", "I" ,;
+         STR( aItems[nFor, 2] ), 2, STR( aItems[nFor, 3] ), "%", "0000")
+
+      IF nRetorno != 1
+         MENSAJE:="ERROR GRABANDO ARTICULO, VendeArticulo, "+str(nRetorno)+" " +CHR(13)
+
+      ENDIF
+
+      IF LEN( aItems ) == 1
+         EXIT
+
+      ENDIF
+
+   NEXT nFor
+
+   nRetorno:=0
+   nRetorno:=Bematech_FI_CierraCupon(cFPago, "A", "$", "0000", cMtoRecibido, "Gracias, por su Compra !!!")
+
+   If nRetorno != 1
+      MENSAJE:="ERROR CERRANDO CUPON"+str(nRetorno)+" " +CHR(13)
+   ENDIF
+
+   nRetorno:=0
+   nRetorno:=Bematech_FI_FinalizarCierreCupon("chao")
+
+   If nRetorno != 1
+      MENSAJE:="ERROR GRABANDO ARTICULO, CierreCupon"+str(nRetorno)+" " +CHR(13)
+   ENDIF
+
+   nRetorno:=0
+   nRetorno:=Bematech_FI_RetornoImpresora(0,0,0)
+
+   If nRetorno != 1
+      MENSAJE:="ERROR RETORNANDO IMPRESORA"+CHR(13)
+   EndIf
+
+   IF LEN(MENSAJE)&lt;&gt;0
+      MSGINFO(MENSAJE)
+   ENDIF
+
+RETURN NIL
+
+
+FUNCTION imprime_Z() // RELACION DE VENTAS DEL DIA...
+   LOCAL cFecha := DTOC( DATE() ) ,;
+         cHora := TIME() ,;
+         nRETORNO := 0 ,;
+         MENSAJE := ""
+
+   CFECHA:=MsgDate( Date() , "Fecha del Reporte Z" )
+   NRetorno = BemaReporteZeta(cFecha,cHora)
+
+   If nRetorno != 1
+      MENSAJE:="ERROR SACANDO Z"+str(nRetorno)+" " +CHR(13)
+
+   ENDIF
+
+   IF LEN(MENSAJE)&lt;&gt;0
+      MSGINFO(MENSAJE)
+
+   ELSE
+      MSGINFO("Reporte Z de Fecha "+dtoc(cfecha)+" emitido exitosamente")
+
+   ENDIF
+
+RETURN NIL
+
+*FUNCTION CARGA_BEMATECH()
+// Funciones del Cupon Fiscal
+   DLL function Bematech_FI_AbreComprobanteDeVenta(RIF AS LPSTR, Nombre AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_AbreComprobanteDeVenta" LIB "BemaFI32.dll"
+   DLL FUNCTION Bematech_FI_VendeArticulo(CODIGO AS LPSTR, DESCRIPCION AS LPSTR, ALICUOTA AS LPSTR, TIPOCANTIDAD AS LPSTR, CANTIDAD AS LPSTR, CASASDECIMALES AS LONG, VALORUNITARIO AS LPSTR, TIPODESCUENTO AS LPSTR, DESCUENTO AS LPSTR) AS LONG PASCAL FROM "Bematech_FI_VendeArticulo" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_AbreComprobanteDeVentaEx(RIF AS LPSTR, Nombre AS LPSTR, Direccion AS LPSTR) AS LONG PASCAL FROM "Bematech_FI_AbreComprobanteDeVentaEx" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_DevolucionArticulo(cCodigo AS LPSTR, cDescripcion AS LPSTR, cAlicuota AS LPSTR, cTipoCantidad AS LPSTR, cCantidad AS LPSTR, iCasasDecimales AS Integer, cValorUnit AS LPSTR, cTipoDescuento AS LPSTR, cValorDesc AS LPSTR) AS LONG PASCAL FROM "Bematech_FI_DevolucionArticulo" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_AbreNotaDeCredito(cNombre AS LPSTR, cNumeroSerie AS LPSTR, cRIF AS LPSTR, cDia AS LPSTR ,cMes AS LPSTR, cAno AS LPSTR, cHora AS LPSTR, cMinuto AS LPSTR, cSecundo AS LPSTR, cCOO AS LPSTR) AS LONG PASCAL FROM "Bematech_FI_AbreNotaDeCredito" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VendeArticuloDepartamento( Codigo AS LPSTR , Descripcion AS LPSTR , Alicuota AS LPSTR, ValorUnitario AS LPSTR , Cantidad AS LPSTR , Incremento AS LPSTR , Descuento AS LPSTR , IndiceDepartamento AS LPSTR , UnidadMedida AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VendeArticuloDepartamento" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_AnulaArticuloAnterior() AS LONG PASCAL FROM "Bematech_FI_AnulaArticuloAnterior" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_AnulaArticuloGenerico( NumeroItem AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_AnulaArticuloGenerico" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_AnulaCupon() AS LONG PASCAL FROM "Bematech_FI_AnulaCupon" LIB "BemaFI32.dll"
+   DLL function Bm_FI_CierraCuponReducido( FormaPago AS LPSTR , Mensaje AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_CierraCuponReducido" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_CierraCupon( FormaPago AS LPSTR , IncrementoDescuento AS LPSTR , TipoIncrementoDescuento AS LPSTR , ValorIncrementoDescuento AS LPSTR , ValorPago AS LPSTR , Mensaje AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_CierraCupon" LIB "BemaFI32.dll"
+   DLL FUNCTION BmFechaCup( FormaPgto AS LPSTR, Acrescimo AS LPSTR, TipoAcresc AS LPSTR, ValorAcresc AS LPSTR, ValorPago AS LPSTR, Mensagem AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_CierraCupon" LIB "BemaFI32"
+   DLL FUNCTION BemaReporteZeta( Dt AS LPSTR, Hs AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ReduccionZ" LIB "BemaFI32"
+//
+// JLY
+*   DLL FUNCTION BemaProgAlicuota( cTasas AS LPSTR) AS LONG PASCAL FROM "Bematech_FI_ProgramaAlicuota" LIB "BemaFI32"
+   DLL FUNCTION Bematech_FI_ProgramaAlicuota( cTasas AS LPSTR) AS LONG PASCAL FROM "Bematech_FI_ProgramaAlicuota" LIB "BemaFI32"
+//
+   DLL function Bematech_FI_ResetaImpresora() AS LONG PASCAL FROM "Bematech_FI_ResetaImpresora" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_IniciaCierreCupon( IncrementoDescuento AS LPSTR , TipoincrementoDescuento AS LPSTR , ValorIncrementoDescuento AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_IniciaCierreCupon" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_EfectuaFormaPago( FormaPago AS LPSTR , ValorFormaPago AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_EfectuaFormaPago" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_EfectuaFormaPagoDescripcionForma( FormaPago AS LPSTR , ValorFormaPago AS LPSTR , DescripcionFormaPago AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_EfectuaFormaPagoDescripcionForma" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_FinalizarCierreCupon( Mensaje AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_FinalizarCierreCupon" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_RectificaFormasPago( FormaOrigen AS LPSTR , FormaDestino AS LPSTR , Valor AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_RectificaFormasPago" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_UsaUnidadMedida( UnidadMedida AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_UsaUnidadMedida" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ExtenderDescripcionArticulo( Descripcion AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ExtenderDescripcionArticulo" LIB "BemaFI32.dll"
+// Funciones de Inicialización
+   DLL function Bematech_FI_CambiaSimboloMoneda( SimboloMoneda AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_CambiaSimboloMoneda" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ProgramaAlicuot( Aliquota AS LPSTR , ICMS_ISS AS Integer ) AS LONG PASCAL FROM "Bematech_FI_ProgramaAlicuota" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ProgramaHorarioDeVerano() AS LONG PASCAL FROM "Bematech_FI_ProgramaHorarioDeVerano" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_CrearDepartamento( Indice AS Integer, Departamento AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_CrearDepartamento" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_CrearTotalizadorSinIcms( Indice AS Integer, Totalizador AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_CrearTotalizadorSinIcms" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ProgramaRedondeo() AS LONG PASCAL FROM "Bematech_FI_ProgramaRedondeo" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ProgramaTruncamiento() AS LONG PASCAL FROM "Bematech_FI_ProgramaTruncamiento" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_LineasEntreCupones( Linhas AS Integer ) AS LONG PASCAL FROM "Bematech_FI_LineasEntreCupones" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_EspacioEntreLineas( Dots AS Integer ) AS LONG PASCAL FROM "Bematech_FI_EspacioEntreLineas" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_FuerzaImpactoAgujas( FuerzaImpacto AS Integer ) AS LONG PASCAL FROM "Bematech_FI_FuerzaImpactoAgujas" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ActivaDesactivaReporteZAutomatico(flag AS Integer ) AS LONG PASCAL FROM "Bematech_FI_ActivaDesactivaReporteZAutomatico" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ActivaDesactivaCuponAdicional(flag AS Integer ) AS LONG PASCAL FROM "Bematech_FI_ActivaDesactivaCuponAdicional" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ActivaDesactivaVinculadoComprobanteNoFiscal(flag AS Integer ) AS LONG PASCAL FROM "Bematech_FI_ActivaDesactivaVinculadoComprobanteNoFiscal" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ActivaDesactivaImpresionBitmapMA( flag AS Integer ) AS LONG PASCAL FROM "Bematech_FI_ActivaDesactivaImpresionBitmapMA" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_HoraLimiteReporteZ( Hora AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_HoraLimiteReporteZ" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ProgramaCliche( Cliche AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ProgramaCliche" LIB "BemaFI32.dll"
+// Funciones de los Informes Fiscales
+   DLL function Bematech_FI_LecturaX() AS LONG PASCAL FROM "Bematech_FI_LecturaX" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ReduccionZ( Fecha as LPSTR , Hora as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ReduccionZ" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_InformeGerencial( Texto as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_InformeGerencial" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_InformeGerencialTEF( Texto as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_InformeGerencialTEF" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_CierraInformeGerencial() AS LONG PASCAL FROM "Bematech_FI_CierraInformeGerencial" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_LecturaMemoriaFiscalFecha( FechaInicial as LPSTR , FechaFinal as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_LecturaMemoriaFiscalFecha" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_LecturaMemoriaFiscalReduccion( ReduccionInicial as LPSTR, ReduccionFinal as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_LecturaMemoriaFiscalReduccion" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_LecturaMemoriaFiscalSerialFecha( FechaInicial as LPSTR , FechaFinal as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_LecturaMemoriaFiscalSerialFecha" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_LecturaMemoriaFiscalSerialReduccion( ReduccionInicial as LPSTR , ReduccionFinal as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_LecturaMemoriaFiscalSerialReduccion" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_InformeTransacciones( tipo as LPSTR, Fechaini as LPSTR, Fechafim as LPSTR, Opcion as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_InformeTransacciones" LIB "BemaFI32.dll"
+// Funciones de las Operaciones No Fiscales
+   DLL function Bematech_FI_RecibimientoNoFiscal( IndiceTotalizador as LPSTR , Valor as LPSTR , FormaPago as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_RecibimientoNoFiscal" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_AbreComprobanteNoFiscalVinculado( FormaPago as LPSTR , Valor as LPSTR , NumeroCupon as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_AbreComprobanteNoFiscalVinculado" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ImprimeComprobanteNoFiscalVinculado( Texto as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ImprimeComprobanteNoFiscalVinculado" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_UsaComprobanteNoFiscalVinculadoTEF( Texto as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_UsaComprobanteNoFiscalVinculadoTEF" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_CierraComprobanteNoFiscalVinculado() AS LONG PASCAL FROM "Bematech_FI_CierraComprobanteNoFiscalVinculado" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_Sangria( Valor as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_Sangria" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_Provision( Valor as LPSTR , FormaPago as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_Provision" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_AbreInformeGerencial( NumInforme as LPSTR ) AS LONG PASCAL FROM "Bematech_FI_AbreInformeGerencial" LIB "BemaFI32.dll"
+// Otras Funciones
+   DLL function Bematech_FI_AbrePuertaSerial() AS LONG PASCAL FROM 'Bematech_FI_AbrePuertaSerial' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_CierraPuertaSerial() AS LONG PASCAL FROM 'Bematech_FI_CierraPuertaSerial' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_AperturaDelDia( ValorCompra AS LPSTR , FormaPago AS LPSTR ) AS LONG PASCAL FROM 'Bematech_FI_AperturaDelDia' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_CierreDelDia() AS LONG PASCAL FROM 'Bematech_FI_CierreDelDia' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ImprimeConfiguracionesImpresora() AS LONG PASCAL FROM 'Bematech_FI_ImprimeConfiguracionesImpresora' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ImprimeDepartamentos() AS LONG PASCAL FROM 'Bematech_FI_ImprimeDepartamentos' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaImpresoraPrendida() AS LONG PASCAL FROM 'Bematech_FI_VerificaImpresoraPrendida' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ImpresionCarne( Titulo as LPSTR, Parcelas AS LPSTR , Fechas AS integer, Cantidad AS integer, Texto AS LPSTR, Cliente AS LPSTR, RG_CPF AS LPSTR, Cupon AS LPSTR , Vias AS integer, Firma AS integer ) AS LONG PASCAL FROM 'Bematech_FI_ImpresionCarne' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_InfoBalanza( Porta AS LPSTR , Modelo AS integer, Peso as LPSTR, PrecioKilo as LPSTR, Total AS LPSTR ) AS LONG PASCAL FROM 'Bematech_FI_InfoBalanza' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VersionDll( Version AS LPSTR ) AS LONG PASCAL FROM 'Bematech_FI_VersionDll' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_LeerArchivoRetorno( Retorno AS LPSTR ) AS LONG PASCAL FROM 'Bematech_FI_LeerArchivoRetorno' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ReloadINIFile() AS LONG PASCAL FROM 'Bematech_FI_ReloadINIFile' LIB "BemaFI32.dll"
+// Funciones de Autenticación y Gaveta de Efectivo
+   DLL function Bematech_FI_Autenticacion() AS LONG PASCAL FROM "Bematech_FI_Autenticacion" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ProgramaCaracterAutenticacion( Parametros AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ProgramaCaracterAutenticacion" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_AccionaGaveta() AS LONG PASCAL FROM "Bematech_FI_AccionaGaveta" LIB "BemaFI32.dll"
+// Funciones de Informaciones de la Impresora
+   DLL function Bematech_FI_NumeroSerie( NumeroSerie AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_NumeroSerie" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_SubTotal( SubTotal AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_SubTotal" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_NumeroCupon( NumeroCupon AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_NumeroCupon" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_LecturaXSerial() AS LONG PASCAL FROM "Bematech_FI_LecturaXSerial" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VersionFirmware( VersionFirmware AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VersionFirmware" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_CGC_IE( CGC AS LPSTR , IE AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_CGC_IE" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_GranTotal( GranTotal AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_GranTotal" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_Cancelamientos( ValorCancelamientos AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_Cancelamientos" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_Descuentos( ValorDescuentos AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_Descuentos" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_NumeroOperacionesNoFiscales( NumeroOperaciones AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_NumeroOperacionesNoFiscales" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_NumeroCuponesAnulados( NumeroCancelamientos AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_NumeroCuponesAnulados" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_NumeroIntervenciones( NumeroIntervenciones AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_NumeroIntervenciones" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_NumeroReducciones( NumeroReducoes AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_NumeroReducciones" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_NumeroSustitucionesPropietario( NumeroSustituiciones AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_NumeroSustitucionesPropietario" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_UltimoArticuloVendido( NumeroArticulo AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_UltimoArticuloVendido" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ClichePropietario( Cliche AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ClichePropietario" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_NumeroCaja( NumeroCaja AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_NumeroCaja" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_NumeroTienda( NumeroTienda AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_NumeroTienda" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_SimboloMoneda( SimboloMoneda AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_SimboloMoneda" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_MinutosPrendida( Minutos AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_MinutosPrendida" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_MinutosImprimiendo( Minutos AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_MinutosImprimiendo" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaModoOperacion( Modo AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VerificaModoOperacion" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaEpromConectada( Flag AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VerificaEpromConectada" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ValorPagoUltimoCupon( ValorCupon AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ValorPagoUltimoCupon" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_FechaHoraImpresora( Fecha AS LPSTR , Hora AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_FechaHoraImpresora" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ContadoresTotalizadoresNoFiscales( Contadores AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ContadoresTotalizadoresNoFiscales" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaTotalizadoresNoFiscales( Totalizadores AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VerificaTotalizadoresNoFiscales" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_FechaHoraReduccion( Fecha AS LPSTR , Hora AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_FechaHoraReduccion" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaTruncamiento( Flag AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VerificaTruncamiento" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_Agregado( ValorIncrementos AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_Agregado" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ContadorBilletePasaje( ContadorPasaje AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ContadorBilletePasaje" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaAlicuotasIss( Flag AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VerificaAlicuotasIss" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaFormasPago( Formas AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VerificaFormasPago" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaRecibimientoNoFiscal( Recebimentos AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VerificaRecibimientoNoFiscal" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaDepartamentos( Departamentos AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VerificaDepartamentos" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaTotalizadoresParciales( Totalizadores AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VerificaTotalizadoresParciales" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_RetornoAlicuotas( Alicuotas AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_RetornoAlicuotas" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_DatosUltimaReduccion( DadosReduccion AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_DatosUltimaReduccion" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaIndiceAlicuotasIss( Flag AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VerificaIndiceAlicuotasIss" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ValorFormaPago( FormaPago AS LPSTR , Valor AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ValorFormaPago" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ValorTotalizadorNoFiscal( Totalizador AS LPSTR , Valor AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ValorTotalizadorNoFiscal" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ClavePublica( Clave AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ClavePublica" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ContadorSecuencial( Retorno AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_ContadorSecuencial" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VentaBrutaDiaria( Valor AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_VentaBrutaDiaria" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_BaudrateProgramado( Baudrate AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_BaudrateProgramado" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_FlagActivacionAlineamientoIzquierda( Flag AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_FlagActivacionAlineamientoIzquierda" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_ImprimeClavePublica( ) AS LONG PASCAL FROM "Bematech_FI_ImprimeClavePublica" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_FechaMovimiento( Data AS LPSTR ) AS LONG PASCAL FROM "Bematech_FI_FechaMovimiento" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaTipoImpresora( @TipoImpresora AS Integer ) AS LONG PASCAL FROM "Bematech_FI_VerificaTipoImpresora" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaEstadoImpresora( @ACK AS Integer, @ST1 AS Integer, @ST2 AS Integer ) AS LONG PASCAL FROM "Bematech_FI_VerificaEstadoImpresora" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_MonitoramentoPapel( @Lineas AS Integer) AS LONG PASCAL FROM "Bematech_FI_MonitoramentoPapel" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_FlagSensores( @Flag AS integer ) AS LONG PASCAL FROM "Bematech_FI_FlagSensores" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_FlagsFiscales( @Flag AS Integer ) AS LONG PASCAL FROM "Bematech_FI_FlagsFiscales" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_FlagFiscalesIII( @Flag as integer ) AS LONG PASCAL FROM "Bematech_FI_FlagFiscalesIII" LIB "BemaFI32.dll"
+   DLL function Bematech_FI_RetornoImpresora( @ACK AS Integer, @ST1 AS Integer, @ST2 AS Integer ) AS LONG PASCAL FROM 'Bematech_FI_RetornoImpresora' LIB "BemaFI32.dll"
+   DLL function Bematech_FI_VerificaEstadoGaveta( @EstadoGaveta AS Integer ) AS LONG PASCAL FROM "Bematech_FI_VerificaEstadoGaveta" LIB "BemaFI32.dll"
+
+*RETURN NIL</code></pre></div><br>
+<br>
+<br>
+Lo mas importante del archivo .INI<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">;----------------------------------------------------------------------------;
+;                                                                            ;
+;  BEMAFI32.INI                                                              ;
+;  Ver 4.1.10.0 - Jan/2006                                                   ;
+;                                                                            ;
+;  Archivo de inicialización de la dll BemaFI32 para las impresoras fiscales ;
+;  MP-20 FI II, MP-40 FI II, MP-2000 FI TH, MP-6000 FI TH, MP-25 FI,         ;
+;  MP-50 FI Bematech y Y-8000 y Y-8500 Yanco                           ;
+;                                                                            ;
+;----------------------------------------------------------------------------;
+
+[Sistema]
+Puerta=COM3
+Path=C:\
+Status=0
+Retorno=0
+StatusFuncion=0
+ControlPuerta=1
+ModeloImp=BEMATECH
+ConfigRed=0
+ModoGaveta=0
+Log=1
+EmulMFD=0
+StatusCheque=
+PAIS=VENEZUELA
+ConfigRede=2
+
+
+[MFD]
+Impresora=1
+StatusError=1
+TimeOutZ=3
+
+
+[Opcional]
+Favorecido=
+Ciudad=</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p127970">
+    <div class="poster">
+      <div class="name" style="color:#105289">horacio</div>
+      <div class="rank">Posts: 1364</div>
+      <div class="avatar"></div>
+      Joined: Wed Jun 21, 2006 12:39 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Fri Mar 30, 2012 05:44 PM
+      </div>
+      <div class="content"><p>Muchisimas gracias por tu aporte, eso es lo que hace grande este foro. <br>
+Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p128002">
+    <div class="poster">
+      <div class="name" style="color:#105289">joseluisysturiz</div>
+      <div class="rank">Posts: 2064</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 06, 2006 09:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Sat Mar 31, 2012 05:45 PM
+      </div>
+      <div class="content"><blockquote><cite>horacio wrote:</cite>Muchisimas gracias por tu aporte, eso es lo que hace grande este foro. <br>
+Saludos</blockquote><br>
+Bueno, como ya bien dije, el credito es de los otros colegas, yo solo hice algunas pulituras y arregle algunos detalles para adaptarlo a mis necesidades, siempe y cuando se pueda se comparte lo que se pueda.saludos... </div>
+    </div>
+  </div>
+  <div class="post" id="p128057">
+    <div class="poster">
+      <div class="name" style="color:#105289">Orbex</div>
+      <div class="rank">Posts: 24</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 22, 2012 02:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Mon Apr 02, 2012 03:38 AM
+      </div>
+      <div class="content"><p>Hola Jose Luis</p>
+<p>Si me permites, tengo un algunas preguntas:</p>
+<ol>
+<li>Haz podido imprimir en la Bematech descripciones largas para un ITEM, hay una en la DLL que parece que sirve para ello pero que no he sabido como emplearlar?</li>
+<li>Como puedes dar mas espacio entre las lineas de impresion ?</li>
+<li>Se pueden emplear letras de diferente tamaño ?</li>
+<li>Cuando haces la reimpresion de una factura fiscal, como haces para cortar el papel ?</li>
+</ol>
+<p>Gracias por tu ayuda</p>
+<p>Saludos desde Panama</p></div>
+    </div>
+  </div>
+  <div class="post" id="p128099">
+    <div class="poster">
+      <div class="name" style="color:#105289">joseluisysturiz</div>
+      <div class="rank">Posts: 2064</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 06, 2006 09:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Tue Apr 03, 2012 01:45 AM
+      </div>
+      <div class="content"><blockquote><cite>Orbex wrote:</cite>Hola Jose Luis<br>
+<br>
+<br>
+Si me permites, tengo un algunas preguntas:<br>
+<br>
+1. Haz podido imprimir en la Bematech descripciones largas para un ITEM, hay una en la DLL que parece que sirve para ello pero que no he sabido como emplearlar?<br>
+2. Como puedes dar mas espacio entre las lineas de impresion ?<br>
+3. Se pueden emplear letras de diferente tamaño ?<br>
+4. Cuando haces la reimpresion de una factura fiscal, como haces para cortar el papel ?<br>
+<br>
+Gracias por tu ayuda<br>
+<br>
+Saludos desde Panama</blockquote><br>
+<br>
+<br>
+Respondiendo:<br>
+1. Las descripciones tienen un limite, pero puede usar esta opcion que te permite hasta 200 char, en el manual busca<br>
+    Bematech_FI_ExtenderDescripcionArticulo()  Esta función permite aumentar la descripción del artículo hasta 200 caracteres. <br>
+<br>
+2. Para dar mas espacio debes agregarselo al valor que estas enviando o en la VAR, recuerda que son de tipo char, ejemplo<br>
+    cCodigo := cCodigo + space(n)<br>
+    iRetorno = Bematech_FI_VendeArticulo(cCodigo, &quot;Pluma    &quot;, &quot;1200    &quot;, &quot;I   &quot;, &quot;10&quot;, 2, &quot;0,25&quot;, &quot;%&quot;, &quot;0000&quot;)<br>
+    iRetorno = Bematech_FI_VendeArticulo(&quot;123&quot;+SPACE(n), &quot;Pluma&quot;, &quot;1200&quot;, &quot;I&quot;, &quot;10&quot;, 2, &quot;0,25&quot;, &quot;%&quot;, &quot;0000&quot;)<br>
+<br>
+3. No vi ninguna funcion o inicializacion que determine el tamaño o tipo de fuente, habria que leer un poco mas el manual<br>
+<br>
+4. En mi caso el corte de papel lo hace solo la impresora.<br>
+<br>
+Te comento que aca en Venezuela las impresoras le agregan algo que se le llama fiscalizacion, donde estan los datos del dueño del negocio, esos datos son impresos cuando se inicializa la impresion, espero haberte podido ayudar y cualquier otra duda, estamos a la orden.saludos... </div>
+    </div>
+  </div>
+  <div class="post" id="p128102">
+    <div class="poster">
+      <div class="name" style="color:#105289">Orbex</div>
+      <div class="rank">Posts: 24</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 22, 2012 02:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Tue Apr 03, 2012 02:43 AM
+      </div>
+      <div class="content"><p>Gracias por contestar Jose Luis</p>
+<p>El caso del punto 1 es que ya se cual es la funcion pero en el manual no he encontrado la forma de usarla. Me preguntaba si habrias tenido la necesidad de usarla en que parte de la rutina de impresion la debo poner. <br>
+Es decir, se usa la funcion VendeArticulo para definir los productos que se envian a la impresora pero el texto que aparece alli es limitado... la pregunta es, donde coloco la funcion para ampliar la descripcion</p>
+<p>Gracias nuevamente</p></div>
+    </div>
+  </div>
+  <div class="post" id="p128107">
+    <div class="poster">
+      <div class="name" style="color:#105289">joseluisysturiz</div>
+      <div class="rank">Posts: 2064</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 06, 2006 09:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Tue Apr 03, 2012 05:22 AM
+      </div>
+      <div class="content"><blockquote><cite>Orbex wrote:</cite>Gracias por contestar Jose Luis<br>
+<br>
+El caso del punto 1 es que ya se cual es la funcion pero en el manual no he encontrado la forma de usarla. Me preguntaba si habrias tenido la necesidad de usarla en que parte de la rutina de impresion la debo poner. <br>
+Es decir, se usa la funcion VendeArticulo para definir los productos que se envian a la impresora pero el texto que aparece alli es limitado... la pregunta es, donde coloco la funcion para ampliar la descripcion<br>
+<br>
+Gracias nuevamente</blockquote><br>
+<br>
+Extraido del MANUAL<br>
+<br>
+Bematech_FI_ExtenderDescripcionArticulo<br>
+DLL function Bematech_FI_ExtenderDescripcionArticulo( Descripcion AS LPSTR ) AS LONG PASCAL FROM &quot;Bematech_FI_ExtenderDescripcionArticulo&quot; LIB &quot;BemaFI32.dll&quot;<br>
+<br>
+Esta función permite aumentar la descripción del artículo hasta 200 caracteres. <br>
+<br>
+Parámetro: <br>
+<br>
+Descripción: STRING con la descripción del ítem de hasta 200 caracteres. <br>
+Posibles retornos de la Función (INT): <br>
+<br>
+0: Error de comunicación. <br>
+1: OK. <br>
+-2: Parámetro inválido en la función. <br>
+-4: El archivo de inicialización BemaFI32.ini no fue encontrado en el directorio de sistema del Windows. <br>
+-5: Error al abrir la puerta de comunicación. <br>
+-27: Status de la impresora diferente de 6,0,0 (ACK, ST1 y ST2). <br>
+<br>
+ Observaciones: <br>
+<br>
+Esta función debe ser usada antes de la función Bematech_FI_VendeArticulo, pues de esa manera, el artículo será impreso con la nueva descripción.<br>
+<br>
+Ésta tiene validad solamente para la impresión de un artículo, volviendo al default que es de 29 caracteres en la descripción<br>
+<br>
+Ejemplo: <br>
+<br>
+ Ejemplo en Visual Basic <br>
+<br>
+ <br>
+<br>
+iRetorno = Bematech_FI_ExtenderDescripcionArticulo(&quot;Producto 123/776 - 001 abc&quot;) <br>
+<br>
+ <br>
+<br>
+Ejemplo en Delphi <br>
+<br>
+ <br>
+<br>
+cDescMaior := 'Producto 123/776 - 001 abc'; <br>
+<br>
+iRetorno := Bematech_FI_ExtenderDescripcionArticulo( pchar( cDescMaior ) );</div>
+    </div>
+  </div>
+  <div class="post" id="p128131">
+    <div class="poster">
+      <div class="name" style="color:#105289">Orbex</div>
+      <div class="rank">Posts: 24</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 22, 2012 02:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Tue Apr 03, 2012 02:22 PM
+      </div>
+      <div class="content"><p>Muchas gracias Jose Luis, me funciono perfecto lo de la ampliacion de la descripcion.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p128156">
+    <div class="poster">
+      <div class="name" style="color:#105289">joseluisysturiz</div>
+      <div class="rank">Posts: 2064</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 06, 2006 09:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Tue Apr 03, 2012 10:44 PM
+      </div>
+      <div class="content"><blockquote><cite>Orbex wrote:</cite>Muchas gracias Jose Luis, me funciono perfecto lo de la ampliacion de la descripcion.</blockquote><br>
+<br>
+Ok, si quieres puedes publicar algo de lo hecho para compartirlo con los demas colegas, asi aprendemos todos, saludos... </div>
+    </div>
+  </div>
+  <div class="post" id="p128163">
+    <div class="poster">
+      <div class="name" style="color:#105289">Orbex</div>
+      <div class="rank">Posts: 24</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 22, 2012 02:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Wed Apr 04, 2012 03:28 AM
+      </div>
+      <div class="content"><p>Claro que si, voy a hacer una recopilacion de algunas cosas y luego la publico</p>
+<p>Gracias</p>
+<p>PD: Seria bueno que se hiciera lo mismo con otros modelos de impresoras fiscales. Por lo pronto he utilizaco Tally, Hasar, Citizen pero solo por medio de programas SPOOLER, aun no he logrado hacer la coneccion por medio de DLL.</p>
+<p>Saludos a todos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p128187">
+    <div class="poster">
+      <div class="name" style="color:#105289">joseluisysturiz</div>
+      <div class="rank">Posts: 2064</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 06, 2006 09:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Wed Apr 04, 2012 06:43 PM
+      </div>
+      <div class="content"><blockquote><cite>Orbex wrote:</cite>Claro que si, voy a hacer una recopilacion de algunas cosas y luego la publico<br>
+<br>
+Gracias<br>
+<br>
+PD: Seria bueno que se hiciera lo mismo con otros modelos de impresoras fiscales. Por lo pronto he utilizaco Tally, Hasar, Citizen pero solo por medio de programas SPOOLER, aun no he logrado hacer la coneccion por medio de DLL.<br>
+<br>
+Saludos a todos.</blockquote><br>
+<br>
+Si consigues los drivers podemo entre todos usar estas impresoras y agregarlas si es posible a FWH, al final no es tan dificil configurar estas impresoras fiscales, solo hay que tener paciencia y tener su emulador, saludos... </div>
+    </div>
+  </div>
+  <div class="post" id="p210860">
+    <div class="poster">
+      <div class="name" style="color:#105289">centrinorata</div>
+      <div class="rank">Posts: 1</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 20, 2018 01:27 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Wed Mar 21, 2018 12:28 PM
+      </div>
+      <div class="content"><blockquote><cite>Orbex wrote:</cite>Hola Jose Luis<br>
+<br>
+<br>
+Si me permites, tengo un algunas preguntas:<br>
+<br>
+1. Haz podido imprimir en la Bematech descripciones largas para un ITEM, hay una en la DLL que parece que sirve para ello pero que no he sabido como emplearlar?<br>
+2. Como puedes dar mas espacio entre las lineas de impresion ?<br>
+3. Se pueden emplear letras de diferente tamaño ?<br>
+4. Cuando haces la reimpresion de una factura fiscal, como haces para cortar el papel ?<br>
+<br>
+Gracias por tu ayuda<br>
+<br>
+Saludos desde Panama</blockquote><br>
+Hola Orbex y tambien a Jose Luis, yo soy de venezuela y quisiera saber como puedo reimprimir una factura en bematech, tengo tambien la necesidad de saber como obtengo la ultima factura emitida para poder comprobar este ultimo en el sistema!! gracias</div>
+    </div>
+  </div>
+  <div class="post" id="p210879">
+    <div class="poster">
+      <div class="name" style="color:#105289">joseluisysturiz</div>
+      <div class="rank">Posts: 2064</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 06, 2006 09:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Wed Mar 21, 2018 07:58 PM
+      </div>
+      <div class="content"><blockquote><cite>centrinorata wrote:</cite><blockquote><cite>Orbex wrote:</cite>Hola Jose Luis<br>
+<br>
+<br>
+Si me permites, tengo un algunas preguntas:<br>
+<br>
+1. Haz podido imprimir en la Bematech descripciones largas para un ITEM, hay una en la DLL que parece que sirve para ello pero que no he sabido como emplearlar?<br>
+2. Como puedes dar mas espacio entre las lineas de impresion ?<br>
+3. Se pueden emplear letras de diferente tamaño ?<br>
+4. Cuando haces la reimpresion de una factura fiscal, como haces para cortar el papel ?<br>
+<br>
+Gracias por tu ayuda<br>
+<br>
+Saludos desde Panama</blockquote><br>
+Hola Orbex y tambien a Jose Luis, yo soy de venezuela y quisiera saber como puedo reimprimir una factura en bematech, tengo tambien la necesidad de saber como obtengo la ultima factura emitida para poder comprobar este ultimo en el sistema!! gracias</blockquote><br>
+<br>
+<br>
+Saludos, si puedes contactme por SKYPE, casi siempre estoy por alli...haber en que te puedo ayudar...mi nick es joseluisy(cerebro)...saludos... </div>
+    </div>
+  </div>
+  <div class="post" id="p241848">
+    <div class="poster">
+      <div class="name" style="color:#105289">cujarjose</div>
+      <div class="rank">Posts: 1</div>
+      <div class="avatar"></div>
+      Joined: Sun May 16, 2021 05:53 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: CUMPLIENDO IMPRESORA FISCAL BEMATECH</span><br>
+        Posted: Sat Jun 05, 2021 03:03 PM
+      </div>
+      <div class="content"><p>Saludos amigos del foro, tengo el siguiente problema y si me pueden orientar, para la emision de la factura fiscal implemente las rutinas de la Bematech tanto las que se describen en el manual como las que aqui se indican y en el emulador fiscal no se refleja o no calcula el IVA no entiendo, como lograr que lo calcule sale todo el tiempo como productos exentos este es parte del codigo para esa parte.</p>
+<p>If mExento = True Then<br>
+                                sql = &quot;INSERT INTO tblBemaVentaArticulos (Codigo,Descripcion,IndiceAlicuota,&quot; _<br>
+                                &amp; &quot;TipoCantidad,Quantidade,CasasDecimales,ValorUnitario,TipoDescuento,ValorDescuento)&quot; _<br>
+                                &amp; &quot; VALUES ('&quot; &amp; mCodID.Trim &amp; &quot;','&quot; &amp; Mid(mDescrip.Trim, 1, 29) _<br>
+                                &amp; &quot;','&quot; &amp; &quot;II&quot; _<br>
+                                &amp; &quot;','&quot; &amp; &quot;I&quot; _<br>
+                                &amp; &quot;','&quot; &amp; mcantidad _<br>
+                                &amp; &quot;','&quot; &amp; 2 _<br>
+                                &amp; &quot;','&quot; &amp; CType(mVarImporUnit, Single) _<br>
+                                &amp; &quot;','&quot; &amp; &quot;%&quot; _<br>
+                                &amp; &quot;','&quot; &amp; (Val(mDescue) * 100).ToString &amp; &quot;')&quot;</p>
+<pre><code>                        Else
+                            sql = &amp;quot;INSERT INTO tblBemaVentaArticulos (Codigo,Descripcion,IndiceAlicuota,&amp;quot; _
+                            &amp;amp; &amp;quot;TipoCantidad,Quantidade,CasasDecimales,ValorUnitario,TipoDescuento,ValorDescuento)&amp;quot; _
+                            &amp;amp; &amp;quot; VALUES ('&amp;quot; &amp;amp; mCodID.Trim &amp;amp; &amp;quot;','&amp;quot; &amp;amp; Mid(mDescrip.Trim, 1, 29) _
+                            &amp;amp; &amp;quot;','&amp;quot; &amp;amp; &amp;quot;PP&amp;quot; _
+                            &amp;amp; &amp;quot;','&amp;quot; &amp;amp; &amp;quot;I&amp;quot; _
+                            &amp;amp; &amp;quot;','&amp;quot; &amp;amp; mcantidad _
+                            &amp;amp; &amp;quot;','&amp;quot; &amp;amp; 2 _
+                            &amp;amp; &amp;quot;','&amp;quot; &amp;amp; CType(mVarImporUnit, Single) _
+                            &amp;amp; &amp;quot;','&amp;quot; &amp;amp; &amp;quot;%&amp;quot; _
+                            &amp;amp; &amp;quot;','&amp;quot; &amp;amp; (Val(mDescue) * 100).ToString &amp;amp; &amp;quot;')&amp;quot;
+                        End If
+                        mysql(sql
+</code></pre>
+<p>Grabo igualmente la alicuota <br>
+ Private Sub btoAplica_Click(sender As Object, e As EventArgs) Handles btoAplica.Click<br>
+        Dim SituacionTributaria As Object<br>
+        If Option1.Checked = True Then<br>
+            SituacionTributaria = &quot;0&quot;<br>
+        Else<br>
+            SituacionTributaria = &quot;1&quot;<br>
+        End If<br>
+        'Función que configura un valor para una alicuota<br>
+        Retorno = Bematech_FI_ProgramaAlicuota(txtAlicuota.Text, SituacionTributaria)<br>
+        Call VerificaRetornoImpresora(&quot;&quot;, &quot;&quot;, Retorno, &quot;Programación de Alicuotas&quot;)</p>
+<pre><code>    lblmsj.Text = &amp;quot;Alicuota Programada ...&amp;quot;
+    tmrTemporizador.Start()
+
+    txtAlicuota.Focus()
+End Sub
+</code></pre>
+<p>Y tampoco aparece el IVA cuando genero la factura por el emulador MP 4000 TH FI</p>
+<p>Si me pueden orientar les agradeceria.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

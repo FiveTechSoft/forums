@@ -1,0 +1,1408 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Buffer de registro - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-34402">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Buffer de registro</div>
+  <div class="post" id="p204250">
+    <div class="poster">
+      <div class="name" style="color:#105289">José Luis Sánchez</div>
+      <div class="rank">Posts: 564</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 13, 2005 09:23 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Buffer de registro</span><br>
+        Posted: Tue Aug 01, 2017 12:06 PM
+      </div>
+      <div class="content">Hola,<br>
+estoy intentando hacer un buffer de registro que me permita acceder al mismo con la notación dbf:campo. Una alternativa al clásico scatter/gather pero que pueda usar los nombres de campo para acceder. Me da igual una clase que funciones.<br>
+<br>
+El primer ejemplo que he encontrado es de Maurizio, en este foro - <!-- l --><a class="postlink-local" href="http://forums.fivetechsupport.com/viewtopic.php?f=3&amp;t=14019&amp;start=0&amp;hilit=tdatabase">viewtopic.php?f=3&amp;t=14019&amp;start=0&amp;hilit=tdatabase</a><!-- l --><br>
+<br>
+Pero el siguiente ejemplo no funciona con Harbour:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Function MAin()
+Local aVArs 
+USE "CUSTOMER.dbf"
+aVars := LoadDbf() 
+
+? aVars:FIRST//  := "ABCD" 
+? aVars:LAST
+
+SaveDbf(aVars)
+dbcloseall()
+Return nil 
+
+ Function LoadDbf()  // Scatter()
+  Local aVars  := {=&gt;}
+  LOcal nField := FCount()
+  LOcal nX := 1
+  FOR nX  := 1 TO  nField
+      aVars[FIELDNAME(nX)] := FieldGet(nX)
+  NEXT
+
+ Return aVars
+
+//--------------------------------------------------------------------------
+Function  SaveDbf(aVArs)     //Gather(aVars)
+    lOCAL Nx  := 1
+    FOR Nx  := 1 TO  LEN(aVars)
+            FieldPut(nX,aVArs[FIELDNAME(nX)]  )
+    NEXT
+Return TRUE
+
+//--------------------------------------------------------------------------
+ Function  Blank(aVars)  
+   local i,nX
+   i := len(aVars)
+   for nX :=1 to i
+     do case
+        case valtype(aVars[FIELDNAME(nX)]) == "C" ; aVars[FIELDNAME(nX)] := space(len(aVars[FIELDNAME(nX)]))
+        case valtype(aVars[FIELDNAME(nX)]) == "N" ; aVars[FIELDNAME(nX)] := 0
+        case valtype(aVars[FIELDNAME(nX)]) == "D" ; aVars[FIELDNAME(nX)] := CTOD("00-00-00")
+        case valtype(aVars[FIELDNAME(nX)]) == "M" ; aVars[FIELDNAME(nX)] := space(200)
+        case valtype(aVars[FIELDNAME(nX)]) == "L" ; aVars[FIELDNAME(nX)] := .F.
+     endcase
+   next
+  Return  aVars</code></pre></div><br>
+<br>
+Mirando en los fuentes de harbour, hay un ejemplo de clase pero tampoco me funciona como yo quiero, puedo acceder al campo por la posición en el buffer pero no por el nombre del campo:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+FUNCTION Main()
+   LOCAL oCu
+   
+   MsgInfo( "start" )
+   USE Customer ALIAS CU NEW
+   oCu := HbRecord():New("CU")
+   oCu:Get()
+   ? oCu:Buffer[1]
+   ? oCu:FIRST
+   
+RETURN  nil
+
+// código de C:\harbour\contrib\xhb\ttable.prg
+CREATE CLASS HBField
+
+   VAR ALIAS INIT Alias()
+   VAR Name INIT ""
+   VAR TYPE INIT "C"
+   VAR Len INIT 0
+   VAR Dec INIT 0
+   VAR ORDER INIT 0
+   VAR Value
+
+   METHOD Get() INLINE ::value := ( ::alias )-&gt;( FieldGet( ::order ) )
+   METHOD Put( x ) INLINE ::value := x, ;
+      ( ::alias )-&gt;( FieldPut( ::order, x ) )
+
+ENDCLASS
+
+CREATE CLASS HBRecord
+
+   VAR Buffer INIT {}
+   VAR ALIAS INIT Alias()
+   VAR Number INIT 0
+   VAR aFields INIT {}
+
+   METHOD New( cAlias )
+   METHOD Get()
+   METHOD Put()
+
+ENDCLASS
+
+METHOD NEW( cAlias ) CLASS HBRecord
+
+   LOCAL i
+   LOCAL oFld
+   LOCAL aStruc
+   LOCAL aItem
+
+   __defaultNIL( @cAlias, Alias() )
+
+   ::Alias   := cAlias
+   ::Buffer  := {} // {=&gt;}
+   ::aFields := Array( ( ::alias )-&gt;( FCount() ) )
+
+   aStruc := ( ::alias )-&gt;( dbStruct() )
+
+   FOR EACH aItem in ::aFields
+      i          := aItem:__EnumIndex()
+      oFld       := HBField()
+      oFld:order := i
+      oFld:Name  := ( ::alias )-&gt;( FieldName( i ) )
+      oFld:Type  := aStruc[ i, 2 ]
+      oFld:LEN   := aStruc[ i, 3 ]
+      oFld:Dec   := aStruc[ i, 4 ]
+      oFld:Alias := ::alias
+      aItem      := oFld
+   NEXT
+
+   RETURN Self
+
+METHOD PROCEDURE Get() CLASS HBRecord
+
+   LOCAL xField
+
+   FOR EACH xField IN ::aFields
+      xField:Get()
+      ::buffer[ xField:__EnumIndex() ] := xField:value
+   NEXT
+
+   RETURN
+
+METHOD PROCEDURE Put() CLASS HBRecord
+
+   LOCAL xField
+
+   FOR EACH xField IN ::aFields
+      IF !( xField:Value == ::buffer[ xField:__EnumIndex() ] )
+         xField:PUT( ::buffer[ xField:__EnumIndex() ] )
+         ::buffer[ xField:__EnumIndex() ] := xField:value
+      ENDIF
+   NEXT
+
+   RETURN</code></pre></div><br>
+<br>
+Se que FWH tiene la clase DataRow, pero me parece matar moscas a cañonazos. Si alguien tiene una alternativa al clásico Scatter / Gather que permita acceder via nombre del campo, le agracederé que lo comparta.<br>
+<br>
+Saludos,<br>
+José Luis</div>
+    </div>
+  </div>
+  <div class="post" id="p204259">
+    <div class="poster">
+      <div class="name" style="color:#105289">darioflores</div>
+      <div class="rank">Posts: 17</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 06, 2015 07:06 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Tue Aug 01, 2017 01:14 PM
+      </div>
+      <div class="content"><p>Buenas, si utilizas una clase puedes usar las funciones __objGetValueList y __objSetValueList para añadir al objeto los nombres de los campos como propiedades (y los valores del registro claro).<br>
+Luego, claro está, deberás actualizar las propiedades cuando te muevas por la tabla.</p>
+<p>Un saludo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p204270">
+    <div class="poster">
+      <div class="name" style="color:#105289">quim</div>
+      <div class="rank">Posts: 56</div>
+      <div class="avatar"></div>
+      Joined: Mon Apr 11, 2011 06:22 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Tue Aug 01, 2017 02:41 PM
+      </div>
+      <div class="content">José Luís, te adjunto un pequeño código a ver que te parece<br>
+Saludos<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/**
+ * Creacion de variables de clase dinámicas
+ * v1.0 09-02-2015
+ * @info :
+ * Se adapta para mantener un array asociativo
+ *
+ */
+
+#include "hbclass.ch"
+
+function main()
+
+  local oData := DynClass():New()
+
+  // Set
+  oData:NewData("Name")
+  oData:NewData("City")
+  oData:NewData("Phone")
+
+  // Put
+  oData:Name  := "John"
+  oData:City  := "New York"
+  oData:Phone := "555 667 788"
+
+  // Get
+  ? oData:Name, oData:City, oData:Phone
+
+  // Associative mode
+  oData:aBuffer['Name']  := "Mark"
+  oData:aBuffer['City']  := "Dallas"
+  oData:aBuffer['Phone'] := "636 695 487"
+
+  ? oData:aBuffer['Name'], oData:aBuffer['City'], oData:aBuffer['Phone']
+
+return .T.
+
+//-------------------------------------------------------------------------------------------------//
+
+CLASS DynClass
+ 
+  DATA   aItems       INIT {}
+  DATA   aDatas       INIT {}
+  DATA   aBuffer      INIT {=&gt;}
+
+  METHOD New()        CONSTRUCTOR
+
+  METHOD NewData()
+  METHOD GetData() 
+  METHOD PutData() 
+
+ENDCLASS
+
+//-------------------------------------------------------------------------------------------------//
+
+METHOD New() CLASS DynClass
+return Self
+
+//-------------------------------------------------------------------------------------------------//
+
+METHOD NewData( cName, uValue ) CLASS DynClass
+
+   aadd( ::aItems, cName )
+   aadd( ::aDatas, uValue )
+
+   ::aBuffer[cName] := uValue
+
+  __clsAddMsg( ::ClassH, cName,;
+               {|Self| Self:GetData( cName ) }, HB_OO_MSG_INLINE )
+
+  __clsAddMsg( ::ClassH, "_" + cName,;
+               {|Self,Value| Self:PutData( cName, Value ) }, HB_OO_MSG_INLINE )
+
+return Self
+
+//-------------------------------------------------------------------------------------------------//
+
+METHOD GetData( cName ) CLASS DynClass
+
+  local nIndex := ascan( ::aItems, cName )
+
+return( If(nIndex &gt; 0, ::aDatas[ nIndex ], NIL) )
+
+//-------------------------------------------------------------------------------------------------//
+
+METHOD PutData( cName, uValue ) CLASS DynClass
+
+  local nIndex := ascan( ::aItems, cName )
+  ::aBuffer[cName] := uValue
+
+return( If(nIndex &gt; 0, ::aDatas[ nIndex ] := uValue, NIL) )
+
+//-------------------------------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p204280">
+    <div class="poster">
+      <div class="name" style="color:#105289">José Luis Sánchez</div>
+      <div class="rank">Posts: 564</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 13, 2005 09:23 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Tue Aug 01, 2017 04:03 PM
+      </div>
+      <div class="content"><p>Dario: Gracias por indicarme las funciones __objGetValueList y __objSetValueList. No las conocía. No quiero cambiar los valores cuando se mueva el puntero del DBF, solo quiero hacer get y put.</p>
+<p>Quim: Gracias por el código, creo que me va a servir mucho. Si le paso un alias al new y monto las datas de los campos casi lo tengo.</p>
+<p>Saludos,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p204285">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Tue Aug 01, 2017 04:17 PM
+      </div>
+      <div class="content">Muy interesante la clase de Quim. Gracias.<br>
+<br>
+Tengo una similar basada en el método errorblock del gestor de errores... pero nunca me gustó... siempre pensé que debe ser lenta en ejecución.<br>
+<br>
+Utilizaré, algún día, la de Quim: el proceso de transición no es inmediato, es una clase con multiples funcionalidades, fruto de muchos años de dale que te pego.<br>
+<br>
+Por cierto Quim, ¿ por qué la clase duplica el almacenamiento, en datas y en hash ? ¿ Es más rápido el acceso al hash o cual es el motivo ?<br>
+<br>
+<strong>EDITADO: </strong>Por cierto, modificaría los dos métodos de la clase, para darle velocidad, suprimiendo aItems y aDatas, así:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//-------------------------------------------------------------------------------------------------//
+
+CLASS DynClass
+ 
+//  DATA   aItems       INIT {}
+//  DATA   aDatas       INIT {}
+  DATA   aBuffer      INIT {=&gt;}
+
+  METHOD New()        CONSTRUCTOR
+
+  METHOD NewData()
+  METHOD GetData() 
+  METHOD PutData() 
+
+   METHOD MsgError()            // Nuevo !!
+ENDCLASS
+
+//-------------------------------------------------------------------------------------------------//
+
+METHOD New() CLASS DynClass
+return Self
+
+//-------------------------------------------------------------------------------------------------//
+
+METHOD NewData( cName, uValue ) CLASS DynClass
+
+//   aadd( ::aItems, cName )
+//   aadd( ::aDatas, uValue )
+
+   ::aBuffer[cName] := uValue
+
+  __clsAddMsg( ::ClassH, cName,;
+               {|Self| Self:GetData( cName ) }, HB_OO_MSG_INLINE )
+
+  __clsAddMsg( ::ClassH, "_" + cName,;
+               {|Self,Value| Self:PutData( cName, Value ) }, HB_OO_MSG_INLINE )
+
+return Self
+
+//-------------------------------------------------------------------------------------------------//
+METHOD GetData( cName ) CLASS DynClass
+   RETURN If( HHaskey(::aBuffer, cName), ::aBuffer[cName],   ::MsgError("Nombre de data desconocido en acceso "+ cName) )
+
+//-------------------------------------------------------------------------------------------------//
+METHOD PutData( cName, uValue ) CLASS DynClass
+
+   RETURN If( HHaskey(::aBuffer, cName), ::aBuffer[cName] := uValue,  ::MsgError("Nombre de data desconocido en asignación "+ cName) )
+
+//-------------------------------------------------------------------------------------------------//
+// Nuevo
+METHOD MsgError(cMsg)
+   RETURN (MsgInfo(cMsg), NIL)</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p204287">
+    <div class="poster">
+      <div class="name" style="color:#105289">quim</div>
+      <div class="rank">Posts: 56</div>
+      <div class="avatar"></div>
+      Joined: Mon Apr 11, 2011 06:22 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Tue Aug 01, 2017 04:25 PM
+      </div>
+      <div class="content"><p>José Luis :</p>
+<p>Me alegra que te sirva, tienes los planos de una ermita, ahora toca construir tu catedral <!-- s;) --><img src="{SMILIES_PATH}/icon_wink.gif" alt=";)" title="Wink" /><!-- s;) --></p>
+<p>hmpaquito :</p>
+<p>Son dos formas distintas de acceder al dato, cuestión de estética, la que más te guste</p>
+<p>Si suprimes aItems y aDatas ya no podrás referirte al objeto de la forma oData:Nombre, oData:Fecha, ... sólo por su equivalente hash oData[&quot;Nombre&quot;] ...<br>
+La rapidez que buscas es imperceptible <!-- s;) --><img src="{SMILIES_PATH}/icon_wink.gif" alt=";)" title="Wink" /><!-- s;) --></p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p204300">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marcelo Via Giglio</div>
+      <div class="rank">Posts: 1088</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 03:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Tue Aug 01, 2017 07:19 PM
+      </div>
+      <div class="content">Hola,<br>
+<br>
+esto utilizo, no solo para un registro desde una tabla, sino, de manera general manejar varios datos en un solo registro<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#INCLUDE "FIVEWIN.CH"
+
+CLASS oRecord
+   DATA aData, aFields
+   METHOD new() CONSTRUCTOR
+   METHOD FieldGet( nField )       INLINE ::aData[ nField ]
+   METHOD FieldName( nField )      INLINE ::aFields[ nField ]
+   METHOD FieldPos( cFieldName )   INLINE ASCAN( ::aFields, UPPER( cFieldName ) )
+   METHOD FieldPut( cFieldName, uVal )
+   METHOD LASTREC()                INLINE LEN( ::aData )
+   METHOD FieldLen()               INLINE LEN( ::aData )
+   METHOD loadFromAlias( cAlias )
+   METHOD show()
+   ERROR HANDLER OnError( cMsg, nError )
+
+ENDCLASS
+
+//------------------------------------------------------------------------------
+METHOD new()
+//------------------------------------------------------------------------------
+
+   ::aData   := {}
+   ::aFields := {}
+
+   RETURN(Self)
+
+//------------------------------------------------------------------------------
+METHOD FieldPut( cFieldName, uVal )
+//------------------------------------------------------------------------------
+   LOCAL pos := ::FieldPos( cFieldName )
+
+   IF pos = 0
+      AAdd( ::AFields, UPPER( cFieldName ) )
+      AAdd( ::aData, uVal )
+   ELSE
+      ::aData[ pos ] := uVal
+   ENDIF
+
+   RETURN NIL
+
+//------------------------------------------------------------------------------
+METHOD OnError( uValor , nError)
+//------------------------------------------------------------------------------
+   LOCAL cMensaje := UPPER ( ALLTRIM(__GetMessage() ) )
+
+   IF SUBSTR( cMensaje, 1, 1 ) == "_"  // ASIGNACION
+      ::FieldPut( SUBSTR( cMensaje, 2 ), uValor )
+   ELSE
+      RETURN ::FieldGet( ::FieldPos( cMensaje )  )
+   ENDIF
+
+RETURN NIL
+
+//------------------------------------------------------------------------------
+METHOD loadFromAlias( cAlias )
+//------------------------------------------------------------------------------
+   LOCAL i
+
+   FOR i := 1 TO (cAlias) -&gt; ( FCOUNT() )
+       ::FIELDPUT( (cAlias) -&gt; ( FieldName(i) ), (cAlias) -&gt; ( FieldGet(i) ) )
+   NEXT
+
+   RETURN NIL
+
+//------------------------------------------------------------------------------
+METHOD show()
+//------------------------------------------------------------------------------
+   LOCAL a := {}
+
+   AEVAL( ::AFIELDS, {|b,i| AADD( a , { ::AFIELDS[i], ::aData[i] } ) } )
+   xBrowse( a )
+
+   RETURN NIL</code></pre></div><br>
+<br>
+<br>
+Si utilizar el LoadFromAlias, tendras un registro con la información de los campos de la tabla.<br>
+<br>
+La cualidad de esta clase es que te permite<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">  oRec := oRecord():new()
+  oRec:algo := "ALGO"
+  ? oRec:algo</code></pre></div><br>
+<br>
+no necesitas definir sus datos, se los crea dinamicamente<br>
+<br>
+Saludos<br>
+<br>
+Marcelo Vía</div>
+    </div>
+  </div>
+  <div class="post" id="p204308">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Wed Aug 02, 2017 07:23 AM
+      </div>
+      <div class="content"><p>Marcelo,</p>
+<p>Yo tengo una similar.<br>
+El sistema de funcionamiento de la clase, basado en el gestor de errores, podría ser lento. No he hecho prueba de tiempos.</p>
+<p>La novedad de la clase de Quim es que no utiliza el OnError. Ahí radica su bondad.</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p204318">
+    <div class="poster">
+      <div class="name" style="color:#105289">José Luis Sánchez</div>
+      <div class="rank">Posts: 564</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 13, 2005 09:23 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Wed Aug 02, 2017 09:24 AM
+      </div>
+      <div class="content">Marcelo,<br>
+Tu clase hace lo que yo pretendo. He añadido un método saveToAlias y puedo salvar también a un DBF.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//------------------------------------------------------------------------------
+METHOD saveToAlias( cAlias )
+//------------------------------------------------------------------------------
+   LOCAL i, pos
+
+   FOR i := 1 TO Len(::aData) // (cAlias) -&gt; ( FCOUNT() )
+        pos := FieldPos( ::aFields[i] ) 
+        if pos != 0
+            FIELDPUT( pos, ::aData[i] ) // FIELDPUT de Harbour
+        endif
+   NEXT
+
+   RETURN NIL</code></pre></div><br>
+<br>
+hmpaquito: no entiendo lo que dices que al estar basado en el gestor de errores podría ser lenta, ¿ lo puedes explicar y la manera de solucionarlo ? Quiero hacer una clase a partir del código de Quim, cuando la tenga la publicaré y también te animo, si te parece bien, a publicar tu clase de manejo de buffer.<br>
+<br>
+Saludos,<br>
+José Luis</div>
+    </div>
+  </div>
+  <div class="post" id="p204321">
+    <div class="poster">
+      <div class="name" style="color:#105289">quim</div>
+      <div class="rank">Posts: 56</div>
+      <div class="avatar"></div>
+      Joined: Mon Apr 11, 2011 06:22 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Wed Aug 02, 2017 09:50 AM
+      </div>
+      <div class="content"><p>Al utilizar OnError hace que la clase se 'cae' cada vez que se declara un nuevo miembro, similar a lo que hace TDataBase</p>
+<p>oRecord:Nuevo produce un error en tiempo de ejecución pero no 'se nota' ya que el error 'se recupera' devolviendo el valor get o put solicitado</p>
+<p>La llamada a la funcion  __clsAddMsg que hago, es la misma función que crea las variables de clase en su propia definición</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p204322">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Wed Aug 02, 2017 10:05 AM
+      </div>
+      <div class="content"><p>José Luis,</p>
+<p>Primero. Mi clase tiene un montón de dependencias. Es lo bueno (y lo malo) de tantos años de dale que te pego sobre el mismo código. Tiene dos mil líneas.</p>
+<p>Segundo. En este mismo hilo podríamos ir mejorando la de Quim. Puedo ir sugiriendo / añadiendo funcionalidades en base a lo que ya tengo. O si acaso subirla a Github y allí ir desarrollandola, aunque yo nunca lo he usado.</p>
+<p>Tercero. Por favor, lo primero, ponerle una data xCargo, que tendrían que tener todos los objetos, incluso las sillas y las mesas  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --></p>
+<p>Cuarto. Mi clase se basa en el OnError, lo cual me parece muy chapucero, y quizá lento.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p204323">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Wed Aug 02, 2017 10:53 AM
+      </div>
+      <div class="content"><blockquote><cite>hmpaquito wrote:</cite><br>
+El sistema de funcionamiento de la clase, basado en el gestor de errores, podría ser lento. No he hecho prueba de tiempos.<br>
+</blockquote><br>
+Podría, si, pero no tanto. Si necesitas una clase para solo contener el registro, tampoco es que vayas a hacer gran diferencia. El peso es que al buscar el mensaje no lo ha encontrado , luego el motor de objetos busca por el metodo Onerror, y lo ejecuta. No es para tanto.<br>
+Considera además que esa propiedad de los objetos de poder adaptarse es una gran ventaja, esa introspección te permite declarar más cosas como campos virtuales. Tengo especial predilección por esta alternativa, porque es lo que más se parece a los ORMs (objet relational mappers) que se usan en otros lenguajes.<br>
+<br>
+La alternativa de Quim requiere que explícitamente declares los campos, con lo que el ahorro de tiempo es relativo, requiere de bastante administración y gestion para usarlo en una escala importante. La definicion es dificil de 'cachear', ya que podriamos tener mas de una tabla con = nombre y diferente estructura durante la ejecucion del programa.<br>
+<br>
+A ver si me pongo y subo la que yo uso, muy parecida a la tuya.</div>
+    </div>
+  </div>
+  <div class="post" id="p204324">
+    <div class="poster">
+      <div class="name" style="color:#105289">darioflores</div>
+      <div class="rank">Posts: 17</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 06, 2015 07:06 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Wed Aug 02, 2017 11:38 AM
+      </div>
+      <div class="content"><blockquote><cite>hmpaquito wrote:</cite>José Luis,<br>
+<br>
+Primero. Mi clase tiene un montón de dependencias. Es lo bueno (y lo malo) de tantos años de dale que te pego sobre el mismo código. Tiene dos mil líneas.<br>
+<br>
+Segundo. En este mismo hilo podríamos ir mejorando la de Quim. Puedo ir sugiriendo / añadiendo funcionalidades en base a lo que ya tengo. O si acaso subirla a Github y allí ir desarrollandola, aunque yo nunca lo he usado.<br>
+<br>
+Tercero. Por favor, lo primero, ponerle una data xCargo, que tendrían que tener todos los objetos, incluso las sillas y las mesas  <br>
+<br>
+Cuarto. Mi clase se basa en el OnError, lo cual me parece muy chapucero, y quizá lento.</blockquote><br>
+<br>
+Con un EXTEND CLASS HBObject WITH DATA xCargo al inicio de tu main, todos los objetos que instancies contendrán esa propiedad.<br>
+Buenos aportes los del hilo, muchas gracias.<br>
+<br>
+Un saludo.</div>
+    </div>
+  </div>
+  <div class="post" id="p204439">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Fri Aug 04, 2017 06:53 PM
+      </div>
+      <div class="content">Mi grano de arena.<br>
+Es vieja pero creo que funciona:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//---------------------------------------------------------------------------//
+//  AUTOR.....: Manuel Exposito Suarez                                       //
+//  eMails....: &lt;!-- e --&gt;&lt;a href="mailto:xmessoft@gmail.com"&gt;xmessoft@gmail.com&lt;/a&gt;&lt;!-- e --&gt;                                           //
+//  CLASE.....: TDbRecord                                                    //
+//  FECHA MOD.: 21/09/1994                                                   //
+//  VERSION...: 1.5                                                          //
+//  PROPOSITO.: Clase para el manejo del BUFFER de registros                 //
+//---------------------------------------------------------------------------//
+
+#include "HbClass.ch"
+#include "Error.ch"
+
+//---------------------------------------------------------------------------//
+
+CLASS TDbRecord
+
+   CLASSDATA oError INIT ErrorNew()
+   DATA aBuffer        // Buffer de trabajo
+   DATA aBlank         // Buffer de vacios
+   DATA nArea INIT 0   // Area de trabajo
+   DATA nFields INIT 0 // Numero de campos
+
+   METHOD New( xArea ) CONSTRUCTOR
+   METHOD Use( cDBF, lNewWA, cRDD, cAlias, lShare, lRO ) CONSTRUCTOR
+   METHOD Used()
+   METHOD RecNo()
+   METHOD Append( lUnlock )
+   METHOD Insert( lUnlock )
+   METHOD Update( lUnlock )
+   METHOD Delete( lUnlock )
+   METHOD Lock()
+   METHOD UnLock()
+   METHOD NetError()
+   METHOD Load()
+   METHOD Save()
+   METHOD Blank()
+   METHOD BufferGet( i )
+   METHOD BufferPut( i, xValue )
+
+   ERROR HANDLER OnError( uParam1 )
+
+ENDCLASS
+
+//---------------------------------------------------------------------------//
+// Constructor de la clase estando el DBF abierto
+
+METHOD New( xArea ) CLASS TDbRecord
+
+   local n
+   local cType := ValType( xArea )
+
+   do case
+      case cType == "N"
+         ::nArea := xArea
+      case cType == "C"
+         ::nArea := Select( xArea )
+      otherwise
+           ::nArea := Select()
+   end case
+
+   // Creamos un array vacio para el buffer de datos
+   n := ( ::nArea )-&gt;( FCount() )
+   ::aBuffer := Array( n )
+   ::nFields := n
+
+   // Creamos un array con datos en blanco a partir de registro fantasma
+   n := ( ::nArea )-&gt;( RecNo() )
+   ( ::nArea )-&gt;( DbGoTo( LastRec() + 1 ) )
+   ::Load()
+   ::aBlank := AClone( ::aBuffer )
+   ( ::nArea )-&gt;( DbGoTo( n ) )
+
+return( Self )
+
+//---------------------------------------------------------------------------//
+// Constructor de la clase estando el DBF cerrada
+
+METHOD Use( cDBF, lNewWA, cRDD, cAlias, lShare, lRO ) CLASS TDbRecord
+
+   DbUseArea( lNewWA, cRDD, cDBF, cAlias, lShare, lRO )
+
+   if !::NetError()
+      ::New( Select() )
+   else
+      Alert( "No se puede abrir " + cDBF )
+   endif
+
+return( Self )
+
+//---------------------------------------------------------------------------//
+// Determina si se esta utilizando la DBF
+
+METHOD Used() CLASS TDbRecord
+return( ( ::nArea )-&gt;( Used() ) )
+
+//---------------------------------------------------------------------------//
+// Registro actual en la DBF
+
+METHOD RecNo() CLASS TDbRecord
+return( ( ::nArea )-&gt;( RecNo() ) )
+
+//---------------------------------------------------------------------------//
+// Anade un registro vacio en la DBF, si lFree libera bloqueo
+
+METHOD Append( lUnlock ) CLASS TDbRecord
+
+    ( ::nArea )-&gt;( DbAppend( lUnlock ) )
+
+return( Self )
+
+//---------------------------------------------------------------------------//
+// Anade un registro vacio y lo rellena con los valores del buffer
+
+METHOD Insert( lUnlock ) CLASS TDbRecord
+
+   if ::Lock()
+      ( ::nArea )-&gt;( DbAppend() )
+      ::Save()
+      if ValType( lUnlock ) == "L" .and. lUnlock
+         ::Unlock()
+      endif
+   endif
+
+return( !::NetError() )
+
+//---------------------------------------------------------------------------//
+// Actualiza un registro con los valores del buffer
+
+METHOD Update( lUnlock ) CLASS TDbRecord
+
+   if ::Lock()
+      ::Save()
+      if ValType( lUnlock ) == "L" .and. lUnlock
+         ::Unlock()
+      endif
+   endif
+
+return( !::NetError() )
+
+//---------------------------------------------------------------------------//
+// Borra un registro
+
+METHOD Delete( lUnlock ) CLASS TDbRecord
+
+   if ::Lock()
+      ( ::nArea )-&gt;( DbDelete() )
+      if ValType( lUnlock ) == "L" .and. lUnlock
+         ::Unlock()
+      endif
+   endif
+
+return( !::NetError() )
+
+//---------------------------------------------------------------------------//
+// Bloquea el registro actual, devuelve un .t. si lo consigue
+
+METHOD Lock() CLASS TDbRecord
+return( ( ::nArea )-&gt;( RLock() ) )
+
+//---------------------------------------------------------------------------//
+// Desbloquea el registro actual
+
+METHOD UnLock() CLASS TDbRecord
+
+   ( ::nArea )-&gt;( DbUnlock() )
+
+return( Self )
+
+//---------------------------------------------------------------------------//
+// Comprueba si ha habido algun error
+
+METHOD NetError() CLASS TDbRecord
+return( ( ::nArea )-&gt;( NetErr() ) )
+
+//---------------------------------------------------------------------------//
+// Carga el buffer desde la DBF
+
+METHOD Load() CLASS TDbRecord
+
+   local n := ::nFields
+   local i
+
+   for i := 1 to n
+      ::aBuffer[ i ] := ( ::nArea )-&gt;( FieldGet( i ) )
+   next
+
+return( Self )
+
+//---------------------------------------------------------------------------//
+// Salva el buffer a la DBF
+
+METHOD Save() CLASS TDbRecord
+
+   local n := ::nFields
+   local i
+
+   for i := 1 to n
+      ( ::nArea )-&gt;( FieldPut( i, ::aBuffer[ i ] ) )
+   next
+
+return( Self )
+
+//---------------------------------------------------------------------------//
+// Limpia el buffer
+
+METHOD Blank() CLASS TDbRecord
+
+   local n := ::nFields
+   local i
+
+   for i := 1 to n
+      ::aBuffer[ i ] := ::aBlank[ i ]
+   next
+
+return( Self )
+
+//---------------------------------------------------------------------------//
+// Devuelve el valor de un elemento del buffer
+
+METHOD BufferGet( i ) CLASS TDbRecord
+return( ::aBuffer[ i ] )
+
+//---------------------------------------------------------------------------//
+// Asigna un valor a un elemento del buffer
+
+METHOD BufferPut( i, xVal ) CLASS TDbRecord
+
+   ::aBuffer[ i ] := xVal
+
+return( Self )
+
+//---------------------------------------------------------------------------//
+// Acesso o Buffer usando
+
+METHOD OnError( uParam ) CLASS TDbRecord
+
+   local cMsg := __GetMessage()
+   local nPos, uRet
+
+   if uParam &lt;&gt; nil .and. Left( cMsg, 1 ) == '_'
+      cMsg := SubStr( cMsg, 2 )
+   endif
+
+   if ( ( nPos := ( ::nArea )-&gt;( FieldPos( cMsg ) ) ) &lt;&gt; 0 )
+      if uParam == nil
+         uRet := ::aBuffer[ nPos ]
+      else
+         ::aBuffer[ nPos ] := uParam
+      endif
+   else
+      ::oError:Args := { Self, cMsg, uParam }
+      ::oError:CanDefault := .F.
+      ::oError:CanRetry := .F.
+      ::oError:CanSubstitute := .T.
+      ::oError:Description := "Invalid class member"
+      ::oError:GenCode := EG_NOVARMETHOD
+      ::oError:Operation := "TDbRecord:" + cMsg
+      ::oError:Severity := ES_ERROR
+      ::oError:SubCode := -1
+      ::oError:SubSystem := "TDbRecord"
+      uRet := Eval( ErrorBlock(), ::oError )
+   endif
+
+return( uRet )
+
+//---------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+<br>
+Es vieja pero en su día me enseñó mucho...<br>
+Ahora estoy con otras cosas.<br>
+<br>
+Pronto estará en la palestra HDO para MySQL junto a HDO para SQLite  </div>
+    </div>
+  </div>
+  <div class="post" id="p204440">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Buffer de registro</span><br>
+        Posted: Fri Aug 04, 2017 06:53 PM
+      </div>
+      <div class="content">Y el ejemplo:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//----------------------------------------------------------------------------//
+//  AUTOR.....: Manuel Expósito Suárez                                        //
+//  eMails....: &lt;!-- e --&gt;&lt;a href="mailto:xmessoft@gmail.com"&gt;xmessoft@gmail.com&lt;/a&gt;&lt;!-- e --&gt;                                            //
+//  CLASE.....: TDbRecord                                                     //
+//  FECHA MOD.: 21/09/1997                                                    //
+//  VERSION...: 1.5                                                           //
+//  PROPOSITO.: Clase para el manejo del BUFFER de registros                  //
+//----------------------------------------------------------------------------//
+//  PROPOSITO.: Ejemplo de mantenimiento de una tabla con TDbRecord           //
+//----------------------------------------------------------------------------//
+
+//-- Definiciones ------------------------------------------------------------//
+
+#define B_BOX ( CHR( 218 ) + CHR( 196 ) + CHR( 191 ) + CHR( 179 ) + ;
+                CHR( 217 ) + CHR( 196 ) + CHR( 192 ) + CHR( 179 ) + " " )
+
+#define ID_CONSUTA  0
+#define ID_MODIFICA 1
+#define ID_ALTA     2
+#define ID_BORRA    3
+
+//-- Includes ----------------------------------------------------------------//
+
+#include "InKey.ch"
+
+REQUEST HB_GT_WIN
+
+//-- Modulo principal --------------------------------------------------------//
+
+procedure main()
+
+    local oRec
+
+    SET DATE FORMAT TO "DD/MM/YYYY"
+    SET DELETED ON
+
+    cls
+
+    // Creamos objeto Record y abrimo la DBF es igual que hacer:
+    // USE Test NEW SHARED
+    // oRec := TDbRecord():New()
+
+    // La sitaxis es:
+    // METHOD Use( cDBF, lNewWA, cRDD, cAlias, lShare, lReadOnly )
+    oRec := TDbRecord():Use( "Test", .t.,,, .t. )
+
+    if oRec:Used()
+        // Abrimos el Browse
+        GestBrw( oRec )
+    else
+        Alert( "No se pudo abrir el fichero..." )
+    endif
+
+    DbCloseAll()
+
+return
+
+//-- Modulos auxiliares ------------------------------------------------------//
+
+//----------------------------------------------------------------------------//
+// Gestion completa de una tabla MySQL
+
+static procedure GestBrw( oRec )
+
+    local oBrw, oCol
+    local lEnd := .f.
+    local nKey, n, nFld
+
+    oBrw := TBrowseDb( 1, 0, MaxRow() - 1, MaxCol() )
+
+    oBrw:colorSpec := "W+/B, N/BG"
+    oBrw:ColSep    := " ³ "
+    oBrw:HeadSep   := "ÄÅÄ"
+    oBrw:FootSep   := "ÄÁÄ"
+
+    nFld := oRec:nFields
+
+    FOR n := 1 TO nFld
+        oBrw:AddColumn( TBColumnNew( ( oRec:nArea )-&gt;( FieldName( n ) ), GenCB( oRec, n ) ) )
+    NEXT
+
+    cls
+
+    @ 0, 0 SAY PadC( "Ojeando la tabla: " + ;
+                        upper( ( oRec:nArea )-&gt;( Alias() ) ), MaxCol() + 1, " " ) COLOR "W+/G+"
+
+    @ MaxRow(),         0 SAY "INSERT"              COLOR "GR+/R+"
+    @ MaxRow(), Col() + 1 SAY "Altas"               COLOR "W+/R+"
+    @ MaxRow(), Col() + 1 SAY "ENTER"               COLOR "GR+/R+"
+    @ MaxRow(), Col() + 1 SAY "Modifica"            COLOR "W+/R+"
+    @ MaxRow(), Col() + 1 SAY "SUPR"                COLOR "GR+/R+"
+    @ MaxRow(), Col() + 1 SAY "Bajas"               COLOR "W+/R+"
+    @ MaxRow(), Col() + 1 SAY "F4"                  COLOR "GR+/R+"
+    @ MaxRow(), Col() + 1 SAY "      "              COLOR "W+/R+"
+    @ MaxRow(), Col() + 1 SAY "F5"                  COLOR "GR+/R+"
+    @ MaxRow(), Col() + 1 SAY "      "              COLOR "W+/R+"
+    @ MaxRow(), Col() + 1 SAY "F6"                  COLOR "GR+/R+"
+    @ MaxRow(), Col() + 1 SAY "      "              COLOR "W+/R+"
+    @ MaxRow(), Col() + 1 SAY "ESC"                 COLOR "GR+/R+"
+    @ MaxRow(), Col() + 1 SAY "Salir"               COLOR "W+/R+"
+
+    while !lEnd
+
+      oBrw:ForceStable()
+
+      nKey = InKey( 0 )
+
+      do case
+         case nKey == K_ESC             // Salir
+              SetPos( MaxRow(), 0 )
+              lEnd = .t.
+
+         case nKey == K_DOWN            // Fila siguiente
+              oBrw:Down()
+         case nKey == K_UP              // Fila anterior
+              oBrw:Up()
+
+         case nKey == K_LEFT            // Va a la columna antrior
+              oBrw:Left()
+
+         case nKey == K_RIGHT           // Va a la columna siguiente
+              oBrw:Right()
+
+         case nKey = K_PGDN             // Va a la pagina siguiente
+              oBrw:pageDown()
+
+         case nKey = K_PGUP             // Va a la pagina antrior
+              oBrw:pageUp()
+
+         case nKey = K_CTRL_PGUP        // Va al principio
+              oBrw:goTop()
+
+         case nKey = K_CTRL_PGDN        // Va al final
+              oBrw:goBottom()
+
+         case nKey = K_HOME             // Va a la primera columna visible
+              oBrw:home()
+
+         case nKey = K_END              // Va a la ultima columna visible
+              oBrw:end()
+
+         case nKey = K_CTRL_LEFT        // Va a la primera columna
+              oBrw:panLeft()
+
+         case nKey = K_CTRL_RIGHT       // Va a la ultima columna
+              oBrw:panRight()
+
+         case nKey = K_CTRL_HOME        // Va a la primera página
+              oBrw:panHome()
+
+         case nKey = K_CTRL_END         // Va a la última página
+              oBrw:panEnd()
+
+         case nKey = K_DEL              // Borra fila
+            Borrar( oRec, oBrw )
+
+         case nKey = K_INS              // Inserta columna
+            Insertar( oRec, oBrw )
+
+         case nKey = K_ENTER            // Modifica columna
+            Modificar( oRec, oBrw )
+
+      endcase
+
+   end
+
+return
+
+//----------------------------------------------------------------------------//
+// Crea los codeblock SETGET de las columnas del browse
+
+static function GenCB( oRec, n )
+return( { || ( oRec:nArea )-&gt;( FieldGet( n ) ) } )
+
+//----------------------------------------------------------------------------//
+// Pantalla de datos de la tabla
+
+static function PantMuestra( oRec, nTipo )
+
+    local GetList := {}
+    local cTipo, cId
+
+    do case
+        case nTipo == ID_ALTA
+            cTipo := "Insertando"
+            cId := "nuevo"
+        case nTipo == ID_BORRA
+        case nTipo == ID_CONSUTA
+        case nTipo == ID_MODIFICA
+            cTipo := "Modificando"
+            cId := AllTrim( Str( ( oRec:nArea )-&gt;( RecNo() ) ) )
+    end
+
+    SET CURSOR ON
+
+    DispBox( 3, 2, 18, 74, B_BOX )
+
+    @ 04, 03 SAY cTipo + " registro en tabla " + ( oRec:nArea )-&gt;( Alias() ) + " - Numero: " + cId
+
+    @ 06, 03 SAY "First....:" GET oRec:First    PICTURE "@K"
+    @ 07, 03 SAY "Last.....:" GET oRec:Last     PICTURE "@K"
+    @ 08, 03 SAY "Street...:" GET oRec:Street   PICTURE "@K"
+    @ 09, 03 SAY "City.....:" GET oRec:City     PICTURE "@K"
+    @ 10, 03 SAY "State....:" GET oRec:State    PICTURE "@K"
+    @ 11, 03 SAY "Zip......:" GET oRec:Zip      PICTURE "@K"
+    @ 12, 03 SAY "Hiredate.:" GET oRec:Hiredate PICTURE "@K"
+    @ 13, 03 SAY "Married..:" GET oRec:Married  PICTURE "@K"
+    @ 14, 03 SAY "Age......:" GET oRec:Age      PICTURE "@K"
+    @ 15, 03 SAY "Salary...:" GET oRec:Salary   PICTURE "@K"
+    @ 16, 03 SAY "Notes:"
+    @ 17, 03                  GET oRec:Notes    PICTURE "@K"
+
+return( GetList )
+
+//----------------------------------------------------------------------------//
+// Inserta una fila
+
+static procedure Insertar( oRec, oBrw )
+
+    local GetList := {}
+    local cPant := SaveScreen( 3, 2, 18, 74 )
+
+    oRec:Blank()
+
+    GetList := PantMuestra( oRec, ID_ALTA )
+    READ
+
+    set cursor off
+
+    RestScreen( 3, 2, 18, 74, cPant )
+
+    if LastKey() != K_ESC .and. Updated()
+        if oRec:Insert( .t. )
+            Alert( "Tupla insertada" )
+            oBrw:RefreshAll()
+        else
+            Alert( "No se pudo insertar el registro;" +;
+                   "El reistro está bloqueado por otro" )
+        endif
+    endif
+
+return
+
+//----------------------------------------------------------------------------//
+// Modifica la fila actual
+
+static procedure Modificar(oRec,oBrw )
+
+    local GetList := {}
+    local cPant := SaveScreen( 3, 2, 18, 74 )
+
+    oRec:Load()
+
+    GetList := PantMuestra( oRec, ID_MODIFICA )
+    READ
+
+    set cursor off
+
+    RestScreen( 3, 2, 18, 74, cPant )
+
+    if LastKey() != K_ESC .and. Updated()
+        if oRec:Update( .t. )
+            Alert( "Tupla Modificada" )
+            oBrw:RefreshCurrent()
+        else
+            Alert( "No se pudo actualizar el registro;" +;
+                   "El reistro está bloqueado por otro" )
+        endif
+    endif
+
+return
+
+//----------------------------------------------------------------------------//
+// Borra la fila actual
+
+static procedure Borrar( oRec, oBrw )
+
+    local nRec := ( oRec:nArea )-&gt;( RecNo() )
+
+    if Alert( "Realmente quieres borrar el registro?", { "Si", "No" } ) == 1
+        if oRec:Delete( .t. )
+            Alert( "Borrado..." )
+            oBrw:RefreshAll()
+        else
+            Alert( "No se pudo borrar el registro;" +;
+                   "El reistro está bloqueado por otro" )
+        endif
+    else
+        Alert( "No se ha borrado..." )
+    endif
+
+return
+
+//----------------------------------------------------------------------------//
+
+#include "TDbRecord.prg"
+
+//----------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

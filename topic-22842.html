@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>TsBrowse and MinGW. - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-22842">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> TsBrowse and MinGW.</div>
+  <div class="post" id="p122070">
+    <div class="poster">
+      <div class="name" style="color:#105289">concentra</div>
+      <div class="rank">Posts: 124</div>
+      <img class="avatar avatar-img" src="avatars/284.jpg" alt="" loading="lazy">
+      Joined: Mon Nov 14, 2005 10:15 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">TsBrowse and MinGW.</span><br>
+        Posted: Tue Nov 08, 2011 05:11 PM
+      </div>
+      <div class="content">I am triing to compile / link TsBrowse 9 with Harbour / MinGW.<br>
+My problem is TSBFUNCS.C low level functions in C.<br>
+I made some changes in order to compile TSBFUNCS.C but now I have errors linking.<br>
+A lot of undefined references.<br>
+<br>
+Where are MoveTo, GetTextExtent, DrawMasked, DrawBitmap, MaskRegion ?<br>
+Or what am I doing wrong ?<br>
+<br>
+Link errors:<br>
+ <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">../TSBFUNCS.o:TSBFUNCS.C:(.text+0x94): undefined reference to `MoveTo(HDC__*, int, int)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0xfa): undefined reference to `MoveTo(HDC__*, int, int)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x1b6): undefined reference to `MoveTo(HDC__*, int, int)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x1f4): undefined reference to `MoveTo(HDC__*, int, int)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x251): undefined reference to `MoveTo(HDC__*, int, int)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x2ae): more undefined references to `MoveTo(HDC__*, int, int)' follow
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x105e): undefined reference to `GetTextExtent(HDC__*, char const*, int)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x144a): undefined reference to `DrawMasked(HDC__*, HBITMAP__*, unsigned short, unsigned short)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x1d9d): undefined reference to `DrawBitmap(HDC__*, HBITMAP__*, unsigned short, unsigned short, unsigned short, unsigned short, unsigned long)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x1f2f): undefined reference to `DrawBitmap(HDC__*, HBITMAP__*, unsigned short, unsigned short, unsigned short, unsigned short, unsigned long)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x22a1): undefined reference to `DrawBitmap(HDC__*, HBITMAP__*, unsigned short, unsigned short, unsigned short, unsigned short, unsigned long)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x22f4): undefined reference to `MaskRegion(HDC__*, tagRECT*, unsigned long, unsigned long)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x235e): undefined reference to `DrawBitmap(HDC__*, HBITMAP__*, unsigned short, unsigned short, unsigned short, unsigned short, unsigned long)'
+../TSBFUNCS.o:TSBFUNCS.C:(.text+0x23af): undefined reference to `MaskRegion(HDC__*, tagRECT*, unsigned long, unsigned long)'</code></pre></div><br>
+<br>
+Source code :<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/***************************************************************
+
+This file contains the special painting routines used by TSBrowse Class
+Last update: November 30th, 2009
+
+***************************************************************/
+
+#include &lt;hbApi.h&gt;    /* set your own path if needed */
+#include &lt;WinTen.h&gt;   /* set your own path if needed */
+#include &lt;Windows.h&gt;
+#include &lt;shellapi.h&gt;
+#include &lt;StdLib.h&gt;
+
+void WndBoxDraw( HDC, LPRECT, HPEN, HPEN, int, BOOL ) ;
+void cDrawCursor( HWND, LPRECT, long, COLORREF ) ;
+void DrawCheck( HDC, LPRECT, HPEN, int, BOOL ) ;
+DWORD GetTextExtent( HDC, LPCSTR, int ) ;
+DWORD MoveTo( HDC hDC, int x, int y );
+extern void DrawBitmap( HDC, HBITMAP, WORD wCol, WORD wRow, WORD wWidth, WORD wHeight, DWORD dwRaster ) ;
+extern void DrawMasked( HDC hdc, HBITMAP hbm, WORD y, WORD x ) ;
+extern void MaskRegion( HDC hDC, RECT * rct, COLORREF cTransparent, COLORREF cBackground ) ;
+static void GoToPoint( HDC, int, int ) ;
+static void DegradColor( HDC, RECT *, COLORREF, signed long ) ;
+
+//---------------------------------------------------------------------------//
+
+HB_FUNC( TSDRAWCELL )
+{
+   HWND hWnd        = (HWND) hb_parni( 1 ) ;
+   HDC  hDC         = (HDC) hb_parni( 2 ) ;
+   int  nRow        = hb_parni( 3 ) ;
+   int  nColumn     = hb_parni( 4 ) ;
+   int  nWidth      = hb_parni( 5 ) ;
+   LPSTR cData      = (LPSTR) hb_parc( 6 )  ;
+   int  nLen        = hb_parclen( 6 ) ;
+   DWORD nAlign     = hb_parnl( 7 ) ;
+   COLORREF clrFore = hb_parnl( 8 ) ;
+   COLORREF clrBack = hb_parnl( 9 ) ;
+   HFONT hFont      = (HFONT) hb_parni( 10 ) ;
+   HBITMAP hBitMap  = (HBITMAP) hb_parni( 11 ) ;
+   int nHeightCell  = hb_parni( 12 ) ;
+   BOOL b3DLook     = hb_parl( 13 ) ;
+   int nLineStyle   = hb_parni( 14 ) ;
+   COLORREF clrLine = hb_parnl( 15 ) ;
+   int nHeadFoot    = hb_parni( 16 ) ;
+   int nHeightHead  = hb_parni( 17 ) ;
+   int nHeightFoot  = hb_parni( 18 ) ;
+   int nHeightSuper = hb_parni( 19 ) ;
+   BOOL bAdjBmp     = hb_parl( 20 ) ;
+   BOOL bMultiLine  = hb_parl( 21 ) ;
+   int nVAlign      = hb_parni( 22 ) ;
+   int nVertText    = hb_parni( 23 ) ;
+   COLORREF clrTo   = hb_parnl( 24 ) ;
+   BOOL bOpaque     = hb_parl( 25 ) ;
+   HBRUSH wBrush    = (HBRUSH) hb_parnl( 26 ) ;
+
+   #define S_LOG          0x0080
+   #define ISLOGICAL( s ) ( hb_param( s, S_LOG )    != NULL )
+
+   BOOL b3DInv      = ( ISLOGICAL( 27 ) ? ! hb_parl( 27 ) : FALSE ) ;
+   BOOL b3D         = ( ISLOGICAL( 27 ) ? TRUE : FALSE ) ;
+   COLORREF nClr3DL = hb_parnl( 28 ) ;
+   COLORREF nClr3DS = hb_parnl( 29 ) ;
+   long lCursor     = hb_parnl( 30 ) ;
+
+   int ixLayOut     = HIWORD( nAlign ) ;
+   int iAlign       = LOWORD( nAlign ) ;
+   int iTxtW        = LOWORD( GetTextExtent( hDC, cData, nLen ) ) ;
+   BOOL bGrid       = ( nLineStyle &gt; 0 ? TRUE : FALSE ) ;
+   BOOL bHeader     = ( nHeadFoot == 1 ? TRUE : FALSE ) ;
+   BOOL bFooter     = ( nHeadFoot == 2 ? TRUE : FALSE ) ;
+   BOOL bSuper      = ( nHeadFoot == 3 ? TRUE : FALSE ) ;
+   BOOL bChecked    = ( nVertText == 3 ? TRUE : FALSE ) ;
+   BOOL bBrush      = ( wBrush ? TRUE : FALSE ) ;
+   BOOL bDegrad     = ( bBrush || clrTo == clrBack ? FALSE : TRUE ) ;
+   HFONT hOldFont ;
+   BOOL bDestroyDC  = FALSE ;
+   HPEN hGrayPen    = CreatePen( PS_SOLID, 1, clrLine );
+   HPEN hWhitePen   = CreatePen( PS_SOLID, 1, GetSysColor( COLOR_BTNHIGHLIGHT ) ) ;
+
+   RECT rct ;
+   BITMAP bm ;
+   int nTop, nLeft, nBkOld, iFlags ;
+
+   if( ! hDC )
+   {
+      bDestroyDC = TRUE ;
+      hDC = GetDC( hWnd ) ;
+   }
+
+   if( hFont )
+      hOldFont = (HFONT) SelectObject( hDC, hFont ) ;
+
+   GetClientRect( hWnd, &amp;rct ) ;
+   SetTextColor( hDC, clrFore ) ;
+   SetBkColor( hDC, clrBack ) ;
+
+   if( nRow == 0 )
+      rct.top = ( bHeader ? nHeightSuper - ( nHeightSuper ? 1 : 0 ) : 0 ) ;
+   else
+      rct.top = ( bFooter ? rct.bottom - nHeightFoot + 1 : nHeightHead + nHeightSuper - ( nHeightSuper ? 1 : 0 ) +
+                  ( nHeightCell * ( nRow - 1 ) ) ) ;
+
+   rct.bottom = rct.top + ( bHeader ? nHeightHead :( bSuper ? nHeightSuper : nHeightCell ) - 1 ) ;
+
+   /* Don't let left side go beyond rct.right of Client Rect. */
+   if( nColumn - ( rct.right - rct.left ) &lt;= 0 )
+   {
+      rct.left = nColumn ;
+
+        /* if nWidth == -1 or -2, it indicates the last column so go to limit,
+         Don't let right side go beyond rct.right of Client Rect. */
+      if( ( nWidth &gt;= 0 ) &amp;&amp; ((rct.left + nWidth - rct.right) &lt;= 0) )  // negative values have different meanings
+         rct.right = rct.left + nWidth ;
+
+      if( ! bDegrad )
+      {
+         rct.bottom += ( bHeader ? 0 : 1 ) ;
+         rct.right += 1 ;
+
+         if( ! bBrush )
+            ExtTextOut( hDC, rct.left, rct.top, ETO_OPAQUE | ETO_CLIPPED, &amp;rct, "", 0, 0  ) ;
+         else
+            FillRect( hDC, &amp;rct, wBrush ) ;
+
+         rct.bottom -= ( bHeader ? 0 : 1 ) ;
+         rct.right -= 1 ;
+      }
+      else
+         DegradColor( hDC, &amp;rct, clrBack, clrTo  ) ;
+
+      if( hBitMap )
+      {
+
+         if( ! bAdjBmp )
+         {
+             GetObject( hBitMap, sizeof( BITMAP ), ( LPSTR ) &amp;bm ) ;
+             nTop = rct.top + ( ( rct.bottom - rct.top + 1 ) / 2 ) - ( bm.bmHeight / 2 ) ;
+
+             switch( ixLayOut ) // bitmap layout x coordinate
+             {
+               case 0: // column left
+                  nLeft = rct.left ;
+                  break ;
+               case 1: // column center (text -if any- may overwrite the bitmap)
+                  nLeft = rct.left + ( ( rct.right - rct.left + 1 ) / 2 ) -
+                          ( bm.bmWidth / 2 ) - 1 ;
+                  break ;
+               case 2: // column right
+                  nLeft = rct.right - ( bm.bmWidth + 1 ) ;
+                  break ;
+               case 3: // left of centered text
+                  nLeft = max( rct.left, rct.left + ( ( rct.right - rct.left + 1 ) / 2 ) -
+                          ( iTxtW / 2 ) - bm.bmWidth - 2 ) ;
+                  break ;
+               case 4: // right of centered text
+                  nLeft = rct.left + ( ( rct.right - rct.left + 1 ) / 2 ) + ( iTxtW / 2 ) + 2 ;
+                  break ;
+               default: // a value &gt; 4 means specific pixel location from column left
+                  nLeft = rct.left + ixLayOut ;
+                  break ;
+             }
+         }
+         else
+         {
+            nTop  = rct.top ;
+            nLeft = rct.left ;
+         }
+
+         if( b3DLook )
+         {
+            if( bAdjBmp )
+            {
+               nTop  = rct.top + 1 ;
+               DrawBitmap( hDC, hBitMap,  nTop, rct.left - 1, rct.right - rct.left + 1,
+                           rct.bottom - rct.top - 1, 0 ) ;
+               hBitMap = 0 ;
+
+               if( ! bOpaque )
+                  MaskRegion( hDC, &amp;rct, GetPixel( hDC, nLeft, nTop ), GetBkColor( hDC ) ) ;
+            }
+            else
+               if( bOpaque )
+                  DrawBitmap( hDC, hBitMap, nTop, nLeft, 0, 0, 0 ) ;
+               else
+                  DrawMasked( hDC, hBitMap, nTop, nLeft ) ;
+         }
+         else
+         {
+            if( bAdjBmp)
+            {
+               DrawBitmap( hDC, hBitMap,  rct.top, rct.left - 2, rct.right - rct.left + 3,
+                           rct.bottom - rct.top - 1, 0 ) ;
+               hBitMap = 0 ;
+
+               if( ! bOpaque )
+                  MaskRegion( hDC, &amp;rct, GetPixel( hDC, nLeft, nTop ), GetBkColor( hDC ) ) ;
+            }
+            else
+               if( bOpaque )
+                  DrawBitmap( hDC, hBitMap, nTop, nLeft, 0, 0, 0 ) ;
+               else
+                  DrawMasked( hDC, hBitMap, nTop, nLeft ) ;
+         }
+      }
+
+      if( nLen )
+      {
+         if( iAlign == DT_LEFT )
+            rct.left += ( 2 + ( hBitMap &amp;&amp; ixLayOut == 0 ? bm.bmWidth + 1 : 0 ) ) ;
+
+         if( iAlign == DT_RIGHT )
+            rct.right -= ( 2 + ( hBitMap &amp;&amp; ixLayOut == 2 ? bm.bmWidth + 1 : 0 ) ) ;
+
+         if( nVertText == 1 )
+         {
+            rct.right  += ( 4 * nLen ) ;
+            rct.bottom += 10 ;
+         }
+
+         iFlags = iAlign | DT_NOPREFIX | nVAlign * 4 | ( bMultiLine &amp;&amp; nVAlign &lt; 2 ? 0 : DT_SINGLELINE ) ;
+
+         if( ( nVertText == 3 || nVertText == 4 ) )
+            DrawCheck( hDC, &amp;rct, hWhitePen, iAlign, bChecked ) ;
+         else
+         {
+            nBkOld = SetBkMode( hDC, TRANSPARENT ) ;
+
+            if( b3D )
+            {
+               rct.top    -= 1 ;
+               rct.left   -= 1 ;
+               rct.bottom -= 1 ;
+               rct.right  -= 1 ;
+               SetTextColor( hDC, b3DInv ? nClr3DS : nClr3DL ) ;
+               DrawTextEx( hDC, cData, nLen, &amp;rct, iFlags, NULL ) ;
+
+               rct.top    += 2 ;
+               rct.left   += 2 ;
+               rct.bottom += 2 ;
+               rct.right  += 2 ;
+               SetTextColor( hDC, b3DInv ? nClr3DL : nClr3DS ) ;
+               DrawTextEx( hDC, cData, nLen, &amp;rct, iFlags, NULL ) ;
+
+               rct.top    -= 1 ;
+               rct.left   -= 1 ;
+               rct.bottom -= 1 ;
+               rct.right  -= 1 ;
+               SetTextColor( hDC, clrFore ) ;
+            }
+
+            DrawTextEx( hDC, cData, nLen, &amp;rct, iFlags, NULL ) ;
+            SetBkMode( hDC, nBkOld ) ;
+         }
+
+         if( iAlign == DT_LEFT )
+            rct.left -= ( 2 + ( hBitMap &amp;&amp; ixLayOut == 0 ? bm.bmWidth + 1 : 0 ) ) ;
+
+         if( iAlign == DT_RIGHT )
+            rct.right += ( 2 + ( hBitMap &amp;&amp; ixLayOut == 2 ? bm.bmWidth + 1 : 0 ) ) ;
+
+         if( nVertText == 1 )
+         {
+            rct.right -= ( 4 * nLen ) ;
+            rct.bottom -= 10 ;
+         }
+      }
+
+      if( b3DLook )
+      {
+         bHeader = ( bSuper ? bSuper : bHeader ) ;
+
+         if( ( nWidth != -2 ) &amp;&amp; bGrid )   // -1 draw gridline in phantom column; -2 don't draw gridline in phantom column
+            WndBoxDraw( hDC, &amp;rct, hWhitePen, hGrayPen, b3DLook ? 4 : nLineStyle, bHeader ) ;
+
+         if( lCursor )
+            cDrawCursor( hWnd, &amp;rct, lCursor, clrFore ) ;
+
+      }
+      else
+      {
+         bHeader = ( bFooter ? bFooter : ( bHeader || bSuper ) ) ;
+
+         if( ( nWidth != -2 ) &amp;&amp; bGrid )   // -1 draw gridline in phantom column; -2 don't draw gridline in phantom column
+               WndBoxDraw( hDC, &amp;rct, hGrayPen, hGrayPen, nLineStyle, bHeader ) ;
+
+         if( lCursor )
+            cDrawCursor( hWnd, &amp;rct, lCursor, clrFore ) ;
+      }
+
+   }
+
+   DeleteObject( hGrayPen ) ;
+   DeleteObject( hWhitePen ) ;
+   if( hFont )
+      SelectObject( hDC, hOldFont ) ;
+
+   if( bDestroyDC )
+      ReleaseDC( hWnd, hDC ) ;
+}
+
+//--------------------------------------------------------------------------------------------------------------------//
+
+void WndBoxDraw( HDC hDC, RECT * rct, HPEN hPUpLeft, HPEN hPBotRit, int nLineStyle, \
+                 BOOL bHeader )
+
+{
+   HPEN hOldPen  = (HPEN) SelectObject( hDC, hPUpLeft ) ;
+   HPEN hBlack   = CreatePen( PS_SOLID, 1, 0 ) ;
+
+   switch( nLineStyle )
+   {
+      case 0 :
+         break ;
+      case 1 :
+         SelectObject( hDC, hPBotRit ) ;
+         GoToPoint( hDC, rct-&gt;left, rct-&gt;bottom - ( bHeader ? 1 : 0 ) ) ;
+         LineTo( hDC, rct-&gt;right - 1, rct-&gt;bottom - ( bHeader ? 1 : 0 ) ) ;
+         LineTo( hDC, rct-&gt;right - 1, rct-&gt;top - 1 ) ;
+         if( bHeader )
+            LineTo( hDC, rct-&gt;left - 1, rct-&gt;top - 1 ) ;
+         break ;
+      case 2 :
+         SelectObject( hDC, hPBotRit ) ;
+         GoToPoint( hDC, rct-&gt;right - 1, rct-&gt;bottom ) ;
+         LineTo( hDC, rct-&gt;right - 1, rct-&gt;top - 1 ) ;
+         break ;
+      case 3 :
+         SelectObject( hDC, hPBotRit ) ;
+         GoToPoint( hDC, rct-&gt;left, rct-&gt;bottom ) ;
+         LineTo( hDC, rct-&gt;right, rct-&gt;bottom ) ;
+         break ;
+      case 4 :
+         SelectObject( hDC, hPUpLeft ) ;
+         GoToPoint( hDC, rct-&gt;left, rct-&gt;bottom ) ;
+         LineTo( hDC, rct-&gt;left, rct-&gt;top ) ;
+         LineTo( hDC, rct-&gt;right , rct-&gt;top ) ;
+         SelectObject( hDC, hPBotRit ) ;
+         GoToPoint( hDC, rct-&gt;left, rct-&gt;bottom - ( bHeader ? 1 : 0 ) ) ;
+         LineTo( hDC, rct-&gt;right - 1, rct-&gt;bottom - ( bHeader ? 1 : 0 ) ) ;
+         LineTo( hDC, rct-&gt;right - 1, rct-&gt;top - 1 ) ;
+         break ;
+      case 5 :
+         rct-&gt;top += 1 ;
+         rct-&gt;left += 1 ;
+         rct-&gt;bottom -= 1 ;
+         rct-&gt;right -= 1 ;
+         DrawFocusRect( hDC, rct );
+         break ;
+   }
+
+   SelectObject( hDC, hOldPen );
+   DeleteObject( hBlack );
+}
+
+//---------------------------------------------------------------------------//
+
+HB_FUNC( TSBRWSCROLL )
+{
+   HWND hWnd        = (HWND) hb_parni( 1 ) ;
+   int iRows        = hb_parni( 2 ) ;
+   HFONT hFont      = (HFONT) hb_parni( 3 ) ;
+   int nHeightCell  = hb_parni( 4 ) ;
+   int nHeightHead  = hb_parni( 5 ) ;
+   int nHeightFoot  = hb_parni( 6 ) ;
+   int nHeightSuper = hb_parni( 7 ) ;
+
+   HFONT hOldFont ;
+   HDC hDC = GetDC( hWnd ) ;
+   RECT rct;
+
+   if( hFont )
+      hOldFont = (HFONT) SelectObject( hDC, hFont ) ;
+
+   GetClientRect( hWnd, &amp;rct ) ;
+
+   rct.top    += ( nHeightHead + nHeightSuper - ( nHeightSuper ? 1 : 0 ) ) ;  // exclude heading from scrolling
+   rct.bottom -= nHeightFoot ;                     // exclude footing from scrolling
+   rct.bottom -= ( ( rct.bottom - rct.top + 1 ) % nHeightCell );  // exclude unused portion at bottom
+   ScrollWindowEx( hWnd, 0, (int) -( nHeightCell * iRows ), 0, &amp;rct, 0, 0, 0 );
+
+   if( hFont )
+      SelectObject( hDC, hOldFont );
+
+   ReleaseDC( hWnd, hDC );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( TSBRWHSCROLL )
+{
+   HWND hWnd  = (HWND) hb_parni( 1 ) ;
+   WORD wCols = hb_parni( 2 ) ;
+   int nLeft  = hb_parni( 3 ) ;
+   int nRight = hb_parni( 4 ) ;
+
+   HDC hDC    = GetDC( hWnd ) ;
+   RECT rct;
+
+   GetClientRect( hWnd, &amp;rct ) ;
+
+   if ( nLeft )
+      rct.left = nLeft ;
+
+   if ( nRight )
+      rct.right = nRight ;
+
+   ScrollWindowEx( hWnd, wCols, 0, 0, &amp;rct, 0, 0, 0 ) ;
+
+   ReleaseDC( hWnd, hDC ) ;
+}
+
+
+//---------------------------------------------------------------------------//
+
+HB_FUNC( ROWFROMPIX )
+{
+   HWND hWnd = ( HWND ) hb_parni( 1 ) ;
+   int iPixR = hb_parni( 2 ) ;
+   int iCell = hb_parni( 3 ) ;
+   int iHead = hb_parni( 4 ) ;
+   int iFoot = hb_parni( 5 ) ;
+   int iSupH = hb_parni( 6 ) ;
+
+   RECT rct ;
+   int iRow ;
+
+   GetClientRect( hWnd, &amp;rct ) ;
+
+   if( iPixR &lt;= ( rct.top + iHead + iSupH ) )
+      iRow = 0 ;
+   else
+      if( iPixR &gt;= ( rct.bottom - iFoot ) )
+         iRow = -1 ;
+      else
+      {
+         rct.top += ( iHead + iSupH ) ;
+         iRow = ( ( iPixR - rct.top ) / iCell ) + 1 ;
+      }
+
+   hb_retni( iRow ) ;
+}
+
+//---------------------------------------------------------------------------//
+
+HB_FUNC( SBGETHEIGHT )
+{
+   HWND  hWnd  = (HWND) hb_parni( 1 ) ;
+   HFONT hFont = (HFONT) hb_parni( 2 ) ;
+   int  iTotal = hb_parni( 3 )  ;
+
+   TEXTMETRIC tm ;
+
+   RECT  rct ;
+   HDC   hDC = GetDC( hWnd ) ;
+   HFONT hOldFont ;
+   LONG  lTotHeight, lReturn ;
+
+   if( iTotal &lt; 2 )
+   {
+      if( hFont )
+         hOldFont = (HFONT) SelectObject( hDC, hFont ) ;
+      GetTextMetrics( hDC, &amp;tm ) ;
+      if( hFont )
+         SelectObject( hDC, hOldFont ) ;
+      ReleaseDC( hWnd, hDC ) ;
+      lReturn = ( iTotal == 1 ? tm.tmAveCharWidth : tm.tmHeight ) ;
+      hb_retnl( lReturn ) ;
+   }
+   else
+   {
+      GetWindowRect( hWnd, &amp;rct ) ;
+      lTotHeight = rct.bottom - rct.top + 1 ;
+      ReleaseDC( hWnd, hDC ) ;
+      hb_retnl( lTotHeight ) ;
+   }
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( COUNTROWS )
+{
+   HWND hWnd = ( HWND ) hb_parni( 1 ) ;
+   int iCell = hb_parni( 2 ) ;
+   int iHead = hb_parni( 3 ) ;
+   int iFoot = hb_parni( 4 ) ;
+   int iSupH = hb_parni( 5 ) ;
+
+   RECT rct ;
+   int iRows, iFree ;
+
+   GetClientRect( hWnd, &amp;rct ) ;
+
+   iFree = rct.bottom - rct.top + 1 - iSupH - iHead - iFoot ;
+   iRows = iFree / iCell ;
+
+   hb_retni( iRows ) ;
+}
+
+//---------------------------------------------------------------------------//
+
+HB_FUNC( SBMPHEIGHT ) // ( hBmp )
+{
+   HBITMAP hBmp  = (HBITMAP) hb_parni( 1 ) ;
+   BITMAP bm ;
+
+   GetObject( hBmp, sizeof( BITMAP ), ( LPSTR ) &amp;bm ) ;
+
+   hb_retni( bm.bmHeight ) ;
+}
+
+//---------------------------------------------------------------------------//
+
+HB_FUNC( SBMPWIDTH )
+{
+   HBITMAP hBmp  = (HBITMAP) hb_parni( 1 ) ;
+   BITMAP bm ;
+
+   GetObject( hBmp, sizeof( BITMAP ), ( LPSTR ) &amp;bm ) ;
+
+   hb_retni( bm.bmWidth ) ;
+}
+
+//---------------------------------------------------------------------------//
+
+void DrawCheck( HDC hDC, LPRECT rct, HPEN hWhitePen, int nAlign, BOOL bChecked )
+{
+   RECT lrct ;
+   HPEN hOldPen ;
+   HBRUSH hOldBrush ;
+
+   HBRUSH hGrayBrush  = CreateSolidBrush( RGB( 192, 192, 192 ) ) ;
+   HBRUSH hWhiteBrush = CreateSolidBrush( RGB( 255, 255, 255 ) ) ;
+   HPEN hBlackPen     = CreatePen( PS_SOLID, 1, RGB( 0, 0, 0 ) ) ;
+   HPEN hLGrayPen     = CreatePen( PS_SOLID, 1, RGB( 192, 192, 192 ) ) ;
+   HPEN hGrayPen      = CreatePen( PS_SOLID, 1, RGB( 128, 128, 128 ) ) ;
+
+   hOldBrush = (HBRUSH) SelectObject( hDC, hGrayBrush ) ;
+
+   lrct.top = rct-&gt;top + ( ( ( rct-&gt;bottom - rct-&gt;top + 1 ) / 2 ) - 8 );
+
+   switch( nAlign )
+   {
+      case 0:
+         lrct.left = rct-&gt;left ;
+         break ;
+      case 1:
+         lrct.left = rct-&gt;left + ( ( rct-&gt;right - rct-&gt;left + 1 ) / 2 ) - 8 ;
+         break ;
+      case 2:
+         lrct.left = rct-&gt;right - 16 ;
+         break ;
+   }
+
+   lrct.bottom = lrct.top + 16 ;
+   lrct.right  = lrct.left + 16 ;
+
+   lrct.left   -= 1 ;
+   lrct.top    -= 1 ;
+   lrct.right  += 1 ;
+   lrct.bottom += 1 ;
+
+   hOldPen = (HPEN) SelectObject( hDC, hBlackPen ) ;
+   Rectangle( hDC, lrct.left, lrct.top, lrct.right, lrct.bottom ) ;
+
+   lrct.left   += 1 ;
+   lrct.top    += 1 ;
+   lrct.right  -= 1 ;
+   lrct.bottom -= 1 ;
+
+   FillRect( hDC, &amp;lrct, hGrayBrush ) ;
+
+   lrct.top    += 2 ;
+   lrct.left   += 2 ;
+   lrct.right  -= 1 ;
+   lrct.bottom -= 1 ;
+
+   FillRect( hDC, &amp;lrct, hWhiteBrush ) ;
+
+   SelectObject( hDC, hOldBrush ) ;
+   DeleteObject( hGrayBrush ) ;
+   DeleteObject( hWhiteBrush ) ;
+
+   lrct.right  -= 1 ;
+   lrct.bottom -= 1 ;
+
+   SelectObject( hDC, hGrayPen ) ;
+   Rectangle( hDC, lrct.left, lrct.top, lrct.right, lrct.bottom ) ;
+
+   lrct.top    += 1 ;
+   lrct.left   += 1 ;
+   lrct.right  -= 1 ;
+   lrct.bottom -= 1 ;
+
+   SelectObject( hDC, hBlackPen ) ;
+   Rectangle( hDC, lrct.left, lrct.top, lrct.right, lrct.bottom ) ;
+
+   lrct.top  += 1 ;
+   lrct.left += 1 ;
+
+   SelectObject( hDC, hWhitePen ) ;
+   Rectangle( hDC, lrct.left, lrct.top, lrct.right, lrct.bottom ) ;
+
+   lrct.top    += 1 ;
+   lrct.right  -= 2 ;
+   lrct.bottom -= 1 ;
+
+   if( bChecked )
+   {
+      GoToPoint( hDC, lrct.right, lrct.top ) ;
+
+      SelectObject( hDC, hBlackPen ) ;
+
+      LineTo( hDC, lrct.right - 4 , lrct.bottom - 3 ) ;
+      LineTo( hDC, lrct.right - 6, lrct.bottom - 5 ) ;
+
+      GoToPoint( hDC, lrct.right, lrct.top + 1) ;
+      LineTo( hDC, lrct.right - 4 , lrct.bottom - 2 ) ;
+      LineTo( hDC, lrct.right - 6, lrct.bottom - 4 ) ;
+
+      GoToPoint( hDC, lrct.right, lrct.top + 2) ;
+      LineTo( hDC, lrct.right - 4 , lrct.bottom - 1 ) ;
+      LineTo( hDC, lrct.right - 6, lrct.bottom - 3 ) ;
+   }
+
+   SelectObject( hDC, hOldPen ) ;
+   DeleteObject( hGrayPen ) ;
+   DeleteObject( hLGrayPen ) ;
+   DeleteObject( hBlackPen ) ;
+}
+
+//----------------------------------------------------------------------------//
+
+static void GoToPoint( HDC hDC, int ix, int iy )
+{
+
+   #ifdef __FLAT__
+      POINT pt;
+      MoveToEx( hDC, ix, iy, &amp;pt ) ;
+   #else
+      MoveTo( hDC, ix, iy );
+   #endif
+}
+
+//--------------------------------------------------------------------------------------------------------------------//
+
+static void DegradColor( HDC hDC, RECT * rori, COLORREF cFrom, signed long cTo )
+{
+   float clr1r, clr1g, clr1b, clr2r, clr2g, clr2b ;
+   float iEle, iRed, iGreen, iBlue ;
+   BOOL bDir, bHoriz = cTo &lt; 0 ;
+   float iTot = ( ! bHoriz ? ( rori-&gt;bottom + 2 - rori-&gt;top ) : ( rori-&gt;right + 2 - rori-&gt;left ) ) ;
+   RECT rct ;
+   HBRUSH hOldBrush, hBrush ;
+
+   rct.top = rori-&gt;top ;
+   rct.left = rori-&gt;left ;
+   rct.bottom = rori-&gt;bottom ;
+   rct.right = rori-&gt;right ;
+
+   clr1r = GetRValue( cFrom ) ;
+   clr1g = GetGValue( cFrom ) ;
+   clr1b = GetBValue( cFrom ) ;
+
+   cTo   = ( cTo &lt; 0 ? -cTo : cTo ) ;
+   clr2r = GetRValue( cTo ) ;
+   clr2g = GetGValue( cTo ) ;
+   clr2b = GetBValue( cTo ) ;
+
+   iRed   =  clr2r - clr1r ;
+   iGreen =  clr2g - clr1g ;
+   iBlue  =  clr2b - clr1b ;
+
+   iRed   = ( iRed / iTot ) ;
+   iGreen = ( iGreen / iTot ) ;
+   iBlue  = ( iBlue / iTot ) ;
+
+   iRed   = ( iRed &lt; 0 ? -iRed : iRed ) ;
+   iGreen = ( iGreen &lt; 0 ? -iGreen : iGreen ) ;
+   iBlue  = ( iBlue &lt; 0 ? -iBlue : iBlue ) ;
+
+   if( ! bHoriz )
+      rct.bottom = rct.top + 1 ;
+   else
+      rct.right = rct.left + 1 ;
+
+   hBrush = CreateSolidBrush( RGB( clr1r, clr1g, clr1b ) ) ;
+   hOldBrush = (HBRUSH) SelectObject( hDC, hBrush ) ;
+   FillRect( hDC, &amp;rct, hBrush ) ;
+
+   for( iEle = 1; iEle &lt; iTot; iEle++ )
+   {
+         bDir = ( clr2r &gt;= clr1r ? TRUE : FALSE ) ;
+         if( bDir )
+            clr1r += iRed ;
+         else
+            clr1r -= iRed ;
+
+         clr1r = ( clr1r &lt; 0 ? 0 : clr1r &gt; 255 ? 255 : clr1r ) ;
+
+         bDir = ( clr2g &gt;= clr1g ? TRUE : FALSE  ) ;
+         if( bDir )
+            clr1g += iGreen ;
+         else
+            clr1g -= iGreen ;
+         clr1g = ( clr1g &lt; 0 ? 0 : clr1g &gt; 255 ? 255 : clr1g ) ;
+
+         bDir = ( clr2b &gt;= clr1b ? TRUE : FALSE  ) ;
+         if( bDir )
+            clr1b += iBlue ;
+         else
+            clr1b -= iBlue ;
+         clr1b = ( clr1b &lt; 0 ? 0 : clr1b &gt; 255 ? 255 : clr1b ) ;
+
+      SelectObject( hDC, hOldBrush ) ;
+      DeleteObject( hBrush ) ;
+      hBrush = CreateSolidBrush( RGB( clr1r, clr1g, clr1b ) ) ;
+      SelectObject( hDC, hBrush ) ;
+      FillRect( hDC, &amp;rct, hBrush ) ;
+
+      if( ! bHoriz )
+      {
+         rct.top++ ;
+         rct.bottom++ ;
+      }
+      else
+      {
+         rct.left++ ;
+         rct.right++ ;
+      }
+   }
+   SelectObject( hDC, hOldBrush ) ;
+   DeleteObject( hBrush ) ;
+}
+
+//---------------------------------------------------------------------------//
+/*
+HB_FUNC( CHANGESYSCOLORS )
+{
+   int iEle, iItems = hb_parni( 1 ) ;
+   int aiElemen[ 28 ] ;
+   COLORREF alColors[ 28 ] ;
+
+   for( iEle = 0 ; iEle &lt;= ( iItems - 1 ) ; iEle++ )
+   {
+      aiElemen[ iEle ] = hb_parni( 2, ( iEle + 1 ) ) ;
+      alColors[ iEle ] = hb_parnl( 3, ( iEle + 1 ) ) ;
+   }
+
+   SetSysColors( iItems, aiElemen, alColors ) ;
+}
+*/
+//----------------------------------------------------------------------------//
+
+void cDrawCursor( HWND hWnd, RECT * rctc, long lCursor, COLORREF nClr )
+{
+   HDC hDC;
+   HRGN hReg;
+   COLORREF lclr = ( lCursor == 1 ? RGB( 5, 5, 5 ) : lCursor == 2 ? nClr : lCursor );
+   HBRUSH hBr ;
+   RECT rct ;
+
+   if( lCursor != 3 )
+   {
+      hBr = CreateSolidBrush( lclr ) ;
+      hReg = CreateRectRgn( rctc-&gt;left, rctc-&gt;top, rctc-&gt;right - 1, rctc-&gt;bottom );
+      hDC  = GetDCEx( hWnd, hReg, DCX_CACHE );
+
+      FrameRgn( hDC, hReg, hBr, 2, 2 );
+
+      ReleaseDC( hWnd, hDC );
+      DeleteObject( hReg ) ;
+      DeleteObject( hBr ) ;
+   }
+   else
+   {
+      rct.top    = rctc-&gt;top + 1 ;
+      rct.left   = rctc-&gt;left + 1 ;
+      rct.bottom = rctc-&gt;bottom - 1 ;
+      rct.right  = rctc-&gt;right - 1 ;
+
+      hDC  = GetDC( hWnd ) ;
+      DrawFocusRect( hDC, &amp;rct ) ;
+      ReleaseDC( hWnd, hDC ) ;
+   }
+}</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

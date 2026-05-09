@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Aporte. Nueva clase TQRecord. Para el árbol de Navidad - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-36460">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Aporte. Nueva clase TQRecord. Para el árbol de Navidad</div>
+  <div class="post" id="p217614">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Aporte. Nueva clase TQRecord. Para el árbol de Navidad</span><br>
+        Posted: Thu Dec 13, 2018 08:58 PM
+      </div>
+      <div class="content">Hola a todos,<br>
+<br>
+Siguiendo la estela de una pregunta de José Luis, os dejo una clase Record, orientada a la versatilidad y la rapidez.<br>
+<br>
+Espero vuestros comentarios. Saludos<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">///////////////
+// TQRecord.prg  -  Quick Record
+//
+/////////////////////////////////////////////////
+
+#include "hbclass.ch"
+#Include "\prg\genlib\debug.ch"
+
+
+//-------------------------------------------------------------------------//
+function PruebaTQRecord()
+Local oRec
+Local cAlias:= "JAlgo", xRegistro
+
+SELECT 0
+USE \Algo ALIAS (cAlias)
+IF Select(cAlias) == 0
+   MERROR_("no se pudo abrir !!", cAlias)
+ENDIF
+*
+*
+xRegistro:= 2
+*
+oRec:= TQRecord(cAlias):New(cAlias, xRegistro, .t.)
+*
+SELECT (cAlias)
+GO xRegistro
+*
+FLOGMSG_("1", oRec, oRec:cAlias, oRec:AlmCod, AlmCod)
+*
+oRec:AlmCod:= "24"
+FLOGMSG_("2", oRec, oRec:cAlias, oRec:AlmCod, AlmCod)
+*
+oRec:Graba()
+FLOGMSG_("3", oRec, oRec:cAlias, oRec:AlmCod, AlmCod)
+*
+CLOSE (cAlias)
+return nil
+*
+*
+//-------------------------------------------------------------------------//
+CLASS TQRecord
+
+  DATA cAlias
+  DATA nFCount                      HIDDEN
+
+
+  DATA   aBuffer      INIT {=&gt;}     HIDDEN
+
+  METHOD New()        CONSTRUCTOR
+  METHOD AddField()                 HIDDEN
+
+  DATA nRecNumber                   HIDDEN
+  DATA aCampos                      HIDDEN
+
+  METHOD DondeCargar()              HIDDEN
+
+  METHOD Llena()
+  METHOD Graba()
+
+  DATA lValueNil                    HIDDEN
+
+ENDCLASS
+
+//-------------------------------------------------------------------------//
+// cAlias, Obligatorio
+// xDondeCargar, posibles valores son: NIL, nRegistro, "EOF"
+// lValueNil, indica si se cargaran las datas-field con NIL
+METHOD New(cAlias, xDondeCargar, lValueNil) CLASS TQRecord
+  Local nArea:= Select()
+  Local nSitio
+  Local cName
+  Local nPos
+  *
+  ::cAlias:= cAlias
+  IF lValueNil == NIL
+     lValueNil:= .f.
+  ENDIF
+  ::lValueNil:= lValueNil
+  *
+  SELECT (cAlias)
+  ::nFCount:= FCount()
+  nSitio:= Recno()
+  *
+  *
+  ::aCampos:= Array(::nFCount)
+  *
+  ::DondeCargar(xDondeCargar, lValueNil)
+  *
+  IF lValueNil
+     // Carga datas con NIL. Interesante para luego solo grabar los que no son NIL y asi
+     // permitir grabaciones parciales utiles por ejemplo en registros que tienen campos
+     // que se deben actualizar de forma separada, por ejemplo campos contador.
+     FOR nPos:= 1 TO ::nFCount
+        cName:= FieldName(nPos)
+        *
+        ::aCampos[nPos] := cName
+        *
+        ::AddField(cName, NIL)
+     NEXT
+     *
+  ELSE
+     FOR nPos:= 1 TO ::nFCount
+        cName:= FieldName(nPos)
+        *
+        ::aCampos[nPos] := cName
+        *
+        ::AddField(cName, FieldGet(nPos))
+     NEXT
+     *
+  ENDIF
+  GO nSitio
+  SELECT (nArea)
+  *
+RETURN Self
+*
+//-------------------------------------------------------------------------//
+METHOD DondeCargar(xDondeCargar)
+  *
+  DO CASE
+     CASE xDondeCargar == NIL .OR. ValType(xDondeCargar) == "N"
+        IF xDondeCargar == NIL
+           xDondeCargar:= Recno()
+        ENDIF
+        IF !::lValueNil              // No necesario pq para lValueNil = .T. no se cargan datos
+           GO xDondeCargar
+        ENDIF
+        ::nRecNumber:= xDondeCargar
+        *
+     CASE ValType(xDondeCargar) == "C" .AND. xDondeCargar == "EOF"
+        IF !::lValueNil
+           GO BOTTOM
+           SKIP          // Eof(), para datas vacias, y nuevo
+        ENDIF
+        ::nRecNumber:= 0
+        *
+        *
+     CASE .T.
+        MERROR_("Opcion no contemplada !!", cAlias, xDondeCargar)
+        *
+  ENDCASE
+  *
+RETURN NIL
+*
+//-------------------------------------------------------------------------//
+METHOD AddField(cName, uValue)
+  *
+  ::aBuffer[cName] := uValue
+  *
+  __clsAddMsg( ::ClassH, cName,;
+               {|Self        | Self:aBuffer[cName]           }, HB_OO_MSG_INLINE )
+  *
+  __clsAddMsg( ::ClassH, "_" + cName,;
+               {|Self, uValue| Self:aBuffer[cName] := uValue }, HB_OO_MSG_INLINE )
+  *
+return Self
+
+//-------------------------------------------------------------------------//
+STATIC FUNCTION Vacia()
+   ::Llena(xDondeCargar)
+RETURN NIL
+*
+//-------------------------------------------------------------------------//
+METHOD Llena(xDondeCargar)
+  Local nArea:= Select()
+  Local nSitio
+  Local nPos
+  Local cName
+  *
+  SELECT (cAlias)
+  nSitio:= Record()
+  *
+  ::DondeCargar(xDondeCargar)
+  *
+  IF ::lValueNil
+     // Carga datas con NIL. Interesante para luego solo grabar los que no son NIL
+     FOR nPos:= 1 TO ::nFCount
+        cName:= FieldName(nPos)
+        *
+        ::Buffer[cName]:= NIL
+        *
+     NEXT
+     *
+  ELSE
+     FOR nPos:= 1 TO ::nFCount
+        cName:= FieldName(nPos)
+        *
+        ::Buffer[cName]:= FieldGet(nPos)
+        *
+     NEXT
+     *
+  ENDIF
+  *
+  GO nSitio
+  SELECT (nArea)
+RETURN NIL
+
+//-------------------------------------------------------------------------//
+METHOD Graba()
+  Local nArea:= Select()
+  Local nSitio
+  Local nI, nPos
+  Local lValueNil:= ::lValueNil
+  *
+  SELECT (::cAlias)
+  nSitio:= Recno()
+  *
+  IF ::nRecNumber == 0
+     Add_Rec(0)
+  ELSE
+     GO ::nRecNumber
+     Rec_Lock(0)
+  ENDIF
+  *
+  FOR nI:= 1 TO ::nFCount
+     // Grabacion segura (cambio de orden de campos entre tabla de origen y
+     // tabla de destino o bien no existe el campo en destino.)
+     nPos:= FieldPos(::aCampos[nI])
+     IF nPos &gt; 0
+        IF If(lValueNil , ::aBuffer[::aCampos[nI]] != NIL, .t.)          
+           FieldPut(nPos, ::aBuffer[::aCampos[nI]])
+        ENDIF
+     ENDIF
+  NEXT
+  *
+  UNLOCK
+  *
+  GO nSitio
+  *
+  SELECT (nArea)
+RETURN NIL
+*
+*</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p217633">
+    <div class="poster">
+      <div class="name" style="color:#105289">José Luis Sánchez</div>
+      <div class="rank">Posts: 564</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 13, 2005 09:23 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Aporte. Nueva clase TQRecord. Para el árbol de Navidad</span><br>
+        Posted: Sat Dec 15, 2018 07:30 AM
+      </div>
+      <div class="content">Hola,<br>
+Pues me alegro de que la idea te sirviera la idea, a veces las cosas sencillas son las que más utilizamos. Yo ahora estoy utilizando una modificación de la clase original que me envió Biel Maimó y que dejo por si alguien más está interesado.<br>
+<br>
+Hay varias diferencias con la clase original. El alias lo defines en el momento de crear el objeto, en vez de arrays esta nueva clase usa tablas hash, y la creación de una data no existente en la dbf original debe hacerse mediante el métido adddata('data').<br>
+<br>
+Saludos,<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Código basado en una aportación de Marcelo Via Giglio y modificada por Biel Maimó.
+#include "hbclass.ch"
+
+CLASS tRecord
+
+   DATA   aFld                INIT {=&gt;} HIDDEN
+   DATA   cAlias AS CHARACTER INIT ""   HIDDEN
+   METHOD New(cAlias) CONSTRUCTOR
+   METHOD FieldGet( cName)
+   METHOD FieldPut( cName, uVal )
+   METHOD AddData( cName )
+   METHOD AddDataFromAlias()
+   METHOD LoadFromAlias()
+   METHOD saveToAlias()
+   METHOD blankFromAlias()
+   METHOD SetAlias( cAlias )
+   METHOD GetAlias( ) INLINE ::cAlias
+
+ENDCLASS
+
+//------------------------------------------------------------------------------
+METHOD New( cAlias ) CLASS tRecord
+   IF cAlias!=NIL .AND. Select(cAlias)!=0
+      ::cAlias:=cAlias
+      ::AddDataFromAlias()
+      //::loadFromAlias()
+   ENDIF
+RETURN SELF
+
+//------------------------------------------------------------------------------
+METHOD FieldGet( cName ) CLASS tRecord ; RETURN ::aFld[ cName ]
+
+//-----------------------------------------------------------------------------
+METHOD FieldPut( cName, uVal ) CLASS tRecord
+   ::aFld[ cName ]:=uVal
+RETURN NIL
+
+//------------------------------------------------------------------------------
+METHOD AddData( cName ) CLASS tRecord
+
+  __clsAddMsg( ::ClassH, cName,;
+               {|Self| Self:FieldGet( cName ) }, HB_OO_MSG_INLINE )
+
+  __clsAddMsg( ::ClassH, "_" + cName,;
+               {|Self,Value| Self:FieldPut( cName, Value ) }, HB_OO_MSG_INLINE )
+
+RETURN Self
+
+//------------------------------------------------------------------------------
+METHOD AddDataFromAlias() CLASS tRecord
+   LOCAL nFld,i
+   nFld:=(::cAlias)-&gt;(FCount())
+   FOR i:=1 TO nFld
+      ::AddData( (::cAlias)-&gt;(FieldName( i )) )
+   NEXT
+RETURN NIL
+
+//------------------------------------------------------------------------------
+METHOD LoadFromAlias( ) CLASS tRecord
+   LOCAL nFld,i
+   nFld:=(::cAlias)-&gt;(FCount())
+   FOR i:=1 TO nFld
+      ::aFld[ ( (::cAlias)-&gt;(FieldName( i )) )]:= (::cAlias)-&gt;(FieldGet(i) )
+   NEXT
+RETURN NIL
+
+//-----------------------------------------------------------------------------
+METHOD SetAlias( cAlias ) CLASS tRecord
+   LOCAL lVal
+   IF cAlias!=NIL .AND. Empty(::cAlias) .AND. Select(cAlias)!=0
+      ::cAlias:=cAlias
+      
+      ::AddDataFromAlias()
+      //::loadFromAlias()
+      lVal:=.T.
+   ELSE
+      lVal:=.F.
+      //En este caso deberia borrar los mensajes del objeto, y de momento no se como hacerlo.
+   ENDIF
+RETURN lVal
+
+//-----------------------------------------------------------------------------
+METHOD blankFromAlias() CLASS tRecord
+   LOCAL i, cInit
+   FOR i := 1 TO ( ::cAlias ) -&gt;( FCount() )
+      DO CASE
+      CASE ( ::cAlias )-&gt;( FieldName( i ) ) == "C"
+         cinit := Space( Len( ( ::cAlias )-&gt;( FieldName( i ) ) ) )
+      CASE ( ::cAlias )-&gt;( FieldName( i ) ) == "N"
+         cinit := 0
+      CASE ( ::cAlias )-&gt;( FieldName( i ) ) == "D"
+         cinit := Date()
+      CASE ( ::cAlias )-&gt;( FieldName( i ) ) == "M"
+         cInit := Space( 255 )
+      CASE ( ::cAlias )-&gt;( FieldName( i ) ) == "L"
+         cinit := .F.
+      ENDCASE
+      ::aFld[ ( (::cAlias)-&gt;(FieldName( i )) )]:= cInit
+   NEXT
+RETURN NIL
+
+// ------------------------------------------------------------------------------
+METHOD saveToAlias() CLASS tRecord
+   LOCAL i, key, pos
+   FOR i := 1 TO Len( ::aFld ) // (::cAlias) -&gt; ( FCOUNT() )
+      key := hb_hKeyAt( ::aFld, i )
+      pos := (::cAlias)-&gt;(FieldPos( key ))
+      IF pos != 0
+        (::cAlias)-&gt;(FieldPut( pos, ::aFld[ key ] )) // FIELDPUT de Harbour
+      ENDIF
+   NEXT
+RETURN NIL
+
+// ------------------------------------------------------------------------------</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

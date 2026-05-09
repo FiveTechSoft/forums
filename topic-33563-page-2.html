@@ -1,0 +1,985 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Label new - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-33563">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Label new</div>
+<div class="pagination">Page: <a href="topic-33563.html">1</a> <strong>2</strong> (17 posts)</div>  <div class="post" id="p198470">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Label new</span><br>
+        Posted: Wed Feb 08, 2017 08:13 PM
+      </div>
+      <div class="content"><p>Surely many of us will want to try it</p>
+<p>Publish what you have developed already and let us test it, so we can help you</p></div>
+    </div>
+  </div>
+  <div class="post" id="p198540">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Label new</span><br>
+        Posted: Fri Feb 10, 2017 09:52 AM
+      </div>
+      <div class="content">I use customer.dbf to have fields to insert on label<br>
+I use tregla class to show rulers<br>
+<br>
+<br>
+<img src="http://www.iispascalcomiforti.it/wp-content/uploads/2017/02/1lbl.jpg" alt="" loading="lazy"><br>
+<br>
+<br>
+the test.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+#include "Constant.ch"
+REQUEST DBFCDX
+REQUEST DBFFPT
+EXTERNAL ORDKEYNO,ORDKEYCOUNT,ORDCREATE,ORDKEYGOTO
+
+
+Function Test()
+
+   local oDlg, oBrw, oFont
+   Local oBtnLabel[2]
+
+   SET DATE ITALIAN
+   SET CENTURY ON
+
+   FwNumFormat( 'E', .t. )
+
+   USE CUSTOMER ALIAS CUST
+
+   DEFINE FONT oFont NAME 'Tahoma' SIZE 0, -14
+
+   DEFINE DIALOG oDlg SIZE 640,440 PIXEL ;
+      FONT oFont TITLE 'XBrowse Windows 7 Bars' ;
+      COLOR CLR_BLACK,RGB(250,250,250)
+
+   @ 10,20 XBROWSE oBrw OF oDlg SIZE -10,-20 PIXEL ;
+      COLUMNS "First","Last","Street","City", "State", "Zip","HireDate","Age", "Salary" ;
+      ALIAS 'CUST' NOBORDER
+
+   oBrw:lRecordSelector := .f.
+   oBrw:nMarqueeStyle   := MARQSTYLE_HIGHLWIN7
+
+   WITH OBJECT oBrw:InsCol( 1 )
+
+      :cHeader       := " "
+      :bEditValue    := { || If( AScan( oBrw:aSelected, oBrw:BookMark ) &gt; 0, .t., nil ) }
+      :SetCheck()
+      :nHeadBmpNo    := { || If( Len( oBrw:aSelected ) == oBrw:nLen, 1, 2 ) }
+      :bLClickHeader := { |r,c,f,oCol| If( Len( oBrw:aSelected ) == oBrw:nLen, ;
+                                           oBrw:SelectNone(), oBrw:SelectAll() ) }
+
+   END
+
+   oBrw:CreateFromCode()
+
+   @ 204,2 BUTTON oBtnLabel Prompt "Label Manager" SIZE 60,10 PIXEL;
+             ACTION Label_Manager('CUST',oBrw,'CUST')
+
+
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   RELEASE FONT oFont
+   Return nil</code></pre></div><br>
+<br>
+<br>
+<strong>the Label Manager project </strong><br>
+Label.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+#include "Constant.ch"
+
+#Define Label_extension  ".LBL"
+
+#define FW_BOLD          700
+#define COLOR_BTNFACE    15
+
+
+
+
+
+ Static oRulerH,oRulerV,aFonts
+ Static oBar,oBar1,oBar2,oBar3
+ static oWnd
+ static oLen
+ static cIniLabel
+ Static oLabel
+ static nLblWidth
+ static nLblHeight
+ static nLblVSep
+ static nLblHSep
+ static nLblColumn,nLblLines
+ static cLabelName
+
+
+*-- FUNCTION -----------------------------------------------------------------
+*         Name: LabelDesignner
+*  Description:
+*       Author: Silvio Falconi
+*-----------------------------------------------------------------------------
+
+
+   Function Label_Manager(cDbf,oGrid,cPref)
+       Local lPrintFrame  := .t.
+
+        // load the fields( fields,titles and types)  of the xbrowse
+        Local   nLen := Len( oGrid:aCols )
+        Local   aCampos [ nLen ]
+        Local   aTitulos[ nLen ]
+        Local   aTipos  [ nLen ]
+        Local cField
+        Local aGet[10]
+        Local oHand
+        Local nX := 0
+        Local oMsgBar, oRow, oCol
+
+
+
+      //fields of the dbf
+     FOR n = 1 TO nLen
+           aCampos   [ n ]:= oGrid:aCols[ n ]:cExpr
+           aTitulos  [ n ]:= oGrid:aCols[ n ]:cHeader
+           aTipos    [ n ]:= oGrid:aCols[ n ]:cDataType
+       NEXT
+
+
+
+    nLblWidth    := 400
+    nLblHeight   := 600
+    nLblVSep     := 0.5
+    nLblHSep     := 0.5
+    nLblColumn   := 2
+    nLblLines    := 6
+    cLabelName   := "noname.lbl"
+
+
+DEFINE CURSOR oHand HAND
+DEFINE WINDOW oWnd TITLE "Label Design "+ cLabelName  Vscroll
+
+
+
+     SetBar()
+
+   // LABEL BOARD...
+
+  oLabel :=TMetaFile():New(oBar:nHeight+5, oBar3:nWidth+5,(nLblHeight),(nLblWidth), ,oWnd,CLR_BLACK,CLR_WHITE,)
+   oLabel:bRClicked  := {|nRow,nCol,nFlags|EditDialog( nRow, nCol, oLabel )}
+
+
+
+   @ 2.17, 259 say "Select Fields:"   OF oBar1   SIZE 120,20 PIXEL
+    @ 2.17,359   COMBOBOX aGet[10] VAR cField     ITEMS aTitulos      OF oBar1   SIZE 200,90 PIXEL  STYLE CBS_DROPDOWN ;
+   ON CHANGE  CreateSay( aTitulos[aGet[10]:nat],;   // title
+                         aCampos [aGet[10]:nat],;  // field
+                         aTipos  [aGet[10]:nat],;  // type
+                         oLabel)
+
+
+
+
+     DEFINE MSGBAR oMsgBar OF oWnd PROMPT I18n("File: ") + cLabelName ;
+          COLOR CLR_HBLUE, GetSysColor( COLOR_BTNFACE )    NOINSET
+
+   DEFINE MSGITEM oLen PROMPT space (10) SIZE 80 OF oWnd:oMsgBar ;
+          TOOLTIP I18n("Size of the file")
+
+   DEFINE MSGITEM oRow PROMPT I18n("Lin: 0") SIZE 60 OF oWnd:oMsgBar ;
+          TOOLTIP I18n("Line")
+
+   DEFINE MSGITEM oCol PROMPT I18n("Col: 0") SIZE 60 OF oWnd:oMsgBar ;
+          TOOLTIP I18n("Column")
+
+
+
+      // for the rulers
+      oLabel:bMMoved = { | nRow, nCol, nFlags | ;
+        oRow:SetText( nRow    ) ,;
+        oCol:SetText( nCol   ) ,;
+         nX :=0.98 ,;
+        oRulerV:PaintPencil( Int( nRow *  nX + oRulerV:nGap  )   ,;
+                               Int( nCol *  nX +oRulerV:nGap    )  ),;
+       oRulerH:PaintPencil( Int( nRow *  nX +oRulerH:nGap   )   ,;
+                               Int( nCol *  nX +oRulerH:nGap   )  )  }
+
+        oRulerH:Pix2mm := oRulerH:Pix2mm/2.54
+        oRulerV:Pix2mm := oRulerV:Pix2mm/2.54
+
+        oRulerV:refresh()
+        oRulerH:refresh()
+
+
+
+
+
+
+       oWnd:bResized := { || oBar1:nWidth := oWnd:oBar:nWidth - 1, ;
+                             oBar2:nWidth := oWnd:oBar:nWidth - 1,oRulerH:nWidth  := oWnd:oBar:nWidth - 1 }
+
+        ACTIVATE WINDOW oWnd center
+
+
+        return nil
+
+
+
+ *-- FUNCTION -----------------------------------------------------------------
+*         Name: New Label
+*  Description:
+*       Author: Silvio Falconi
+*-----------------------------------------------------------------------------
+
+
+
+Function NewLabel()
+
+
+   return nil
+
+ *-- FUNCTION -----------------------------------------------------------------
+*         Name: Open Label
+*  Description:
+*       Author: Silvio Falconi
+*-----------------------------------------------------------------------------
+  Function OpenLabel()
+
+
+   return nil
+
+
+
+
+ *-- FUNCTION -----------------------------------------------------------------
+*         Name: setBar
+*  Description:
+*       Author: Silvio Falconi
+*-----------------------------------------------------------------------------
+
+Function SetBar()
+   Local oCursor
+
+      DEFINE CURSOR oCursor HAND
+
+    DEFINE BUTTONBAR oBar OF oWnd 3D SIZE 26,0
+   oBar:bLClicked := { || NIL }
+   oBar:bRClicked := { || NIL }
+   oBar:nHeight+=68
+
+     @  oBar:nHeight-28, -1 BUTTONBAR oBar1 OF oBar 3D SIZE oBar:nWidth - 1, 29 ;
+            BUTTONSIZE 26, 27
+
+   oBar1:bLClicked := { || NIL }
+   oBar1:bRClicked := { || NIL }
+ *  SetFonts()
+
+     DEFINE BUTTON OF oBar1 ;
+     FILENAME ".\bitmaps\New.BMP"       ;
+     ACTION NIL ;
+     TOOLTIP i18n( "New Label. " ) ;
+     MESSAGE i18n( "New Label." ) ;
+      NOBORDER
+
+      DEFINE BUTTON OF oBar1 ;
+     FILENAME ".\bitmaps\Open2.BMP"       ;
+     ACTION NIL ;
+     TOOLTIP i18n( "Open Label. " ) ;
+     MESSAGE i18n( "Open Label." ) ;
+      NOBORDER
+
+       DEFINE BUTTON OF oBar1 ;
+     FILENAME ".\bitmaps\image.BMP"       ;
+     ACTION CreateBitmap(oLabel) ;
+     TOOLTIP i18n( "Insert Image. " ) ;
+     MESSAGE i18n( "Insert Image." ) ;
+      NOBORDER
+
+
+      DEFINE BUTTON OF oBar1 ;
+     FILENAME ".\bitmaps\save.BMP"       ;
+     ACTION SaveLabel(oLabel) ;
+     TOOLTIP i18n( "save Label. " ) ;
+     MESSAGE i18n( "saveLabel." ) ;
+      NOBORDER
+
+
+     DEFINE BUTTON OF oBar1 ;
+     FILENAME ".\bitmaps\printer.BMP"       ;
+     ACTION Preview(.t. ) ;
+     TOOLTIP i18n( "RPreview Label. " ) ;
+     MESSAGE i18n( "RPreview Label." ) ;
+      NOBORDER
+
+
+
+   AEval( oBar1:aControls, { |x| x:oCursor := oCursor } )
+
+ //-----------------------------------------------------------------------------//
+
+     oBar:nHeight+=28
+
+   @ oBar:nHeight-28, -1 BUTTONBAR oBar2 OF oBar 3D SIZE oBar:nWidth - 1, 29 ;
+            BUTTONSIZE 26, 27
+
+
+   oBar2:bLClicked := { || NIL }
+   oBar2:bRClicked := { || NIL }
+
+   AEval( oBar2:aControls, { |x| x:oCursor := oCursor, ;
+                                   x:nLeft += 219, x:nRight += 219 } )
+
+
+
+
+  //-----------------------------------------------------------------------//
+      DEFINE BUTTONBAR oBar3 OF oWnd 3D SIZE 26,0 lEFT
+
+     Ruler(oBar2,oBar3)
+
+     return nil
+
+
+
+*-- FUNCTION -----------------------------------------------------------------
+*         Name: Rulers
+*  Description: dra two rulers
+*       Author: Silvio Falconi
+*-----------------------------------------------------------------------------
+
+ Function Ruler(oBar2,oBar3)
+    Local oFont
+    Local oPen
+
+   Local oWnd1 := oBar2
+   local oWnd2 := oBar3
+   Local nRow    := 1.1
+   Local nCol    := 30
+   Local nWidth  := oWnd:oBar:nWidth - 1
+
+   Local lPixel  := .t.
+   Local lInches  := .t.
+   Local lHorizontal:= .t.
+   Local nMin:=0
+   Local nMax:= 100
+   Local nHeight := 29
+   Local nClrText := CLR_BLUE
+   Local nClrBack := CLR_WHITE
+   Local stepcm:= 1
+   Local stepmm:= 10
+
+
+
+
+
+          DEFINE FONT oFont NAME "Ms Sans Serif" SIZE 0, -8
+          DEFINE PEN  oPen WIDTH 0.1
+
+           oRulerH := TRegla(): New( oWnd1, nRow, nCol, nWidth, nHeight     ,;
+                                   lPixel,nMin,nMax,lHorizontal          ,;
+                                   oFont,oPen,lInches,nClrText,nClrBack  ,;
+                                   stepcm,stepmm)
+
+
+              oRulerV := TRegla(): New( oWnd2, nRow, 0, nWidth, 999    ,;
+                                   lPixel,nMin,nMax,.f.          ,;
+                                   oFont,oPen,lInches,nClrText,nClrBack  ,;
+                                   stepcm,stepmm)
+
+
+          oRulerH:nZoom     = 1.0
+          oRulerH:Pix2mm    = 1.0
+          oRulerH:nGap      = 0
+          oRulerH:nMinDib   = 0
+
+          oRulerH:SetPix2mm(oRulerH:Pix2mm)
+
+
+          oRulerV:nZoom     = 1.0
+          oRulerV:Pix2mm    = 1.0
+          oRulerV:nGap      = 0
+          oRulerV:nMinDib   = 0
+
+          oRulerV:SetPix2mm(oRulerV:Pix2mm)
+
+           RETURN NIL
+
+
+
+
+
+function CreateSay(cCaption, cField, cType, oDlg )
+
+   local oSay
+   local oFontName := TFont():New( "ARIAL", 0, -24,,,,,,,,,,,,, , )
+   IF !empty(cCaption)
+   @ 1, 2 SAY oSay PROMPT "&lt;" +cCaption+"&gt;" OF oDlg SIZE 150, 40 DESIGN BORDER  FONT oFontName
+    oSay:bGet = nil
+    oSay:lWantClick = .T.
+    BringWindowToTop( oSay:hWnd )
+    oSay:SetFocus()
+    oSay:bGotFocus = { | nRow, nCol | oLen:settext(oSay:nId) }   // show the id on MSGBAR
+    oSay:bRClicked = { | nRow, nCol | EditControl( nRow, nCol, oSay ) }
+Endif
+
+return nil
+
+
+function CreateBitmap( oDlgIde, nRow, nCol )
+   local oBmp
+   local cBmpFile := cGetFile( "*.bmp", "Select a bitmap file" )
+   if File( cBmpFile )
+      @  nRow, nCol BITMAP oBmp FILENAME cBmpFile OF oDlgIde DESIGN  size 200,200
+      oBmp:bRClicked = { | nRow, nCol | EditControl( oBmp, nRow, nCol,"BITMAP" ) }
+      oBmp:bGotFocus = { | nRow, nCol | oLen:settext(oBmp:nId) }   // show the id on MSGBAR
+      oBmp:SetFocus()
+   endif
+return nil
+
+
+
+//---------------------------------------------------------------------------------------//
+function EditControl( nRow, nCol, oControl )
+
+   local oMenu
+
+
+   MENU oMenu POPUP
+   MENUITEM "Bring to front" ACTION BringWindowToTop( oControl:hWnd )
+
+     IF oControl:ClassName() == "TSAY"
+        MENUITEM "&amp;Font..."   ACTION (oControl:SelFont(),;
+                                      oControl:nHeight:=oControl:oFont:nHeight,;
+                                      oControl:nWidth:=oControl:ofont:nWidth,;
+                                                                 oLabel:refresh())
+
+
+        MENUITEM "&amp;Colors..." ACTION (oControl:SelColor(),oLabel:refresh())
+     Endif
+
+
+      MENUITEM "Position"
+      MENU
+         MENUITEM "nTop"    + Chr( 9 ) + LTrim( Str( oControl:nTop ) )
+         MENUITEM "nLeft"   + Chr( 9 ) + LTrim( Str( oControl:nLeft ) )
+         MENUITEM "Move up"   ACTION ( oControl:HideDots(), oControl:nTop--, oControl:ShowDots() )
+         MENUITEM "Move down" ACTION ( oControl:HideDots(), oControl:nTop++, oControl:ShowDots() )
+      ENDMENU
+
+      MENUITEM "Size"
+      MENU
+         MENUITEM "nWidth"  + Chr( 9 ) + LTrim( Str( oControl:nWidth ) )
+         MENUITEM "nHeight" + Chr( 9 ) + LTrim( Str( oControl:nHeight ) )
+         ENDMENU
+         SEPARATOR
+        MENUITEM "Field Property" ACTION  Field_Property(oControl)
+   ENDMENU
+
+   ACTIVATE POPUP oMenu WINDOW oControl AT nRow, nCol
+
+return nil
+
+
+function Preview(lPrintFrame )
+
+   local oPrn, oCtrl, oBrush, oFont
+   local n
+   oWndChild:=oLabel
+
+   PRINTER oPrn PREVIEW NAME cLabelName
+   PAGE
+
+         aDes:=  oPrn:Pix2Cmtr( oWndChild:nBottom, oWndChild:nRight )
+
+
+   if lPrintFrame
+        oPrn:Box( 10, 10, oWndChild:nBottom, oWndChild:nRight, )
+    Endif
+
+
+
+
+
+
+         if ! Empty( oWndChild:aControls )
+         for n = 1 to Len( oWndChild:aControls )
+            oCtrl = oWndChild:aControls[ n ]
+
+            do case
+            case oCtrl:ClassName() == "TSAY"
+
+
+                    SetBkColor( oPrn:hDcOut, oCtrl:nClrPane )
+
+                    DEFINE BRUSH oBrush COLOR oCtrl:nClrPane
+
+                    FillRect( oPrn:hDcOut, { oCtrl:nTop, oCtrl:nLeft,;
+                              oCtrl:nTop + oCtrl:nHeight - 1,;
+                              oCtrl:nLeft + oCtrl:nWidth - 1 }, oBrush:hBrush )
+
+                    oBrush:End()
+
+                    oCtrl:GetFont()
+
+                    DEFINE FONT oFont NAME oCtrl:oFont:cFaceName ;
+                       SIZE oCtrl:oFont:nWidth, oCtrl:oFont:nHeight ;
+                       OF oPrn
+
+                    oFont:Activate( oPrn:hDCOut )
+
+                    ExtTextOut( oPrn:hDcOut,;
+                             oCtrl:nTop,;
+                             oCtrl:nLeft,;
+                             oCtrl:GetText() )
+
+
+                    oFont:DeActivate( oPrn:hDCOut )
+                    oFont:End()
+
+               case oCtrl:ClassName() == "TBITMAP"
+                    oPrn:SayBitmap( oCtrl:nTop,;
+                                    oCtrl:nLeft,;
+                                    oCtrl:cFileName, 80, 80 )
+            endcase
+         next
+         endif
+      ENDPAGE
+   ENDPRINTER
+
+   return nil
+
+
+
+*-- FUNCTION -----------------------------------------------------------------
+*         Name: save on inifile
+*  Description: dra two rulers
+*       Author: Silvio Falconi
+*-----------------------------------------------------------------------------
+
+Function SaveLabel(oWndChild)
+   Local oControl
+   Local cLabel:=""
+   Local  cIniLabelFile    :=  cFilePath(GetModuleFileName( GetInstance() ) ) +  cLabelName
+
+
+
+
+   WritePProString("Label","LblWidth",Ltrim(Str(nLblWidth)),cIniLabelFile)
+   WritePProString("Label","LblHeight",Ltrim(Str(nLblHeight)),cIniLabelFile)
+   WritePProString("Label","LblVSep",Ltrim(Str(nLblVSep)),cIniLabelFile)
+   WritePProString("Label","LblHSep",Ltrim(Str(nLblHSep)),cIniLabelFile)
+   WritePProString("Label","LblCol",Ltrim(Str(nLblColumn)),cIniLabelFile)
+   WritePProString("Label","LblLin",Ltrim(Str(nLblLines)),cIniLabelFile)
+
+     //-----------------------------------------------------------------//
+     if ! Empty( oWndChild:aControls )
+         for n = 1 to Len( oWndChild:aControls )
+            oControl = oWndChild:aControls[ n ]
+
+
+
+              IF oControl:ClassName() == "TSAY"
+                   cLabel:=cLabel+LTrim(STR(oControl:nTop))+"|"
+                   cLabel:=cLabel+LTrim(STR(oControl:nLeft))+"|"
+                   cLabel:=cLabel+LTrim(STR(oControl:nWidth))+"|"
+                   cLabel:=cLabel+LTrim(STR(oControl:nHeight))+"|"
+                  cLabel:=cLabel+(oControl:cCaption)+"|"
+                  cLabel:=cLabel+("SAY")+"|"
+                  cLabel:=cLabel+(oControl:oFont:cfacename)+"|"
+                  cLabel:=cLabel+LTrim(STR(oControl:ofont:nInpHeight))+"|"
+                  cLabel:=cLabel+LTrim(STR(oControl:ofont:nInpWidth ))+"|"
+                  cLabel:=cLabel+LTrim(STR(oControl:ofont:nEscapement))+"|"
+                  cLabel:=cLabel+LTrim(STR(oControl:ofont:nOrientation))+"|"
+
+                  cLabel:=cLabel+LTrim(STR(oControl:ofont:nWeight))+"|"
+
+                  if oControl:ofont:lBold
+                     cLabel:=cLabel+"SI"+"|"
+                  ELSE
+                     cLabel:=cLabel+"NO"+"|"
+                  ENDIF
+
+                  if oControl:ofont:lItalic
+                     cLabel:=cLabel+"SI"+"|"
+                  ELSE
+                     cLabel:=cLabel+"NO"+"|"
+                  ENDIF
+
+                   if oControl:ofont:lUnderLine
+                     cLabel:=cLabel+"SI"+"|"
+                  ELSE
+                     cLabel:=cLabel+"NO"+"|"
+                  ENDIF
+
+                  if oControl:ofont:lStrikeOut
+                     cLabel:=cLabel+"SI"+"|"
+                  ELSE
+                     cLabel:=cLabel+"NO"+"|"
+                  ENDIF
+
+               Endif
+
+               IF oControl:ClassName() ==  "TBITMAP"
+                   cLabel:=cLabel+LTrim(STR(oControl:nTop))+"|"
+                   cLabel:=cLabel+LTrim(STR(oControl:nLeft))+"|"
+                   cLabel:=cLabel+LTrim(STR(oControl:nWidth))+"|"
+                   cLabel:=cLabel+LTrim(STR(oControl:nHeight))+"|"
+                  cLabel:=cLabel+(oControl:cFileName)+"|"
+                  cLabel:=cLabel+("IMAGE")+"|"
+
+               Endif
+
+               IF oControl:ClassName() ==  "TIMAGE"
+                   cLabel:=cLabel+LTrim(STR(oControl:nTop))+"|"
+                   cLabel:=cLabel+LTrim(STR(oControl:nLeft))+"|"
+                   cLabel:=cLabel+LTrim(STR(oControl:nWidth))+"|"
+                   cLabel:=cLabel+LTrim(STR(oControl:nHeight))+"|"
+                   cLabel:=cLabel+("IMAGE")+"|"
+
+               Endif
+
+
+
+               //SAVE ON INIFILE
+
+                SetIni( cIniLabelFile, "Fields", STR(oControl:nId), cLabel )
+                cLabel:=""
+             Next
+
+
+    Endif
+
+     //-----------------------------------------------------------------//
+
+     SetIni( cIniLabelFile, "Data", "Archive", Alias() )
+
+    return nil
+
+
+
+
+//-----------------------------------------------------------------------------------------//
+
+  static function EditDialog( nRow, nCol, oControl )
+
+   local oMenu
+
+   MENU oMenu POPUP
+      MENUITEM "Set name.." ACTION EditTitle( oWnd )
+
+      SEPARATOR
+
+      MENUITEM "Proprietà"  ACTION Proprieta(oControl)
+
+
+      SEPARATOR
+    *  MENUITEM "nWidth"  + Chr( 9 ) + LTrim( Str( oControl:nWidth ) )
+    *  MENUITEM "nHeight" + Chr( 9 ) + LTrim( Str( oControl:nHeight ) )
+      SEPARATOR
+   ENDMENU
+
+     endmenu
+
+   ACTIVATE POPUP oMenu WINDOW oControl AT nRow, nCol // SAVE
+
+   return nil
+
+
+
+
+  static function EditTitle( oWnd )
+
+   local oDlg, oGet, cOldTitle := PadR( oWnd:cCaption, 100 )
+
+   DEFINE DIALOG oDlg TITLE "Label title" SIZE 600, 110
+
+   oWnd:cCaption = PadR( oWnd:cCaption, 100 )
+
+   @ 1, 1 GET oGet VAR oWnd:cCaption OF oDlg SIZE 285, 12 ;
+      ON CHANGE oWnd:SetText( AllTrim( oGet:GetText() ) )
+
+   @ 2, 18 BUTTON "&amp;Ok" OF oDlg ACTION oDlg:End()
+
+   @ 2, 25 BUTTON "&amp;Cancel" OF oDlg ACTION ( oWnd:SetText( cOldTitle ),cLabelName:=cOldTitle,  oDlg:End() )
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+
+
+return nil
+
+
+
+
+//-----------------------------------------------------------------------------------------//
+
+ Function  Proprieta(oControl)
+    Local oDlgProp,oFont
+    Local aGetProp[10]
+    Local oBtn[2]
+    Local aGet[6]
+
+   Local nBottom   := 32
+   Local nRight    := 62
+   Local nWidthDlg :=  Max( nRight * DLG_CHARPIX_W, 180 )
+   Local nHeightDlg := nBottom * DLG_CHARPIX_H
+
+
+    nLblWidth:=    VAL(GetPvProfString("Label", "LblWidth","400", cLabelName))
+    nLblHeight:=   VAL(GetPvProfString("Label", "LblHeight","600", cLabelName))
+    nLblVSep:=     VAL(GetPvProfString("Label", "LblVSep","0", cLabelName))
+    nLblHSep:=     VAL(GetPvProfString("Label", "LblHSep","0", cLabelName))
+    nLblColumn:=   VAL(GetPvProfString("Label", "LblCol","2", cLabelName))
+    nLblLines:=    VAL(GetPvProfString("Label", "LblLin","6", cLabelName))
+
+
+ DEFINE DIALOG oDlgProp        ;
+   TITLE "Label Property"     ;
+   SIZE nWidthDlg, nHeightDlg   PIXEL      ;
+   STYLE nOr( DS_MODALFRAME, WS_POPUP, WS_CAPTION,  4 )
+
+@ 12, 10 SAY "Label Height :" OF oDlgProp SIZE 55, 8 PIXEL
+@ 26, 10 SAY "Label Width :" OF oDlgProp SIZE 55, 8 PIXEL
+@ 40, 10 SAY "Label Name :" OF oDlgProp SIZE 55, 8 PIXEL
+
+@ 66, 10 SAY "Horizontal Separator (mm):" OF oDlgProp SIZE 90, 8 PIXEL
+@ 82, 10 SAY "Vertical Separator (mm):" OF oDlgProp SIZE 90, 8 PIXEL
+@ 96, 10 SAY "Labels for line:" OF oDlgProp SIZE 65, 8 PIXEL
+@ 110,10 SAY "Labels for columns:" OF oDlgProp SIZE 65, 8 PIXEL
+
+
+@ 10, 55  GET aGet[1] VAR  nLblHeight  OF oDlgProp SIZE 55, 12 PIXEL
+@ 24, 55  GET aGet[2] VAR  nLblWidth  OF oDlgProp SIZE 55, 12 PIXEL
+@ 38, 55  GET aGet[3] VAR  cLabelName  OF oDlgProp SIZE 155, 12 PIXEL
+
+@ 64, 155  GET aGet[4] VAR  nLblHSep  OF oDlgProp SIZE 25, 12 PIXEL
+@ 80, 155  GET aGet[5] VAR  nLblVSep  OF oDlgProp SIZE 25, 12 PIXEL
+@ 94, 155  GET aGet[6] VAR  nLblColumn  OF oDlgProp SIZE 25, 12 PIXEL
+@ 108,155  GET aGet[6] VAR  nLblLines  OF oDlgProp SIZE 25, 12 PIXEL
+
+@ 224, 136 BUTTON oBtn[1] PROMPT i18n("&amp;Conferma") OF oDlgProp SIZE 45, 12 PIXEL  DEFAULT  ACTION   ( oDlgProp:end( IDOK ) )
+@ 224, 194 BUTTON oBtn[2] PROMPT i18n("&amp;Annulla") OF oDlgProp SIZE 45, 12 PIXEL  CANCEL    ACTION   ( oDlgProp:end( IDCANCEL ) )
+
+
+ACTIVATE DIALOG oDlgProp CENTERED
+
+       IF oDlgProp:nresult == IDOK
+
+   WritePProString("Label","LblWidth",Ltrim(Str(nLblWidth)),cLabelName)
+   WritePProString("Label","LblHeight",Ltrim(Str(nLblHeight)),cLabelName)
+   WritePProString("Label","LblVSep",Ltrim(Str(nLblVSep)),cLabelName)
+   WritePProString("Label","LblHSep",Ltrim(Str(nLblHSep)),cLabelName)
+   WritePProString("Label","LblCol",Ltrim(Str(nLblColumn)),cLabelName)
+   WritePProString("Label","LblLin",Ltrim(Str(nLblLines)),cLabelName)
+
+       ENDIF
+
+
+return nil
+
+
+
+ Function  Field_Property(oControl)
+   Local nBottom   := 12
+   Local nRight    := 42
+   Local nWidthDlg :=  Max( nRight * DLG_CHARPIX_W, 180 )
+   Local nHeightDlg := nBottom * DLG_CHARPIX_H
+   Local oItemProp
+   Local oBtn[2]
+     DEFINE DIALOG oItemProp        ;
+   TITLE "Item Property"     ;
+   SIZE nWidthDlg, nHeightDlg   PIXEL      ;
+   STYLE nOr( DS_MODALFRAME, WS_POPUP, WS_CAPTION,  4 )
+
+   @ 224, 136 BUTTON oBtn[1] PROMPT i18n("&amp;Conferma") OF oItemProp SIZE 45, 12 PIXEL  DEFAULT  ACTION   ( oItemProp:end( IDOK ) )
+@ 224, 194 BUTTON oBtn[2] PROMPT i18n("&amp;Annulla") OF oItemProp SIZE 45, 12 PIXEL  CANCEL    ACTION   ( oItemProp:end( IDCANCEL ) )
+
+
+  ACTIVATE DIALOG oItemProp CENTERED
+
+return nil</code></pre></div><br>
+<br>
+<br>
+<br>
+Now  it can save on file ini <br>
+sample :  silvio.lbl<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">[Label]
+LblWidth=400
+LblHeight=600
+LblVSep=0
+LblHSep=0
+LblCol=2
+LblLin=6
+[Fields]
+152=16|8|448|40|&lt;First&gt;|SAY|Arial|-24|0|0|0|400|NO|SI|NO|NO|
+153=64|8|360|32|&lt;Last&gt;|SAY|Arial Rounded MT Bold|-24|0|0|0|400|NO|NO|NO|NO|
+154=112|16|368|40|&lt;Street&gt;|SAY|ARIAL|-24|0|0|0|0|NO|NO|NO|NO|
+155=168|128|256|40|&lt;City&gt;|SAY|ARIAL|-24|0|0|0|0|NO|NO|NO|NO|
+156=168|16|88|40|&lt;Zip&gt;|SAY|ARIAL|-24|0|0|0|0|NO|NO|NO|NO|
+[Data]
+Archive=CUST</code></pre></div><br>
+<br>
+But there are also some errors<br>
+1. on the save  if th econtrol is a bitmap not found cfilename of bitmaps<br>
+2. on the save I not Know how save the color of the say control<br>
+3. then I not understtod how refesh the metafile ( oLabel) and resize it on visual then the size are not the same respect of the rulers<br>
+4. then I not understood  ho align one or most control to top, to left,to right,to bottom <br>
+5. on Preview test all controls are showed  bad and the label not is the same size of that I design</div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-33563.html">1</a> <strong>2</strong> (17 posts)</div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

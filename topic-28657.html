@@ -1,0 +1,1787 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>How to receive events from objects? - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-28657">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> How to receive events from objects?</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-28657-page-2.html">2</a> <a href="topic-28657-page-3.html">3</a> (33 posts)</div>  <div class="post" id="p160535">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jose Dolar</div>
+      <div class="rank">Posts: 52</div>
+      <div class="avatar"></div>
+      Joined: Thu Mar 22, 2012 05:43 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">How to receive events from objects?</span><br>
+        Posted: Fri Jun 13, 2014 01:34 AM
+      </div>
+      <div class="content"><p>Dear Fivewin users,</p>
+<p>We use com/activex objects in our application using the createObject() function.  We can access properties and methods but we can't figure how to receive events.</p>
+<p>How do we write codes in harbour to received events?</p>
+<p>Any help will be highly appreciated.</p>
+<p>Thank you very much!</p>
+<p>Jose</p></div>
+    </div>
+  </div>
+  <div class="post" id="p160537">
+    <div class="poster">
+      <div class="name" style="color:#105289">Richard Chidiak</div>
+      <div class="rank">Posts: 946</div>
+      <img class="avatar avatar-img" src="avatars/3.png" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 07:05 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Fri Jun 13, 2014 04:26 AM
+      </div>
+      <div class="content">Jose<br>
+<br>
+This is how i do with codejock, maybe it can help<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">with object ::oCalex
+
+     :bOnEvent = { | event, aParms, pParams | ::handleEvent( Event, aParms, pParams ) }
+
+
+METHOD handleEvent( Event, aParms, pParams ) CLASS TPLANCJ
+LOCAL opParms,oRes,oTime,cId,OEVENT
+if valType( Event ) == "C"
+   Do Case
+
+        Case Event == "DoRetrieveDayEvents"
+           ::lDoInsert := .f.
+           ::RetrieveDayEvents( aParms[ 1 ], aParms[2] )
+           ::lDoInsert := .T.    // Bypass the InsertEvent Method because we put the data in here.
+
+        Case Event == "DblClick"
+        if ::oCalex:ViewType() &lt; xtpCalendarMonthView .OR. ::oCalex:ViewType() = xtpCalendarFullWeekView //day or week view only
+           IF ( oEvent := ::oCalex:ActiveView():HitTest():ViewEvent() ) != nil  // EVENEMENT EXISTANT
+               oEvent := oEvent:Event()
+               ::EditEvent( oEvent)
+            Else   // new EVENt
+              // oday   := ::ActiveView():HitTest():Viewday():date // EX 31/03/2011  type = date
+              oTIME  := ::oCalex:ActiveView():HitTest():HitDateTime()     // DATE time EX 31/03/2011 12.30.00.00
+              ::lDoInsert := .T.    // Bypass the InsertEvent Method because we put the data in here.
+              cid    := ::getuniqueid()
+              oEvent := ::oCalex:DataProvider:CreateEventex(CID)
+              #ifdef __HARBOUR__
+                 #ifdef __XHARBOUR__
+                     oevent:CustomProperties:Property( "id", cid ) // xharbour
+                  #Else
+                     oevent:customproperties:_Property("id",CID)   // harbour
+                 #endif
+              #endif
+
+              oevent:StartTime  := oTIME
+              oevent:EndTime    := ::GETENDTIME(oTIME)
+
+              IF PLANPREF-&gt;MULTIPERS
+                 ORES = ::oCalex:MultipleResources:Item(::oCalex:ActiveView():Selection:GroupIndex)
+                 IF ORES:SCHEDULEIDS():COUNT() = 1 // scheduleid for 1 person else it will be a group of persons and we need to add a function to retreive the id wanted
+                    oEvent:Scheduleid := ORES:SCHEDULEIDS():item(0)
+                 ENDIF
+              ENDIF
+              ::InsertEvent( oEvent)
+              ::lDoInsert := .f.
+              ::oCalex:DataProvider:AddEvent( oEvent )
+              ::lDoInsert := .f.
+           ENDIF
+         endif
+
+         case Event == "BeforeEditOperation"  // occurs before insertevent
+            OpParms := aParms[ 1 ]
+            //  OpParms:EventViews:ViewEvent( 0 ) = oevent
+
+            //       aparms[ 1 ] holds a pointer to CalendarEditOperationParameters object.
+            //          This object is referred to as opParms on documentation.
+            //          OpParms:Operation is the edit operation taking place from Enumeration list
+            //          OpParms:EventViews is an Object acting as an array with all event objects
+            //                   marked for editing on the calendar control.
+            //          OpParms:EventViews:Count() length of the array
+            //          OpParms:EventViews:ViewEvent( n ) returns the nth event in EventViews.
+            //       aparms[ 2 ] sent by ref to inform .t. to cancel the operation of .f. to allow it.
+
+            if OpParms:Operation() == xtpCalendarEO_EditSubject_ByF2
+               aParms[ 2 ] := .T.
+
+               if OpParms:EventViews:Count() &gt; 0
+                  ::EditEvent( OpParms:EventViews:ViewEvent( 0 ) )
+               endif
+
+            endif
+
+       case Event == "DoCreateEvent" // "EventAddedEx"
+         IF ::lDoInsert
+            ::InsertEvent( aParms[ 1 ], @aParms[2], @aParms[3] )    // oEvent, nId, lResult
+         ENDIF
+       case Event == "DoUpdateEvent" .and. aParms[ 1 ]:CustomProperties:Property( "id" ) != Nil
+            ::UpdatefromEvent( aParms[ 1 ] )
+       case Event == "DoDeleteEvent" .and. aParms[ 1 ]:CustomProperties:Property( "id" ) != Nil
+            // ::ActiveView():UNDO()
+       case Event == "EventDeletedEx" .and. aParms[ 1 ]:CustomProperties:Property( "id" ) != Nil
+            // ::DeleteEvent( aParms[ 1 ] ) // delete from ::appdetail and prompt for delete more secure
+       Case Event == "MouseMove" .OR. Event == "MouseDown" // aParms[ 3] = x , aParms[ 4] = y
+            IF aParms[ 1 ] = 2 //  1 = left click , 2 = right click
+               IF ::oCalex:ViewType() &lt; xtpCalendarMonthView .OR. ::oCalex:ViewType() = xtpCalendarFullWeekView //day or week view only
+                  cId    := SPACE(12)
+                  oEvent := ::oCalex:ActiveView():HitTest():ViewEvent()
+                  IF oEvent # nil
+                     oEvent := oEvent:Event()
+                     CID    := oEvent:CustomProperties:Property( "id" )
+                  ENDIF
+                  ::CONTEXTMENU(CID,aParms[ 3],aParms[4])
+               ENDIF
+            ENDIF
+       Case Event == "MouseDown"
+       case Event == "KeyDown"
+       case Event == "IsEditOperationDisabled"
+       case Event == "IsEditOperationDisabledV"
+       case Event == "SelectionChanged"
+       case Event == "PrePopulate"
+       case Event == "PrePopulateDay"
+       case Event == "ViewChanged"
+       case Event == "OptionsChanged"
+   End
+endif
+Return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p160580">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jose Dolar</div>
+      <div class="rank">Posts: 52</div>
+      <div class="avatar"></div>
+      Joined: Thu Mar 22, 2012 05:43 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Fri Jun 13, 2014 06:16 PM
+      </div>
+      <div class="content"><p>Hi Richard,</p>
+<p>Thank you for the response.</p>
+<p>I still have few questions which I hope you have idea.</p>
+<p>How's the activex calls back to your application?  Is it through the :bOnEvent?</p>
+<p>Thank you very much.</p>
+<p>Jose</p></div>
+    </div>
+  </div>
+  <div class="post" id="p160586">
+    <div class="poster">
+      <div class="name" style="color:#105289">Richard Chidiak</div>
+      <div class="rank">Posts: 946</div>
+      <img class="avatar avatar-img" src="avatars/3.png" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 07:05 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Fri Jun 13, 2014 07:24 PM
+      </div>
+      <div class="content"><p>Jose</p>
+<p>Yes the bonevent block traps all the events </p>
+<p>Now for Harbour , Antonio has extended the activex class, i am using thactivex (this is a sample below)</p>
+<pre><code>    ::oCalex := thActiveX():New( ::oPanelCalex, &amp;quot;Codejock.CalendarControl.15.0.2&amp;quot; )
+</code></pre>
+<p>with object ::oCalex</p>
+<pre><code> :bOnEvent = { | event, aParms, pParams | ::handleEvent( Event, aParms, pParams ) }
+</code></pre>
+<p>etc...<br>
+Hth</p>
+<p>richard</p></div>
+    </div>
+  </div>
+  <div class="post" id="p160598">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jose Dolar</div>
+      <div class="rank">Posts: 52</div>
+      <div class="avatar"></div>
+      Joined: Thu Mar 22, 2012 05:43 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Fri Jun 13, 2014 09:55 PM
+      </div>
+      <div class="content"><p>Richard,</p>
+<p>Thank you for the info.</p>
+<p>I have a link error.  Is thActiveX class part of Harbor or FiveWin?</p>
+<p>What if my activex doesn't require a window,  Can I just pass the program ID, I mean the second parameter to ThActivex?</p>
+<p>Thanks,</p>
+<p>Jose</p></div>
+    </div>
+  </div>
+  <div class="post" id="p160609">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Sat Jun 14, 2014 05:50 AM
+      </div>
+      <div class="content"><p>Jose,</p>
+<p>&gt; I have a link error. Is thActiveX class part of Harbor or FiveWin?</p>
+<p>It is in FWH, though it uses the ActiveX implementation of Harbour. </p>
+<p>&gt; What if my activex doesn't require a window, Can I just pass the program ID, I mean the second parameter to ThActivex?</p>
+<p>Yes, it should work fine <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p160627">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jose Dolar</div>
+      <div class="rank">Posts: 52</div>
+      <div class="avatar"></div>
+      Joined: Thu Mar 22, 2012 05:43 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Sat Jun 14, 2014 04:04 PM
+      </div>
+      <div class="content"><p>Hi Antonio,</p>
+<p>Thank you for responding on this thread.</p>
+<p>Last thing, is THActiveX object compatible with Createobject object except for the addition of bOnEvent code block?</p>
+<p>I just want to have rough estimates to the impact to existing prg codes before requesting  for new FWH lib.  We just released our App that used CreateObject and management may ask this question.</p>
+<p>Thank you and regards,</p>
+<p>Jose</p></div>
+    </div>
+  </div>
+  <div class="post" id="p160631">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Sat Jun 14, 2014 06:43 PM
+      </div>
+      <div class="content"><p>Jose,</p>
+<p>What object are you using ?</p>
+<p>In OLE, the only way to be sure of something, is to test it <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>Please notice that FWH Class THActiveX is for OLE controls, I mean, visual components that you can place on a dialog or a window, so if the object that you create is not a control, then I guess that you will not be able to use it.</p>
+<p>Anyhow, if you can provide us a small test of what you need to do, and a self contained example with the OLE object that you are using, that would help to be sure or not if it will work for you.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p160645">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jose Dolar</div>
+      <div class="rank">Posts: 52</div>
+      <div class="avatar"></div>
+      Joined: Thu Mar 22, 2012 05:43 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Sun Jun 15, 2014 01:17 AM
+      </div>
+      <div class="content"><p>Antonio,</p>
+<p>&gt;What object are you using ?<br>
+it is a  &quot;OLE for Retail POS&quot;.  A standardize interface for POS devices (like Receipt Printer, Magnetic Strip Reader, Cash Drawer etc).<br>
+Here's the link for details of the OLE.</p>
+<!-- m -->
+<p><a class="postlink" href="http://www.monroecs.com/opos.htm">http://www.monroecs.com/opos.htm</a></p>
+<p>I can't figure how to create a self contained example as it requires installation of specific hardware and driver to see result.</p>
+<p>Basically what I'm doing is just instantiate ole object using the function createobject(cProgamID).</p>
+<p>Example:</p>
+<p>oOleOPOSPrn:=createObject(''OPOS.POSPrinter''). </p>
+<p>Once created, I can access all properties and methods documented in the OLE.</p>
+<p>Similar to this: oOleOPOSPrn:printNomal(.....) </p>
+<p>My problem is some device statuses and errors are send back to the application via events.</p>
+<p>Question Here:<br>
+Does CreateObject() support events?<br>
+if event is supported, then how? Thank you.</p>
+<p>If it will help I can send you my prg file related to this.</p>
+<p>Regards/Saludos,</p>
+<p>Jose</p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p160648">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Sun Jun 15, 2014 07:16 AM
+      </div>
+      <div class="content">Jose,<br>
+<br>
+This is Harbour's Class win_oleAuto:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CREATE CLASS win_oleAuto
+
+   VAR __hObj
+   VAR __hObjEnum
+   VAR __hSink
+   VAR __cargo
+
+   METHOD __enumStart( enum, lDescend )
+   METHOD __enumSkip( enum, lDescend )
+   METHOD __enumStop()
+
+   METHOD __OpIndex( xIndex, xValue ) OPERATOR "[]"
+
+   ERROR HANDLER __OnError()
+
+ENDCLASS</code></pre></div> <br>
+<br>
+You can review it here:<br>
+<a href="https://github.com/harbour/core/blob/master/contrib/hbwin/oleauto.prg" rel="noopener">https&#58;//github&#46;com/harbour/core/blob/master/contrib/hbwin/oleauto&#46;prg</a><br>
+<br>
+It uses this low level C file:<br>
+<a href="https://github.com/harbour/core/blob/master/contrib/hbwin/olecore.c" rel="noopener">https&#58;//github&#46;com/harbour/core/blob/master/contrib/hbwin/olecore&#46;c</a><br>
+<br>
+If you search for the word &quot;event&quot; in those files, it does not appear. I have never used the events of an OLE object that it is not a visual control.<br>
+<br>
+I am not saying that events are not supported on those objects, simply that I have never seen them or used them or read about someone using them. Thats why the best you can do is to ask in the Harbour users group in google groups.<br>
+<br>
+Anyhow, I remember someone posted a class here, or a code where events were related to non-visual OLE objects. But we should search for it in these forums and see if I am remembering it properly. It was long time ago.</div>
+    </div>
+  </div>
+  <div class="post" id="p160685">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jose Dolar</div>
+      <div class="rank">Posts: 52</div>
+      <div class="avatar"></div>
+      Joined: Thu Mar 22, 2012 05:43 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Mon Jun 16, 2014 12:40 AM
+      </div>
+      <div class="content"><p>Hi Antonio,</p>
+<p>Is this the topic?<br>
+If yes then, do you have idea if this was included in Harbor lib?</p>
+<!-- m -->
+<p><a class="postlink" href="http://forums.fivetechsupport.com/viewtopic.php?p=72425">http://forums.fivetechsupport.com/viewtopic.php?p=72425</a></p>
+<p>Regards,</p>
+<p>Jose</p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p160686">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Mon Jun 16, 2014 01:03 AM
+      </div>
+      <div class="content"><p>Jose,</p>
+<p>Excellent! You found it <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>The keys of such code are IEnumConnectionPoints and IConnectionPoint, so if you google for them, you will find examples of their use.</p>
+<p>I have look for those names in Harbour source code and they don't appear.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p160687">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Mon Jun 16, 2014 01:12 AM
+      </div>
+      <div class="content">I hope Carlos does not mind if we copy the code here so it does not get lost <br>
+<br>
+OleWEvents0.c<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include &lt;windows.h&gt;
+#include &lt;ocidl.h&gt;
+#include &lt;olectl.h&gt;
+#include &lt;shlobj.h&gt;
+
+#ifdef __MINGW_H 
+#include &lt;exdisp.h&gt;
+#endif
+#ifdef UNICODE
+   EXTERN_C const IID DIID_DWebBrowserEvents2;
+   WINOLEAPI  CoInitializeEx(LPVOID pvReserved, DWORD dwCoInit);
+#endif   
+
+extern "C" 
+{
+   // LPWSTR AnsiToWide( LPSTR cAnsi );
+   // LPSTR WideToAnsi( LPWSTR cWide );
+   static void InvokeEvent( void * pSelf, DISPID, DISPPARAMS *, VARIANT * );
+   void HB_FUN_OLEINVOKE( void );
+   void HB_FUN_OLESETPROPERTY( void );
+   void HB_FUN_OLEGETPROPERTY( void );
+//   #ifdef __BORLANDC__
+      void hb_oleVariantToItem( void *, VARIANT * );
+      void hb_oleItemToVariant( VARIANT *, void * );
+//      void hb_oleVariantUpdate( VARIANT* , PHB_ITEM , HB_OLEOBJ_FUNC )
+//   #endif   
+}   
+
+class TActiveXEvent : public IDispatch
+{
+   public:
+
+   LONG m_cRef;
+   IID m_iid;
+   void * pSelf; // PRG Object
+
+   TActiveXEvent()
+   {
+      m_cRef = 0;
+      pSelf = NULL;
+   }
+   
+   // *** IUnknown ***
+   STDMETHOD(QueryInterface)( REFIID riid, PVOID *ppv )
+   {
+      if ( IsEqualIID( riid, IID_IDispatch ) )
+         *ppv = (IDispatch *) this;
+      else if ( IsEqualIID( riid, IID_IUnknown ) )
+         *ppv = this;
+      else if( IsEqualIID( riid, m_iid ) )
+         * ppv = this;
+      else
+      {
+         *ppv = NULL;
+         return E_NOINTERFACE;
+      }
+
+      AddRef();
+
+      return S_OK;
+   }
+
+   STDMETHOD_(ULONG, AddRef)(void)
+   {
+      return InterlockedIncrement( &amp;m_cRef );
+   }
+
+   STDMETHOD_(ULONG, Release)(void)
+   {
+      ULONG cRef = InterlockedDecrement( &amp;m_cRef );
+
+      if ( cRef == 0 )
+         delete this;
+
+      return cRef;
+   }
+
+   // *** IDispatch ***
+   STDMETHOD (GetIDsOfNames)( REFIID, OLECHAR **, unsigned int, LCID, DISPID *pdispid )
+   {
+      *pdispid = DISPID_UNKNOWN;
+      return DISP_E_UNKNOWNNAME;
+   }
+
+   STDMETHOD (GetTypeInfo)( unsigned int, LCID, ITypeInfo ** )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (GetTypeInfoCount)( unsigned int * )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (Invoke)( DISPID idEvent, REFIID, LCID, WORD, DISPPARAMS * pParams, 
+                       VARIANT * pResult, EXCEPINFO *, unsigned int * )
+   {
+      if( pSelf )
+         InvokeEvent( pSelf, idEvent, pParams, pResult );
+
+      return S_OK;
+   }
+};
+
+class TActiveX : public IOleClientSite,
+                 public IOleInPlaceSite,
+                 public IOleInPlaceFrame,
+                 public IOleControlSite,
+                 public IDispatch
+{
+   public:
+   TActiveX( HWND );
+   ~TActiveX();
+
+   // *** IUnknown ***
+   STDMETHOD(QueryInterface)( REFIID riid, PVOID *ppv )
+   {
+      if ( IsEqualIID( riid, IID_IOleClientSite ) )
+         *ppv = (IOleClientSite *) this;
+      else if ( IsEqualIID( riid, IID_IOleInPlaceSite ) )
+         *ppv = (IOleInPlaceSite *) this;
+      else if ( IsEqualIID( riid, IID_IOleInPlaceFrame ) )
+         *ppv = (IOleInPlaceFrame *) this;
+      else if ( IsEqualIID( riid, IID_IOleInPlaceUIWindow ) )
+         *ppv = ( IOleInPlaceUIWindow *) this;
+      else if ( IsEqualIID( riid, IID_IOleControlSite ) )
+         *ppv = (IOleControlSite *)this;
+      else if ( IsEqualIID( riid, IID_IOleWindow ) )
+         *ppv = this;
+      else if ( IsEqualIID( riid, IID_IDispatch ) )
+         *ppv = (IDispatch *) this;
+      else if ( IsEqualIID( riid, IID_IUnknown ) )
+         *ppv = this;
+      else
+      {
+         *ppv = NULL;
+         return E_NOINTERFACE;
+      }
+
+      AddRef();
+
+      return S_OK;
+   }
+
+   STDMETHOD_(ULONG, AddRef)(void)
+   {
+      return InterlockedIncrement( &amp;m_cRef );
+   }
+
+   STDMETHOD_(ULONG, Release)(void)
+   {
+      ULONG cRef = InterlockedDecrement( &amp;m_cRef );
+
+      if ( cRef == 0 )
+         delete this;
+
+      return cRef;
+   }
+
+   // *** IOleClientSite ***
+   STDMETHOD (SaveObject)()
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (GetMoniker)( DWORD, DWORD, LPMONIKER * )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (GetContainer)( LPOLECONTAINER * )
+   {
+      return E_NOINTERFACE;
+   }
+
+   STDMETHOD (ShowObject)()
+   {
+      return S_OK;
+   }
+
+   STDMETHOD (OnShowWindow)( BOOL )
+   {
+      return S_OK;
+   }
+
+   STDMETHOD (RequestNewObjectLayout)()
+   {
+      return E_NOTIMPL;
+   }
+
+   // *** IOleWindow ***
+   STDMETHOD (GetWindow)( HWND *phwnd )
+   {
+      *phwnd = m_hwnd;
+      return S_OK;
+   }
+
+   STDMETHOD (ContextSensitiveHelp)( BOOL )
+   {
+      return E_NOTIMPL;
+   }
+
+   // *** IOleInPlaceSite ***
+   STDMETHOD (CanInPlaceActivate)(void)
+   {
+      return S_OK;
+   }
+
+   STDMETHOD (OnInPlaceActivate) (void)
+   {
+      return S_OK;
+   }
+
+   STDMETHOD (OnUIActivate) (void)
+   {
+      return S_OK;
+   }
+
+   STDMETHOD (GetWindowContext)(
+      IOleInPlaceFrame    **ppFrame,
+      IOleInPlaceUIWindow **ppIIPUIWin,
+      LPRECT                prcPosRect,
+      LPRECT                prcClipRect,
+      LPOLEINPLACEFRAMEINFO pFrameInfo )
+   {
+      *ppFrame = (IOleInPlaceFrame *) this;
+      *ppIIPUIWin = NULL;
+
+      RECT rc;
+
+      GetClientRect( m_hwnd, &amp;rc );
+
+      prcPosRect-&gt;left   = 0;
+      prcPosRect-&gt;top    = 0;
+      prcPosRect-&gt;right  = rc.right;
+      prcPosRect-&gt;bottom = rc.bottom;
+
+      CopyRect( prcClipRect, prcPosRect );
+
+      pFrameInfo-&gt;cb             = sizeof(OLEINPLACEFRAMEINFO);
+      pFrameInfo-&gt;fMDIApp        = FALSE;
+      pFrameInfo-&gt;hwndFrame      = m_hwnd;
+      pFrameInfo-&gt;haccel         = NULL;
+      pFrameInfo-&gt;cAccelEntries  = 0;
+
+      (*ppFrame)-&gt;AddRef();
+
+      return S_OK;
+   }
+
+   STDMETHOD (Scroll)( SIZE )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (OnUIDeactivate)( BOOL )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (OnInPlaceDeactivate)(void)
+   {
+      return S_OK;
+   }
+
+   STDMETHOD (DiscardUndoState)(void)
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (DeactivateAndUndo)(void)
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (OnPosRectChange)( LPCRECT )
+   {
+      return S_OK;
+   }
+
+   // *** IOleInPlaceUIWindow ***
+   STDMETHOD (GetBorder)( LPRECT )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (RequestBorderSpace)( LPCBORDERWIDTHS )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (SetBorderSpace)( LPCBORDERWIDTHS )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (SetActiveObject)( IOleInPlaceActiveObject *, LPCOLESTR )
+   {
+      return E_NOTIMPL;
+   }
+
+   // *** IOleInPlaceFrame ***
+   STDMETHOD (InsertMenus)( HMENU, LPOLEMENUGROUPWIDTHS )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (SetMenu)( HMENU, HOLEMENU, HWND )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (RemoveMenus)( HMENU )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (SetStatusText)( LPCOLESTR )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (EnableModeless)( BOOL )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (TranslateAccelerator)( LPMSG, WORD )
+   {
+      return S_OK;
+   }
+
+   // *** IOleControlSite ***
+   STDMETHOD (OnControlInfoChanged)(void)
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (LockInPlaceActive)( BOOL )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (GetExtendedControl)( IDispatch ** )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (TransformCoords)( POINTL *, POINTF *, DWORD )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (TranslateAccelerator)( LPMSG, DWORD )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (OnFocus)( BOOL )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (ShowPropertyFrame)(void)
+   {
+      return E_NOTIMPL;
+   }
+
+   // *** IDispatch ***
+   STDMETHOD (GetIDsOfNames)( REFIID, OLECHAR **, unsigned int, LCID, DISPID *pdispid )
+   {
+      *pdispid = DISPID_UNKNOWN;
+      return DISP_E_UNKNOWNNAME;
+   }
+
+   STDMETHOD (GetTypeInfo)( unsigned int, LCID, ITypeInfo ** )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (GetTypeInfoCount)( unsigned int * )
+   {
+      return E_NOTIMPL;
+   }
+
+   STDMETHOD (Invoke)( DISPID, REFIID, LCID, WORD, DISPPARAMS *, VARIANT *, EXCEPINFO *, unsigned int * )
+   {
+      return DISP_E_MEMBERNOTFOUND;
+   }
+
+   void setLocation( int, int, int, int );
+   void setVisible( bool );
+   void setFocus( bool );
+   void Add( char * pszProgID );
+   void remove();
+   HWND GetHWnd( void );
+   WCHAR * AnsiToWide( char * psz );
+
+   IUnknown      * m_punk;
+   TActiveXEvent * m_pEvent;
+
+private:
+
+   void ConnectEvents();
+   void DisconnectEvents();
+
+   IConnectionPoint *GetConnectionPoint( REFIID );
+
+   LONG           m_cRef;
+   HWND           m_hwnd;
+   RECT           m_rect;
+   DWORD          m_eventCookie;
+};
+
+TActiveX::TActiveX( HWND hwnd )
+{
+   #ifndef UNICODE
+      CoInitialize( NULL );
+   #else  
+      CoInitializeEx( NULL, 0 );
+   #endif   
+
+   m_cRef = 0;
+   m_hwnd = hwnd;
+   m_punk = NULL;
+
+   SetRectEmpty( &amp;m_rect );
+
+   m_pEvent = new TActiveXEvent();
+
+   m_pEvent-&gt;AddRef();
+}
+
+TActiveX::~TActiveX()
+{
+   m_pEvent-&gt;Release();
+
+   m_punk-&gt;Release();
+   
+   // CoUninitialize();
+}
+
+void TActiveX::Add( char * pszProgID )
+{
+   CLSID clsid;
+   WCHAR * pszWProgID = AnsiToWide( pszProgID );
+
+   CLSIDFromString( pszWProgID, &amp;clsid );
+   delete []pszWProgID;
+
+   CoCreateInstance( clsid, NULL, CLSCTX_INPROC_SERVER | CLSCTX_LOCAL_SERVER, IID_IUnknown, (PVOID *) &amp;m_punk );
+
+   IOleObject *pioo;
+
+   m_punk-&gt;QueryInterface( IID_IOleObject, (PVOID *) &amp;pioo );
+
+   pioo-&gt;SetClientSite( this );
+
+   pioo-&gt;Release();
+
+   IPersistStreamInit *ppsi;
+
+   m_punk-&gt;QueryInterface( IID_IPersistStreamInit, (PVOID *) &amp;ppsi );
+
+   if( ppsi )
+   {    
+      ppsi-&gt;InitNew();
+      ppsi-&gt;Release();
+   }   
+
+   ConnectEvents();
+   setVisible( true );
+   setFocus( true );
+}
+
+void TActiveX::remove()
+{
+   IOleObject *pioo;
+
+   m_punk-&gt;QueryInterface( IID_IOleObject, (PVOID *) &amp;pioo );
+
+   pioo-&gt;Close( OLECLOSE_NOSAVE );
+
+   pioo-&gt;SetClientSite( NULL );
+
+   pioo-&gt;Release();
+
+   IOleInPlaceObject *pipo;
+
+   m_punk-&gt;QueryInterface( IID_IOleInPlaceObject, (PVOID *) &amp;pipo );
+
+   pipo-&gt;UIDeactivate();
+
+   pipo-&gt;InPlaceDeactivate();
+
+   pipo-&gt;Release();
+
+   DisconnectEvents();
+}
+
+void TActiveX::setLocation( int x, int y, int cx, int cy )
+{
+   m_rect.left   = x;
+   m_rect.top    = y;
+   m_rect.right  = cx;
+   m_rect.bottom = cy;
+
+   IOleInPlaceObject *pipo;
+
+   m_punk-&gt;QueryInterface( IID_IOleInPlaceObject, (PVOID *) &amp;pipo );
+
+   pipo-&gt;SetObjectRects( &amp;m_rect, &amp;m_rect );
+
+   pipo-&gt;Release();
+}
+
+void TActiveX::setVisible( bool bVisible )
+{
+   IOleObject *pioo;
+
+   m_punk-&gt;QueryInterface( IID_IOleObject, (PVOID *) &amp;pioo );
+
+   if ( bVisible )
+   {
+      pioo-&gt;DoVerb( OLEIVERB_INPLACEACTIVATE, NULL, this, 0, m_hwnd, &amp;m_rect );
+      pioo-&gt;DoVerb( OLEIVERB_SHOW, NULL, this, 0, m_hwnd, &amp;m_rect );
+   }
+   else
+      pioo-&gt;DoVerb( OLEIVERB_HIDE, NULL, this, 0, m_hwnd, NULL );
+
+   pioo-&gt;Release();
+}
+
+void TActiveX::setFocus( bool bFocus )
+{
+   IOleObject *pioo;
+
+   if ( bFocus )
+   {
+      m_punk-&gt;QueryInterface( IID_IOleObject, (PVOID *) &amp;pioo );
+
+      pioo-&gt;DoVerb( OLEIVERB_UIACTIVATE, NULL, this, 0, m_hwnd, &amp;m_rect );
+
+      pioo-&gt;Release();
+   }
+}
+
+#define IMPLTYPE_MASK \
+    (IMPLTYPEFLAG_FDEFAULT | IMPLTYPEFLAG_FSOURCE | IMPLTYPEFLAG_FRESTRICTED)
+
+#define IMPLTYPE_DEFAULTSOURCE \
+    (IMPLTYPEFLAG_FDEFAULT | IMPLTYPEFLAG_FSOURCE)
+
+void TActiveX::ConnectEvents()
+{
+   IProvideClassInfo2 * ppci2;
+   IProvideClassInfo * ppci;
+
+   // Responde al protocolo IID_IProvideClassInfo2
+   if( m_punk != NULL &amp;&amp; m_punk-&gt;QueryInterface( IID_IProvideClassInfo2,
+                                                 ( void ** ) &amp;ppci2 ) == S_OK )
+   {
+      IConnectionPoint * pcp;
+
+      ppci2-&gt;GetGUID( GUIDKIND_DEFAULT_SOURCE_DISP_IID, &amp;m_pEvent-&gt;m_iid );
+      ppci2-&gt;Release();
+
+      if( pcp = GetConnectionPoint( m_pEvent-&gt;m_iid ) )
+      {
+         pcp-&gt;Advise( m_pEvent, &amp;m_eventCookie );
+         pcp-&gt;Release();
+      }
+      return;
+   }
+
+   // Responde al protocolo IID_IProvideClassInfo
+   if( m_punk-&gt;QueryInterface( IID_IProvideClassInfo, ( void ** ) &amp;ppci ) == S_OK )
+   {
+      IConnectionPoint * pcp;
+      LPTYPEINFO pClassInfo = NULL;
+      LPTYPEATTR pClassAttr;
+      int nFlags;
+      HREFTYPE hRefType;
+      
+      if( ppci-&gt;GetClassInfo( &amp;pClassInfo ) == S_OK )
+      { 
+         pClassInfo-&gt;GetTypeAttr( &amp;pClassAttr );
+         
+         if( ! ( pClassAttr != NULL &amp;&amp; pClassAttr-&gt;typekind == TKIND_COCLASS ) )
+            return; 
+
+         for( int i = 0; i &lt; pClassAttr-&gt;cImplTypes; i++ )
+         {
+            if( pClassInfo-&gt;GetImplTypeFlags( i, &amp;nFlags ) == S_OK &amp;&amp;
+                ( nFlags &amp; IMPLTYPE_MASK ) == IMPLTYPE_DEFAULTSOURCE )
+            {
+               LPTYPEINFO pEventInfo = NULL;
+                       
+               if( pClassInfo-&gt;GetRefTypeOfImplType( i, &amp;hRefType ) == S_OK &amp;&amp;
+                   pClassInfo-&gt;GetRefTypeInfo( hRefType, &amp;pEventInfo ) == S_OK )
+               {
+                  LPTYPEATTR pEventAttr;
+                           
+                  if( pEventInfo-&gt;GetTypeAttr( &amp;pEventAttr ) == S_OK )
+                  {
+                     m_pEvent-&gt;m_iid = pEventAttr-&gt;guid;
+                     pEventInfo-&gt;ReleaseTypeAttr( pEventAttr );
+                     if( pcp = GetConnectionPoint( m_pEvent-&gt;m_iid ) )
+                     {
+                        pcp-&gt;Advise( m_pEvent, &amp;m_eventCookie );
+                        pcp-&gt;Release();
+                     }
+                  }
+                  pEventInfo-&gt;Release();
+               }
+               break;
+            }
+         }
+         pClassInfo-&gt;ReleaseTypeAttr( pClassAttr );
+         pClassInfo-&gt;Release();
+      }
+      ppci-&gt;Release();
+   }
+}
+
+void TActiveX::DisconnectEvents()
+{
+   IConnectionPoint *pcp;
+
+   pcp = GetConnectionPoint( DIID_DWebBrowserEvents2 );
+
+   if( pcp )
+   {
+      pcp-&gt;Unadvise( m_eventCookie );
+
+      pcp-&gt;Release();
+   }
+}
+
+IConnectionPoint * TActiveX::GetConnectionPoint( REFIID riid )
+{
+   IConnectionPointContainer *pcpc;
+
+   if( m_punk-&gt;QueryInterface( IID_IConnectionPointContainer, (PVOID *) &amp;pcpc ) == S_OK )
+   {
+      IConnectionPoint *pcp;
+
+      pcpc-&gt;FindConnectionPoint( riid, &amp;pcp );  // buscar enumconnectionpoint
+
+      pcpc-&gt;Release();
+
+      return pcp;
+   }
+   else
+      return NULL;
+}
+
+HWND TActiveX::GetHWnd( void )
+{
+    long result = 0;
+
+    // InvokeHelper( DISPID_HWND, DISPATCH_PROPERTYGET, VT_I4,
+    //               ( void * ) &amp;result, NULL );
+    return ( HWND ) result;
+}
+
+WCHAR * TActiveX::AnsiToWide( char * psz )
+{
+   #ifndef UNICODE
+      int len = lstrlen( psz ) + 1;
+   #else
+      int len = strlen( psz ) + 1;
+   #endif   
+      
+   WCHAR * pszW = new WCHAR[ len ];
+
+   MultiByteToWideChar( CP_ACP, 0, psz, -1, pszW, len );
+
+   return pszW;
+}
+
+#ifdef __HARBOUR__
+   #define _HB_API_INTERNAL_  // to access PHB_ITEMs struct members
+   #include &lt;hbapi.h&gt;
+   #include &lt;hbapiitm.h&gt;
+   #include &lt;hbvm.h&gt;
+   #ifdef UNICODE
+      #include &lt;hbstack.h&gt;
+   #endif   
+#endif
+
+/*
+void static * __cdecl operator new( size_t uisize ) // unsigned int
+{
+   return hb_xgrab( uisize );
+}
+
+void static __cdecl operator delete( void * p )
+{
+   hb_xfree( p );   
+}
+*/
+
+static LPWSTR AnsiToWide( LPSTR cAnsi )
+{
+   WORD wLen;
+   LPWSTR cString;
+
+   wLen  = MultiByteToWideChar( CP_ACP, MB_PRECOMPOSED, cAnsi, -1, 0, 0 );
+   
+   if( wLen )
+   {
+      cString = ( LPWSTR ) hb_xgrab( wLen * 2 );
+      MultiByteToWideChar( CP_ACP, MB_PRECOMPOSED, cAnsi, -1, ( LPWSTR ) cString, wLen );
+   }
+   else
+   {
+      wLen  = MultiByteToWideChar( CP_ACP, MB_PRECOMPOSED, "", -1, 0, 0 );
+      cString = ( LPWSTR ) hb_xgrab( wLen * 2 );    
+      MultiByteToWideChar( CP_ACP, MB_PRECOMPOSED, "", -1, ( LPWSTR ) cString, wLen );
+   }   
+         
+   return ( cString );
+}
+
+HRESULT IsActiveX( char * pszProgID )
+{
+   CLSID clsid;
+   WCHAR * pszWProgID = AnsiToWide( pszProgID );
+   HRESULT ret = CLSIDFromString( pszWProgID, &amp;clsid );
+   
+   hb_xfree( ( void * ) pszWProgID );
+   
+   return ret;
+}   
+
+static LPSTR WideToAnsi( LPWSTR cWide )
+{
+   WORD wLen;
+   LPSTR cString = NULL;
+
+   wLen = WideCharToMultiByte( CP_ACP, 0, ( LPWSTR ) cWide, -1,
+                               cString, 0, NULL, NULL );
+   if( wLen )
+   {    
+      cString = ( LPSTR ) hb_xgrab( wLen );
+      WideCharToMultiByte( CP_ACP, 0, ( LPWSTR ) cWide, -1,
+                           cString, wLen, NULL, NULL );
+   }
+   else
+   {    
+      cString = ( LPSTR ) hb_xgrab( 1 );                            
+      cString[ 0 ] = 0;
+   }   
+
+   return ( cString );
+}
+
+#ifdef __BORLANDC__
+extern "C" {
+#endif  
+
+HB_FUNC( ACTXINVOKE )
+{
+   HB_FUN_OLEINVOKE();
+}       
+
+HB_FUNC( ACTXSETPROPERTY )
+{
+   HB_FUN_OLESETPROPERTY();
+}       
+
+HB_FUNC( ACTXGETPROPERTY )
+{
+   HB_FUN_OLEGETPROPERTY();
+}       
+
+HB_FUNC( ISACTIVEX ) // cProgID --&gt; lYesNo
+{
+   hb_retl( IsActiveX( ( char * ) hb_parc( 1 ) ) == NOERROR );
+}       
+
+HB_FUNC( CREATEACTIVEX ) // hWnd, cProgID, Self --&gt; pActiveX
+{
+   TActiveX * pActiveX = new TActiveX( ( HWND ) hb_parnl( 1 ) );
+
+   pActiveX-&gt;AddRef();
+   pActiveX-&gt;Add( ( char * ) hb_parc( 2 ) );
+   pActiveX-&gt;m_pEvent-&gt;pSelf = hb_gcGripGet( hb_param( 3, HB_IT_ANY ) );
+
+   hb_retnl( ( ULONG ) pActiveX );
+}
+
+HB_FUNC( ACTXEND )
+{
+   TActiveX * pActiveX = ( TActiveX * ) hb_parnl( 1 );
+    
+   hb_gcGripDrop( ( PHB_ITEM ) pActiveX-&gt;m_pEvent-&gt;pSelf );
+   pActiveX-&gt;m_pEvent-&gt;pSelf = NULL;
+
+   // delete pActiveX; NO !!!
+}
+    
+HB_FUNC( ACTXSETLOCATION ) // hActX, nX, nY, nCX, nCY
+{
+   TActiveX * pActiveX = ( TActiveX * ) hb_parnl( 1 );
+
+   pActiveX-&gt;setLocation( ( int ) hb_parnl( 2 ), ( int ) hb_parnl( 3 ),
+                          ( int ) hb_parnl( 4 ), ( int ) hb_parnl( 5 ) );
+}
+
+HB_FUNC( ACTXPDISP )
+{
+   IDispatch * pDisp = NULL;
+   IUnknown * pUnk = ( ( TActiveX * ) hb_parnl( 1 ) )-&gt;m_punk;
+
+   if( pUnk-&gt;QueryInterface( IID_IDispatch, ( void ** ) &amp;pDisp ) == S_OK )
+      pDisp-&gt;Release();
+
+   hb_retnl( ( ULONG ) pDisp );
+}
+
+HB_FUNC( ACTXPDISPPTR )
+{
+   IDispatch * pDisp = NULL;
+   IUnknown * pUnk = ( ( TActiveX * ) hb_parnl( 1 ) )-&gt;m_punk;
+
+   if( pUnk-&gt;QueryInterface( IID_IDispatch, ( void ** ) &amp;pDisp ) == S_OK )
+      pDisp-&gt;Release();
+
+   hb_retptr( pDisp );
+}
+
+static void VariantToItem( VARIANTARG &amp;va, PHB_ITEM pItem )
+{
+   while( va.vt == ( VT_BYREF | VT_VARIANT ) || va.vt == VT_VARIANT || va.vt == VT_BYREF )
+      va = * va.pvarVal;
+
+   switch( va.vt )
+   {
+      case VT_BSTR | VT_BYREF:
+      case VT_BSTR:
+      {
+         char * sString;
+
+         if( va.vt &amp; VT_BYREF )
+            sString = WideToAnsi( * va.pbstrVal );
+         else
+            sString = WideToAnsi( va.bstrVal );
+
+         if( sString )
+            hb_itemPutC( pItem, sString );
+         else
+            hb_itemPutC( pItem, NULL );
+
+         hb_xfree( ( void * ) sString );
+
+         break;
+      }
+      
+      case VT_BOOL | VT_BYREF:
+           hb_itemPutL( pItem, * va.pboolVal == VARIANT_TRUE ? TRUE : FALSE );
+           break;
+
+      case VT_BOOL:
+           hb_itemPutL( pItem, va.boolVal == VARIANT_TRUE ? TRUE : FALSE );
+           break;
+      
+      case VT_I4 | VT_BYREF:     // Long (4 bytes)
+      case VT_UI4 | VT_BYREF:
+      case VT_INT | VT_BYREF:
+      case VT_UINT | VT_BYREF:
+           hb_itemPutNL( pItem, ( LONG ) * va.plVal );
+           break;
+
+      case VT_I4:     // Long (4 bytes)
+      case VT_UI4:
+      case VT_INT:
+      case VT_UINT:
+      case 8209:
+           hb_itemPutNL( pItem, ( LONG ) va.lVal );
+           break;
+   }      
+}   
+
+static void ItemToVariant( PHB_ITEM pItem, VARIANTARG &amp;va )
+{
+   switch( hb_itemType( pItem ) )   
+   {
+      case HB_IT_LOGICAL: 
+           va.boolVal = hb_itemGetL( pItem ) ? VARIANT_TRUE : VARIANT_FALSE;
+           break;
+   }    
+}   
+
+//#ifndef __BORLANDC__
+//   HRESULT hb_oleVariantToItem( PHB_ITEM, VARIANT * );
+//#endif   
+
+static void InvokeEvent( void * pSelf, DISPID idEvent, DISPPARAMS * pParams, VARIANT * pResult )
+{
+   int i;
+   PHB_ITEM pArray = hb_itemArrayNew( 0 );
+   PHB_ITEM pitemRet;
+   
+   static PHB_DYNS pDynSym = 0;
+
+   if( ! pDynSym )
+      pDynSym = hb_dynsymFind( "ONEVENT" );
+
+   if( pSelf == NULL )
+   {
+      hb_itemRelease( pArray );     
+      return;
+   }      
+
+
+   hb_vmPushSymbol( hb_dynsymSymbol( pDynSym ) );
+   hb_vmPush( ( PHB_ITEM ) pSelf );
+   hb_vmPushLong( ( ULONG ) idEvent );
+   hb_vmPush( pArray );
+   hb_vmPushLong( ( LONG ) pParams );
+   
+   if( pParams-&gt;cArgs &gt; 0 )
+   {    
+      for( i = pParams-&gt;cArgs - 1; i &gt;= 0; i-- )
+      {
+         PHB_ITEM pItem = hb_itemNew( NULL );
+         
+         hb_oleVariantToItem( pItem, &amp;pParams-&gt;rgvarg[ i ] );
+         hb_arrayAdd( pArray, pItem );
+         hb_itemRelease( pItem ); 
+      }
+   }    
+   hb_vmFunction( 3 );  // nIdEvent, aParams, pParams
+   hb_itemRelease( pArray );
+   
+   pitemRet = hb_param( -1, HB_IT_ANY );   
+//   ItemToVariant( pitemRet, * pResult );
+   hb_oleItemToVariant( ( VARIANT * )&amp;pResult, pitemRet ); 
+}   
+
+HB_FUNC( ACTXSTRING ) // cProgID --&gt; cString "{ -  - }"
+{
+   LPWSTR pW = ( LPWSTR ) AnsiToWide( ( char * ) hb_parc( 1 ) );
+   GUID ClassID;
+   LPSTR pString;
+
+   CLSIDFromProgID( ( LPCOLESTR ) pW, &amp;ClassID );
+   hb_xfree( pW );
+   StringFromCLSID( ClassID, &amp;pW );
+   hb_retc( pString = WideToAnsi( pW ) );
+   hb_xfree( ( void * ) pString );
+   CoTaskMemFree( pW );
+}   
+
+HRESULT _get_default_sink( IDispatch * iDisp, const char * szEvent, IID * piid );
+
+extern "C" 
+{
+    IDispatch * hb_oleParam( int iParam );
+};
+
+HB_FUNC( ACTXEVENTS )
+{
+   LPWSTR pW = AnsiToWide( ( char * ) hb_parc( 1 ) );
+   ITypeInfo * ptinfo;
+   ITypeLib * ptlib;
+   IUnknown * pUnk = hb_oleParam( 2 );
+   IProvideClassInfo2 * ppci2;
+   GUID guid;
+   
+   if( LoadTypeLib( pW, &amp;ptlib ) != S_OK )
+   {    
+      hb_xfree( pW );
+      return;
+   }
+   else
+      hb_xfree( pW );        
+   
+   if( ! pUnk-&gt;QueryInterface( IID_IProvideClassInfo2,
+                               ( void ** ) &amp;ppci2 ) == S_OK )
+      return;
+   
+   ppci2-&gt;GetGUID( GUIDKIND_DEFAULT_SOURCE_DISP_IID, &amp;guid );
+   ppci2-&gt;Release();
+   
+   if( ptlib-&gt;GetTypeInfoOfGuid( guid, &amp;ptinfo ) == S_OK )
+   {    
+      FUNCDESC * pfdesc;
+      BSTR bsName;
+      unsigned int n = 0;
+      LPSTR cName;
+      LPWSTR pW2;
+      TYPEATTR * ptattr;
+      
+      ptinfo-&gt;GetTypeAttr( &amp;ptattr );
+
+      hb_reta( 0 ); 
+
+      for( WORD w = 0; w &lt; ptattr-&gt;cFuncs; w++ )
+      {
+         PHB_ITEM pSubarray = hb_itemArrayNew( 2 );
+         PHB_ITEM pName, pItem;
+         
+         ptinfo-&gt;GetFuncDesc( w, &amp;pfdesc );     
+         ptinfo-&gt;GetDocumentation( pfdesc-&gt;memid, &amp;bsName, NULL, NULL, NULL );
+         cName = WideToAnsi( bsName );
+         hb_arraySet( pSubarray, 1, hb_itemPutC( NULL, cName ) );
+         hb_arraySet( pSubarray, 2, hb_itemPutNL( NULL, pfdesc-&gt;memid ) );
+         hb_arrayAdd( hb_param( -1, HB_IT_ANY ), pSubarray );
+         hb_xfree( cName );
+         ptinfo-&gt;ReleaseFuncDesc( pfdesc );
+         hb_itemRelease( pSubarray ); 
+      }  
+   }
+   else
+      MessageBox( 0, "can't read types from ActiveX", "error", 0 );  
+}   
+
+HB_FUNC( SETEVENTPARAM ) // pParams, nParam, uValue
+{
+   DISPPARAMS * pParams = ( DISPPARAMS * ) hb_parnl( 1 );
+   VARIANT * va = &amp;pParams-&gt;rgvarg[ pParams-&gt;cArgs - hb_parnl( 2 ) ];
+
+   if( va-&gt;vt == ( VT_BYREF | VT_BOOL ) )
+      * va-&gt;pboolVal = hb_parl( 3 ) ? VARIANT_TRUE : VARIANT_FALSE;
+}   
+
+#ifdef __BORLANDC__
+};
+#endif</code></pre></div><br>
+<br>
+OleWEvents.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+ *  Events for OLE
+ *  (c) 2008 Carlos Mora (&lt;!-- e --&gt;&lt;a href="mailto:carlosantoniomora@yahoo.es"&gt;carlosantoniomora@yahoo.es&lt;/a&gt;&lt;!-- e --&gt; - harbouradvisor.blogspot.com )
+ *  based on the work of Oscar Lira Lira for ActiveX
+ *    (&lt;!-- e --&gt;&lt;a href="mailto:oscarlira78@hotmail.com"&gt;oscarlira78@hotmail.com&lt;/a&gt;&lt;!-- e --&gt; - &lt;!-- m --&gt;&lt;a class="postlink" href="http://freewin.sytes.net"&gt;http://freewin.sytes.net&lt;/a&gt;&lt;!-- m --&gt;)
+ */
+
+
+#include "hbclass.ch"
+#include "MyInclude.ch"
+//-----------------------------------------------------------------------------------------------//
+CLASS OleWEvent
+   DATA hWnd
+   DATA oOle      INIT nil
+   DATA hSink     INIT nil
+   DATA hObj      INIT nil
+
+   CONSTRUCTOR New()
+   DESTRUCTOR Release()
+
+   DELEGATE Set TO oOle
+   DELEGATE Get TO oOle
+   ERROR HANDLER __Error
+
+   DATA aEvent
+   DATA aBlock
+   METHOD EventMap( nEvent, bBlock )
+
+ENDCLASS
+
+METHOD New( cProgId ) CLASS OleWEvent
+   Local oError
+
+   If ( ::hWnd := OleWECreate( cProgId ) ) &gt; 0
+
+      ::hObj := OleGetDisp( ::hWnd )
+
+      TRY
+         ::oOle := ToleAuto():New( ::hObj )
+      CATCH oError
+         QOut( oError:Description )
+      END
+
+      ::hSink := OleConnectEvents( ::hObj, ::aEvent:= {} , ::aBlock:= {} )
+
+   EndIf
+
+   RETURN SELF
+
+*-----------------------------------------------------------------------------*
+METHOD Release() CLASS OleWEvent
+*-----------------------------------------------------------------------------*
+   If ::hSink != NIL
+      OleDisconnectEvents( ::hSink )
+      ::hSink:= NIL
+   EndIf
+   If ::hObj != NIL
+      OleFreeDispatch( ::hObj )
+      ::hObj:= NIL
+   EndIf
+   ::aEvent:= ::aBlock:= NIL
+   If ::hWnd != NIL
+      OleWEDestroy( ::hWnd )
+      ::hWnd := NIL
+   EndIf
+
+Return NIL
+
+*-----------------------------------------------------------------------------*
+METHOD __Error( ... ) CLASS OleWEvent
+*-----------------------------------------------------------------------------*
+Local cMessage, uRet
+   cMessage := __GetMessage()
+
+   IF Left( cMessage, 1 ) == "_"
+      cMessage := SubStr( cMessage, 2 )
+   ENDIF
+   RETURN HB_ExecFromArray( ::oOle, cMessage, HB_aParams() )
+
+//-----------------------------------------------------------------------------------------------//
+METHOD EventMap( nEvent, bBlock ) CLASS OleWEvent
+   LOCAL nAt
+
+   IF (nAt := AScan( ::aEvent, nEvent )) == 0
+      AAdd( ::aEvent, nEvent )
+      AAdd( ::aBlock, bBlock )
+   ELSE
+      ::aBlock[ nAt ] := bBlock
+   ENDIF
+
+RETURN NIL</code></pre></div><br>
+<br>
+TestOWE.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+ *  Events for OLE
+ *  (c) 2008 Carlos Mora (&lt;!-- e --&gt;&lt;a href="mailto:carlosantoniomora@yahoo.es"&gt;carlosantoniomora@yahoo.es&lt;/a&gt;&lt;!-- e --&gt; - harbouradvisor.blogspot.com )
+ *  based on the work of Oscar Lira Lira for ActiveX
+ *    (&lt;!-- e --&gt;&lt;a href="mailto:oscarlira78@hotmail.com"&gt;oscarlira78@hotmail.com&lt;/a&gt;&lt;!-- e --&gt; - &lt;!-- m --&gt;&lt;a class="postlink" href="http://freewin.sytes.net"&gt;http://freewin.sytes.net&lt;/a&gt;&lt;!-- m --&gt;)
+ */
+
+
+#include "MyInclude.ch"
+
+function Main()
+   Local i, oConn, oRS, dInicio
+
+   SetMode( 30, 80 )
+   dInicio:= date() - 100
+
+   oConn:= TAdoConnection():New( "Provider=Microsoft.Jet.OLEDB.4.0;Data Source="+CurDrive()+":\"+CurDir()+"\test.mdb" , "", "" )
+
+   oConn:Open()
+
+   oRS:= ADMRecordSet():New( oConn )
+   oRS:Open( "Tabla1" )
+
+   For i:= 1 To oRS:FCount()
+      ? oRS:FieldName(i)
+   End
+   Inkey(1)
+
+   oRS:oRS:EventMap(  0, {|| DefaultEvent( HB_APARAMS() ) } )
+//   oRS:oRS:EventMap( 15, {|| muestraevento( 15, HB_APARAMS() ) } )
+   oRS:oRS:EventMap( 16, {|| muestraevento( 16, HB_APARAMS() ) } )
+   oRS:GoTop()
+   /*
+   For i:= 2 to 100
+      oRS:oRS:EventMap( i, &amp;( '{|| dispoutat( MaxRow(), 60, "Evento '+StrZero(i,3)+'" ), Inkey(0.1) }' ) )
+   End
+   */
+   While !oRS:Eof()
+      ? oRS:CHAR, oRS:NUM, oRS:LOG, oRS:DATE
+
+      oRS:Skip()
+   End
+
+   ? 'listo'
+   Inkey(0)
+
+//   Browse()
+
+
+   return nil
+
+
+Function MuestraEvento( nEvent, aParams )
+   Local i
+   Debug nEvent
+   For i:= 1 to len( aParams )
+      iF ! ( Valtype( aParams[i] ) $ "UO" )
+         debug I, aParams[i]
+      EndIf
+   End
+
+Return NIL
+
+Function DefaultEvent( aParams )
+   Local i, nRow, nCol
+   For i:= 1 to len( aParams )
+      iF ! ( Valtype( aParams[i] ) $ "UO" )
+         debug I, aParams[i]
+      EndIf
+   End
+   nRow:= Row()
+   nCol:= Col()
+   DispOutAt( 0, 40, 'Event: '+Str( aParams[1], 3 ) )
+   Inkey( 0.1 )
+   SetPos( nRow, nCol )
+
+Return NIL
+
+
+   #pragma BEGINDUMP
+
+#include &lt;windows.h&gt;
+#include &lt;hbapi.h&gt;
+
+
+HB_FUNC( OUTPUTDEBUGSTRING )
+{
+   OutputDebugString( hb_parc(1) );
+}</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p160688">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Mon Jun 16, 2014 01:24 AM
+      </div>
+      <div class="content">My mistake, this is used in Harbour <br>
+<br>
+IConnectionPoint<br>
+<br>
+<a href="https://github.com/harbour/core/blob/master/contrib/hbwin/axcore.c" rel="noopener">https&#58;//github&#46;com/harbour/core/blob/master/contrib/hbwin/axcore&#46;c</a></div>
+    </div>
+  </div>
+  <div class="post" id="p160689">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to receive events from objects?</span><br>
+        Posted: Mon Jun 16, 2014 01:28 AM
+      </div>
+      <div class="content"><p>And this is the function that allows to use them:</p>
+<p>HB_FUNC( __AXREGISTERHANDLER )  /* ( pDisp, bHandler [, cIID] ) --&gt; pSink</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-28657-page-2.html">2</a> <a href="topic-28657-page-3.html">3</a> (33 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

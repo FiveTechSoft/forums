@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ayuda para desarrollar un control de navegacion y edicion - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-21444">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Ayuda para desarrollar un control de navegacion y edicion</div>
+  <div class="post" id="p113884">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">carlos vargas</div>
+      <div class="rank">Posts: 1789</div>
+      <img class="avatar avatar-img" src="avatars/110.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 11, 2005 05:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Ayuda para desarrollar un control de navegacion y edicion</span><br>
+        Posted: Thu Apr 28, 2011 11:08 PM
+      </div>
+      <div class="content">Estimados, todos<br>
+<br>
+Recientement me veo en la necesidad de construir un control que muestre 10 botones en un dialogo:<br>
+*4 de ellos son para navegar por la tabla ( Inicio, anterior, siguiente, final), y otros botones para  *Localizar, *Listar, *Agregar, *Editar, *Borrar y *Cerrar.<br>
+y que en modo Edicion o Agregar registro (*Agregar y Editar) cambien su funcion a *Grabar y *Deshacer, y luego de grabar o descartar los cambios retomen su funcion inicial. <br>
+<br>
+Mi necesidad es que deseo abandonar la modalidad browse, para centrame en el registro a registro.<br>
+por motivo que la app sera cliente/servidor, y todos sabemos que los browse no comulgan bien con esta arquitectura.<br>
+he mirado un control en VFP que me gusta y es a lo que aspiro a realizar.<br>
+<br>
+En este momento he avanzado algo, esto es lo que tengo:<br>
+una clase para el manejo del movimiento del puntero en la tabla ( TBtnNav ), y una clase derivada para las otras acciones a realizar. ( TBtnABC )<br>
+<br>
+<br>
+<a href="http://www.megaupload.com/?d=J0QMNN6H" rel="noopener">http&#58;//www&#46;megaupload&#46;com/?d=J0QMNN6H</a><br>
+<br>
+<img src="http://img153.imageshack.us/img153/6720/misbotones.jpg" alt="" loading="lazy"><br>
+<br>
+test.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">PROCEDURE Test()
+   LOCAL oDlg
+   LOCAL oBNav
+
+   USE D:\FWH\SAMPLES\CLIENTES.DBF NEW ALIAS CUST
+
+   DEFINE DIALOG oDlg NAME "TEST"
+
+   //oBNav := TBtnNav():new( oDlg, "CUST" ) //primera clase
+   oBNav := TBtnABC():new( oDlg, "CUST" )    //segunda clase
+   oBNav:bOnChange := { | o | msginfo( (o:cAlias)-&gt;NOMBRE ) }
+   oBNav:SetAction( 10,  {|| oDlg:END() }, "CERRAR TEST" )
+
+   ACTIVATE DIALOG oDlg CENTER
+
+   USE
+
+RETURN</code></pre></div><br>
+<br>
+clases.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*-------------------------------------------------------------------------------------------------*/
+/*incluye fichero cabezera de sistema*/
+#include "hbclass.ch"
+#include "fivewin.ch"
+
+/*-------------------------------------------------------------------------------------------------*/
+#define BN_TOP      01
+#define BN_BACK     02
+#define BN_NEXT     03
+#define BN_END      04
+#define BN_LOCATE   05
+#define BN_PRINT    06
+#define BN_NEW      07
+#define BN_EDIT     08
+#define BN_DELETE   09
+#define BN_CLOSE    10
+
+/*-------------------------------------------------------------------------------------------------*/
+
+CLASS TBtnNav
+   DATA oDlg
+   DATA cAlias
+   DATA aoButtons
+   DATA abActions
+   DATA bOnChange
+
+   METHOD New( oDlg, cAlias, bOnChange )
+   METHOD DisableAll()                    INLINE AEval( ::aoButtons, { |o| o:disable() } )
+   METHOD EnableAll()                     INLINE AEval( ::aoButtons, { |o| o:enable()  } )
+   METHOD SetAlias( cAlias )
+   METHOD Navigate( cMoveTo )
+   METHOD EnableDisable()
+
+ENDCLASS
+
+/*-------------------------------------------------------------------------------------------------*/
+
+METHOD TBtnNav:new( oDlg, cAlias, bOnChange )
+
+   ::oDlg      := oDlg
+
+   ::aoButtons := Array( 04 )
+   ::abActions := Array( 04 )
+
+   AFill( ::abActions, {|| NIL } )
+
+   REDEFINE BUTTONBMP ::aoButtons[01] ID 601 OF oDlg BITMAP "BM_DTOP"   ACTION ::abActions[01]
+   REDEFINE BUTTONBMP ::aoButtons[02] ID 602 OF oDlg BITMAP "BM_DBACK"  ACTION ::abActions[02]
+   REDEFINE BUTTONBMP ::aoButtons[03] ID 603 OF oDlg BITMAP "BM_DNEXT"  ACTION ::abActions[03]
+   REDEFINE BUTTONBMP ::aoButtons[04] ID 604 OF oDlg BITMAP "BM_DEND"   ACTION ::abActions[04]
+
+   ::aoButtons[01]:cToolTip := "Primer registro"
+   ::aoButtons[02]:cToolTip := "Registro anterior"
+   ::aoButtons[03]:cToolTip := "Siguiente registro"
+   ::aoButtons[04]:cToolTip := "Ultimo registro"
+
+   IF Empty( cAlias )
+      IF Used()
+         ::SetAlias( Alias() )
+      ENDIF
+   ELSE
+      ::SetAlias( cAlias )
+   ENDIF
+
+   IF bOnChange &lt;&gt; NIL .and. ValType( bOnChange ) == "B"
+      ::bOnChange := bOnChange
+   ELSE
+      ::bOnChange := NIL
+   ENDIF
+
+RETURN Self
+
+/*-------------------------------------------------------------------------------------------------*/
+
+METHOD TBtnNav:SetAlias( cAlias )
+
+   ::cAlias := cAlias
+
+   ( ::cAlias )-&gt;( DBGoTop() )
+
+   ::aoButtons[ BN_TOP  ]:bAction := {|| ::Navigate( "TOP"  ), ::EnableDisable() }
+   ::aoButtons[ BN_BACK ]:bAction := {|| ::Navigate( "BACK" ), ::EnableDisable() }
+   ::aoButtons[ BN_NEXT ]:bAction := {|| ::Navigate( "NEXT" ), ::EnableDisable() }
+   ::aoButtons[ BN_END  ]:bAction := {|| ::Navigate( "END"  ), ::EnableDisable() }
+
+   ::EnableDisable()
+
+RETURN NIL
+
+/*-------------------------------------------------------------------------------------------------*/
+
+METHOD TBtnNav:Navigate( cMoveTo )
+   LOCAL cNewPos, nRec
+
+   IF VALTYPE( cMoveTo ) &lt;&gt; "C" .OR. EMPTY( cMoveTo )
+      RETURN .F.
+   ENDIF
+
+   cMoveTo := UPPER( ALLTRIM( cMoveTo ) )
+   cNewPos := 'MID'
+
+   DO CASE
+   CASE cMoveTo = "NEXT"
+      ( ::cAlias )-&gt;( dbskip() )
+      IF ( ::cAlias )-&gt;( eof() )
+         ( ::cAlias )-&gt;( dbgobottom() )
+         cNewPos = "END"
+      ELSE
+         nRec = ( ::cAlias )-&gt;( recno() )
+         ( ::cAlias )-&gt;( dbskip() )
+         IF ( ::cAlias )-&gt;( eof() )
+            cNewPos = "END"
+         ENDIF
+         ( ::cAlias )-&gt;( dbgoto( nRec ) )
+      ENDIF
+   CASE cMoveTo = "BACK"
+      ( ::cAlias )-&gt;( dbskip( -1 ) )
+      IF ( ::cAlias )-&gt;( bof() )
+         ( ::cAlias )-&gt;( dbgotop() )
+         cNewPos = "TOP"
+      ELSE
+         nRec = ( ::cAlias )-&gt;( recno() )
+         ( ::cAlias )-&gt;( dbskip( -1 ) )
+         IF ( ::cAlias )-&gt;( bof() )
+            cNewPos = "TOP"
+         ENDIF
+         ( ::cAlias )-&gt;( dbgoto( nRec ) )
+      ENDIF
+   CASE cMoveTo = "END"
+      ( ::cAlias )-&gt;( dbgobottom() )
+      cNewPos = "END"
+   CASE cMoveTo = "TOP"
+      ( ::cAlias )-&gt;( dbgotop() )
+      cNewPos = "TOP"
+   OTHERWISE
+      RETURN .F.
+   ENDCASE
+
+   IF ValType( ::bOnChange ) == "B"
+      Eval( ::bOnChange, Self )
+   ENDIF
+
+RETURN .T.
+
+/*-------------------------------------------------------------------------------------------------*/
+
+METHOD TBtnNav:EnableDisable()
+   LOCAL lOk := TRUE
+   LOCAL nRec, nTop, nBottom
+
+   IF Empty( ::cAlias ) .or. ( ::cAlias )-&gt;( Eof() )
+      ::DisableAll()
+      RETURN FALSE
+   ENDIF
+
+   nRec := ( ::cAlias )-&gt;( RecNo() )
+
+   ( ::cAlias )-&gt;( DBGoTop() )
+   nTop := ( ::cAlias )-&gt;( RecNo() )
+
+   ( ::cAlias )-&gt;( DBGoBottom() )
+   nBottom := ( ::cAlias )-&gt;( RecNo() )
+
+   ( ::cAlias )-&gt;( DBGoTo( nRec ) )
+
+   DO CASE
+   CASE nRec = nTop
+      ::aoButtons[ BN_TOP  ]:disable()
+      ::aoButtons[ BN_BACK ]:disable()
+      ::aoButtons[ BN_NEXT ]:enable()
+      ::aoButtons[ BN_END  ]:enable()
+   CASE nRec = nBottom
+      ::aoButtons[ BN_TOP  ]:enable()
+      ::aoButtons[ BN_BACK ]:enable()
+      ::aoButtons[ BN_NEXT ]:disable()
+      ::aoButtons[ BN_END  ]:disable()
+   OTHERWISE
+      ::EnableAll()
+   ENDCASE
+
+RETURN lOk
+
+/*-------------------------------------------------------------------------------------------------*/
+/*-------------------------------------------------------------------------------------------------*/
+
+CLASS TBtnABC FROM TBtnNav
+   DATA lAppend
+   DATA lEdit
+   METHOD New( oDlg, cAlias, bOnChange )
+   METHOD SetAction( nButton, bAction, cToolTip )
+   METHOD SetBitmap( nButton, cBitmap, cPrompt, cTooltip ) VIRTUAL
+   METHOD EnableDisable2()
+
+ENDCLASS
+
+/*-------------------------------------------------------------------------------------------------*/
+
+METHOD TBtnABC:New( oDlg, cAlias, bOnChange )
+
+   ::lAppend := FALSE
+   ::lEdit   := FALSE
+
+   Super:New( oDlg, cAlias, bOnChange )
+
+   ASize( ::aoButtons, 10 )
+   ASize( ::abActions, 10 )
+
+   AFill( ::abActions, {|| NIL }, 5, 6 )
+
+   REDEFINE BUTTONBMP ::aoButtons[05] ID 605 OF oDlg BITMAP "BM_DLOCATE"   ACTION ::abActions[05]
+   REDEFINE BUTTONBMP ::aoButtons[06] ID 606 OF oDlg BITMAP "BM_DPRINT"    ACTION ::abActions[06]
+   REDEFINE BUTTONBMP ::aoButtons[07] ID 607 OF oDlg BITMAP "BM_DNEW"      ACTION ::abActions[07]
+   REDEFINE BUTTONBMP ::aoButtons[08] ID 608 OF oDlg BITMAP "BM_DEDIT"     ACTION ::abActions[08]
+   REDEFINE BUTTONBMP ::aoButtons[09] ID 609 OF oDlg BITMAP "BM_DDELETE"   ACTION ::abActions[09]
+   REDEFINE BUTTONBMP ::aoButtons[10] ID 610 OF oDlg BITMAP "BM_DCLOSE"    ACTION ::abActions[10]
+
+   ::aoButtons[05]:cToolTip := "Localizar dato"
+   ::aoButtons[06]:cToolTip := "Listar información"
+   ::aoButtons[07]:cToolTip := "Nuevo registro"
+   ::aoButtons[08]:cToolTip := "Editar Registro"
+   ::aoButtons[09]:cToolTip := "Eliminar registro"
+   ::aoButtons[10]:cToolTip := "Cerrar modulo"
+
+   ::EnableDisable2()
+
+RETURN Self
+
+/*-------------------------------------------------------------------------------------------------*/
+
+METHOD TBtnABC:SetAction( nButton, bAction, cToolTip )
+
+   IF nButton &lt;= Len( ::aoButtons )
+      IF ValType( bAction ) == "B"
+         ::aoButtons[ nButton ]:bAction := bAction
+         IF !Empty( cToolTip )
+            ::aoButtons[ nButton ]:cToolTip := cToolTip
+         ENDIF
+      ENDIF
+   ENDIF
+
+RETURN NIL
+
+/*-------------------------------------------------------------------------------------------------*/
+
+METHOD TBtnABC:EnableDisable2()
+   LOCAL lOk
+
+   lOk := Super:EnableDisable()
+
+   IF lOk
+      ::aoButtons[ BN_LOCATE ]:enable()
+      ::aoButtons[ BN_PRINT  ]:enable()
+      ::aoButtons[ BN_NEW    ]:enable()
+      ::aoButtons[ BN_EDIT   ]:enable()
+      ::aoButtons[ BN_DELETE ]:enable()
+      ::aoButtons[ BN_CLOSE  ]:enable()
+   ELSE
+      ::aoButtons[ BN_LOCATE ]:disable()
+      ::aoButtons[ BN_PRINT  ]:disable()
+      ::aoButtons[ BN_NEW    ]:enable()
+      ::aoButtons[ BN_EDIT   ]:disable()
+      ::aoButtons[ BN_DELETE ]:disable()
+      ::aoButtons[ BN_CLOSE  ]:enable()
+   ENDIF
+
+RETURN NIL
+
+/*-------------------------------------------------------------------------------------------------*/</code></pre></div><br>
+<br>
+test.rc<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">TEST DIALOG 0, 0, 253, 228
+STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
+CAPTION "Dialog"
+FONT 8, "Ms Shell Dlg"
+{
+    PUSHBUTTON      "", 601, 7, 207, 21, 14, NOT WS_TABSTOP
+    PUSHBUTTON      "", 602, 28, 207, 21, 14, NOT WS_TABSTOP
+    PUSHBUTTON      "", 603, 49, 207, 21, 14, NOT WS_TABSTOP
+    PUSHBUTTON      "", 604, 70, 207, 21, 14, NOT WS_TABSTOP
+    PUSHBUTTON      "", 605, 96, 207, 21, 14, NOT WS_TABSTOP
+    PUSHBUTTON      "", 606, 117, 207, 21, 14, NOT WS_TABSTOP
+    PUSHBUTTON      "", 607, 143, 207, 21, 14, NOT WS_TABSTOP
+    PUSHBUTTON      "", 608, 164, 207, 21, 14, NOT WS_TABSTOP
+    PUSHBUTTON      "", 609, 185, 207, 21, 14, NOT WS_TABSTOP
+    PUSHBUTTON      "", 610, 211, 207, 21, 14, NOT WS_TABSTOP
+}
+BM_DBACK           BITMAP         ".\\tb\\back.bmp"
+BM_DCLOSE         BITMAP         ".\\tb\\close.bmp"
+BM_DDELETE        BITMAP         ".\\tb\\delete.bmp"
+BM_DEDIT            BITMAP         ".\\tb\\edit.bmp"
+BM_DEND             BITMAP         ".\\tb\\end.bmp"
+BM_DLOCATE        BITMAP         ".\\tb\\locate.bmp"
+BM_DNEW            BITMAP         ".\\tb\\new.bmp"
+BM_DNEXT           BITMAP         ".\\tb\\next.bmp"
+BM_DPRINT          BITMAP         ".\\tb\\print.bmp"
+BM_DSAVE            BITMAP         ".\\tb\\save.bmp"
+BM_DTOP            BITMAP         ".\\tb\\top.bmp"
+BM_DUNDO           BITMAP         ".\\tb\\undo.bmp"</code></pre></div><br>
+<br>
+Pero de momento existe algunas cuestiones  a resolver.<br>
+<br>
+1.- no es un control, lo cual me gustaria. (yo he hecho mis pinitos crendo clases tales como TTitle, xBackupLite, etc., pero no con controles que interactuen con el usuario, o que contenga otros controles)<br>
+<br>
+2.- el metodo que determina e estado activado o desactivado de los botones de navegacion, tiene un codigo no optimizado para la modalidad cliente/servidor ya que usa saltos al inicio y al final para determinar la posicion del puntero en la tabla asociada, esto en cada interaccion de los botones, esto funciona bien en modo local, pero lo veo ineficiente en c/s. ( lo curioso es que hae tiempo habia hecho un codigo para esto ms optimizado y lo perdi  )<br>
+<br>
+3- en la segunda clase TBtnABC el metodo EnableDisable2 lo queria definir como en la clase superior TBtnNav que se llamara EnableDisable, pero me fallo cuando hice uso de TBtnABC, ya que me llamaba al metodo EnableDisable de la clase TBtnABC.<br>
+<br>
+Si alguien se anima a ayudarme bienvenido sea, ya que creo firmemente que necesitamos algo como esto, para ir cambiando el chip de que para todo es con browses. <br>
+Nota: no estoy en contra de los browse, es mas, fue lo que me llamo la atencion en clipper desde un inicio, pero los tiempos han cambiado, y segun leo no es recomendable en c/s.<br>
+<br>
+por algo se inicia, y yo pues doy el primer paso.<br>
+<br>
+agradeciendo su atencion, y su ayuda.<br>
+<br>
+salu2<br>
+carlos vargas</div>
+    </div>
+  </div>
+  <div class="post" id="p113929">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ramon Paredes</div>
+      <div class="rank">Posts: 215</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 02, 2007 03:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda para desarrollar un control de navegacion y edicion</span><br>
+        Posted: Sat Apr 30, 2011 11:53 PM
+      </div>
+      <div class="content"><p>Carlos, </p>
+<p>El asunto de los browses depende del uso que hagas de ellos, yo tengo un sistema con 7 modulos integrados entre si y hago uso intensivo de browse sin menoscabar el rendimiento de la aplicacion C/S, claro esta con sus LIMIT correspondientes y sus Filtros para mostrar lo estrictamente necesario, claro que ya no podemos como en dbf browse sin condiciones pero segun mi criterio aun siguen siendo un atractivo en nuestro ambiente,</p>
+<p>Claro que lo que pretendes es perfectamente valido, </p>
+<p>Saludos</p>
+<p>Desde Managua, Nicaragua nuestra tierra,</p>
+<p>Ramon Paredes</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

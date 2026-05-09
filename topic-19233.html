@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Buscador de puntos de acceso WiFi - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-19233">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-7.html">FiveWin para Pocket PC</a> Buscador de puntos de acceso WiFi</div>
+  <div class="post" id="p101176">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Daniel Garcia-Gil</div>
+      <div class="rank">Posts: 2365</div>
+      <img class="avatar avatar-img" src="avatars/249.gif" alt="" loading="lazy">
+      Joined: Wed Nov 02, 2005 11:46 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Buscador de puntos de acceso WiFi</span><br>
+        Posted: Sun Jul 04, 2010 03:54 PM
+      </div>
+      <div class="content">Saludos<br>
+<br>
+Gracias a Otto por compartir el codigo original, fue adaptadoa FWPPC<br>
+<br>
+Descargar desde aqui: <a href="http://www.sitasoft.net/fivewin/samples/fwppc/wifi.zip" rel="noopener">http&#58;//www&#46;sitasoft&#46;net/fivewin/samples/fwppc/wifi&#46;zip</a><br>
+<br>
+sample<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FWCE.ch"
+
+
+FUNCTION Main()
+   LOCAL oWnd
+   LOCAL oWifi
+   LOCAL aAdapters, cAdapter
+   LOCAL n
+   LOCAL aInfo
+   LOCAL ctext
+   LOCAL oBrw
+   
+   
+   DEFINE DIALOG oWnd TITLE "Wifi Search" SIZE 220, 210
+   
+   oWifi = TWifiScan():New()
+
+   aInfo = GetInfo( oWifi )
+   
+   /*
+   MacAddress ( string )               
+   Ssid       ( string )        
+   Channel    ( numeric )        
+   Auth       ( string )        
+   InfrastructureMode  ( string )
+   Signal( numeric )   */
+
+   @ 1, 1 LISTBOX oBrw ;
+      FIELDS aInfo[ oBrw:nAt, 2 ], Transform(aInfo[ oBrw:nAt, 6 ], "9999" ),;
+             Transform( aInfo[ oBrw:nAt, 3 ], "999" ), aInfo[ oBrw:nAt, 5 ], ;
+             aInfo[ oBrw:nAt, 4 ], aInfo[ oBrw:nAt, 1 ] ;
+      HEADERS "Name", "Sig", "Ch", "Type", "Sec", "Mac";
+      COLSIZES  100, 30, 30, 60, 60, 150 ;
+      SIZE 100, 82 
+   
+   oBrw:SetArray( aInfo )
+    
+   ACTIVATE DIALOG oWnd CENTERED;
+            ON CLICK( aInfo := GetInfo( oWifi, cAdapter ),;
+                      oBrw:SetArray( aInfo ),;
+                      oBrw:Refresh() )
+
+   oWifi:End()
+      
+RETURN NIL
+
+
+FUNCTION GetInfo( oWifi )
+   local aInfo 
+   local cAdapter
+   
+   cAdapter = GetAdapter( oWifi )
+   
+   if ! Empty( cAdapter )
+      oWifi:RefreshBSSIDs( cAdapter )
+      aInfo = oWifi:GetBBSIDs( cAdapter )
+   endif
+   if Len( aInfo ) == 0 
+      aInfo := { { , , 0, , , 0 } }
+   endif
+
+return aInfo
+
+FUNCTION GetAdapter( oWifi )
+   local aAdapters := oWifi:GetAdapters()
+   local cAdapter := ""
+   if Len( aAdapters ) &gt; 0
+      cAdapter = aAdapters[ 1 ]
+   endif
+return cAdapter</code></pre></div><br>
+<br>
+CLASS <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+CLASS TWifiScan
+
+   DATA hHandle
+   
+   METHOD New()
+   METHOD GetAdapters  INLINE GetAdapters( ::hHandle )
+   METHOD GetBBSIDs( cAdapter )  INLINE GetBBSIDs( ::hHandle, cAdapter )
+                                 /*Return Array 6 position
+                                   MacAddress ( string )               
+                                   Ssid       ( string )        
+                                   Channel    ( numeric )        
+                                   Auth       ( string )        
+                                   InfrastructureMode  ( string )
+                                   Signal( numeric ) */
+
+   
+   METHOD RefreshBSSIDs( cAdapter ) INLINE RefreshBSSIDs( ::hHandle, cAdapter )
+
+   METHOD End()   INLINE EndWifi( ::hHandle )
+
+ENDCLASS
+
+METHOD New() CLASS TWifiScan
+
+   ::hHandle = InitWifi()
+
+RETURN Self</code></pre></div><br>
+<br>
+C code<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include &lt;windows.h&gt;
+#include &lt;hbapi.h&gt;
+#include &lt;hbapiitm.h&gt;
+#include &lt;ntddndis.h&gt;
+#include &lt;nuiouser.h&gt;
+#include &lt;winioctl.h&gt;
+
+typedef struct tagWifiPeek{
+    CRITICAL_SECTION m_Lock;
+    HANDLE m_hNDUIO;
+} WIFIPEEK;
+typedef WIFIPEEK  *PFWIFIPEEK;
+
+void CloseWifi( PFWIFIPEEK );
+BOOL OpenWifi( PFWIFIPEEK );
+LPWSTR AnsiToWide( LPSTR );
+LPSTR WideToAnsi( LPWSTR );
+const char cSep = '-';
+static char * sAuth_Mode[] = { "Open System",
+                              "Wep" };
+                              
+static char * sInfra_Mode[] = { "Ad Hoc",
+                                "Access Point",
+                                "Auto or unknown" };
+
+//----------------------------------
+
+HB_FUNC( ENDWIFI )
+{
+  PFWIFIPEEK pWifi = ( PFWIFIPEEK ) hb_parnl( 1 );
+  
+    if( pWifi-&gt;m_hNDUIO != NULL)
+    {
+        CloseWifi( pWifi );
+    }
+    DeleteCriticalSection(&amp;pWifi-&gt;m_Lock);
+    hb_xfree( pWifi );
+}
+
+//----------------------------------
+
+HB_FUNC( INITWIFI )
+{
+  PFWIFIPEEK pWifi = hb_xgrab( sizeof( WIFIPEEK ) );
+   
+    pWifi-&gt;m_hNDUIO=NULL;
+    InitializeCriticalSection(&amp;pWifi-&gt;m_Lock);
+    if( OpenWifi( pWifi ) )
+       hb_retnl( ( LONG ) pWifi );
+    else
+    {
+       hb_xfree( pWifi );
+       hb_retnl( 0 );
+    }
+    
+}
+
+//----------------------------------
+
+
+void CloseWifi( PFWIFIPEEK pWifi )
+{
+    CloseHandle( pWifi-&gt;m_hNDUIO );
+    pWifi-&gt;m_hNDUIO=NULL;
+}
+
+//----------------------------------
+
+BOOL OpenWifi( PFWIFIPEEK pWifi )
+{
+HANDLE hDev;
+
+    //already opened?
+    if( pWifi-&gt;m_hNDUIO != NULL)
+    {
+        return TRUE;
+    }
+
+    hDev=CreateFile(NDISUIO_DEVICE_NAME, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, INVALID_HANDLE_VALUE);
+    if(hDev == INVALID_HANDLE_VALUE)
+    {
+        return FALSE;
+    }
+    else
+    {
+        pWifi-&gt;m_hNDUIO=hDev;
+        return TRUE;
+    }
+}
+
+HB_FUNC( GETADAPTERS )
+{
+HANDLE hFile;
+BYTE Buffer[2048];
+VOID *pvBuf;
+DWORD dwRet;
+PFWIFIPEEK pWifi = ( PFWIFIPEEK ) hb_parnl( 1 );
+PHB_ITEM  pAdapters = hb_itemArrayNew( 0 );
+
+    if(pWifi == NULL || pWifi-&gt;m_hNDUIO == NULL)
+    {
+        hb_retnl( 0 );
+    }
+    EnterCriticalSection(&amp;pWifi-&gt;m_Lock);
+    //open NDIS driver
+    hFile=CreateFile(L"NDS0:", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, INVALID_HANDLE_VALUE);
+    if(hFile != INVALID_HANDLE_VALUE)
+    {
+        pvBuf=(void *)(&amp;Buffer[0]);
+        dwRet=sizeof(Buffer);
+        if(DeviceIoControl(hFile, IOCTL_NDIS_GET_ADAPTER_NAMES, NULL, 0, pvBuf, sizeof(Buffer), &amp;dwRet, NULL))
+        {
+            //adapter list ok.
+            LPWSTR pszStr;
+            dwRet=0;
+
+            //no string classes used, so no MFC or ATL dependency.
+            for(pszStr=(LPWSTR)pvBuf; *pszStr; pszStr+=wcslen(pszStr)+1)
+            {
+                //check if adapter name is ok, skip infrared, gprs, ActiveSync etc.
+                if(wcsicmp(pszStr, L"ASYNCMAC1") &amp;&amp; \
+                    wcsicmp(pszStr, L"IRSIR1") &amp;&amp; \
+                    wcsicmp(pszStr, L"L2TP1") &amp;&amp; \
+                    wcsicmp(pszStr, L"PPTP1") &amp;&amp; \
+                    wcsicmp(pszStr, L"RNDISFN1") &amp;&amp; \
+                    wcsicmp(pszStr, L"WWAN1") &amp;&amp; \
+                    wcsicmp(pszStr, L"XSC1_IRDA1"))
+                    {               
+                  LPSTR psStr;
+                  PHB_ITEM pSubarray;
+                psStr = WideToAnsi( ( LPWSTR ) pszStr );
+                pSubarray = hb_itemPutC( NULL, psStr );
+                hb_arrayAddForward( pAdapters, pSubarray );
+                hb_itemRelease( pSubarray );
+             }
+
+            }
+        }
+        CloseHandle(hFile);
+    }
+    LeaveCriticalSection(&amp;pWifi-&gt;m_Lock);
+  hb_itemReturnRelease( pAdapters );
+
+}
+
+
+BOOL RefreshBSSIDs( PFWIFIPEEK pWifi, LPWSTR pAdapter )
+{
+NDISUIO_SET_OID nso;
+DWORD dwBytesRet;
+BOOL retval;
+
+    EnterCriticalSection(&amp;pWifi-&gt;m_Lock);
+    nso.ptcDeviceName = pAdapter;
+    nso.Oid = OID_802_11_BSSID_LIST_SCAN;
+
+    dwBytesRet=0;
+    if(!DeviceIoControl(pWifi-&gt;m_hNDUIO, IOCTL_NDISUIO_SET_OID_VALUE, (void *)&amp;nso, sizeof(NDISUIO_SET_OID), NULL, 0, &amp;dwBytesRet, NULL))
+    {
+        retval=FALSE;
+    }
+    else
+    {
+        retval=TRUE;
+    }
+    LeaveCriticalSection(&amp;pWifi-&gt;m_Lock);
+    return retval;
+}
+
+HB_FUNC( REFRESHBSSIDS )
+{
+   PFWIFIPEEK pWifi = ( PFWIFIPEEK ) hb_parnl( 1 );
+   LPSTR psStr = hb_parc( 2 );
+   LPWSTR pAdapter = AnsiToWide( psStr );
+   
+   hb_retl( RefreshBSSIDs( pWifi, pAdapter ) );
+   
+   hb_xfree( pAdapter );
+}   
+   
+
+//----------------------------------------------
+
+
+
+char *MacToChar(char *pszMACAddress, 
+                unsigned char *pbyMacAddressInBytes)
+{
+    sprintf(pszMACAddress, "%02x%c%02x%c%02x%c%02x%c%02x%c%02x", 
+                        pbyMacAddressInBytes[0] &amp; 0xff,
+                        cSep,
+                        pbyMacAddressInBytes[1]&amp; 0xff, 
+                        cSep,
+                        pbyMacAddressInBytes[2]&amp; 0xff, 
+                        cSep,
+                        pbyMacAddressInBytes[3]&amp; 0xff, 
+                        cSep,
+                        pbyMacAddressInBytes[4]&amp; 0xff, 
+                        cSep,
+                        pbyMacAddressInBytes[5]&amp; 0xff);
+
+    return pszMACAddress;
+}   
+
+
+CHAR * Get_Auth_Mode( int );
+
+HB_FUNC( GETBBSIDS )
+{
+   PNDISUIO_QUERY_OID pNQO;
+   DWORD dwBytesRet;
+   BYTE Buffer[8192], *pByte;
+   PNDIS_802_11_BSSID_LIST pList;
+   PNDIS_WLAN_BSSID pItem;
+   int i, iChannel;
+   PHB_ITEM pItemDest;
+     PHB_ITEM pitemField = hb_itemNew( NULL );
+     ULONG dwReturnedItems;
+     CHAR BSSID[64] = "";
+     PFWIFIPEEK pWifi = ( PFWIFIPEEK ) hb_parnl( 1 ); 
+     LPWSTR pAdapter  = AnsiToWide( ( LPSTR ) hb_parc( 2 ) );
+   
+     EnterCriticalSection(&amp;pWifi-&gt;m_Lock);  
+     pNQO=(PNDISUIO_QUERY_OID)Buffer;
+   
+     pNQO-&gt;ptcDeviceName = pAdapter;
+     pNQO-&gt;Oid=OID_802_11_BSSID_LIST;
+   
+     // Run query
+     dwBytesRet = 0;
+     if(!DeviceIoControl(pWifi-&gt;m_hNDUIO, IOCTL_NDISUIO_QUERY_OID_VALUE, (void *)pNQO, 8192, (void *)pNQO, 8192, &amp;dwBytesRet, NULL))
+     {
+        LeaveCriticalSection(&amp;pWifi-&gt;m_Lock);
+        hb_retl( FALSE );
+     }
+   
+     pList=(PNDIS_802_11_BSSID_LIST)&amp;pNQO-&gt;Data;
+     dwReturnedItems = pList-&gt;NumberOfItems;
+   
+    pItemDest = hb_itemArrayNew( 0 );
+   
+     //first item in array
+     pItem=pList-&gt;Bssid;
+    
+     for(i=0; i&lt;( INT )dwReturnedItems; i++)
+     {
+        MacToChar( BSSID,  pItem-&gt;MacAddress );
+   
+         if(pItem-&gt;Configuration.DSConfig &gt; 14)
+         {
+              iChannel=(pItem-&gt;Configuration.DSConfig - 2407000) / 5000;
+        }else
+         {
+            iChannel=pItem-&gt;Configuration.DSConfig;
+         }     
+   
+         hb_arrayNew( pitemField, 6 );
+       hb_arraySetC( pitemField, 1, BSSID );            //MacAddress
+       hb_arraySetC( pitemField, 2, pItem-&gt;Ssid.Ssid ); // Ssid
+       hb_arraySetNI( pitemField, 3, iChannel );        // Channel
+       hb_arraySetC( pitemField, 4, sAuth_Mode[ pItem-&gt;Privacy ] );  // Auth 
+       hb_arraySetC( pitemField, 5, sInfra_Mode[ pItem-&gt;InfrastructureMode ] ); //InfrastructureMode
+       hb_arraySetNI( pitemField, 6, pItem-&gt;Rssi );     //Signal
+       hb_arrayAddForward( pItemDest, pitemField );
+        
+        //some pointer magic...actually pItem-&gt;Length was not sizeof(NDIS_WLAN_BSSID)
+        //so use returned length
+        pByte=(BYTE *)pItem;
+        pByte+=pItem-&gt;Length;
+        pItem=(PNDIS_WLAN_BSSID)pByte;
+     }//for
+   
+     LeaveCriticalSection(&amp;pWifi-&gt;m_Lock);
+     
+   hb_itemRelease( pitemField );
+   hb_itemReturnRelease( pItemDest );
+}</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

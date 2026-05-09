@@ -1,0 +1,2024 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>SOCKETS - Hay que reiniciar ordenador para volver a conectar - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-40446">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> SOCKETS - Hay que reiniciar ordenador para volver a conectar</div>
+  <div class="post" id="p241509">
+    <div class="poster">
+      <div class="name" style="color:#105289">Verhoven</div>
+      <div class="rank">Posts: 563</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 07:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Sun May 23, 2021 08:46 PM
+      </div>
+      <div class="content">Me estoy encontrando con el siguiente problema:<br>
+Tengo desarrollado un cliente sockets para conectar con un ordenador y un programa externos que  hacen de servidor.<br>
+Todo va bien pero si salgo de mi programa y vuelvo a tratar de conectar el otro ordenador (servidor) parece no devolver nunca connect, esto solo se soluciona reiniciando el ordenador que hace de cliente.<br>
+Es como si algo se quedara pillado con la tarjeta de red o con el socket, de manera que al salir del programa lo dejara bloqueado.<br>
+He tratado de solucionarlo incluyendo un<strong> shutdown() </strong>en el método <strong>end</strong> de la clase <strong>Tsocket </strong>pero sigue igual.<br>
+<br>
+Copio el código incluido en la clase Tsocket para tratar de solucionarlo aunque no ha funcionado:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#define SD_RECEIVE         0
+#define SD_SEND            1
+#define SD_BOTH            2
+
+...
+
+METHOD End() CLASS TSocket
+
+   local nAt := AScan( ::aSockets, { | oSocket | oSocket:nSocket == ::nSocket  } )
+
+   while ::lSending
+      SysRefresh()
+   end
+ 
+   //Añadido el 23/05/2021 para ver si al salir del programa y volver a entrar no hay problema para volver a conectar con el servidor, pero no lo arregla.
+   if shutdown( ::nSocket, SD_BOTH ) &lt;&gt; 0
+       msgwait('ERROR: ShutDown(), WSAGetLastError = '+alltrim(str(WSAGetLastError())),"oSocket:SendData",2)
+      else
+       msgwait('OK, ShutDown() == 0',"oSocket:Close()",2)
+   endif
+
+   if nAt != 0
+      ADel( ::aSockets, nAt )
+      ASize( ::aSockets, Len( ::aSockets ) - 1 )
+      if Len( ::aSockets ) == 0
+         WSACleanUp()
+      endif
+   endif
+   
+   if ! Empty( ::nSocket )
+      CloseSocket( ::nSocket )
+      ::nSocket = 0
+   endif
+
+return nil
+
+...
+
+DLL32 STATIC FUNCTION shutdown( dwReserved AS LONG, lpdwReserved AS LONG);
+      AS LONG PASCAL FROM "shutdown" LIB "ws2_32.dll"  // "wsock32.dll"  también vale</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p241531">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Mon May 24, 2021 02:16 PM
+      </div>
+      <div class="content">Pon esta traza y comprueba que pase por ahi:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   if nAt != 0
+      ADel( ::aSockets, nAt )
+      ASize( ::aSockets, Len( ::aSockets ) - 1 )
+      if Len( ::aSockets ) == 0
+         MsgInfo( "si" )
+         WSACleanUp()
+      endif
+   endif</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p241534">
+    <div class="poster">
+      <div class="name" style="color:#105289">Verhoven</div>
+      <div class="rank">Posts: 563</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 07:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Mon May 24, 2021 04:18 PM
+      </div>
+      <div class="content"><p>Hola Antonio.<br>
+Lo he comprobado y no pasa por WSACleanUp().<br>
+La matriz ::aSockets contiene más de un socket. Y este es el problema, porque al hacer end() si queda alguno distinto del que ha creado el programa, como la condición para pasar por WSACleanUp() es que no quede ninguno, esto impide que pase por WSACleanUp().</p>
+<p>¿Cómo se puede arreglar? porque el otro socket lo está creando otro programa que corre en el ordenador y no se si al hacer WSACleanUp() voy a interferir en el otro programa.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241535">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Mon May 24, 2021 04:37 PM
+      </div>
+      <div class="content"><p>Cambia MsgInfo( &quot;si&quot; ) por MsgInfo( Len( ::aSockets ) ) ó mejor por XBrowser( ::aSockets ) para averiguar que sockets hay en el array</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241537">
+    <div class="poster">
+      <div class="name" style="color:#105289">Verhoven</div>
+      <div class="rank">Posts: 563</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 07:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Mon May 24, 2021 05:02 PM
+      </div>
+      <div class="content"><p>Me aparecen dos sockets en el array, pero mi programa solo está creando uno.<br>
+Si salgo del otro programa que usa sokets en ese mismo ordenador y arranco el mío solamente, entonces me sale solo uno.<br>
+Es como si la librería de windows llevara la cuenta de todos los sockets abiertos en el ordenador y por esto aSockets contiene dos el de mi programa y el del otro programa.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241541">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Mon May 24, 2021 06:32 PM
+      </div>
+      <div class="content"><p>Puedes proporcionar un ejemplo completo para probarlo aqui ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241552">
+    <div class="poster">
+      <div class="name" style="color:#105289">Verhoven</div>
+      <div class="rank">Posts: 563</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 07:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Tue May 25, 2021 10:57 AM
+      </div>
+      <div class="content">Buenas tardes Antonio. <br>
+Paso la clase TSockets con algunas modificaciones que le he hecho para:<br>
+Evitar en el método SendData entrar en un bucle sin fin si falla el envío.<br>
+SendData en vez de los byte totales a enviar devuelve los enviados porque cuando el valor es -1  significa que ha habido fallos.<br>
+Le añado una mínima descripción de errores.<br>
+También incorporo la función shutdown() porque he leído en la información que ofrece Microsoft que conviene ejecutarla antes de CloseSocket().<br>
+Y una función para imprimir en un log la descripción de los errores.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// FiveWin WinSocket.dll support !!!
+
+/* 25/05/2021
+   MODIFICACION DE LA CLASE ORIGINAL TSOCKET:
+     El problema radicaba en que la clase TSocket original de FiveWin no gestiona los errores 
+     cuando trata de enviar datos, EL FALLO CONSISTE en que deja al método SendData en un bucle
+     infinito. He modificado TSockets para gestionarlo.
+
+  
+   Referencia de sockets propios de harbour (No usados en esta clase).
+   https://github.com/Petewg/harbour-core/wiki/Harbour-Socket-API
+*/
+
+#include "FiveWin.ch"
+
+#define AF_INET            2
+#define SOCK_STREAM        1
+
+#define IPPROTO_IP         0
+#define SOL_SOCKET        -1
+
+#define FD_READ            1
+#define FD_WRITE           2
+#define FD_OOB             4
+#define FD_ACCEPT          8
+#define FD_CONNECT        16
+#define FD_CLOSE          32
+
+#define SD_RECEIVE         0
+#define SD_SEND            1
+#define SD_BOTH            2
+
+#define SO_REUSEADDR       4
+
+#define FILE_BLOCK     30000
+
+/*  ERRORES DE CONEXION SOCKETS DE WINSOCK2   :
+    &lt;!-- m --&gt;&lt;a class="postlink" href="https://docs.microsoft.com/es-es/windows/win32/winsock/windows-sockets-error-codes-2"&gt;https://docs.microsoft.com/es-es/window ... or-codes-2&lt;/a&gt;&lt;!-- m --&gt;     */
+
+#define WSAEWOULDBLOCK 10035  // El buffer de envío está lleno.
+/* WSAEWOULDBLOCK is not really an error but simply tells you that your send buffers are full. 
+   This can happen if you saturate the network or if the other side simply doesn't acknowledge the received data.*/
+
+#define WSAECONNRESET  10054  //El host remoto cortó la conexión.
+
+#define WSAENOTCONN    10057  /*  Socket is not connected.
+                                  A request to send or receive data was disallowed because the socket is not connected 
+                                  and (when sending on a datagram socket using sendto) no address was supplied. 
+                                  Any other type of operation might also return this error—for example, 
+                                  setsockopt setting SO_KEEPALIVE if the connection has been reset.   */
+
+#ifdef __XPP__
+   #define New _New
+#endif
+
+//----------------------------------------------------------------------------//
+
+CLASS GSocket
+
+   DATA    nPort    AS NUMERIC INIT  0      // socket port number
+   DATA    cIPAddr  AS String  INIT ""      // socket IP address
+   DATA    nTimeOut AS NUMERIC INIT 30
+   DATA    nBackLog AS NUMERIC INIT  5
+   DATA    nSocket  AS NUMERIC INIT -1
+   DATA    hFile    AS NUMERIC INIT  0
+
+   DATA    bAccept, bRead, bWrite, bClose, bConnect, bOOB
+   DATA    lDebug
+   DATA    cLogFile
+
+   DATA    cMsg, nRetCode, Cargo
+   DATA    aBuffer                         // data sending buffer
+   DATA    lSending                        // sending in progress
+
+   CLASSDATA aSockets INIT {}
+
+   METHOD  New( nPort, oWnd )  CONSTRUCTOR
+
+   MESSAGE Accept METHOD _Accept( nSocket )
+
+   METHOD  End()
+
+   METHOD  HandleEvent( nSocket, nOperation, nErrorCode )
+
+   METHOD  GetData()
+
+   METHOD  SendBin( pMemory, nSize ) INLINE SendBinary( pMemory, nSize )
+
+   METHOD  SendChunk( nBlockSize )
+   METHOD  SendFile( cFileName, nBlockSize )
+
+   METHOD SendData( cData )
+   
+   MESSAGE Listen METHOD _Listen()
+
+   METHOD  Close()
+
+   METHOD  Connect( cIPAddr, nPort ) INLINE ;
+         ConnectTo( ::nSocket, If( nPort != nil, nPort, ::nPort ), cIPAddr )
+
+   METHOD  Refresh() INLINE SocketSelect( ::nSocket )
+
+   METHOD  OnAccept()  INLINE If( ::bAccept  != nil, Eval( ::bAccept,  Self ),)
+   METHOD  OnRead()    INLINE If( ::bRead    != nil, Eval( ::bRead,    Self ),)
+   METHOD  OnWrite()   INLINE If( ::bWrite   != nil, Eval( ::bWrite,   Self ),)
+   METHOD  OnClose()   INLINE If( ::bClose   != nil, Eval( ::bClose,   Self ),)
+   METHOD  OnConnect( nErrorCode ) INLINE If( ::bConnect != nil, Eval( ::bConnect, Self, nErrorCode ),)
+   METHOD  OnOOB()     INLINE If( ::bOOB     != nil, Eval( ::bOOB,     Self ),)
+
+   METHOD  ClientIP()  INLINE GetPeerName( ::nSocket )
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( nPort, oWnd ) CLASS GSocket
+
+   DEFAULT oWnd := WndMain(), ::aSockets := {}
+
+   if Len( ::aSockets ) == 0
+      if WSAStartup() != 0
+         MsgAlert( "WSAStartup error" )
+      endif
+   endif
+
+   if ( ::nSocket := Socket( AF_INET, SOCK_STREAM, IPPROTO_IP ) ) == 0
+      MsgAlert( "Socket creation error: " + Str( WsaGetLastError() ) )
+   endif
+   //msginfo(::nSocket,"wintpv: Nuevo socket creado")
+   
+   ::cIPAddr  = GetHostByName( GetHostName() )  //"127.1.1.1"
+   ::aBuffer  = {}
+   ::lSending = .f.
+   ::lDebug   = .f.
+
+   if nPort != nil
+      ::nPort = nPort
+      BindToPort( ::nSocket, nPort )  // Bind is not needed for connect sockets
+   endif
+
+   AAdd( ::aSockets, Self )
+   //msginfo(Len( ::aSockets ),"Sockets totales creados con este nuevo:")
+   if oWnd != nil
+      oWnd:bSocket = { | nSocket, nLParam | ::HandleEvent( nSocket,;
+                         nLoWord( nLParam ), nHiWord( nLParam ) ) }
+
+      WSAAsyncSelect( ::nSocket, oWnd:hWnd, WM_ASYNCSELECT,;
+            nOr( FD_ACCEPT, FD_OOB, FD_READ, FD_CLOSE, FD_CONNECT, FD_WRITE ) )
+   else
+      MsgAlert( "You must create a main window in order to use a GSocket object" )
+   endif
+
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD _Accept( nSocket ) CLASS GSocket
+
+   ::nSocket  = Accept( nSocket )
+   ::aBuffer  = {}
+   ::lSending = .f.
+   ::lDebug   = .f.
+
+   AAdd( ::aSockets, Self )
+
+   WSAAsyncSelect( ::nSocket, WndMain():hWnd, WM_ASYNCSELECT,;
+      nOr( FD_ACCEPT, FD_OOB, FD_READ, FD_CLOSE, FD_CONNECT, FD_WRITE ) )
+
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD GetData() CLASS GSocket
+
+   local cData := ""
+
+   ::nRetCode = Recv( ::nSocket, @cData )
+
+   if ::lDebug .AND. ! Empty( ::cLogFile )
+      LogFile( ::cLogFile, { cData } )
+   endif
+
+return cData
+
+//----------------------------------------------------------------------------//
+
+METHOD _Listen() CLASS GSocket
+
+   local nRetCode := Listen( ::nSocket, ::nBackLog )
+
+return ( nRetCode == 0 )
+
+//----------------------------------------------------------------------------//
+
+METHOD End() CLASS GSocket
+
+   local nAt := AScan( ::aSockets, { | oSocket | oSocket:nSocket == ::nSocket  } )
+   local nShutdown:=0
+
+   while ::lSending
+      SysRefresh()
+   end
+ 
+/*   if nAt != 0
+      ADel( ::aSockets, nAt )
+      ASize( ::aSockets, Len( ::aSockets ) - 1 )
+      if Len( ::aSockets ) == 0
+         msginfo("antes de WSACleanUp()")
+         WSACleanUp()
+      endif
+   endif */
+   
+   //Añadido el 23/05/2021 para ver si al salir del programa y volver a entrar no hay problema 
+   // para volver a conectar con el servidor.
+   if (nShutdown:=shutdown( ::nSocket, SD_BOTH )) &lt;&gt; 0
+       //msginfo( nShutdown, "Shutdown()" )
+       //msgwait('ERROR: ShutDown(), WSAGetLastError = '+alltrim(str(WSAGetLastError())),"oSocket:ShutDown()",3)
+       EscribeEnFichTxt(dtos(Date())+' '+time()+;
+                      ' ERROR: ShutDown('+alltrim(str(::nSocket))+'), WSAGetLastError = '+alltrim(str(WSAGetLastError())),;
+                      'LOG_SOCKETS.TXT',.T.,2)
+      //else
+       //msgwait('OK, ShutDown() == '+str(nShutdown),"oSocket:ShutDown()",2)
+   endif
+      
+   if ! Empty( ::nSocket )
+      CloseSocket( ::nSocket )
+      ::nSocket = 0
+   endif
+
+   if nAt != 0
+      ADel( ::aSockets, nAt )
+      ASize( ::aSockets, Len( ::aSockets ) - 1 )
+      if Len( ::aSockets ) == 0
+         //msginfo("antes de WSACleanUp()")
+         //EscribeEnFichTxt(dtos(Date())+" "+time()+" WSACleanUp() OK",'LOG_SOCKETS.TXT',.T.,2)
+         WSACleanUp()
+      endif
+   endif 
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD Close() CLASS GSocket
+  
+   while ::lSending
+      SysRefresh()
+   end
+
+return CloseSocket( ::nSocket )
+
+//----------------------------------------------------------------------------//
+
+METHOD HandleEvent( nSocket, nOperation, nErrorCode ) CLASS GSocket
+
+   local nAt := AScan( ::aSockets, { | oSocket | oSocket:nSocket == nSocket } )
+   local oSocket
+
+   if nAt != 0
+      oSocket = ::aSockets[ nAt ]
+
+      do case
+         case nOperation == FD_ACCEPT
+              if ::lDebug .AND. ! Empty( ::cLogFile )
+                 LogFile( ::cLogFile, { "Accept",;
+                          "Socket handle:" + Str( nSocket ) } )
+              endif
+              oSocket:OnAccept()
+
+         case nOperation == FD_READ
+              if ::lDebug .AND. ! Empty( ::cLogFile )
+                 LogFile( ::cLogFile, { "Read",;
+                          "Socket handle:" + Str( nSocket ) } )
+              endif
+              oSocket:OnRead()
+
+         case nOperation == FD_WRITE
+              if ::lDebug .AND. ! Empty( ::cLogFile )
+                 LogFile( ::cLogFile, { "Write",;
+                          "Socket handle:" + Str( nSocket ) } )
+              endif
+              oSocket:OnWrite()
+
+         case nOperation == FD_CLOSE
+              if ::lDebug .AND. ! Empty( ::cLogFile )
+                 LogFile( ::cLogFile, { "Close",;
+                          "Socket handle:" + Str( nSocket ) } )
+              endif
+              oSocket:OnClose()
+
+         case nOperation == FD_CONNECT
+              if ::lDebug .AND. ! Empty( ::cLogFile )
+                 LogFile( ::cLogFile, { "Connect",;
+                          "Socket handle:" + Str( nSocket ) } )
+              endif
+              oSocket:OnConnect( nErrorCode )
+
+         case nOperation == FD_OOB
+              if ::lDebug .AND. ! Empty( ::cLogFile )
+                 LogFile( ::cLogFile, { "OOB",;
+                          "Socket handle:" + Str( nSocket ) } )
+              endif
+              oSocket:OnOOB()
+
+         otherwise
+              if ::lDebug .AND. ! Empty( ::cLogFile )
+                 LogFile( ::cLogFile, { "nOperation not recognized",;
+                          Str( nOperation ) } )
+              endif
+      endcase
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD SendChunk( nBlockSize ) CLASS GSocket
+
+   local cBuffer, nBytes := 0
+
+   DEFAULT nBlockSize := FILE_BLOCK
+
+   cBuffer = Space( nBlockSize )
+
+   if ::hFile != 0
+      nBytes = FRead( ::hFile, @cBuffer, nBlockSize )
+      if nBytes &lt; nBlockSize
+         cBuffer = SubStr( cBuffer, 1, nBytes )
+         FClose( ::hFile )
+         ::hFile = 0
+      endif
+
+      ::SendData( cBuffer )
+   end
+
+return nBytes
+
+//----------------------------------------------------------------------------//
+
+METHOD SendFile( cFileName, nBlockSize ) CLASS GSocket
+
+   DEFAULT nBlockSize := FILE_BLOCK
+
+   if ! Empty( cFileName ) .AND. File( cFileName )
+      If( ( ::hFile := FOpen( cFileName ) ) != -1 )
+         while ::SendChunk( nBlockSize ) == nBlockSize
+         end
+      endif
+   endif
+
+return nil
+
+
+METHOD SendData( cData ) CLASS GSocket
+   local nSize := Len( cData )
+   local nLen  := nSize
+   local nSent := 0
+   local nIntentos := 3
+   
+   local nErrorWSA := 0, cErrDesc:=""
+
+   if ! ::lSending
+      ::lSending = .t.
+    else
+      aadd( ::aBuffer, cData )
+      return nSize
+   endif
+
+   while ( nLen &gt; 0 .AND. ;
+           ( nSent := SocketSend( ::nSocket, cData ) ) &lt; nLen ) .OR. ;
+         len( ::aBuffer ) &gt; 0
+      
+      // Check for buffered packets to send
+      if nLen == 0 .AND. Len( ::aBuffer ) &gt; 0
+         cData = ::aBuffer[ 1 ]
+         ADel( ::aBuffer, 1 )
+         ASize( ::aBuffer, len( ::aBuffer ) - 1 )
+      endif
+      if nSent != -1  //No hay error en el envío.
+         cData = SubStr( cData, nSent + 1 )
+         nLen  = len( cData )
+        else          //Ha habido error en el envío.
+         nErrorWSA = WSAGetLastError()
+         if nErrorWSA != WSAEWOULDBLOCK  //Buffer lleno
+            exit
+           else  //WSAEWOULDBLOCK =&gt; Buffer lleno. Reintenta el envío hasta nIntentos veces.
+            if nIntentos &gt; 0
+               nIntentos = nIntentos - 1
+               RetardoSecs(1)
+               sysrefresh()
+               loop
+             else
+               exit  // 14/08/2018   Sale para no quedar en un bucle sin fin si hay errores WINSOCK2.
+            endif
+         endif
+      endif
+      sysrefresh()
+   enddo
+
+   if nSent == -1
+     //Descripción del Error:
+     do CASE
+        CASE nErrorWSA == WSAENOTCONN   //Socket is not connected.
+             cErrDesc:="Socket is not connected."
+             // Tiene que volver a conectar el Socket porque se ha desconectado.
+        
+        CASE nErrorWSA == WSAECONNRESET //El host remoto cortó la conexión.
+             cErrDesc:="El host remoto cortó la conexión."
+             
+        CASE nErrorWSA != WSAEWOULDBLOCK
+             cErrDesc:="Buffer Send lleno."
+
+     ENDCASE
+
+     //msgwait('ERROR: SocketSend(), WSAGetLastError = '+alltrim(str(nErrorWSA)),"oSocket:SendData",2)
+     EscribeEnFichTxt(dtos(Date())+' '+time()+;
+                      ' ERROR: SocketSend(), WSAGetLastError = '+alltrim(str(nErrorWSA))+;
+                      ' FROM '+iif(empty(::cIPAddr),"ip ???",::cIPAddr)+":"+iif(empty(::nPort),"port ???",alltrim(str(::nPort)))+" = "+cErrDesc,'LOG_SOCKETS.TXT',.T.,2)
+     
+   endif
+
+   // if ::lDebug .AND. ! Empty( ::cLogFile )
+   //    LogFile( ::cLogFile, { cData } )
+   // endif
+
+   ::lSending = .f.
+
+return nSent // Propongo nSent en vez de nSize porque Si nSent = -1 es que la instrucción no ha ido bien, hay errores. //nSize
+
+
+//----------------------------------------------------------------------------//
+
+function GShowIP()
+ 
+   local oSocket := GSocket():New( 2000 )
+   local cIp := oSocket:cIPAddr 
+   
+   oSocket:End() 
+   
+return cIp
+
+//----------------------------------------------------------------------------//
+
+/* Escribe en un fichero txt.
+   Añade la línea si lAppend:=.t. o NIL
+   Devuelve: .F. si no tuvo exito al abrir el fichero.
+             .T. si tuvo exito.
+*/
+function EscribeEnFichTxt(cMensaje,cFich,lAppend,Intentos,lAvisoError,lBorraFichExistente,lAnadeCRLFfinal)
+local lValRet:=.f.
+local nLongFichero:=0
+local nLongRec:=len(cMensaje)
+local nManejador:=-1
+
+default cFich    := "LOG.TXT"
+default lAppend  := .T.
+default Intentos := 1
+default lAvisoError:=.t.
+default lBorraFichExistente:=.F.
+default lAnadeCRLFfinal:=.T.
+
+if lBorraFichExistente
+   ferase(cFich)
+endif
+
+while lValRet=.f. .AND. intentos &gt; 0
+ intentos=intentos-1
+ nManejador := iif(FILE(cFich)                        ,;
+                   FOPEN(cfich,FO_READWRITE+FO_SHARED),;
+                   FCREATE(cFich, FC_NORMAL))
+  
+ if FERROR() = 0
+   //Longitud del fichero y se sitúa al final del fichero.
+   nLongFichero:=FSEEK(nManejador,0,FS_END)
+  
+   //Devuelve a la posición inicial si lAppend=.f.
+   iif( lAppend, NIL, FSEEK(nManejador,0) )
+  
+   // Escribe el mensaje
+   iif( FWRITE(nManejador, cMensaje+iif(lAnadeCRLFfinal,CRLF,"")) &lt; nLongRec, lValRet:=.f., lValRet:=.t. )
+
+   FCLOSE(nManejador)
+  else
+   if lAvisoError
+      msgwait('ERROR AL ABRIR FICHERO:'+CRLF+cFich,'EscribeFich',1)
+   endif
+ endif
+enddo
+return lValRet
+
+DLL32 STATIC FUNCTION shutdown( dwReserved AS LONG, lpdwReserved AS LONG);
+      AS LONG PASCAL FROM "shutdown" LIB "ws2_32.dll"  // "wsock32.dll"  también vale</code></pre></div><br>
+<br>
+Como el  servidor lo he desarrollado a partir del código que aparece en sockserv.prg que viene con FiveWin, observo que con cada bAccept que recibe el servidor el sistema crea un nuevo socket, sucediendo que cuando se &quot;mata&quot; el socket correspondiente al servidor NO se matan sin embargo a sus clientes asociados creados en el código bAccept.<br>
+Por esto hay que tener la precaución de ir matando todos los sockets de los clientes creados para evitar que se queden vivos y que el código del método end() de TSocket no llegue nunca a ejecutar WSACleanUp().<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//Código para crear el servidor de sockets:
+static oServerSocket    //Socket SERVIDOR
+static oClientSocket     //Socket para atender al cliente que se conecta con el servidor que se crea en bAccept del socket servidor (oServerSocket).
+
+. . .
+
+function CreaSocketServidor()
+   oServerSocket := GSocket():New( nPuerto )
+
+   oServerSocket:bAccept = { | oServerSocket | oClientSocket := GSocket():Accept( oServerSocket:nSocket ),;
+                       oClientSocket:Cargo  := NIL,;
+                       oClientSocket:bRead  := { | oServerSocket | SocketOnRead( oServerSocket ) },;
+                       oClientSocket:bClose := { | oServerSocket | SocketOnClose( oServerSocket ) } }
+
+   lServerSocketActivo = .T.
+   
+   oServerSocket:Listen()
+return NIL
+
+function SocketOnClose( oSocket )
+
+    lServerSocketActivo = .F.
+
+    oClientSocket:END()  //Necesario porque el cliente cuando se conecta crea un nuevo socket
+                                   // que hay que eliminar para que GSocket, en el método end(), ejecute WSACleanUp().
+return nil</code></pre></div><br>
+<br>
+Espero haberme explicado bien...</div>
+    </div>
+  </div>
+  <div class="post" id="p241566">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Tue May 25, 2021 05:09 PM
+      </div>
+      <div class="content"><p>Parece que static oClientSocket se sobreescribiría en una siguiente petición</p>
+<p>Deberias usar un aClientSockets := {} e ir añadiendo cada uno de los clientes a él</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241571">
+    <div class="poster">
+      <div class="name" style="color:#105289">Verhoven</div>
+      <div class="rank">Posts: 563</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 07:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Tue May 25, 2021 06:37 PM
+      </div>
+      <div class="content"><p>Lo había pensado, el problema es que cuando el servidor recibe un close desde el cliente no encuentro la manera de identificar cual ha sido el cliente que lo ha mandado. Con lo cual no se que cliente asociado es el que tengo que &quot;matar&quot;.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241572">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Tue May 25, 2021 06:52 PM
+      </div>
+      <div class="content">Complete, porfa:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// FiveWin WinSocket.dll support !!!
+
+/* 25/05/2021
+   MODIFICACION DE LA CLASE ORIGINAL TSOCKET:
+     El problema radicaba en que la clase TSocket original de FiveWin no gestiona los errores
+     cuando trata de enviar datos, EL FALLO CONSISTE en que deja al método SendData en un bucle
+     infinito. He modificado TSockets para gestionarlo.
+
+
+   Referencia de sockets propios de harbour (No usados en esta clase).
+   https://github.com/Petewg/harbour-core/wiki/Harbour-Socket-API
+*/
+
+#include "FiveWin.ch"
+#include "Fileio.ch"
+
+#define AF_INET            2
+#define SOCK_STREAM        1
+
+#define IPPROTO_IP         0
+#define SOL_SOCKET        -1
+
+#define FD_READ            1
+#define FD_WRITE           2
+#define FD_OOB             4
+#define FD_ACCEPT          8
+#define FD_CONNECT        16
+#define FD_CLOSE          32
+
+#define SD_RECEIVE         0
+#define SD_SEND            1
+#define SD_BOTH            2
+
+#define SO_REUSEADDR       4
+
+#define FILE_BLOCK     30000
+
+/*  ERRORES DE CONEXION SOCKETS DE WINSOCK2   :
+    &lt;!-- m --&gt;&lt;a class="postlink" href="https://docs.microsoft.com/es-es/window"&gt;https://docs.microsoft.com/es-es/window&lt;/a&gt;&lt;!-- m --&gt; ... or-codes-2     */
+
+#define WSAEWOULDBLOCK 10035  // El buffer de envío está lleno.
+/* WSAEWOULDBLOCK is not really an error but simply tells you that your send buffers are full.
+   This can happen if you saturate the network or if the other side simply doesn't acknowledge the received data.*/
+
+#define WSAECONNRESET  10054  // El host remoto cortó la conexión.
+
+#define WSAENOTCONN    10057  /*  Socket is not connected.
+                                  A request to send or receive data was disallowed because the socket is not connected
+                                  and (when sending on a datagram socket using sendto) no address was supplied.
+                                  Any other type of operation might also return this error—for example,
+                                  setsockopt setting SO_KEEPALIVE if the connection has been reset.   */
+
+#ifdef __XPP__
+#define New _New
+#endif
+
+// ----------------------------------------------------------------------------//
+
+CLASS GSocket
+
+   DATA    nPort    AS NUMERIC INIT  0      // socket port number
+   DATA    cIPAddr  AS String  INIT ""      // socket IP address
+   DATA    nTimeOut AS NUMERIC INIT 30
+   DATA    nBackLog AS NUMERIC INIT  5
+   DATA    nSocket  AS NUMERIC INIT -1
+   DATA    hFile    AS NUMERIC INIT  0
+
+   DATA    bAccept, bRead, bWrite, bClose, bConnect, bOOB
+   DATA    lDebug
+   DATA    cLogFile
+
+   DATA    cMsg, nRetCode, Cargo
+   DATA    aBuffer                         // data sending buffer
+   DATA    lSending                        // sending in progress
+
+   CLASSDATA aSockets INIT {}
+
+   METHOD  New( nPort, oWnd )  CONSTRUCTOR
+
+   MESSAGE ACCEPT METHOD _Accept( nSocket )
+
+   METHOD  End()
+
+   METHOD  HandleEvent( nSocket, nOperation, nErrorCode )
+
+   METHOD  GetData()
+
+   METHOD  SendBin( pMemory, nSize ) INLINE SendBinary( pMemory, nSize )
+
+   METHOD  SendChunk( nBlockSize )
+   METHOD  SendFile( cFileName, nBlockSize )
+
+   METHOD SendData( cData )
+
+   MESSAGE Listen METHOD _Listen()
+
+   METHOD  Close()
+
+   METHOD  Connect( cIPAddr, nPort ) INLINE ;
+      ConnectTo( ::nSocket, If( nPort != NIL, nPort, ::nPort ), cIPAddr )
+
+   METHOD  Refresh() INLINE SocketSelect( ::nSocket )
+
+   METHOD  OnAccept()  INLINE If( ::bAccept  != NIL, Eval( ::bAccept,  Self ), )
+   METHOD  OnRead()    INLINE If( ::bRead    != NIL, Eval( ::bRead,    Self ), )
+   METHOD  OnWrite()   INLINE If( ::bWrite   != NIL, Eval( ::bWrite,   Self ), )
+   METHOD  OnClose()   INLINE If( ::bClose   != NIL, Eval( ::bClose,   Self ), )
+   METHOD  OnConnect( nErrorCode ) INLINE If( ::bConnect != NIL, Eval( ::bConnect, Self, nErrorCode ), )
+   METHOD  OnOOB()     INLINE If( ::bOOB     != NIL, Eval( ::bOOB,     Self ), )
+
+   METHOD  ClientIP()  INLINE GetPeerName( ::nSocket )
+
+ENDCLASS
+
+// ----------------------------------------------------------------------------//
+
+METHOD New( nPort, oWnd ) CLASS GSocket
+
+   DEFAULT oWnd := WndMain(), ::aSockets := {}
+
+   IF Len( ::aSockets ) == 0
+      IF WSAStartup() != 0
+         MsgAlert( "WSAStartup error" )
+      ENDIF
+   ENDIF
+
+   IF ( ::nSocket := Socket( AF_INET, SOCK_STREAM, IPPROTO_IP ) ) == 0
+      MsgAlert( "Socket creation error: " + Str( WsaGetLastError() ) )
+   ENDIF
+   // msginfo(::nSocket,"wintpv: Nuevo socket creado")
+
+   ::cIPAddr  = GetHostByName( GetHostName() )  // "127.1.1.1"
+   ::aBuffer  = {}
+   ::lSending = .F.
+   ::lDebug   = .F.
+
+   IF nPort != nil
+      ::nPort = nPort
+      BindToPort( ::nSocket, nPort )  // Bind is not needed for connect sockets
+   ENDIF
+
+   AAdd( ::aSockets, Self )
+   // msginfo(Len( ::aSockets ),"Sockets totales creados con este nuevo:")
+   IF oWnd != nil
+      oWnd:bSocket = {| nSocket, nLParam | ::HandleEvent( nSocket, ;
+         nLoWord( nLParam ), nHiWord( nLParam ) ) }
+
+      WSAAsyncSelect( ::nSocket, oWnd:hWnd, WM_ASYNCSELECT, ;
+         nOr( FD_ACCEPT, FD_OOB, FD_READ, FD_CLOSE, FD_CONNECT, FD_WRITE ) )
+   ELSE
+
+      MsgAlert( "You must create a main window in order to use a GSocket object" )
+
+   ENDIF
+
+   RETURN Self
+
+// ----------------------------------------------------------------------------//
+
+METHOD _Accept( nSocket ) CLASS GSocket
+
+   ::nSocket  = Accept( nSocket )
+   ::aBuffer  = {}
+   ::lSending = .F.
+   ::lDebug   = .F.
+
+   AAdd( ::aSockets, Self )
+
+   WSAAsyncSelect( ::nSocket, WndMain():hWnd, WM_ASYNCSELECT, ;
+      nOr( FD_ACCEPT, FD_OOB, FD_READ, FD_CLOSE, FD_CONNECT, FD_WRITE ) )
+
+   RETURN Self
+
+// ----------------------------------------------------------------------------//
+
+METHOD GetData() CLASS GSocket
+
+   LOCAL cData := ""
+
+   ::nRetCode = Recv( ::nSocket, @cData )
+
+   IF ::lDebug .AND. ! Empty( ::cLogFile )
+      LogFile( ::cLogFile, { cData } )
+   ENDIF
+
+   RETURN cData
+
+// ----------------------------------------------------------------------------//
+
+METHOD _Listen() CLASS GSocket
+
+   LOCAL nRetCode := Listen( ::nSocket, ::nBackLog )
+
+   RETURN ( nRetCode == 0 )
+
+// ----------------------------------------------------------------------------//
+
+METHOD End() CLASS GSocket
+
+   LOCAL nAt := AScan( ::aSockets, {| oSocket | oSocket:nSocket == ::nSocket  } )
+   LOCAL nShutdown := 0
+
+   WHILE ::lSending
+      SysRefresh()
+   END
+
+/*   if nAt != 0
+      ADel( ::aSockets, nAt )
+      ASize( ::aSockets, Len( ::aSockets ) - 1 )
+      if Len( ::aSockets ) == 0
+         msginfo("antes de WSACleanUp()")
+         WSACleanUp()
+      endif
+   endif */
+
+   // Añadido el 23/05/2021 para ver si al salir del programa y volver a entrar no hay problema
+   // para volver a conectar con el servidor.
+   IF ( nShutdown := shutdown( ::nSocket, SD_BOTH ) ) &lt;&gt; 0
+      // msginfo( nShutdown, "Shutdown()" )
+      // msgwait('ERROR: ShutDown(), WSAGetLastError = '+alltrim(str(WSAGetLastError())),"oSocket:ShutDown()",3)
+      EscribeEnFichTxt( DToS( Date() ) + ' ' + Time() + ;
+         ' ERROR: ShutDown(' + AllTrim( Str( ::nSocket ) ) + '), WSAGetLastError = ' + AllTrim( Str( WSAGetLastError() ) ), ;
+         'LOG_SOCKETS.TXT', .T., 2 )
+      // else
+      // msgwait('OK, ShutDown() == '+str(nShutdown),"oSocket:ShutDown()",2)
+   ENDIF
+
+   IF ! Empty( ::nSocket )
+      CloseSocket( ::nSocket )
+      ::nSocket = 0
+   ENDIF
+
+   IF nAt != 0
+      ADel( ::aSockets, nAt )
+      ASize( ::aSockets, Len( ::aSockets ) - 1 )
+      IF Len( ::aSockets ) == 0
+         // msginfo("antes de WSACleanUp()")
+         // EscribeEnFichTxt(dtos(Date())+" "+time()+" WSACleanUp() OK",'LOG_SOCKETS.TXT',.T.,2)
+         WSACleanUp()
+      ENDIF
+   ENDIF
+
+   RETURN NIL
+
+// ----------------------------------------------------------------------------//
+
+METHOD Close() CLASS GSocket
+
+   WHILE ::lSending
+      SysRefresh()
+   END
+
+   RETURN CloseSocket( ::nSocket )
+
+// ----------------------------------------------------------------------------//
+
+METHOD HandleEvent( nSocket, nOperation, nErrorCode ) CLASS GSocket
+
+   LOCAL nAt := AScan( ::aSockets, {| oSocket | oSocket:nSocket == nSocket } )
+   LOCAL oSocket
+
+   IF nAt != 0
+      oSocket = ::aSockets[ nAt ]
+
+      DO CASE
+      CASE nOperation == FD_ACCEPT
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "Accept", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnAccept()
+
+      CASE nOperation == FD_READ
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "Read", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnRead()
+
+      CASE nOperation == FD_WRITE
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "Write", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnWrite()
+
+      CASE nOperation == FD_CLOSE
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "Close", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnClose()
+
+      CASE nOperation == FD_CONNECT
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "Connect", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnConnect( nErrorCode )
+
+      CASE nOperation == FD_OOB
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "OOB", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnOOB()
+
+      OTHERWISE
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "nOperation not recognized", ;
+               Str( nOperation ) } )
+         ENDIF
+      ENDCASE
+   ENDIF
+
+   RETURN NIL
+
+// ----------------------------------------------------------------------------//
+
+METHOD SendChunk( nBlockSize ) CLASS GSocket
+
+   LOCAL cBuffer, nBytes := 0
+
+   DEFAULT nBlockSize := FILE_BLOCK
+
+   cBuffer = Space( nBlockSize )
+
+   IF ::hFile != 0
+      nBytes = FRead( ::hFile, @cBuffer, nBlockSize )
+      IF nBytes &lt; nBlockSize
+         cBuffer = SubStr( cBuffer, 1, nBytes )
+         FClose( ::hFile )
+         ::hFile = 0
+      ENDIF
+
+      ::SendData( cBuffer )
+   END
+
+   RETURN nBytes
+
+// ----------------------------------------------------------------------------//
+
+METHOD SendFile( cFileName, nBlockSize ) CLASS GSocket
+
+   DEFAULT nBlockSize := FILE_BLOCK
+
+   IF ! Empty( cFileName ) .AND. File( cFileName )
+      If( ( ::hFile := FOpen( cFileName ) ) != -1 )
+         WHILE ::SendChunk( nBlockSize ) == nBlockSize
+         END
+      ENDIF
+   ENDIF
+
+   RETURN NIL
+
+
+METHOD SendData( cData ) CLASS GSocket
+
+   LOCAL nSize := Len( cData )
+   LOCAL nLen  := nSize
+   LOCAL nSent := 0
+   LOCAL nIntentos := 3
+
+   LOCAL nErrorWSA := 0, cErrDesc := ""
+
+   IF ! ::lSending
+      ::lSending = .T.
+   ELSE
+      AAdd( ::aBuffer, cData )
+      RETURN nSize
+   ENDIF
+
+   WHILE ( nLen &gt; 0 .AND. ;
+         ( nSent := SocketSend( ::nSocket, cData ) ) &lt; nLen ) .OR. ;
+         Len( ::aBuffer ) &gt; 0
+
+      SYSREFRESH()
+
+      // Check for buffered packets to send
+      IF nLen == 0 .AND. Len( ::aBuffer ) &gt; 0
+         cData = ::aBuffer[ 1 ]
+         ADel( ::aBuffer, 1 )
+         ASize( ::aBuffer, Len( ::aBuffer ) - 1 )
+      ENDIF
+      IF nSent != -1  // No hay error en el envío.
+         cData = SubStr( cData, nSent + 1 )
+         nLen  = Len( cData )
+      ELSE          // Ha habido error en el envío.
+         nErrorWSA = WSAGetLastError()
+         IF nErrorWSA != WSAEWOULDBLOCK  // Buffer lleno
+            EXIT
+         ELSE  // WSAEWOULDBLOCK =&gt; Buffer lleno. Reintenta el envío hasta nIntentos veces.
+            IF nIntentos &gt; 0
+               nIntentos = nIntentos - 1
+               // RetardoSecs(1)
+               RetardoSecs()
+
+               LOOP
+            ELSE
+               EXIT  // 14/08/2018   Sale para no quedar en un bucle sin fin si hay errores WINSOCK2.
+            ENDIF
+         ENDIF
+      ENDIF
+
+   ENDDO
+
+   IF nSent == -1
+      // Descripción del Error:
+      DO CASE
+      CASE nErrorWSA == WSAENOTCONN   // Socket is not connected.
+         cErrDesc := "Socket is not connected."
+         // Tiene que volver a conectar el Socket porque se ha desconectado.
+
+      CASE nErrorWSA == WSAECONNRESET // El host remoto cortó la conexión.
+         cErrDesc := "El host remoto cortó la conexión."
+
+      CASE nErrorWSA != WSAEWOULDBLOCK
+         cErrDesc := "Buffer Send lleno."
+
+      ENDCASE
+
+      // msgwait('ERROR: SocketSend(), WSAGetLastError = '+alltrim(str(nErrorWSA)),"oSocket:SendData",2)
+      EscribeEnFichTxt( DToS( Date() ) + ' ' + Time() + ;
+         ' ERROR: SocketSend(), WSAGetLastError = ' + AllTrim( Str( nErrorWSA ) ) + ;
+         ' FROM ' + iif( Empty( ::cIPAddr ), "ip ???", ::cIPAddr ) + ":" + iif( Empty( ::nPort ), "port ???", AllTrim( Str( ::nPort ) ) ) + " = " + cErrDesc, 'LOG_SOCKETS.TXT', .T., 2 )
+
+   ENDIF
+
+   // if ::lDebug .AND. ! Empty( ::cLogFile )
+   // LogFile( ::cLogFile, { cData } )
+   // endif
+
+   ::lSending = .F.
+
+   RETURN nSent // Propongo nSent en vez de nSize porque Si nSent = -1 es que la instrucción no ha ido bien, hay errores. //nSize
+
+
+// ----------------------------------------------------------------------------//
+
+FUNCTION GShowIP()
+
+   LOCAL oSocket := GSocket():New( 2000 )
+   LOCAL cIp := oSocket:cIPAddr
+
+   oSocket:End()
+
+   RETURN cIp
+
+// ----------------------------------------------------------------------------//
+
+/* Escribe en un fichero txt.
+   Añade la línea si lAppend:=.t. o NIL
+   Devuelve: .F. si no tuvo exito al abrir el fichero.
+             .T. si tuvo exito.
+*/
+FUNCTION EscribeEnFichTxt( cMensaje, cFich, lAppend, Intentos, lAvisoError, lBorraFichExistente, lAnadeCRLFfinal )
+
+   LOCAL lValRet := .F.
+   LOCAL nLongFichero := 0
+   LOCAL nLongRec := Len( cMensaje )
+   LOCAL nManejador := -1
+
+   DEFAULT cFich    := "LOG.TXT"
+   DEFAULT lAppend  := .T.
+   DEFAULT Intentos := 1
+   DEFAULT lAvisoError := .T.
+   DEFAULT lBorraFichExistente := .F.
+   DEFAULT lAnadeCRLFfinal := .T.
+
+   IF lBorraFichExistente
+      FErase( cFich )
+   ENDIF
+
+   WHILE lValRet = .F. .AND. intentos &gt; 0
+
+      SYSREFRESH()
+
+      intentos = intentos - 1
+      nManejador := iif( File( cFich ), ;
+         FOpen( cfich, FO_READWRITE + FO_SHARED ), ;
+         FCreate( cFich, FC_NORMAL ) )
+
+      IF FError() = 0
+         // Longitud del fichero y se sitúa al final del fichero.
+         nLongFichero := FSeek( nManejador, 0, FS_END )
+
+         // Devuelve a la posición inicial si lAppend=.f.
+         iif( lAppend, NIL, FSeek( nManejador, 0 ) )
+
+         // Escribe el mensaje
+         iif( FWrite( nManejador, cMensaje + iif( lAnadeCRLFfinal, CRLF, "" ) ) &lt; nLongRec, lValRet := .F., lValRet := .T. )
+
+         FClose( nManejador )
+      ELSE
+         IF lAvisoError
+            msgwait( 'ERROR AL ABRIR FICHERO:' + CRLF + cFich, 'EscribeFich', 1 )
+         ENDIF
+      ENDIF
+
+   ENDDO
+
+   RETURN lValRet
+
+FUNCTION RetardoSecs() // Falta esta FUNCTION. ??
+
+   Syswait( .5 )
+
+   RETURN( .T. )
+
+DLL32 STATIC FUNCTION shutdown( dwReserved AS LONG, lpdwReserved AS LONG );
+      AS LONG PASCAL FROM "shutdown" LIB "ws2_32.dll"  // "wsock32.dll"  también vale</code></pre></div><br>
+<br>
+<br>
+Saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p241573">
+    <div class="poster">
+      <div class="name" style="color:#105289">Verhoven</div>
+      <div class="rank">Posts: 563</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 07:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Tue May 25, 2021 06:56 PM
+      </div>
+      <div class="content"><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function RetardoSecs(nSecs, lVerMsgProceso, cMensaje)
+  local nSecIni:=Secs(Time())
+  local nElapsed:=0
+  
+  local oDlg, oSay
+  
+  default cMensaje:='Sistema procesando, espere...'
+  default lVerMsgProceso:=.f.
+
+  if lVerMsgProceso
+      DEFINE DIALOG oDlg TITLE 'PROCESO EN CURSO' FROM 6,10 TO 15,60 ;
+         FONT oFont
+         @ 1,2 SAY oSay VAR cMensaje FONT oFont OF oDlg
+       ACTIVATE DIALOG oDlg NOWAIT
+      sysrefresh()
+  endif
+  
+  while nElapsed &lt; nSecs
+     nElapsed:=Secs(Time())-nSecIni
+     if nElapsed &lt; 0
+        nElapsed:=nElapsed+86400
+     endif
+  enddo
+  
+  if lVerMsgProceso
+     oDlg:end()
+     sysrefresh()
+  endif
+return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p241575">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SOCKETS - Hay que reiniciar ordenador para volver a conectar</span><br>
+        Posted: Tue May 25, 2021 08:22 PM
+      </div>
+      <div class="content">No me hace nada... ????<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// \SAMPLES\SOCKET1.PRG
+
+// FiveWin WinSocket.dll support !!!
+
+/* 25/05/2021
+   MODIFICACION DE LA CLASE ORIGINAL TSOCKET:
+     El problema radicaba en que la clase TSocket original de FiveWin no gestiona los errores
+     cuando trata de enviar datos, EL FALLO CONSISTE en que deja al método SendData en un bucle
+     infinito. He modificado TSockets para gestionarlo.
+
+
+   Referencia de sockets propios de harbour (No usados en esta clase).
+   https://github.com/Petewg/harbour-core/wiki/Harbour-Socket-API
+*/
+
+#include "FiveWin.ch"
+#include "Fileio.ch"
+
+#define AF_INET            2
+#define SOCK_STREAM        1
+
+#define IPPROTO_IP         0
+#define SOL_SOCKET        -1
+
+#define FD_READ            1
+#define FD_WRITE           2
+#define FD_OOB             4
+#define FD_ACCEPT          8
+#define FD_CONNECT        16
+#define FD_CLOSE          32
+
+#define SD_RECEIVE         0
+#define SD_SEND            1
+#define SD_BOTH            2
+
+#define SO_REUSEADDR       4
+
+#define FILE_BLOCK     30000
+
+/*  ERRORES DE CONEXION SOCKETS DE WINSOCK2   :
+    &lt;!-- m --&gt;&lt;a class="postlink" href="https://docs.microsoft.com/es-es/window"&gt;https://docs.microsoft.com/es-es/window&lt;/a&gt;&lt;!-- m --&gt; ... or-codes-2     */
+
+#define WSAEWOULDBLOCK 10035  // El buffer de envío está lleno.
+/* WSAEWOULDBLOCK is not really an error but simply tells you that your send buffers are full.
+   This can happen if you saturate the network or if the other side simply doesn't acknowledge the received data.*/
+
+#define WSAECONNRESET  10054  // El host remoto cortó la conexión.
+
+#define WSAENOTCONN    10057  /*  Socket is not connected.
+                                  A request to send or receive data was disallowed because the socket is not connected
+                                  and (when sending on a datagram socket using sendto) no address was supplied.
+                                  Any other type of operation might also return this error—for example,
+                                  setsockopt setting SO_KEEPALIVE if the connection has been reset.   */
+
+#ifdef __XPP__
+#define New _New
+#endif
+
+// ----------------------------------------------------------------------------//
+
+CLASS GSocket
+
+   DATA    nPort    AS NUMERIC INIT  0      // socket port number
+   DATA    cIPAddr  AS String  INIT ""      // socket IP address
+   DATA    nTimeOut AS NUMERIC INIT 30
+   DATA    nBackLog AS NUMERIC INIT  5
+   DATA    nSocket  AS NUMERIC INIT -1
+   DATA    hFile    AS NUMERIC INIT  0
+
+   DATA    bAccept, bRead, bWrite, bClose, bConnect, bOOB
+   DATA    lDebug
+   DATA    cLogFile
+
+   DATA    cMsg, nRetCode, Cargo
+   DATA    aBuffer                         // data sending buffer
+   DATA    lSending                        // sending in progress
+
+   CLASSDATA aSockets INIT {}
+
+   METHOD  New( nPort, oWnd )  CONSTRUCTOR
+
+   MESSAGE ACCEPT METHOD _Accept( nSocket )
+
+   METHOD  End()
+
+   METHOD  HandleEvent( nSocket, nOperation, nErrorCode )
+
+   METHOD  GetData()
+
+   METHOD  SendBin( pMemory, nSize ) INLINE SendBinary( pMemory, nSize )
+
+   METHOD  SendChunk( nBlockSize )
+   METHOD  SendFile( cFileName, nBlockSize )
+
+   METHOD SendData( cData )
+
+   MESSAGE Listen METHOD _Listen()
+
+   METHOD  Close()
+
+   METHOD  Connect( cIPAddr, nPort ) INLINE ;
+      ConnectTo( ::nSocket, If( nPort != NIL, nPort, ::nPort ), cIPAddr )
+
+   METHOD  Refresh() INLINE SocketSelect( ::nSocket )
+
+   METHOD  OnAccept()  INLINE If( ::bAccept  != NIL, Eval( ::bAccept,  Self ), )
+   METHOD  OnRead()    INLINE If( ::bRead    != NIL, Eval( ::bRead,    Self ), )
+   METHOD  OnWrite()   INLINE If( ::bWrite   != NIL, Eval( ::bWrite,   Self ), )
+   METHOD  OnClose()   INLINE If( ::bClose   != NIL, Eval( ::bClose,   Self ), )
+   METHOD  OnConnect( nErrorCode ) INLINE If( ::bConnect != NIL, Eval( ::bConnect, Self, nErrorCode ), )
+   METHOD  OnOOB()     INLINE If( ::bOOB     != NIL, Eval( ::bOOB,     Self ), )
+
+   METHOD  ClientIP()  INLINE GetPeerName( ::nSocket )
+
+ENDCLASS
+
+// ----------------------------------------------------------------------------//
+
+METHOD New( nPort, oWnd ) CLASS GSocket
+
+   DEFAULT oWnd := WndMain(), ::aSockets := {}
+
+   IF Len( ::aSockets ) == 0
+      IF WSAStartup() != 0
+         MsgAlert( "WSAStartup error" )
+      ENDIF
+   ENDIF
+
+   IF ( ::nSocket := Socket( AF_INET, SOCK_STREAM, IPPROTO_IP ) ) == 0
+      MsgAlert( "Socket creation error: " + Str( WsaGetLastError() ) )
+   ENDIF
+   // msginfo(::nSocket,"wintpv: Nuevo socket creado")
+
+   ::cIPAddr  = GetHostByName( GetHostName() )  // "127.1.1.1"
+   ::aBuffer  = {}
+   ::lSending = .F.
+   ::lDebug   = .F.
+
+   IF nPort != nil
+      ::nPort = nPort
+      BindToPort( ::nSocket, nPort )  // Bind is not needed for connect sockets
+   ENDIF
+
+   AAdd( ::aSockets, Self )
+   // msginfo(Len( ::aSockets ),"Sockets totales creados con este nuevo:")
+   IF oWnd != nil
+      oWnd:bSocket = {| nSocket, nLParam | ::HandleEvent( nSocket, ;
+         nLoWord( nLParam ), nHiWord( nLParam ) ) }
+
+      WSAAsyncSelect( ::nSocket, oWnd:hWnd, WM_ASYNCSELECT, ;
+         nOr( FD_ACCEPT, FD_OOB, FD_READ, FD_CLOSE, FD_CONNECT, FD_WRITE ) )
+   ELSE
+
+      MsgAlert( "You must create a main window in order to use a GSocket object" )
+
+   ENDIF
+
+   RETURN Self
+
+// ----------------------------------------------------------------------------//
+
+METHOD _Accept( nSocket ) CLASS GSocket
+
+   ::nSocket  = Accept( nSocket )
+   ::aBuffer  = {}
+   ::lSending = .F.
+   ::lDebug   = .F.
+
+   AAdd( ::aSockets, Self )
+
+   WSAAsyncSelect( ::nSocket, WndMain():hWnd, WM_ASYNCSELECT, ;
+      nOr( FD_ACCEPT, FD_OOB, FD_READ, FD_CLOSE, FD_CONNECT, FD_WRITE ) )
+
+   RETURN Self
+
+// ----------------------------------------------------------------------------//
+
+METHOD GetData() CLASS GSocket
+
+   LOCAL cData := ""
+
+   ::nRetCode = Recv( ::nSocket, @cData )
+
+   IF ::lDebug .AND. ! Empty( ::cLogFile )
+      LogFile( ::cLogFile, { cData } )
+   ENDIF
+
+   RETURN cData
+
+// ----------------------------------------------------------------------------//
+
+METHOD _Listen() CLASS GSocket
+
+   LOCAL nRetCode := Listen( ::nSocket, ::nBackLog )
+
+   RETURN ( nRetCode == 0 )
+
+// ----------------------------------------------------------------------------//
+
+METHOD End() CLASS GSocket
+
+   LOCAL nAt := AScan( ::aSockets, {| oSocket | oSocket:nSocket == ::nSocket  } )
+   LOCAL nShutdown := 0
+
+   WHILE ::lSending
+      SysRefresh()
+   END
+
+/*   if nAt != 0
+      ADel( ::aSockets, nAt )
+      ASize( ::aSockets, Len( ::aSockets ) - 1 )
+      if Len( ::aSockets ) == 0
+         msginfo("antes de WSACleanUp()")
+         WSACleanUp()
+      endif
+   endif */
+
+   // Añadido el 23/05/2021 para ver si al salir del programa y volver a entrar no hay problema
+   // para volver a conectar con el servidor.
+   IF ( nShutdown := shutdown( ::nSocket, SD_BOTH ) ) &lt;&gt; 0
+      // msginfo( nShutdown, "Shutdown()" )
+      // msgwait('ERROR: ShutDown(), WSAGetLastError = '+alltrim(str(WSAGetLastError())),"oSocket:ShutDown()",3)
+      EscribeEnFichTxt( DToS( Date() ) + ' ' + Time() + ;
+         ' ERROR: ShutDown(' + AllTrim( Str( ::nSocket ) ) + '), WSAGetLastError = ' + AllTrim( Str( WSAGetLastError() ) ), ;
+         'LOG_SOCKETS.TXT', .T., 2 )
+      // else
+      // msgwait('OK, ShutDown() == '+str(nShutdown),"oSocket:ShutDown()",2)
+   ENDIF
+
+   IF ! Empty( ::nSocket )
+      CloseSocket( ::nSocket )
+      ::nSocket = 0
+   ENDIF
+
+   IF nAt != 0
+      ADel( ::aSockets, nAt )
+      ASize( ::aSockets, Len( ::aSockets ) - 1 )
+      IF Len( ::aSockets ) == 0
+         // msginfo("antes de WSACleanUp()")
+         // EscribeEnFichTxt(dtos(Date())+" "+time()+" WSACleanUp() OK",'LOG_SOCKETS.TXT',.T.,2)
+         WSACleanUp()
+      ENDIF
+   ENDIF
+
+   RETURN NIL
+
+// ----------------------------------------------------------------------------//
+
+METHOD Close() CLASS GSocket
+
+   WHILE ::lSending
+      SysRefresh()
+   END
+
+   RETURN CloseSocket( ::nSocket )
+
+// ----------------------------------------------------------------------------//
+
+METHOD HandleEvent( nSocket, nOperation, nErrorCode ) CLASS GSocket
+
+   LOCAL nAt := AScan( ::aSockets, {| oSocket | oSocket:nSocket == nSocket } )
+   LOCAL oSocket
+
+   IF nAt != 0
+      oSocket = ::aSockets[ nAt ]
+
+      DO CASE
+      CASE nOperation == FD_ACCEPT
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "Accept", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnAccept()
+
+      CASE nOperation == FD_READ
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "Read", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnRead()
+
+      CASE nOperation == FD_WRITE
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "Write", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnWrite()
+
+      CASE nOperation == FD_CLOSE
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "Close", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnClose()
+
+      CASE nOperation == FD_CONNECT
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "Connect", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnConnect( nErrorCode )
+
+      CASE nOperation == FD_OOB
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "OOB", ;
+               "Socket handle:" + Str( nSocket ) } )
+         ENDIF
+         oSocket:OnOOB()
+
+      OTHERWISE
+         IF ::lDebug .AND. ! Empty( ::cLogFile )
+            LogFile( ::cLogFile, { "nOperation not recognized", ;
+               Str( nOperation ) } )
+         ENDIF
+      ENDCASE
+   ENDIF
+
+   RETURN NIL
+
+// ----------------------------------------------------------------------------//
+
+METHOD SendChunk( nBlockSize ) CLASS GSocket
+
+   LOCAL cBuffer, nBytes := 0
+
+   DEFAULT nBlockSize := FILE_BLOCK
+
+   cBuffer = Space( nBlockSize )
+
+   IF ::hFile != 0
+      nBytes = FRead( ::hFile, @cBuffer, nBlockSize )
+      IF nBytes &lt; nBlockSize
+         cBuffer = SubStr( cBuffer, 1, nBytes )
+         FClose( ::hFile )
+         ::hFile = 0
+      ENDIF
+
+      ::SendData( cBuffer )
+   END
+
+   RETURN nBytes
+
+// ----------------------------------------------------------------------------//
+
+METHOD SendFile( cFileName, nBlockSize ) CLASS GSocket
+
+   DEFAULT nBlockSize := FILE_BLOCK
+
+   IF ! Empty( cFileName ) .AND. File( cFileName )
+      If( ( ::hFile := FOpen( cFileName ) ) != -1 )
+         WHILE ::SendChunk( nBlockSize ) == nBlockSize
+         END
+      ENDIF
+   ENDIF
+
+   RETURN NIL
+
+
+METHOD SendData( cData ) CLASS GSocket
+
+   LOCAL nSize := Len( cData )
+   LOCAL nLen  := nSize
+   LOCAL nSent := 0
+   LOCAL nIntentos := 3
+
+   LOCAL nErrorWSA := 0, cErrDesc := ""
+
+   IF ! ::lSending
+      ::lSending = .T.
+   ELSE
+      AAdd( ::aBuffer, cData )
+      RETURN nSize
+   ENDIF
+
+   WHILE ( nLen &gt; 0 .AND. ;
+         ( nSent := SocketSend( ::nSocket, cData ) ) &lt; nLen ) .OR. ;
+         Len( ::aBuffer ) &gt; 0
+
+      SYSREFRESH()
+
+      // Check for buffered packets to send
+      IF nLen == 0 .AND. Len( ::aBuffer ) &gt; 0
+         cData = ::aBuffer[ 1 ]
+         ADel( ::aBuffer, 1 )
+         ASize( ::aBuffer, Len( ::aBuffer ) - 1 )
+      ENDIF
+      IF nSent != -1  // No hay error en el envío.
+         cData = SubStr( cData, nSent + 1 )
+         nLen  = Len( cData )
+      ELSE          // Ha habido error en el envío.
+         nErrorWSA = WSAGetLastError()
+         IF nErrorWSA != WSAEWOULDBLOCK  // Buffer lleno
+            EXIT
+         ELSE  // WSAEWOULDBLOCK =&gt; Buffer lleno. Reintenta el envío hasta nIntentos veces.
+            IF nIntentos &gt; 0
+
+               nIntentos = nIntentos - 1
+
+               RetardoSecs(1)
+
+               LOOP
+
+            ELSE
+               EXIT  // 14/08/2018   Sale para no quedar en un bucle sin fin si hay errores WINSOCK2.
+            ENDIF
+         ENDIF
+      ENDIF
+
+   ENDDO
+
+   IF nSent == -1
+      // Descripción del Error:
+      DO CASE
+      CASE nErrorWSA == WSAENOTCONN   // Socket is not connected.
+         cErrDesc := "Socket is not connected."
+         // Tiene que volver a conectar el Socket porque se ha desconectado.
+
+      CASE nErrorWSA == WSAECONNRESET // El host remoto cortó la conexión.
+         cErrDesc := "El host remoto cortó la conexión."
+
+      CASE nErrorWSA != WSAEWOULDBLOCK
+         cErrDesc := "Buffer Send lleno."
+
+      ENDCASE
+
+      // msgwait('ERROR: SocketSend(), WSAGetLastError = '+alltrim(str(nErrorWSA)),"oSocket:SendData",2)
+      EscribeEnFichTxt( DToS( Date() ) + ' ' + Time() + ;
+         ' ERROR: SocketSend(), WSAGetLastError = ' + AllTrim( Str( nErrorWSA ) ) + ;
+         ' FROM ' + iif( Empty( ::cIPAddr ), "ip ???", ::cIPAddr ) + ":" + iif( Empty( ::nPort ), "port ???", AllTrim( Str( ::nPort ) ) ) + " = " + cErrDesc, 'LOG_SOCKETS.TXT', .T., 2 )
+
+   ENDIF
+
+   // if ::lDebug .AND. ! Empty( ::cLogFile )
+   // LogFile( ::cLogFile, { cData } )
+   // endif
+
+   ::lSending = .F.
+
+   RETURN nSent // Propongo nSent en vez de nSize porque Si nSent = -1 es que la instrucción no ha ido bien, hay errores. //nSize
+
+
+// ----------------------------------------------------------------------------//
+
+FUNCTION GShowIP()
+
+   LOCAL oSocket := GSocket():New( 2000 )
+   LOCAL cIp := oSocket:cIPAddr
+
+   oSocket:End()
+
+   RETURN cIp
+
+// ----------------------------------------------------------------------------//
+
+/* Escribe en un fichero txt.
+   Añade la línea si lAppend:=.t. o NIL
+   Devuelve: .F. si no tuvo exito al abrir el fichero.
+             .T. si tuvo exito.
+*/
+FUNCTION EscribeEnFichTxt( cMensaje, cFich, lAppend, Intentos, lAvisoError, lBorraFichExistente, lAnadeCRLFfinal )
+
+   LOCAL lValRet := .F.
+   LOCAL nLongFichero := 0
+   LOCAL nLongRec := Len( cMensaje )
+   LOCAL nManejador := -1
+
+   DEFAULT cFich    := "LOG.TXT"
+   DEFAULT lAppend  := .T.
+   DEFAULT Intentos := 1
+   DEFAULT lAvisoError := .T.
+   DEFAULT lBorraFichExistente := .F.
+   DEFAULT lAnadeCRLFfinal := .T.
+
+   IF lBorraFichExistente
+      FErase( cFich )
+   ENDIF
+
+   WHILE lValRet = .F. .AND. intentos &gt; 0
+
+      SYSREFRESH()
+
+      intentos = intentos - 1
+      nManejador := iif( File( cFich ), ;
+         FOpen( cfich, FO_READWRITE + FO_SHARED ), ;
+         FCreate( cFich, FC_NORMAL ) )
+
+      IF FError() = 0
+         // Longitud del fichero y se sitúa al final del fichero.
+         nLongFichero := FSeek( nManejador, 0, FS_END )
+
+         // Devuelve a la posición inicial si lAppend=.f.
+         iif( lAppend, NIL, FSeek( nManejador, 0 ) )
+
+         // Escribe el mensaje
+         iif( FWrite( nManejador, cMensaje + iif( lAnadeCRLFfinal, CRLF, "" ) ) &lt; nLongRec, lValRet := .F., lValRet := .T. )
+
+         FClose( nManejador )
+      ELSE
+         IF lAvisoError
+            msgwait( 'ERROR AL ABRIR FICHERO:' + CRLF + cFich, 'EscribeFich', 1 )
+         ENDIF
+      ENDIF
+
+   ENDDO
+
+   RETURN lValRet
+
+FUNCTION RetardoSecs(nSecs, lVerMsgProceso, cMensaje)
+
+   local nSecIni:=Secs(Time())
+   local nElapsed:=0
+   local oDlg, oSay, oFont
+ 
+   default cMensaje:='Sistema procesando, espere...'
+   default lVerMsgProceso:=.f.
+
+   if lVerMsgProceso
+
+      DEFINE DIALOG oDlg TITLE 'PROCESO EN CURSO' FROM 6,10 TO 15,60 ;
+         FONT oFont
+
+         @ 1,2 SAY oSay VAR cMensaje FONT oFont OF oDlg
+
+       ACTIVATE DIALOG oDlg NOWAIT
+
+      //sysrefresh()
+
+   endif
+ 
+   while nElapsed &lt; nSecs
+
+     nElapsed:=Secs(Time())-nSecIni
+
+     if nElapsed &lt; 0
+        nElapsed:=nElapsed+86400
+     endif
+
+  enddo
+ 
+  if lVerMsgProceso
+
+     oDlg:end()
+
+     //sysrefresh()
+
+  endif
+
+RETURN NIL
+
+DLL32 STATIC FUNCTION shutdown( dwReserved AS LONG, lpdwReserved AS LONG );
+      AS LONG PASCAL FROM "shutdown" LIB "ws2_32.dll"  // "wsock32.dll"  también vale
+
+// FIN</code></pre></div><br>
+<br>
+Sorry, saludos.</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

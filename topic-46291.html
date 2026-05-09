@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>close a lost dialog thread - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46291">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> close a lost dialog thread</div>
+  <div class="post" id="p283601">
+    <div class="poster">
+      <div class="name" style="color:#105289">JoséQuintas</div>
+      <div class="rank">Posts: 104</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 09, 2021 04:20 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">close a lost dialog thread</span><br>
+        Posted: Wed Jan 28, 2026 01:33 PM
+      </div>
+      <div class="content"><r><p>Not a normal use.<br/><br>
+A GTWVG routine on one thread updates fivewin dialog on another thread, and closes at the end.<br/><br>
+But when an error occurs, GTWVG routines closes, and no other routine can close the fivewin dialog.</p><br>
+<br>
+<p>At momment, I can think only on create another thread, using my old wrapper:</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;CREATE CLASS RunWhileThreadClass
+
+   VAR lExit        INIT .F.
+   VAR nThreadId
+   VAR nInterval    INIT 600
+   VAR cWindowTitle INIT ""
+   VAR bCode
+   METHOD New()     INLINE ::nThreadId := hb_ThreadSelf(), SELF
+   METHOD Execute( bCode )
+
+   ENDCLASS
+
+METHOD Execute( bCode ) CLASS RunWhileThreadClass
+
+   LOCAL nCont
+
+   hb_gtReload( "WVG" )
+   IF bCode != Nil
+      ::bCode := bCode
+   ENDIF
+   AppInitSets()
+   HB_GtInfo( HB_GTI_WINTITLE, ::cWindowTitle )
+   //wvgSetAppWindow():Hide()
+   DO WHILE ! ::lExit
+      Eval( ::bCode )
+      FOR nCont = 1 TO ::nInterval
+         //hb_ReleaseCPU()
+         IF hb_ThreadWait( ::nThreadId, 0.1, .T. ) == 1
+            ::lExit := .T.
+         ENDIF
+         Inkey(1)
+         IF ::lExit
+            EXIT
+         ENDIF
+      NEXT
+   ENDDO
+   //hb_gcAll(.T.)
+
+   RETURN Nil
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>What is does ?<br/><br>
+It checks if another thread is running.<br/><br>
+If another thread stop, it closes current thread.<br/><br>
+On fivewin use, it could check gtwvg thread, and closes fivewin dialog before closes itself.</p><br>
+<br>
+<p>Note:<br/><br>
+My Main routine is anything like this:</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;   hb_ThreadStart( { || Sistema( hb_ArrayToParams( aParamList ) ) } )
+   Inkey(1)
+   hb_ThreadWaitForAll()
+
+   RETURN
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<p>It closes application when no other thread is running.<br/><br>
+But a fivewin dialog is a thread, can't close while a dialog is running.</p><br>
+<br>
+<p>Does anybody have a suggestion ?</p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p283607">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: close a lost dialog thread</span><br>
+        Posted: Wed Jan 28, 2026 04:23 PM
+      </div>
+      <div class="content"><p><r><p>Dear José,</p></p>
+<p>Your approach with the monitoring thread is actually the <STRONG><s>**</s>correct solution<e>**</e></STRONG> for this problem. Here's why and how to implement it properly:</p>
+
+<H2 slug="understanding-the-problem"><s>## </s>Understanding the Problem</H2>
+
+<p>FiveWin is <STRONG><s>**</s>primarily single-threaded for UI operations<e>**</e></STRONG>. <URL url="#0-cite-0"><s>[</s>0-cite-0<e>](#0-cite-0)</e></URL>  This means that when your GTWVG thread terminates unexpectedly due to an error, it can't directly close the FiveWin dialog that's running on a different thread.</p>
+
+<H2 slug="the-solution-thread-safe-dialog-closing"><s>## </s>The Solution: Thread-Safe Dialog Closing</H2>
+
+<p>The recommended approach for <STRONG><s>**</s>cross-thread communication<e>**</e></STRONG> in FiveWin is to use <STRONG><s>**</s>PostMessage<e>**</e></STRONG>, which is asynchronous and thread-safe. <URL url="#0-cite-1"><s>[</s>0-cite-1<e>](#0-cite-1)</e></URL></p>
+
+<p>Your monitoring thread needs to call <C><s>`</s>oDlg:PostMsg(WM_CLOSE)<e>`</e></C> to close the FiveWin dialog. This is exactly what FiveWin's own <C><s>`</s>End()<e>`</e></C> method does for modeless dialogs: <URL url="#0-cite-2"><s>[</s>0-cite-2<e>](#0-cite-2)</e></URL></p>
+
+<p>The <C><s>`</s>PostMsg()<e>`</e></C> method is a simple wrapper around the Windows <C><s>`</s>PostMessage()<e>`</e></C> API, which safely posts a message to the window's message queue from any thread.</p>
+
+<H2 slug="implementation-recommendations"><s>## </s>Implementation Recommendations</H2>
+
+<p><LIST type="decimal"><LI><s>1. </s><p><STRONG><s><strong></s>Store the dialog reference<e></strong></e></STRONG>: Make sure your monitoring thread has access to the FiveWin dialog object (or at least its window handle <C><s><code>&lt;/s&gt;hWnd&lt;e&gt;</code></e></C>).</p></LI></p>
+<LI><s>2. </s><p><STRONG><s>**</s>Use PostMsg to close<e>**</e></STRONG>: When your monitoring thread detects that the GTWVG thread has terminated, call:</p>
+<CODE lang="harbour"><s>   ```harbour</s><i>
+</i>   oDlg:PostMsg(WM_CLOSE)<i>
+</i><e>   ```</e></CODE></LI>
+
+<LI><s>3. </s><p><STRONG><s>**</s>Monitor thread pattern<e>**</e></STRONG>: Your <C><s>`</s>RunWhileThreadClass<e>`</e></C> approach is correct. The key is using <C><s>`</s>hb_ThreadWait()<e>`</e></C> to detect when the GTWVG thread terminates, then closing the dialog.</p></LI>
+
+<LI><s>4. </s><p><STRONG><s>**</s>Garbage collection<e>**</e></STRONG>: Note that FiveWin's <C><s>`</s>End()<e>`</e></C> method calls <C><s>`</s>hb_gcAll(.F.)<e>`</e></C> with <C><s>`</s>.F.<e>`</e></C> specifically for multithreading safety. <URL url="#0-cite-3"><s>[</s>0-cite-3<e>](#0-cite-3)</e></URL></p></LI>
+<p></LIST></p>
+<H2 slug="example-pattern-from-fivewin"><s>## </s>Example Pattern from FiveWin</H2>
+
+<p>The FiveWin codebase includes an example of background thread communication in <C><s>`</s>comm.c<e>`</e></C>, where a <C><s>`</s>listenThread<e>`</e></C> uses <C><s>`</s>SendMessage()<e>`</e></C> to notify the main thread: <URL url="#0-cite-4"><s>[</s>0-cite-4<e>](#0-cite-4)</e></URL></p>
+
+<p>However, <STRONG><s>**</s>PostMessage is preferred over SendMessage<e>**</e></STRONG> for cross-thread dialog control because it's asynchronous and won't block your monitoring thread.</p>
+
+<H2 slug="notes"><s>## </s>Notes</H2>
+
+<p><LIST><LI><s>- </s>Your <C><s><code>&lt;/s&gt;RunWhileThreadClass&lt;e&gt;</code></e></C> monitoring approach is <STRONG><s><strong></s>the right solution<e></strong></e></STRONG> for this problem</LI></p>
+<LI><s>- </s>Make sure the FiveWin dialog is created as <STRONG><s>**</s>modeless<e>**</e></STRONG> (not modal), otherwise it blocks the thread and won't respond properly to <C><s>`</s>PostMsg(WM_CLOSE)<e>`</e></C></LI>
+<LI><s>- </s>Pass the dialog reference to your monitoring thread so it can call <C><s>`</s>oDlg:PostMsg(WM_CLOSE)<e>`</e></C> when the GTWVG thread terminates</LI>
+<LI><s>- </s>Consider adding error handlers in your GTWVG thread that can set a shared flag before terminating, so your monitoring thread knows an error occurred</LI>
+<LI><s>- </s>The <C><s>`</s>hb_ThreadWait()<e>`</e></C> function you're using is from Harbour's threading library (not in FiveWin itself), which is appropriate for monitoring thread status</LI>
+<p></LIST></p>
+<H3 slug="citations"><s>### </s>Citations</H3>
+
+<p><STRONG><s>**</s>File:<e>**</e></STRONG> docs/reference/advanced-diagrams.md (L319-320)</p>
+<p><CODE lang="markdown"><s><code>markdown&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;    K --&amp;gt; L[PostMessage]
+    K --&amp;gt; M[Synchronize]&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>File:<e>**</e></STRONG> docs/reference/advanced-diagrams.md (L337-337)</p>
+<p><CODE lang="markdown"><s><code>markdown&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;    note over A,F: FiveWin is primarily single-threaded&amp;lt;br/&amp;gt;UI applications but can integrate&amp;lt;br/&amp;gt;with background operations&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>File:<e>**</e></STRONG> source/classes/dialog.prg (L779-780)</p>
+<p><CODE lang="text"><s><code>text&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;   if ::lModal != .t.  // possible that ::lModal is still NIL
+      ::PostMsg( WM_CLOSE, nResult )&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>File:<e>**</e></STRONG> source/classes/dialog.prg (L792-792)</p>
+<p><CODE lang="text"><s><code>text&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;   hb_gcAll( .F. ) // .F. is a must for multithreading&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>File:<e>**</e></STRONG> source/winapi/comm.c (L275-277)</p>
+<p><CODE lang="c"><s><code>c&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;      if( pComm-&amp;gt;CommNotifyHwnd != NULL )
+         SendMessage( pComm-&amp;gt;CommNotifyHwnd, WM_COMMNOTIFY, ( WPARAM ) pComm,
+                      MAKELONG( CN_RECEIVE, 0 ) );&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283616">
+    <div class="poster">
+      <div class="name" style="color:#105289">JoséQuintas</div>
+      <div class="rank">Posts: 104</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 09, 2021 04:20 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: close a lost dialog thread</span><br>
+        Posted: Thu Jan 29, 2026 01:57 AM
+      </div>
+      <div class="content"><r><p>Thanks, I will use PostMessage().</p><br>
+<br>
+<p>I forgot about oDlg:bValid and :lCanClose used on it.<br/><br>
+At momment create a property nThreadId on routine class, and change bValid codeblock</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;METHOD Execute()
+...
+   ::bValid := { || ;
+      iif( GetKeyState( VK_ESCAPE ), ::lHitEsc := .T., Nil ), ;
+      iif( GetKeyState( VK_ESCAPE ), ::ShowText( "ESC pressionado" ), Nil ), ;
+      iif( ! Empty( ::nThreadID ) .AND. hb_ThreadWait( ::nThreadId, 0.1, .T. ) == 1, ::lCanClose := .T., Nil ), ;
+      ::lCanClose }
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>Besides PostMessage(), lCanClose need to be changed to .T. or bValid will block dialog close.<br/><br>
+On machines with domain, Task Manager is not available to user.<br/><br>
+With thread test, even if routine does not closes dialog, user will be able to close the dialog.</p><br>
+<br>
+<QUOTE author="Antonio Linares" post_id="283607" time="1769617413" user_id="2"><s>[quote="Antonio Linares" post_id=283607 time=1769617413 user_id=2]</s><br>
+<p>Make sure the FiveWin dialog is created as modeless (not modal), otherwise it blocks the thread and won't respond properly to PostMsg(WM_CLOSE)</p><br>
+<e></blockquote></e></QUOTE><br>
+<br>
+<p>Using multithread, no problem with fivewin modal dialog.<br/><br>
+It is a dialog with GET MEMO and a progressbar.</p><br>
+<br>
+<p>One use is on backup, gtwvg routines zip dbfs, backup and zip MySQL, send to ftp, update text and update progressbar on fivewin dialog at each step.<br/><br>
+Another use is on server, sending mails, and using webservices.<br/><br>
+Then, I am sure that modal dialog is not a problem on multithread.</p></r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

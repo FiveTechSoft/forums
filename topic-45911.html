@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>DataRow can save multiple records in Batch Mode? - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-45911">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> DataRow can save multiple records in Batch Mode?</div>
+  <div class="post" id="p281313">
+    <div class="poster">
+      <div class="name" style="color:#105289">shri_fwh</div>
+      <div class="rank">Posts: 336</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 07, 2009 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">DataRow can save multiple records in Batch Mode?</span><br>
+        Posted: Sat Sep 06, 2025 10:18 AM
+      </div>
+      <div class="content"><p><t>Dear All , <br/><br>
+<br/><br>
+I'm currently using the DataRow class to save single records in MariaDB, and it's working well.<br/><br>
+<br/><br>
+Now, I want to integrate XBrowse with DataRow to save multiple records into MariaDB in batch mode. However, I'm unsure whether DataRow supports batch operations.<br/><br>
+<br/><br>
+I'd appreciate any guidance or suggestions on how to achieve this.<br/><br>
+<br/><br>
+Thanks<br/><br>
+Shridhar</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281315">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DataRow with XBrowse can save multiple records in Batch Mode?</span><br>
+        Posted: Sat Sep 06, 2025 01:11 PM
+      </div>
+      <div class="content"><r>Dear Shridhar,<br/><br>
+<br/><br>
+Please add these methods to Class TXBrowse and let us know if they work as expected:<br/><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;/*----------------------------------------------------------------------------//
+* METHOD UpdateBatch() CLASS TXBrowse
+*
+* Saves all pending changes in a batch update
+* Requires the ADO recordset to be opened with LockType = adLockBatchOptimistic (4)
+* and CursorLocation = adUseClient (3).
+*
+* RETURN: .t. if successful, .f. otherwise
+*/
+METHOD UpdateBatch() CLASS TXBrowse
+   local lSaved := .f.
+   if ::nDataType == DATATYPE_ADO .and. ::oRs != nil
+      if ::oRs:LockType == 4 // adLockBatchOptimistic
+         TRY
+            ::oRs:UpdateBatch( 2 ) // adAffectAll
+            lSaved := .t.
+         CATCH
+            ::oRs:CancelBatch( 2 ) // adAffectAll
+            FW_ShowAdoError( ::oRs:ActiveConnection )
+         END
+      else
+         MsgInfo( "UpdateBatch() requires LockType adLockBatchOptimistic" )
+      endif
+   endif
+return lSaved
+And here is the code for the CancelBatch() method:
+
+/*----------------------------------------------------------------------------//
+* METHOD CancelBatch() CLASS TXBrowse
+*
+* Cancels all pending changes in a batch update
+* Requires the ADO recordset to be opened with LockType = adLockBatchOptimistic (4)
+*
+* RETURN: nil
+*/
+METHOD CancelBatch() CLASS TXBrowse
+   if ::nDataType == DATATYPE_ADO .and. ::oRs != nil
+      if ::oRs:LockType == 4 // adLockBatchOptimistic
+         TRY
+            ::oRs:CancelBatch( 2 ) // adAffectAll
+         CATCH
+            FW_ShowAdoError( ::oRs:ActiveConnection )
+         END
+      else
+         MsgInfo( "CancelBatch() requires LockType adLockBatchOptimistic" )
+      endif
+   endif
+return nil&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p281317">
+    <div class="poster">
+      <div class="name" style="color:#105289">shri_fwh</div>
+      <div class="rank">Posts: 336</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 07, 2009 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DataRow with XBrowse can save multiple records in Batch Mode?</span><br>
+        Posted: Sat Sep 06, 2025 02:08 PM
+      </div>
+      <div class="content"><r>Dear Antonio , <br/><br>
+<br/><br>
+  Basically I am looking Methods in DataRow as its has own array data. As currently I am using below method to save single records. <br/><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;  oAcctRs3  := oApp:RowSet( T_VACCT3_FIND_BY_ID(1) )   
+  
+  oAcctRow := TDataRow():New( oAcctRs3 ) 
+
+  // CHANGE SOME VALUES BY USING GET 
+  oAcctRow:bank_name  := 'ABC BANK' 
+
+ // WRITE DATA TO MARIADB 
+  oAcctRow:save()  
+
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+The similar way I am looking. <br/><br>
+<br/><br>
+Thanks <br/><br>
+Shridhar</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281318">
+    <div class="poster">
+      <div class="name" style="color:#105289">shri_fwh</div>
+      <div class="rank">Posts: 336</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 07, 2009 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DataRow can save multiple records in Batch Mode?</span><br>
+        Posted: Sat Sep 06, 2025 03:18 PM
+      </div>
+      <div class="content"><p><t>Dear Antonio , <br/><br>
+<br/><br>
+   Changing the Subject Line as It should be with Only DataRow. <br/><br>
+<br/><br>
+Thanks<br/><br>
+Shridhar</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281319">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DataRow can save multiple records in Batch Mode?</span><br>
+        Posted: Sat Sep 06, 2025 04:08 PM
+      </div>
+      <div class="content"><p><t>I would still strongly recommend placing this logic in the TXBrowse class for a few key reasons:<br/><br>
+<br/><br>
+Direct Access to the Recordset: The TXBrowse class holds the direct reference to the ADO recordset object (oRs). The UpdateBatch() and CancelBatch() functions are native methods of this ADO recordset. My proposed implementation in TXBrowse is simply a clean, direct wrapper that exposes this existing ADO capability.<br/><br>
+<br/><br>
+Class Responsibility: The TXBrowse class is responsible for managing the entire collection of rows displayed in the grid. A batch operation, which acts on this entire collection of modified rows, fits naturally within the scope of TXBrowse. Conversely, the TDataRow class is designed to represent and handle a single row of data, and its Save() method is built for single-record transactions.<br/><br>
+<br/><br>
+Implementation Complexity: To implement this in TDataRow, we would need to create a new mechanism to gather all the modified TDataRow rows, which would be complex and less efficient. The current approach leverages the fact that XBrowse (when used with a client-side cursor) already tracks all the changes in its local ADO cache. My proposed UpdateBatch() method simply tells ADO to send all those cached changes to the database at once.<br/><br>
+<br/><br>
+Given these points, the most robust, efficient, and maintainable solution is to add the UpdateBatch() and CancelBatch() methods to TXBrowse.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281330">
+    <div class="poster">
+      <div class="name" style="color:#105289">shri_fwh</div>
+      <div class="rank">Posts: 336</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 07, 2009 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DataRow can save multiple records in Batch Mode?</span><br>
+        Posted: Mon Sep 08, 2025 04:10 PM
+      </div>
+      <div class="content"><p><t>Dear Antonio , <br/><br>
+<br/><br>
+  Sorry for the delay in the response. <br/><br>
+<br/><br>
+I am using MariaDB RowSet (not ADO).<br/><br>
+<br/><br>
+TXBrowse to edit invoice detail records, while the master invoice record is handled using a TDataRow. However, using both in combination might cause issues.<br/><br>
+<br/><br>
+My goal is to use a TDataRow array to manage multiple invoice detail records and save them directly to MariaDB, just like a single TDataRow is saved.<br/><br>
+<br/><br>
+I believe this would be a powerful feature—similar to how Hibernate ORM handles object-relational mapping in Java.<br/><br>
+<br/><br>
+Thanks<br/><br>
+Shridhar</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281332">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DataRow can save multiple records in Batch Mode?</span><br>
+        Posted: Mon Sep 08, 2025 08:05 PM
+      </div>
+      <div class="content"><p><t>Hi Shridhar,<br/><br>
+<br/><br>
+I think you can easily do this using TARRAYDATA.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281334">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DataRow can save multiple records in Batch Mode?</span><br>
+        Posted: Tue Sep 09, 2025 01:24 AM
+      </div>
+      <div class="content"><r>You're asking about using TArrayData to manage multiple invoice detail records for MariaDB, similar to how TDataRow handles single records. This would create an ORM-like batch editing capability where you can edit multiple detail records in memory and save them all at once to MariaDB.<br/><br>
+<br/><br>
+Yes, TArrayData is exactly the right class for this use case. tarrdata.prg:42 The class is designed to handle arrays of data with full CRUD operations and can work directly with MariaDB connections for batch operations.<br/><br>
+<br/><br>
+How TArrayData Works with MariaDB <br/><br>
+TArrayData supports MariaDB through its constructor that accepts a MariaDB connection: tarrdata.prg:265-266<br/><br>
+<br/><br>
+The class can be instantiated in several ways for MariaDB:<br/><br>
+<br/><br>
+New( oCn, cTable, [cWhere] ) - Load records from a MariaDB table tarrdata.prg:247<br/><br>
+New( oCn, cSql, [aParams] ) - Load from a complex SQL query tarrdata.prg:248<br/><br>
+<br/><br>
+Key Features for Your Use Case <br/><br>
+Batch Editing and Saving: TArrayData provides SaveData() method that saves all modifications, additions, and deletions in a single transaction: tarrdata.prg:223<br/><br>
+<br/><br>
+MariaDB Transaction Support: The SaveToMYSQL() method handles all changes within a transaction, ensuring data consistency: tarrdata.prg:1719-1733<br/><br>
+<br/><br>
+TDataRow Integration: You can create TDataRow objects from TArrayData for individual record editing: tarrdata.prg:214-217<br/><br>
+<br/><br>
+<B><s><strong></s>Example Implementation<e></strong></e></B> <br/><br>
+Here's how you would implement this for invoice details:<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;// Load invoice detail records  
+oInvDetails := TArrayData():New( oCn, "invoice_details", "invoice_id = " + Str( nInvoiceId ) )  
+  
+// Enable auto-append for easy adding of new detail lines  
+oInvDetails:lAutoAppend := .t.  
+  
+// Set up XBrowse for editing  
+oBrw := TXBrowse():New( oDlg )  
+oInvDetails:SetXBrowse( oBrw )  
+  
+// Edit individual records using TDataRow  
+oDetailRec := oInvDetails:Record( "item_code,description,qty,price" )  
+oDetailRec:Edit()  
+  
+// Save all changes (edits, additions, deletions) in one transaction  
+if oInvDetails:SaveData()  
+   MsgInfo( "All changes saved successfully" )  
+else  
+   MsgAlert( "Error saving changes" )  
+endif&lt;e&gt;</code></pre></div></e></CODE><br>
+Integration with Master Record <br/><br>
+You can use this alongside your master invoice TDataRow:<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;// Master invoice record  
+oInvoice := TDataRow():New( oCn:RowSet( "invoices", "id = " + Str( nInvoiceId ) ) )  
+  
+// Detail records array  
+oInvDetails := TArrayData():New( oCn, "invoice_details", "invoice_id = " + Str( nInvoiceId ) )  
+  
+// Edit master  
+oInvoice:Edit()  
+  
+// Edit details in browse  
+// ... user edits in XBrowse ...  
+  
+// Save both  
+if oInvoice:Save() .and. oInvDetails:SaveData()  
+   MsgInfo( "Invoice saved completely" )  
+endif&lt;e&gt;</code></pre></div></e></CODE><br>
+Advanced Features <br/><br>
+Primary Key Management: TArrayData automatically handles primary keys for MariaDB tables: tarrdata.prg:1725-1728<br/><br>
+<br/><br>
+Field Defaults: You can set default values for new records: tarrdata.prg:52<br/><br>
+<br/><br>
+Change Tracking: The class tracks all modifications and provides lModified property: tarrdata.prg:81-83<br/><br>
+<br/><br>
+Notes <br/><br>
+This approach provides exactly the ORM-like functionality you're looking for. The TArrayData class was specifically enhanced in recent versions to support this kind of batch editing with MariaDB, as documented in the changelog: whatsnew.txt:3660-3670 The class handles transactions automatically, ensuring data integrity when saving multiple related records.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281346">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DataRow can save multiple records in Batch Mode?</span><br>
+        Posted: Tue Sep 09, 2025 06:56 PM
+      </div>
+      <div class="content"><r><QUOTE><s><blockquote></s><MERMAID><s><pre class="mermaid">&lt;/s&gt;graph TB
+
+%% Clusters
+subgraph subGraph4[&quot;Array Data Source&quot;]
+  TArrayData[&quot;TArrayData&quot;]
+  ArrayMethods[&quot;SetData()&amp;lt;br&amp;gt;Sort()&amp;lt;br&amp;gt;Filter()&amp;lt;br&amp;gt;Append()&quot;]
+end
+
+subgraph subGraph3[&quot;ADO Data Source&quot;]
+  TRecSet[&quot;TRecSet&quot;]
+  ADOMethods[&quot;Open()&amp;lt;br&amp;gt;Find()&amp;lt;br&amp;gt;Filter()&amp;lt;br&amp;gt;Sort()&quot;]
+end
+
+subgraph subGraph2[&quot;MySQL Data Source&quot;]
+  FWMariaConnection[&quot;FWMariaConnection&quot;]
+  FRecSet[&quot;FRecSet&quot;]
+  MySQLMethods[&quot;Execute()&amp;lt;br&amp;gt;RowSet()&amp;lt;br&amp;gt;CreateTable()&quot;]
+end
+
+subgraph subGraph1[&quot;DBF Data Source&quot;]
+  TDatabase[&quot;TDatabase&quot;]
+  DBFMethods[&quot;Use()&amp;lt;br&amp;gt;SetFilter()&amp;lt;br&amp;gt;SetOrder()&amp;lt;br&amp;gt;Lock()/UnLock()&quot;]
+end
+
+subgraph subGraph0[&quot;Common Interface Methods&quot;]
+  Common[&quot;RecCount()&amp;lt;br&amp;gt;RecNo()&amp;lt;br&amp;gt;FieldGet()&amp;lt;br&amp;gt;FieldPut()&amp;lt;br&amp;gt;GoTo()&amp;lt;br&amp;gt;Skip()&amp;lt;br&amp;gt;Bof()/Eof()&quot;]
+end
+
+%% Edges reflecting the SVG connections
+TArrayData --&amp;gt; ArrayMethods
+TArrayData --&amp;gt; Common
+TRecSet --&amp;gt; ADOMethods
+TRecSet --&amp;gt; Common
+FRecSet --&amp;gt; Common
+FWMariaConnection --&amp;gt; FRecSet
+FWMariaConnection --&amp;gt; MySQLMethods
+FWMariaConnection --&amp;gt; Common
+TDatabase --&amp;gt; DBFMethods
+TDatabase --&amp;gt; Common
+&lt;e&gt;</pre></e></MERMAID><e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p281416">
+    <div class="poster">
+      <div class="name" style="color:#105289">shri_fwh</div>
+      <div class="rank">Posts: 336</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 07, 2009 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DataRow can save multiple records in Batch Mode?</span><br>
+        Posted: Sat Sep 13, 2025 07:39 AM
+      </div>
+      <div class="content"><p><t>Dear Antonio, <br/><br>
+<br/><br>
+    Many Many Thanks for your detailed reply. I will try this and update you. <br/><br>
+<br/><br>
+Thanks<br/><br>
+Shridhar</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281417">
+    <div class="poster">
+      <div class="name" style="color:#105289">shri_fwh</div>
+      <div class="rank">Posts: 336</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 07, 2009 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DataRow can save multiple records in Batch Mode?</span><br>
+        Posted: Sat Sep 13, 2025 10:25 AM
+      </div>
+      <div class="content"><r>Dear Antonio , <br/><br>
+<br/><br>
+  I tried below code and its working. I believe this is extremely powerful, as the modified data is populated only in base table ( FROM vtran ). <br/><br>
+  <br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;
+LOCAL cSQL := "SELECT ac.ACCT_NAME , t.* " + ; 
+                 " FROM vtran t " + ;
+                 " INNER JOIN vacct ac ON ac.ACCT_ID = t.ACCT_ID " + ;
+                 " WHERE tran_id = 20 "
+
+   aTxnDRows := TArrayData():New( oApp:oDBConn, cSQL) // "SELECT * FROM vt03_2022 WHERE tran_id = 20" ) 
+   
+   XBROWSER aTxnDRows FASTEDIT
+   
+   aTxnDRows:SaveData()
+
+
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Thanks<br/><br>
+Shridhar</r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

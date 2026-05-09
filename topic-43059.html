@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>autoGPT with Harbour support - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-43059">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-42.html">latest AI news</a> autoGPT with Harbour support</div>
+  <div class="post" id="p259007">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">autoGPT with Harbour support</span><br>
+        Posted: Tue Apr 18, 2023 10:37 AM
+      </div>
+      <div class="content"><r>microGPT is based on autoGPT concepts and with some little modifications we can make it generate Harbour code automatically:<br/><br>
+<br/><br>
+<URL url="https://github.com/muellerberndt/micro-gpt">https://github.com/muellerberndt/micro-gpt</URL><br/><br>
+<br/><br>
+Harbour code execution:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;            elif command == "execute_harbour":
+                with open( "test.prg", 'w') as file:
+                   file.write( arg )
+                   file.close()
+                print( colored( "code saved to test.prg", "red" ) )
+                print( colored( arg, "white" ) )
+                print( colored( "compiling it...", "red" ) )
+                result = subprocess.run( "c:\\harbour\\bin\\win\\bcc\\harbour.exe test.prg", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
+                print( result.stderr )
+                input()
+                # _stdout = StringIO()
+                # with redirect_stdout(_stdout):
+                #    exec(arg)
+                if len( result.stderr ) != 0:
+                   memory.add(f"{mem}{result.stderr}")
+                else :
+                   memory.add(f"{mem}{result.stdout}")  &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+If you are interested in cooperating please let me know it<br/><br>
+<br/><br>
+example of use:<br/><br>
+python microgpt.py "write function fibonacci using the Harbour language"<br/><br>
+<br/><br>
+microGPT should write the code, test it and automatically modify it if needed</r></div>
+    </div>
+  </div>
+  <div class="post" id="p259010">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT with Harbour support</span><br>
+        Posted: Tue Apr 18, 2023 11:32 AM
+      </div>
+      <div class="content"><r>This version already remains in a loop until it writes and fixes the Harbour code. No need to touch the keyboard! <E>:-)</E><br/><br>
+<br/><br>
+Please check your OpenAI billing. These auto implementations may consume more than usual.<br/><br>
+<br/><br>
+microgpt.py<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;import os
+import sys
+import json
+import openai
+from termcolor import colored
+from bs4 import BeautifulSoup
+from urllib.request import urlopen
+from duckduckgo_search import ddg
+from io import StringIO
+from contextlib import redirect_stdout
+import subprocess
+from dotenv import load_dotenv
+from spinner import Spinner
+
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+debug = False # if os.getenv("DEBUG") in ['true', '1', 't', 'y', 'yes'] else False
+
+from memory import get_memory_instance
+
+SYSTEM_PROMPT = "You are an autonomous agent who fulfills the user's objective."
+INSTRUCTIONS = '''
+Carefully consider your next command.
+Respond with a JSON-encoded dict containing one of the commands: execute_harbour, execute_shell, read_file, web_search, web_scrape, talk_to_user, or done
+{"thought": "[REASONING]", "cmd": "[COMMAND]", "arg": "[ARGUMENT]"}
+Use only non-interactive shell commands.
+Harbour code run with execute_harbour must include a function Main() at the top of the code.
+Harbour code must print using "?" the result of the proposed code as a function.
+Harbour code does not require any escape character.
+Harbour code functions DONT'T end with "end", "endfunc", "endfunction", "end of function".
+Harbour code does not use "endwhile". 
+Harbour code must start with "function Main()" and end with "return nil".
+Harbour code does not use for ... next ... do. Remove the do.
+Use the "done" command after the objective was achieved
+
+Examples:
+{"thought": Search for websites relevant to salami pizza.", "cmd": "web_search", "arg": "salami pizza"}
+{"thought": "Scrape information about Apples.", "cmd": "web_scrape", "arg": "https://en.wikipedia.org/wiki/Apple"}
+{"thought": "Showing results to the user", "cmd": "talk_to_user", "arg": "[My results]. Did I achieve my objective?"}
+{"thought": "I need to ask the user for guidance", "cmd": "talk_to_user", "arg": "What is URL of Domino's Pizza API?"}
+
+IMPORTANT: ALWAYS RESPOND ONLY WITH THIS EXACT JSON FORMAT. DOUBLE-CHECK YOUR RESPONSE TO MAKE SURE IT CONTAINS VALID JSON. DO NOT INCLUDE ANY EXTRA TEXT WITH THE RESPONSE.
+'''
+
+if __name__ == "__main__":
+
+    model = os.getenv("MODEL")
+
+    if(len(sys.argv) != 2):
+        print("Usage: microgpt.py &lt;objective&gt;")
+        quit()
+
+    print( "Harbour autocoder starting..." )
+ 
+    objective = sys.argv[1]
+    max_memory_item_size = int(os.getenv("MAX_MEMORY_ITEM_SIZE"))
+    memory = get_memory_instance()
+    context = objective
+    thought = "I awakened moments ago."
+
+    while(True):
+        context = memory.get_context(f"{objective}, {thought}")
+
+        if debug:
+            print(f"SYSTEMPROMPT: {SYSTEM_PROMPT}")
+            print(f"CONTEXT: {context}")
+            print(f"OBJECTIVE: {objective}")
+            print(f"INSTRUCTIONS: {INSTRUCTIONS}")
+
+        with Spinner():
+            rs = openai.ChatCompletion.create(
+                model=model,
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"OBJECTIVE:{objective}"},
+                    {"role": "user", "content": f"CONTEXT:\n{context}"},
+                    {"role": "user", "content": f"INSTRUCTIONS:\n{INSTRUCTIONS}"},
+                ])
+
+        response_text = rs['choices'][0]['message']['content']
+
+        # if debug:
+        #    print(f"RAW RESPONSE:\n{response_text}")
+
+        try:
+            response = json.loads(response_text)
+            thought = response["thought"]
+            command = response["cmd"]
+            arg = response["arg"]
+
+            mem = f"Your thought: {thought}\nYour command: {command}\nCmd argument:\n{arg}\nResult:\n"
+
+        except Exception as e:
+            print(colored("Unable to parse response. Retrying...\n", "red"))
+            continue
+
+        if (command == "talk_to_user"):
+            print(colored(f"MicroGPT: {arg}", 'cyan'))
+            user_input = input('Your response: ')
+            memory.add(f"{mem}The user responded with: {user_input}.")
+            continue
+
+        _arg = arg.replace("\n", "\\n") if len(arg) &lt; 64 else f"{arg[:64]}...".replace("\n", "\\n")
+        print(colored(f"MicroGPT: {thought}\nCmd: {command}, Arg: \"{_arg}\"", "cyan"))
+        user_input = "" # input('Press enter to perform this action or abort by typing feedback: ')
+
+        if (len(user_input) &gt; 0):
+            memory.add(f"{mem}The user responded: {user_input}. Take this comment into consideration.")
+            continue
+        try:
+            if command == "execute_harbour":
+                arg = arg.replace( "endfunction", "" )
+                arg = arg.replace( "endwhile", "" )
+                with open( "test.prg", 'w') as file:
+                   file.write( arg )
+                   file.close()
+                print( colored( "code saved to test.prg", "red" ) )
+                print( colored( arg, "white" ) )
+                print( colored( "compiling it...", "red" ) )
+                result = subprocess.run( "c:\\harbour\\bin\\win\\bcc\\harbour.exe test.prg", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
+                print( result.stderr )
+                if len( result.stderr ) != 0:
+                   objective = "fix the code"
+                   memory.add(f"{mem}{result.stderr}")
+                else :
+                   memory.add(f"{mem}{result.stdout}")    
+                   print( "done!" )
+                   exit()
+
+            elif command == "execute_shell":
+                result = subprocess.run(arg, capture_output=True, shell=True)
+                memory.add(f"{mem}STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
+            elif command == "web_search":
+                memory.add(f"{mem}{ddg(arg, max_results=5)}")
+            elif command == "web_scrape":
+                html = urlopen(arg).read()
+                response_text = memory.summarize_memory_if_large(BeautifulSoup(html, features="lxml").get_text(), max_memory_item_size)
+                memory.add(f"{mem}{response_text}")
+            elif command == "read_file":
+                f = open(arg, "r")
+                file_content = memory.summarize_memory_if_large(f.read(), max_memory_item_size)
+                memory.add(f"{mem}{file_content}")
+            elif command == "done":
+                print("Objective achieved.")
+                quit()
+        except Exception as e:
+                memory.add(f"{mem}The command returned an error:\n{str(e)}\nYou should fix the command.")
+&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p259012">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: autoGPT with Harbour support</span><br>
+        Posted: Tue Apr 18, 2023 11:49 AM
+      </div>
+      <div class="content"><r>Enhanced version:<br/><br>
+<br/><br>
+microgpt.py<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;import os
+import sys
+import json
+import openai
+from termcolor import colored
+from bs4 import BeautifulSoup
+from urllib.request import urlopen
+from duckduckgo_search import ddg
+from io import StringIO
+from contextlib import redirect_stdout
+import subprocess
+from dotenv import load_dotenv
+from spinner import Spinner
+
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+debug = False # if os.getenv("DEBUG") in ['true', '1', 't', 'y', 'yes'] else False
+
+from memory import get_memory_instance
+
+SYSTEM_PROMPT = "You are an autonomous agent who fulfills the user's objective."
+INSTRUCTIONS = '''
+Carefully consider your next command.
+Respond with a JSON-encoded dict containing one of the commands: execute_harbour, execute_shell, read_file, web_search, web_scrape, talk_to_user, or done
+{"thought": "[REASONING]", "cmd": "[COMMAND]", "arg": "[ARGUMENT]"}
+Use only non-interactive shell commands.
+Harbour code run with execute_harbour must include a function Main() at the top of the code.
+Harbour code must print using "?" the result of the proposed code as a function.
+Harbour code does not require any escape character.
+Harbour code functions DONT'T end with "end", "endfunc", "endfunction", "end of function".
+Harbour code does not use "endwhile". 
+Harbour code must start with "function Main()" and end with "return nil".
+Harbour code does not use for ... next ... do. Remove the do.
+Use the "done" command after the objective was achieved
+
+Examples:
+{"thought": Search for websites relevant to salami pizza.", "cmd": "web_search", "arg": "salami pizza"}
+{"thought": "Scrape information about Apples.", "cmd": "web_scrape", "arg": "https://en.wikipedia.org/wiki/Apple"}
+{"thought": "Showing results to the user", "cmd": "talk_to_user", "arg": "[My results]. Did I achieve my objective?"}
+{"thought": "I need to ask the user for guidance", "cmd": "talk_to_user", "arg": "What is URL of Domino's Pizza API?"}
+
+IMPORTANT: ALWAYS RESPOND ONLY WITH THIS EXACT JSON FORMAT. DOUBLE-CHECK YOUR RESPONSE TO MAKE SURE IT CONTAINS VALID JSON. DO NOT INCLUDE ANY EXTRA TEXT WITH THE RESPONSE.
+'''
+
+if __name__ == "__main__":
+
+    model = os.getenv("MODEL")
+
+    if(len(sys.argv) != 2):
+        print("Usage: microgpt.py &lt;objective&gt;")
+        quit()
+
+    print( "Harbour autocoder starting..." )
+ 
+    objective = sys.argv[1]
+    max_memory_item_size = int(os.getenv("MAX_MEMORY_ITEM_SIZE"))
+    memory = get_memory_instance()
+    context = objective
+    thought = "I awakened moments ago."
+
+    while(True):
+        context = memory.get_context(f"{objective}, {thought}")
+
+        if debug:
+            print(f"SYSTEMPROMPT: {SYSTEM_PROMPT}")
+            print(f"CONTEXT: {context}")
+            print(f"OBJECTIVE: {objective}")
+            print(f"INSTRUCTIONS: {INSTRUCTIONS}")
+
+        with Spinner():
+            rs = openai.ChatCompletion.create(
+                model=model,
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"OBJECTIVE:{objective}"},
+                    {"role": "user", "content": f"CONTEXT:\n{context}"},
+                    {"role": "user", "content": f"INSTRUCTIONS:\n{INSTRUCTIONS}"},
+                ])
+
+        response_text = rs['choices'][0]['message']['content']
+
+        # if debug:
+        #    print(f"RAW RESPONSE:\n{response_text}")
+
+        try:
+            response = json.loads(response_text)
+            thought = response["thought"]
+            command = response["cmd"]
+            arg = response["arg"]
+
+            mem = f"Your thought: {thought}\nYour command: {command}\nCmd argument:\n{arg}\nResult:\n"
+
+        except Exception as e:
+            print(colored("Unable to parse response. Retrying...\n", "red"))
+            continue
+
+        if (command == "talk_to_user"):
+            print(colored(f"MicroGPT: {arg}", 'cyan'))
+            user_input = input('Your response: ')
+            memory.add(f"{mem}The user responded with: {user_input}.")
+            continue
+
+        _arg = arg.replace("\n", "\\n") if len(arg) &lt; 64 else f"{arg[:64]}...".replace("\n", "\\n")
+        print(colored(f"MicroGPT: {thought}\nCmd: {command}, Arg: \"{_arg}\"", "cyan"))
+        user_input = "" # input('Press enter to perform this action or abort by typing feedback: ')
+
+        if (len(user_input) &gt; 0):
+            memory.add(f"{mem}The user responded: {user_input}. Take this comment into consideration.")
+            continue
+        try:
+            if command == "execute_harbour":
+                arg = arg.replace( "endfunction", "" )
+                arg = arg.replace( "endfunc", "" )
+                arg = arg.replace( "endwhile", "" )
+                with open( "test.prg", 'w') as file:
+                   file.write( arg )
+                   file.close()
+                print( colored( "code saved to test.prg", "red" ) )
+                print( colored( arg, "white" ) )
+                print( colored( "compiling it...", "red" ) )
+                result = subprocess.run( "c:\\harbour\\bin\\win\\bcc\\harbour.exe test.prg", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
+                print( result.stderr )
+                if len( result.stderr ) != 0:
+                   objective = "fix the code"
+                   memory.add(f"{mem}{result.stderr}")
+                else :
+                   memory.add(f"{mem}{result.stdout}")    
+                   print( "done!" )
+                   exit()
+
+            elif command == "execute_shell":
+                result = subprocess.run(arg, capture_output=True, shell=True)
+                memory.add(f"{mem}STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
+            elif command == "web_search":
+                memory.add(f"{mem}{ddg(arg, max_results=5)}")
+            elif command == "web_scrape":
+                html = urlopen(arg).read()
+                response_text = memory.summarize_memory_if_large(BeautifulSoup(html, features="lxml").get_text(), max_memory_item_size)
+                memory.add(f"{mem}{response_text}")
+            elif command == "read_file":
+                f = open(arg, "r")
+                file_content = memory.summarize_memory_if_large(f.read(), max_memory_item_size)
+                memory.add(f"{mem}{file_content}")
+            elif command == "done":
+                print("Objective achieved.")
+                quit()
+        except Exception as e:
+                memory.add(f"{mem}The command returned an error:\n{str(e)}\nYou should fix the command.")
+&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

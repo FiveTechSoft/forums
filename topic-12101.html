@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>TSBrowse: Headers nativos - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-12101">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> TSBrowse: Headers nativos</div>
+  <div class="post" id="p60163">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">TSBrowse: Headers nativos</span><br>
+        Posted: Tue Jul 29, 2008 09:55 PM
+      </div>
+      <div class="content">Hola gente,<br>
+<br>
+Algo que hace rato me da vueltas en la cabeza era usar los THeaders nativos en los browses, y he logrado algo más o menos interesante.<br>
+<br>
+Para poder llevar a cabo el proyecto hay que hacer modificaciones en las 2 clases involucradas, THeader y TSBrowse, para lo que use una técnica/patrón de programación que se llama variaciones protegidas y que trataré de resumir.<br>
+Modificar una clase de la que no somos autores ni controlamos y no tenemos los derechos de publicar el codigo fuente es una tarea dificil. <br>
+Además, al aparecer una nueva versión publicada por sus autores nuestros cambios se perderían en la actualización, y volver a reimplantarlos en las nuevas versiones de las clases es una tarea engorrosa.<br>
+Aunque en Harbour disponemos de una buena implementacion de OOP no podemos usar la herencia directamente porque los comandos de FiveWin estan basados en un nombre de clase en particular.<br>
+<br>
+La solución que encontré es dotar, al menos a las clases a alterar, de una capa protegida, donde se conserva el 100% del código original, y otra donde implementamos los cambios.<br>
+<br>
+Paso 1: Copiar las clases originales THeader.prg y TSBrwose.prg al directorio donde tenemos nuestro proyecto.<br>
+<br>
+Editamos ambos prgs, añadiendo 1 línea con un solo #translate:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">.... THeader.prg ....
+
+#translate CLASS THeader =&gt; CLASS __THeader // Añadir esta línea
+
+CLASS THeader FROM TControl
+
+   DATA   aPrompts, aSizes
+
+ .... más código</code></pre></div><br>
+<br>
+con el añadido de esta línea hemos aislado la clase THeader original y podemos hacer los cambios necesarios en nuestra propia tHeader que pego a continuación, ya que el cambio es menor:<br>
+<br>
+THeader2.prg<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+#include "Constant.ch"
+#include "Header.ch"
+
+#define COLOR_BTNFACE   15
+#define WM_ERASEBKGND   20
+#define GWL_STYLE      -16
+
+CLASS THeader FROM __THeader
+
+   METHOD Notify( nIdCtrl, nPtrNMHDR )
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD Notify( nIdCtrl, nPtrNMHDR ) CLASS THeader
+
+   local nCode := GetNMHDRCode( nPtrNMHDR )
+   local nItem := GETNMHEAITEM( nPtrNMHDR )
+
+   do case
+      case ValType( ::bAction ) != "B"
+      case nCode &gt; HDN_FIRST
+      case nCode == HDN_ITEMCLICK ; Eval( ::bAction, nItem, Self, HDN_ITEMCLICK )
+      case nCode == HDN_ENDTRACK  ; Eval( ::bAction, nItem, Self, HDN_ENDTRACK )
+      otherwise                   ; Eval( ::bAction, nItem, Self, nCode )
+   endcase
+
+return nil</code></pre></div><br>
+<br>
+Y hacemos lo proprio con TSBrowse, yo trabajé con la versión 8 pero, por definición del procedimiento, no debería haber problemas con versiones anteriores:<br>
+<br>
+TSBrowse.prg<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">.. codigo de tsbrowse...
+//----------------------------------------------------------------------------//
+
+#translate CLASS TSBROWSE =&gt; CLASS __TSBROWSE // solo se añade esta línea!
+
+CLASS TSBrowse FROM TControl
+
+   CLASSDATA lRegistered AS LOGICAL
+
+... más código de tsbrowse</code></pre></div><br>
+<br>
+<br>
+Y la nueva subclase donde implantamos el nuevo código<br>
+<br>
+<br>
+TSBrowse2.prg<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+#include "hbclass.ch"
+#include "TSBrowse.ch"
+#include "Header.ch"
+
+CLASS TSBrowse FROM __TSBROWSE
+   DATA oHeader
+   METHOD DrawHeaders()
+
+ENDCLASS
+
+METHOD DrawHeaders( lFooters ) CLASS TSBrowse
+
+   Local nI, nJ, nBegin, nStartCol, oColumn, l3DLook, nClrFore, lAdjBmp, nAlign, nClrBack, hFont, cFooting, ;
+         cHeading, hBitMap, nLastCol, lMultiLine, nVertText, nClrTo, lOpaque, lBrush, ;
+         nMaxWidth    := ::nWidth() , ;
+         aColSizes    := AClone( ::aColSizes ), ;   // use local copies for speed
+         nHeightHead  := ::nHeightHead, ;
+         nHeightFoot  := ::nHeightFoot
+
+   Local nHeightSuper := ::nHeightSuper, ;
+         nVAlign      := 1, ;
+         l3DText, nClr3dL, nClr3dS
+
+   Local hWnd         := ::hWnd, ;
+         hDC          := ::hDc, ;
+         nClrText     := ::nClrText, ;
+         nClrPane     := ::nClrPane, ;
+         nClrHeadFore := ::nClrHeadFore, ;
+         nClrHeadBack := ::nClrHeadBack, ;
+         nClrFootFore := ::nClrFootFore, ;
+         nClrFootBack := ::nClrFootBack, ;
+         nClrOrdeFore := ::nClrOrdeFore, ;
+         nClrOrdeBack := ::nClrOrdeBack, ;
+         nClrLine     := ::nClrLine
+
+   Default lFooters := .F.
+
+   If lFooters
+      Return Super:DrawHeaders( lFooters )
+   EndIf
+
+   If Empty( ::aColumns )
+      Return Self
+   EndIf
+
+   If ::aColSizes == Nil .or. Len( ::aColSizes ) &lt; Len( ::aColumns )
+      ::aColSizes := {}
+      For nI := 1 To Len( ::aColumns )
+         AAdd( ::aColSizes, ::aColumns[ nI ]:nWidth )
+      Next
+   EndIf
+
+   nClrBack := If( ::nPhantom == -1, ATail( ::aColumns ):nClrHeadBack, nClrPane )
+   nClrBack := If( ValType( nClrBack ) == "B", Eval( nClrBack ), nClrBack )
+   nClrFore := If( ::nPhantom == -1, ATail( ::aColumns ):nClrFootBack, nClrPane )
+   nClrFore := If( ValType( nClrFore ) == "B", Eval( nClrFore ), nClrFore )
+   l3DLook  := If( ::nPhantom == -1, ATail( ::aColumns ):l3DLookHead, .F. )
+
+   If ::oPhant == Nil
+      // "Phantom" column; :nPhantom hidden IVar
+      ::oPhant := TSColumn():New(        "", ; // cHeading
+                              {|| "" }, ; // bdata
+                                   nil, ; // cPicture
+                 { nClrText, nClrPane,, ;
+              nClrBack,,,,,,nClrFore }, ; // aColors
+                                   nil, ; // aAlign
+                            ::nPhantom, ; // nWidth
+                                   nil, ; // lBitMap
+                                   nil, ; // lEdit
+                                   nil, ; // bValid
+                                   .T., ; // lNoLite
+                                   nil, ; // cOrder
+                                   nil, ; // cFooting
+                                   nil, ; // bPrevEdit
+                                   nil, ; // bPostEdit
+                                   nil, ; // nEditMove
+                                   nil, ; // lFixLite
+                  { l3DLook, l3DLook }, ;
+                                   nil, ;
+                                  Self  )
+      Else
+         ::oPhant:nClrFore := nClrText
+         ::oPhant:nClrBack := nClrBack
+         ::oPhant:nWidth   := ::nPhantom
+         ::oPhant:l3DLookHead := l3DLook
+      EndIf
+
+   nLastCol := Len( ::aColumns ) + 1
+   AAdd( aColSizes, ::nPhantom )
+
+   nJ := nStartCol := 0
+
+   nBegin := Min( If( ::nColPos &lt;= ::nFreeze, ( ::nColPos := ::nFreeze + 1, ::nColPos - ::nFreeze ), ;
+                      ::nColPos - ::nFreeze ), nLastCol )
+
+   If Empty( ::aColumns )
+      Return Self
+   EndIf
+
+   If ! Empty( ::aSuperHead ) .and. ! lFooters
+      ::DrawSuper()
+   EndIf
+
+   If ::oHeader == NIL
+      ::oHeader:= THeader():New( Self, 0, 0, ::nWidth, nHeightHead, AFill( Array( Len( aColSizes ) ), "" ) ,aColSizes,, nClrFore, nClrBack, {|nItem, oHeader, nMessage| HandleHeader( Self, nItem, oHeader, nMessage ) }  )
+   EndIf
+
+   For nI := 1 To nBegin-1
+      ::oHeader:SetItem( nI, cHeading, 0, 0 )
+   Next
+
+
+   For nI := nBegin To nLastCol
+
+      If nStartCol &gt; nMaxWidth
+         Exit
+      EndIf
+
+      nJ := If( nI &lt; ::nColPos, nJ + 1, nI )
+
+      oColumn := If( nJ &gt; Len( ::aColumns ), ::oPhant, ::aColumns[ nJ ] )
+
+      If ::lDrawHeaders .and. ! lFooters
+         cHeading   := If( Valtype( oColumn:cHeading ) == "B", Eval( oColumn:cHeading ), oColumn:cHeading )
+         nAlign     := If( ValType( oColumn:nHAlign  ) == "B", Eval( oColumn:nHAlign ), oColumn:nHAlign )
+
+         If nAlign == DT_CENTER
+            nAlign:= HDF_CENTER
+         ElseIf nAlign == DT_RIGHT
+            nAlign:= HDF_RIGHT
+         EndIf
+
+         If !Empty( oColumn:cOrder ) .And. ::nColOrder == nJ
+            nAlign+= HDF_SORTUP + HDF_BITMAP_ON_RIGHT
+         EndIf
+
+         ::oHeader:SetItem( nJ, cHeading, aColSizes[ nJ ], nAlign )
+
+      EndIf
+
+   Next
+
+Return Self
+
+Function HandleHeader( Self, nItem, oHeader, nMessage )
+   Local oColumn, nPrevCol, nAlign, cHeading
+
+   // Debug nMessage, nItem
+
+   If nMessage == HDN_ENDTRACK
+      ::aColSizes[ nItem ] := ;
+      ::aColumns[ nItem ]:nWidth := oHeader:GetItem( nItem )[1]
+      ::Refresh( .T. )
+   ElseIf nMessage == HDN_ITEMDBLCLICK
+      If nItem != ( nPrevCol:= ::nColOrder )
+         ::SetOrder( nItem )
+      EndIf
+   EndIf
+
+Return 0 // NIL</code></pre></div><br>
+<br>
+Como se puede observar, han sido muy pocos toques. No he tenido en cuenta los SuperHeaders, los he dejado de momento porque no los uso.<br>
+<br>
+Más allá del resultado estético, me interesa más la técnica de modificar las clases, que aunque se cambie la version de fivewin o TSBrowse nuestro código está separado y protegido, tal como se llama el patrón: Variaciones Protegidas.<br>
+<br>
+Espero que les guste.<br>
+<br>
+<br>
+Un saludo,<br>
+<br>
+Carlos.</div>
+    </div>
+  </div>
+  <div class="post" id="p60205">
+    <div class="poster">
+      <div class="name" style="color:#105289">mmercado</div>
+      <div class="rank">Posts: 782</div>
+      <img class="avatar avatar-img" src="avatars/1255.jpg" alt="" loading="lazy">
+      Joined: Wed Dec 19, 2007 07:50 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">TSBrowse: Headers nativos</span><br>
+        Posted: Wed Jul 30, 2008 11:42 AM
+      </div>
+      <div class="content"><p>Hola Carlos:</p>
+<p>No sabía que existiera la clase THeader (estuve mucho tiempo fuera), ya vi un ejemplo en FWH Samples, pero desconozco sus alcances, si tienes algún ejemplo funcionando con TSBrowse, por favor házmelo llegar.</p>
+<p>Un abrazo.</p>
+<p>Manuel Mercado</p></div>
+    </div>
+  </div>
+  <div class="post" id="p60216">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">TSBrowse: Headers nativos</span><br>
+        Posted: Wed Jul 30, 2008 01:19 PM
+      </div>
+      <div class="content">Hola Manuel,<br>
+<br>
+el código que he posteado te alcanza para probar tus propios ejemplos. Lo único es que tienes que añadir en tu proyecto las clases originales THeader y TSBrowse, usar el truquillo del #translate para renombrar las clases. <br>
+Tambien incluyes las sublcases nuevas THeader2.prg y TSBrowse2.prg , y tu test.prg.<br>
+<br>
+Una imagen:<br>
+<br>
+<img src="http://img186.imageshack.us/img186/5836/mmercadooz5.jpg" alt="" loading="lazy"><br>
+<br>
+para este código<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//---------------------------------------------------------------------------
+Function ClientesBrowse( Variable ) // en variable se copia el codigo que se busca.
+//---------------------------------------------------------------------------
+
+   Local oFont
+   Local oDlg, oBrw, oGet, lIntroCopia:= ValType( Variable ) != 'U'
+
+   Select Clientes
+
+   oFont = TFont():New( GetDefaultFontName(), 0, GetDefaultFontHeight(),, )
+
+   DEFINE DIALOG oDlg RESOURCE "BROWSE" FONT oFont TITLE "Mantenimiento de Clientes" HELPID 0
+      oDlg:lHelpIcon := .f.
+      REDEFINE BROWSE oBrw ALIAS "CLIENTES" ID 101 OF oDlg FONT oFont
+      // oBrw:nClrFocuFore:= CLR_WHITE
+      // oBrw:nClrFocuBack:= CLR_NGREENFOCUS
+
+      *CAMPOS
+      ADD COLUMN TO oBrw ;
+          HEADER "Cliente" DATA {|| Clientes-&gt;Codigo } ;
+          ORDER "CODIGO" ;
+          ALIGN DT_CENTER
+      ADD COLUMN TO oBrw ;
+          HEADER "Nombre"  DATA {|| Clientes-&gt;Empresa } ORDER "EMPRESA" WIDTH GetTextWidth( 0, Replicate( 'M', Len( Clientes-&gt;Empresa ) ), oFont:hFont )
+      ADD COLUMN TO oBrw ;
+          HEADER "CIF/NIF" DATA {|| Clientes-&gt;CIF } ;
+          ORDER "CIF" ;
+          WIDTH GetTextWidth( 0, Replicate( 'M', Len( Clientes-&gt;CIF ) ), oFont:hFont ) ;
+          ALIGN DT_CENTER
+
+      REDEFINE GET oGet VAR oBrw:cSeek ID 102 WHEN .F. OF oDlg
+      oBrw:bSeekChange := {|| oGet:VarPut( oBrw:cSeek ), oGet:Refresh() }
+      oBrw:nHeightCell += 6
+      oBrw:nHeightHead += 6
+
+      *BOTONES
+      REDEFINE BUTTON ID 131 OF oDlg ACTION ClientesForm( .T., oBrw )
+      REDEFINE BUTTON ID 132 OF oDlg ACTION ClientesForm( .F., oBrw )
+      REDEFINE BUTTON ID 133 OF oDlg ACTION ClientesBorra( oBrw )
+      // REDEFINE BUTTON ID 134 OF oDlg ACTION oBrw:Report() // ClientesImprime()
+      REDEFINE BUTTON ID 134 OF oDlg ACTION EtiqCorresp( Clientes-&gt;Contacto ) // ClientesImprime()
+      REDEFINE BUTTON ID 140 OF oDlg ACTION (oDlg:End())
+
+      oBrw:bLDblClick := {|| ClientesForm( .F., oBrw ) }
+      oDlg:bKeyDown := {|nKey, nFlags| ClientesKey( nKey, oDlg, oBrw, @Variable, lIntroCopia ) }
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+Return NIL</code></pre></div><br>
+<br>
+ahora veo de empaquetar un ejemplo completo, solo que no se incluirá la theader original de Fivewin por razones obvias.<br>
+<br>
+Saludos</div>
+    </div>
+  </div>
+  <div class="post" id="p60245">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">TSBrowse: Headers nativos</span><br>
+        Posted: Wed Jul 30, 2008 06:47 PM
+      </div>
+      <div class="content">Bueno, aca tienes un ejemplo completo.<br>
+<br>
+<!-- m --><a class="postlink" href="http://www.box.net/shared/57zns2uwwk">http://www.box.net/shared/57zns2uwwk</a><!-- m --><br>
+<br>
+Está todo, hay que ajustar el makefile para que apunte a los directorios donde instalas FiveWin, Harbour y BCC55, y añadir del directorio sources de fivewin el archivo theader.prg. No lo he incluido porque no estoy seguro de que esté metiendo la pata y viole algo relativo a la propiedad intelectual de fivetech.<br>
+Entonces y para resumir, hay que copiar el THeader.prg del dir sources de fivewin y añadirle el translate que comenté en el primer post, <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">.... THeader.prg ....
+
+#translate CLASS THeader =&gt; CLASS __THeader // Añadir esta línea
+
+CLASS THeader FROM TControl
+
+   DATA   aPrompts, aSizes
+
+ .... más código</code></pre></div><br>
+<br>
+tambien incluí el exe y una dbf con datos para que lo pruebes de forma inmediata. Prueba hacer doble click en la cabecera de la columna y mira como reacciona. Tambien prueba de escribir letras cuando esta ordenado por código, o bien numero cuando esta ordenado alfabeticamente.<br>
+<br>
+Un saludo,<br>
+<br>
+Carlos.</div>
+    </div>
+  </div>
+  <div class="post" id="p60270">
+    <div class="poster">
+      <div class="name" style="color:#105289">mmercado</div>
+      <div class="rank">Posts: 782</div>
+      <img class="avatar avatar-img" src="avatars/1255.jpg" alt="" loading="lazy">
+      Joined: Wed Dec 19, 2007 07:50 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">TSBrowse: Headers nativos</span><br>
+        Posted: Wed Jul 30, 2008 09:55 PM
+      </div>
+      <div class="content"><p>Gracias Carlos.</p>
+<p>Un abrazo.</p>
+<p>Manuel Mercado</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

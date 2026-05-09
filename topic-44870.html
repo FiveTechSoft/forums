@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Creando Servicios con Harbour y xHarbour - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-44870">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Creando Servicios con Harbour y xHarbour</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-44870-page-2.html">2</a> <a href="topic-44870-page-3.html">3</a> <a href="topic-44870-page-4.html">4</a> (47 posts)</div>  <div class="post" id="p273330">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sat Sep 14, 2024 06:03 AM
+      </div>
+      <div class="content"><r>Este tema nos quedó pendiente en el webinar y os prometí desarrollarlo <E>:-)</E><br/><br>
+<br/><br>
+El API de Windows proporciona un API para crear servicios y vamos a ver como se utiliza. Harbour tiene implementado un API para servicios desarrollado por Jose Luis Capel que no se corresponde a la arquitectura proporcionada por Windows. Leandro comentaba que funcionan en Harbour (Tim Stone los usa) pero que no funcionan con xHarbour.<br/><br>
+<br/><br>
+Asi que vamos a ver como se implementan en Windows en primer lugar y vamos a comprobar que funcionan correctamente con Harbour y xHarbour.<br/><br>
+<br/><br>
+servicio.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+function Main()
+
+   Servicio()
+
+return nil
+
+#pragma BEGINDUMP
+
+#include &lt;windows.h&gt;
+#include &lt;tchar.h&gt;
+
+SERVICE_STATUS ServiceStatus;
+SERVICE_STATUS_HANDLE hStatus;
+
+void ServiceMain(int argc, char** argv);
+void ControlHandler(DWORD request);
+int InitService();
+
+HB_FUNC( SERVICIO )
+{
+    SERVICE_TABLE_ENTRY ServiceTable[2];
+    ServiceTable[0].lpServiceName = _T("MiServicio");
+    ServiceTable[0].lpServiceProc = (LPSERVICE_MAIN_FUNCTION)ServiceMain;
+    ServiceTable[1].lpServiceName = NULL;
+    ServiceTable[1].lpServiceProc = NULL;
+
+    StartServiceCtrlDispatcher(ServiceTable);
+}
+
+#pragma warn -8057
+
+void ServiceMain(int argc, char** argv )
+{
+    ServiceStatus.dwServiceType        = SERVICE_WIN32;
+    ServiceStatus.dwCurrentState       = SERVICE_START_PENDING;
+    ServiceStatus.dwControlsAccepted   = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
+    ServiceStatus.dwWin32ExitCode      = 0;
+    ServiceStatus.dwServiceSpecificExitCode = 0;
+    ServiceStatus.dwCheckPoint         = 0;
+    ServiceStatus.dwWaitHint           = 0;
+
+    hStatus = RegisterServiceCtrlHandler(_T("MiServicio"), (LPHANDLER_FUNCTION)ControlHandler);
+
+    if (InitService() == 0)
+    {
+        ServiceStatus.dwCurrentState = SERVICE_RUNNING;
+        SetServiceStatus(hStatus, &amp;ServiceStatus);
+
+        // Aquí va el bucle principal del servicio
+        while (ServiceStatus.dwCurrentState == SERVICE_RUNNING)
+        {
+            // Realiza las tareas del servicio
+            Sleep(1000);
+        }
+    }
+
+    ServiceStatus.dwCurrentState = SERVICE_STOPPED;
+    SetServiceStatus(hStatus, &amp;ServiceStatus);
+}
+
+void ControlHandler(DWORD request)
+{
+    switch(request)
+    {
+        case SERVICE_CONTROL_STOP:
+            ServiceStatus.dwWin32ExitCode = 0;
+            ServiceStatus.dwCurrentState = SERVICE_STOPPED;
+            SetServiceStatus(hStatus, &amp;ServiceStatus);
+            return;
+        case SERVICE_CONTROL_SHUTDOWN:
+            ServiceStatus.dwWin32ExitCode = 0;
+            ServiceStatus.dwCurrentState = SERVICE_STOPPED;
+            SetServiceStatus(hStatus, &amp;ServiceStatus);
+            return;
+        default:
+            break;
+    }
+    SetServiceStatus(hStatus, &amp;ServiceStatus);
+}
+
+int InitService()
+{
+    // Inicialización del servicio
+    return 0;
+}
+
+#pragma ENDDUMP&lt;e&gt;</code></pre></div></e></CODE><br>
+Para construirlo desde FWH\samples hacemos:<br/><br>
+Con Harbour:<br/><br>
+<B><s><strong></s>buildh.bat servicio<e></strong></e></B>  <br/><br>
+Con xHarbour:<br/><br>
+<B><s><strong></s>buildx.bat servicio<e></strong></e></B><br/><br>
+<br/><br>
+Una vez construido hay que registrar el servicio. Para eso es necesario abrir una ventana CMD de Windows en <B><s><strong></s>modo Administrador<e></strong></e></B> (Ctrl+Click desde el menu del CMD):<br/><br>
+<br/><br>
+Primero se registra el servicio:<br/><br>
+<B><s><strong></s>sc create servicio binPath=c:\fwh\samples\servicio.exe<e></strong></e></B><br>
+<QUOTE><s><blockquote></s>[SC] CreateService CORRECTO<e></blockquote></e></QUOTE><br>
+<br>
+A continuación se ejecuta el servicio:<br/><br>
+<B><s><strong></s>sc start servicio<e></strong></e></B><br/><br>
+<br/><br>
+Si todo ha ido bien veremos esto en pantalla:<br>
+<QUOTE><s><blockquote></s>NOMBRE_SERVICIO: servicio<br/><br>
+        TIPO               : 10  WIN32_OWN_PROCESS<br/><br>
+        ESTADO             : 4  RUNNING<br/><br>
+                                (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)<br/><br>
+        CÓD_SALIDA_WIN32   : 0  (0x0)<br/><br>
+        CÓD_SALIDA_SERVICIO: 0  (0x0)<br/><br>
+        PUNTO_COMPROB.     : 0x0<br/><br>
+        INDICACIÓN_INICIO  : 0x0<br/><br>
+        PID                : 18316<br/><br>
+        MARCAS         :<br>
+<e></blockquote></e></QUOTE><br>
+Para detener el servicio hacemos:<br/><br>
+<B><s><strong></s>sc stop servicio<e></strong></e></B> ó<br/><br>
+<B><s><strong></s>sc stop servicio -force<e></strong></e></B><br/><br>
+<br/><br>
+Para saber su estado mientras esta en uso hacemos:<br/><br>
+<B><s><strong></s>sc query servicio<e></strong></e></B><br/><br>
+<br/><br>
+Para eliminar el servicio una vez parado:<br/><br>
+<B><s><strong></s>sc delete servicio<e></strong></e></B><br/><br>
+<br/><br>
+Os ruego que lo probeis tanto en Harbour como en xHarbour. Aqui funciona bien con ambos.<br/><br>
+<br/><br>
+Lo próximo es como saltar desde el código en C a Harbour, algo que es muy sencillo <E>:-)</E></r></div>
+    </div>
+  </div>
+  <div class="post" id="p273331">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sat Sep 14, 2024 06:15 AM
+      </div>
+      <div class="content"><r>Observaciones al uso de los servicios. Esto lo vimos en el webinar por encima. Aqui os lo detallo:<br/><br>
+<br>
+<QUOTE><s><blockquote></s>Existen varias diferencias importantes entre una aplicación normal de Windows y un servicio de Windows.<br/><br>
+<br/><br>
+<B><s><strong></s>Interfaz de usuario: <e></strong></e></B><br/><br>
+Aplicación normal: Generalmente tiene una interfaz gráfica de usuario (GUI) con la que el usuario puede interactuar directamente.<br/><br>
+Servicio: No tiene interfaz gráfica. Funciona en segundo plano sin interacción directa del usuario.<br/><br>
+<br/><br>
+<B><s><strong></s>Inicio y ejecución:<e></strong></e></B> <br/><br>
+Aplicación normal: Se inicia manualmente por el usuario o al arrancar el sistema si está configurada para ello.<br/><br>
+Servicio: Puede configurarse para iniciarse automáticamente al arrancar el sistema, incluso antes de que cualquier usuario inicie sesión.<br/><br>
+<br/><br>
+<B><s><strong></s>Sesión de usuario:<e></strong></e></B> <br/><br>
+Aplicación normal: Se ejecuta en el contexto de la sesión del usuario que la inició.<br/><br>
+Servicio: Puede ejecutarse incluso cuando ningún usuario ha iniciado sesión en el sistema.<br/><br>
+<br/><br>
+<B><s><strong></s>Control: <e></strong></e></B><br/><br>
+Aplicación normal: El usuario la controla directamente a través de su interfaz.<br/><br>
+Servicio: Se controla a través del Administrador de Control de Servicios (SCM) de Windows, usando herramientas como 'services.msc' o comandos como 'sc.exe’.<br/><br>
+<br/><br>
+<B><s><strong></s>Privilegios:<e></strong></e></B> <br/><br>
+Aplicación normal: Generalmente se ejecuta con los privilegios del usuario que la inició.<br/><br>
+Servicio: A menudo se ejecuta con privilegios elevados del sistema, lo que le permite realizar tareas que requieren más permisos.<br/><br>
+<br/><br>
+<B><s><strong></s>Estructura del código:<e></strong></e></B> <br/><br>
+Aplicación normal: Tiene un punto de entrada main() estándar y un bucle de mensajes para la GUI si es una aplicación con ventanas.<br/><br>
+Servicio: Requiere funciones específicas como ServiceMain() y ServiceCtrlHandler() para interactuar con el SCM.<br/><br>
+<br/><br>
+<B><s><strong></s>Interacción con el sistema:<e></strong></e></B> <br/><br>
+Aplicación normal: Interactúa principalmente con el usuario y puede tener acceso limitado a recursos del sistema.<br/><br>
+Servicio: Diseñado para interactuar con el sistema operativo y otros servicios, a menudo realizando tareas críticas del sistema.<br/><br>
+<br/><br>
+<B><s><strong></s>Ciclo de vida:<e></strong></e></B> <br/><br>
+Aplicación normal: Típicamente se inicia, realiza su tarea y termina cuando el usuario la cierra.<br/><br>
+Servicio: Diseñado para ejecutarse continuamente y manejar eventos como inicio, parada, pausa y continuación.<br/><br>
+<br/><br>
+<B><s><strong></s>Recuperación ante fallos:<e></strong></e></B> <br/><br>
+Aplicación normal: Si falla, generalmente requiere que el usuario la reinicie manualmente.<br/><br>
+Servicio: Windows puede configurarse para reiniciar automáticamente un servicio si falla.<br/><br>
+<br/><br>
+<B><s><strong></s>Desarrollo y depuración: <e></strong></e></B><br/><br>
+Aplicación normal: Relativamente sencilla de desarrollar y depurar con herramientas estándar.<br/><br>
+Servicio: Puede ser más complejo de desarrollar y depurar debido a su naturaleza de fondo y la interacción con el SCM.<br/><br>
+<br/><br>
+Estas diferencias hacen que los servicios sean ideales para tareas que necesitan ejecutarse continuamente en segundo plano, como servidores web, sistemas de base de datos, o tareas de mantenimiento del sistema, mientras que las aplicaciones normales son más adecuadas para tareas que requieren interacción directa del usuario.<br>
+<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p273335">
+    <div class="poster">
+      <div class="name" style="color:#105289">wilsongamboa</div>
+      <div class="rank">Posts: 669</div>
+      <img class="avatar avatar-img" src="avatars/179.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 06:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sat Sep 14, 2024 03:19 PM
+      </div>
+      <div class="content"><p><t>Buenos dias<br/><br>
+Antonio obtengo esto<br/><br>
+Warning W8065 servicio.prg 46: Call to function 'InitService' with no prototypein function ServiceMain<br/><br>
+*** 1 errors in Compile **<em><br/><br>
+* Linking errors </em><br/><br>
+con el ultimo fwh que nos diste en webminar<br/><br>
+saludos</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p273336">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sat Sep 14, 2024 03:27 PM
+      </div>
+      <div class="content"><r>Wilson,<br/><br>
+<br/><br>
+Que compilador de C estás usando ? Harbour ó xHarbour ?<br/><br>
+<br/><br>
+Aqui lo he probado con bcc77 32 bits, Harbour y xHarbour, sin ningún warning o error:<br>
+<QUOTE><s><blockquote></s>┌────────────────────────────────────────────────────────────────────────────┐<br/><br>
+│ FiveWin for Harbour 24.07 - Jul. 2024           Harbour development power  │▄<br/><br>
+│ (c) FiveTech 1993-2024 for Microsoft Windows 9X/NT/200X/ME/XP/Vista/7/8/10 │█<br/><br>
+└────────────────────────────────────────────────────────────────────────────┘█<br/><br>
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀<br/><br>
+Compiling...<br/><br>
+Harbour 3.2.0dev (r2403071241)<br/><br>
+Copyright (c) 1999-2021, <URL url="https://harbour.github.io/">https://harbour.github.io/</URL><br/><br>
+Compiling 'servicio.prg' and generating preprocessed output to 'servicio.ppo'...<br/><br>
+Lines 5108, Functions/Procedures 1<br/><br>
+Generating C source output to 'servicio.c'... Done.<br/><br>
+Embarcadero C++ 7.70 for Win32 Copyright (c) 1993-2023 Embarcadero Technologies, Inc.<br/><br>
+servicio.c:<br/><br>
+Turbo Incremental Link 6.97 Copyright (c) 1997-2022 Embarcadero Technologies, Inc.<br/><br>
+* Application successfully built *<e></blockquote></e></QUOTE><br>
+<QUOTE><s><blockquote></s>┌────────────────────────────────────────────────────────────────────────────┐<br/><br>
+│ FiveWin for xHarbour 24.07 - Jul. 2024          Harbour development power  │▄<br/><br>
+│ (c) FiveTech 1993-2024 for Microsoft Windows 9X/NT/200X/ME/XP/Vista/7/8/10 │█<br/><br>
+└────────────────────────────────────────────────────────────────────────────┘█<br/><br>
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀<br/><br>
+Compiling...<br/><br>
+xHarbour 1.3.1 Intl. (SimpLex) (Build 20240108)<br/><br>
+Copyright 1999-2023, <URL url="http://www.xharbour.org">http://www.xharbour.org</URL> <URL url="http://www.harbour-project.org/">http://www.harbour-project.org/</URL><br/><br>
+Compiling 'servicio.prg' and generating preprocessed output to 'servicio.ppo'...<br/><br>
+Generating C source output to 'servicio.c'...<br/><br>
+Done.<br/><br>
+Lines 9, Functions/Procedures 1, pCodes 15<br/><br>
+Embarcadero C++ 7.70 for Win32 Copyright (c) 1993-2023 Embarcadero Technologies, Inc.<br/><br>
+servicio.c:<br/><br>
+Turbo Incremental Link 6.97 Copyright (c) 1997-2022 Embarcadero Technologies, Inc.<br/><br>
+* Application successfully built *<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p273341">
+    <div class="poster">
+      <div class="name" style="color:#105289">wilsongamboa</div>
+      <div class="rank">Posts: 669</div>
+      <img class="avatar avatar-img" src="avatars/179.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 06:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sat Sep 14, 2024 05:16 PM
+      </div>
+      <div class="content"><r><CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;┌────────────────────────────────────────────────────────────────────────────┐
+│ FiveWin for Harbour 24.07 - Jul. 2024           Harbour development power  │▄
+│ (c) FiveTech 1993-2024 for Microsoft Windows 9X/NT/200X/ME/XP/Vista/7/8/10 │█
+└────────────────────────────────────────────────────────────────────────────┘█
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+Compiling...
+Harbour 3.2.0dev (r2407221137)
+Copyright (c) 1999-2021, https://harbour.github.io/
+Compiling 'servicio.prg' and generating preprocessed output to 'servicio.ppo'..
+Lines 5105, Functions/Procedures 1
+Generating C source output to 'servicio.c'... Done.
+Embarcadero C++ 7.70 for Win32 Copyright (c) 1993-2023 Embarcadero Technologies Inc.
+servicio.c:
+Warning W8065 servicio.prg 46: Call to function 'InitService' with no prototypein function ServiceMain
+*** 1 errors in Compile ***
+* Linking errors *
+
+c:\fw6\samples&gt;&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p273347">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">leandro</div>
+      <div class="rank">Posts: 1816</div>
+      <img class="avatar avatar-img" src="avatars/228.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 26, 2005 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sat Sep 14, 2024 06:35 PM
+      </div>
+      <div class="content"><r>Antonio buenas tardes como estas, me compilo y ejecuto sin problema, pero no veo que haga nada <br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;┌────────────────────────────────────────────────────────────────────────────┐
+?FiveWin for xHarbour 24.07 - Jul. 2024          Harbour development power  │▄
+?(c) FiveTech 1993-2024 for Microsoft Windows 9X/NT/200X/ME/XP/Vista/7/8/10 │█
+└────────────────────────────────────────────────────────────────────────────┘?
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀?
+Compiling...
+xHarbour 1.3.1 Intl. (SimpLex) (Build 20240624)
+Copyright 1999-2024, http://www.xharbour.org http://www.harbour-project.org/
+Compiling 'servicio.prg' and generating preprocessed output to 'servicio.ppo'...
+Generating C source output to 'servicio.c'...
+Done.
+Lines 9, Functions/Procedures 1, pCodes 15
+Embarcadero C++ 7.70 for Win32 Copyright (c) 1993-2023 Embarcadero Technologies, Inc.
+servicio.c:
+Turbo Incremental Link 6.97 Copyright (c) 1997-2022 Embarcadero Technologies, Inc.
+* Application successfully built *
+
+C:\fwh2407\samples&gt;
+
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<IMG src="https://hymplus.com/forofw/servicios_1_1.png"><s><img src="</s><URL url="https://hymplus.com/forofw/servicios_1_1.png">https://hymplus.com/forofw/servicios_1_1.png</URL><e>" alt="" loading="lazy"></e></IMG></r></div>
+    </div>
+  </div>
+  <div class="post" id="p273350">
+    <div class="poster">
+      <div class="name" style="color:#105289">alerchster</div>
+      <div class="rank">Posts: 137</div>
+      <img class="avatar avatar-img" src="avatars/2604.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 22, 2012 04:43 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sat Sep 14, 2024 08:02 PM
+      </div>
+      <div class="content"><r>Una vez construido hay que registrar el servicio. Para eso es necesario abrir una ventana <B><s><strong></s>CMD de Windows en modo Administrador<e></strong></e></B> (Ctrl+Click desde el menu del CMD):<br/><br>
+<br/><br>
+Primero se registra el servicio:<br/><br>
+<B><s><strong></s>sc create servicio binPath=c:\fwh\samples\servicio.exe<e></strong></e></B><br/><br>
+<br/><br>
+A continuación se ejecuta el servicio:<br/><br>
+<B><s><strong></s>sc start servicio<e></strong></e></B></r></div>
+    </div>
+  </div>
+  <div class="post" id="p273357">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">leandro</div>
+      <div class="rank">Posts: 1816</div>
+      <img class="avatar avatar-img" src="avatars/228.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 26, 2005 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sat Sep 14, 2024 11:27 PM
+      </div>
+      <div class="content"><p><r>Excelente Antonio, funciono de maravilla  <E>:D</E>  <E>:D</E>  <E>:D</E>  <E>:D</E>  <E>:D</E>  <E>:D</E> <br/><br>
+<br/><br>
+Ahora a pasarlo a código harbour  <E>:oops:</E>  muchas gracias de antemano</r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p273362">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sun Sep 15, 2024 05:05 AM
+      </div>
+      <div class="content"><r><QUOTE author="wilsongamboa"><s><blockquote><cite>wilsongamboa wrote:</cite></s><CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;┌────────────────────────────────────────────────────────────────────────────┐
+│ FiveWin for Harbour 24.07 - Jul. 2024           Harbour development power  │▄
+│ (c) FiveTech 1993-2024 for Microsoft Windows 9X/NT/200X/ME/XP/Vista/7/8/10 │█
+└────────────────────────────────────────────────────────────────────────────┘█
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+Compiling...
+Harbour 3.2.0dev (r2407221137)
+Copyright (c) 1999-2021, https://harbour.github.io/
+Compiling 'servicio.prg' and generating preprocessed output to 'servicio.ppo'..
+Lines 5105, Functions/Procedures 1
+Generating C source output to 'servicio.c'... Done.
+Embarcadero C++ 7.70 for Win32 Copyright (c) 1993-2023 Embarcadero Technologies Inc.
+servicio.c:
+Warning W8065 servicio.prg 46: Call to function 'InitService' with no prototypein function ServiceMain
+*** 1 errors in Compile ***
+* Linking errors *
+
+c:\fw6\samples&gt;&lt;e&gt;</code></pre></div></e></CODE><e></blockquote></e></QUOTE><br>
+<br>
+Prueba a cambiar la línea 19 así:<br/><br>
+int InitService( void );<br/><br>
+<br/><br>
+debemos tener alguna diferencia en buildh.bat</r></div>
+    </div>
+  </div>
+  <div class="post" id="p273364">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sun Sep 15, 2024 05:39 AM
+      </div>
+      <div class="content"><p><t>Una vez hemos entendido la mecánica básica del servicio ahora voy a revisar el API creado por Jose Luis y probarlo con ambos Harbour y xHarbour</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p273365">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Sun Sep 15, 2024 06:13 AM
+      </div>
+      <div class="content"><r>Probando el ejemplo c:\harbour\contrib\hbwin\tests\service.prg con <B><s><strong></s>Harbour<e></strong></e></B><br/><br>
+<br/><br>
+<B><s><strong></s>Para construirlo:<e></strong></e></B><br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;set path=c:\bcc77\bin
+c:\harbour\bin\win\bcc\hbmk2 service.prg -comp=bcc -lhbwin&lt;e&gt;</code></pre></div></e></CODE><br>
+<B><s><strong></s>Abrimos ventana CMD como Administrador<e></strong></e></B><br/><br>
+<br/><br>
+<B><s><strong></s>Ejecutamos service.exe i<e></strong></e></B>  <br/><br>
+// OJO: parámetro i<br>
+<QUOTE><s><blockquote></s>Service has been successfully installed<e></blockquote></e></QUOTE><br>
+<B><s><strong></s>Ejecutamos: service s ó simplemente service<e></strong></e></B><br>
+<QUOTE><s><blockquote></s>Service has had some problems: 1063 El proceso del servicio no puede conectar con el controlador del servicio.<e></blockquote></e></QUOTE><br>
+<B><s><strong></s>Ejecutamos: service u<e></strong></e></B><br>
+<QUOTE><s><blockquote></s>Service has been deleted<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p273406">
+    <div class="poster">
+      <div class="name" style="color:#105289">RAMESHBABU</div>
+      <div class="rank">Posts: 651</div>
+      <img class="avatar avatar-img" src="avatars/190.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 21, 2005 05:54 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Mon Sep 16, 2024 01:45 AM
+      </div>
+      <div class="content"><p><t>Dear Mr.Antonio,<br/><br>
+<br/><br>
+I could build the EXE and the service is started.<br/><br>
+<br/><br>
+Where I should insert the Business Logic in the<br/><br>
+Loop?<br/><br>
+<br/><br>
+Can you please give me a small example. <br/><br>
+<br/><br>
+I tried like this to test <br/><br>
+        // Aquí va el bucle principal del servicio<br/><br>
+        while (ServiceStatus.dwCurrentState == SERVICE_RUNNING)<br/><br>
+        {<br/><br>
+            MemoWrit("MyTime.txt", Time());<br/><br>
+            // Realiza las tareas del servicio<br/><br>
+            Sleep(1000);<br/><br>
+        }<br/><br>
+<br/><br>
+But it did not work.<br/><br>
+<br/><br>
+-Ramesh Babu P</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p273407">
+    <div class="poster">
+      <div class="name" style="color:#105289">wilsongamboa</div>
+      <div class="rank">Posts: 669</div>
+      <img class="avatar avatar-img" src="avatars/179.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 06:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Mon Sep 16, 2024 02:50 AM
+      </div>
+      <div class="content"><p><t>Master Antonio eso era gracias ya compilo OKs</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p273408">
+    <div class="poster">
+      <div class="name" style="color:#105289">wilsongamboa</div>
+      <div class="rank">Posts: 669</div>
+      <img class="avatar avatar-img" src="avatars/179.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 06:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Mon Sep 16, 2024 02:55 AM
+      </div>
+      <div class="content"><p><t>Si logramos hacer eso vamos a tener muchas soluciones tengo varios candidatos para eso<br/><br>
+saludos</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p273413">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Creando Servicios con Harbour y xHarbour</span><br>
+        Posted: Mon Sep 16, 2024 05:48 AM
+      </div>
+      <div class="content"><r>Dear Ramesh,<br/><br>
+<br/><br>
+servicio.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;// Once you build the EXE open a CMD window as Administrator, then:
+// sc create servicio binPath=c:\fwh\samples\servicio.exe
+// sc start servicio
+// when you want to stop it: sc stop servicio
+// when you want to remove it: sc delete servicio
+// DON'T USE ANY GUI FROM IT !!!
+
+#include "FiveWin.ch"
+
+function Main()
+
+   Servicio()
+
+return nil
+
+function TrabajoServicio()
+
+   if ! File( "c:\fwh\samples\servicio.txt" ) 
+      memoWrit( "c:\fwh\samples\servicio.txt", Time() )    
+   else   
+      memoWrit( "c:\fwh\samples\servicio.txt", memoRead( "c:\fwh\samples\servicio.txt" ) + CRLF + Time() )    
+   endif   
+
+return nil    
+
+#pragma BEGINDUMP
+
+#include &lt;windows.h&gt;
+#include &lt;tchar.h&gt;
+#include &lt;hbvm.h&gt;
+
+SERVICE_STATUS ServiceStatus;
+SERVICE_STATUS_HANDLE hStatus;
+
+void ServiceMain(int argc, char** argv);
+void ControlHandler(DWORD request);
+int InitService( void );
+
+HB_FUNC( SERVICIO )
+{
+    SERVICE_TABLE_ENTRY ServiceTable[2];
+    ServiceTable[0].lpServiceName = _T("Servicio");
+    ServiceTable[0].lpServiceProc = (LPSERVICE_MAIN_FUNCTION)ServiceMain;
+    ServiceTable[1].lpServiceName = NULL;
+    ServiceTable[1].lpServiceProc = NULL;
+
+    StartServiceCtrlDispatcher(ServiceTable);
+}
+
+#pragma warn -8057
+
+void ServiceMain(int argc, char** argv )
+{
+    ServiceStatus.dwServiceType        = SERVICE_WIN32;
+    ServiceStatus.dwCurrentState       = SERVICE_START_PENDING;
+    ServiceStatus.dwControlsAccepted   = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
+    ServiceStatus.dwWin32ExitCode      = 0;
+    ServiceStatus.dwServiceSpecificExitCode = 0;
+    ServiceStatus.dwCheckPoint         = 0;
+    ServiceStatus.dwWaitHint           = 0;
+
+    hStatus = RegisterServiceCtrlHandler(_T("Servicio"), (LPHANDLER_FUNCTION)ControlHandler);
+
+    if (InitService() == 0)
+    {
+        ServiceStatus.dwCurrentState = SERVICE_RUNNING;
+        SetServiceStatus(hStatus, &amp;ServiceStatus);
+
+        // Aquí va el bucle principal del servicio
+        while (ServiceStatus.dwCurrentState == SERVICE_RUNNING)
+        {
+            // Realiza las tareas del servicio
+            hb_vmPushSymbol( hb_dynsymSymbol( hb_dynsymFindName( "TRABAJOSERVICIO" ) ) );
+            hb_vmPushNil();
+            hb_vmDo( 0 );
+
+            Sleep(1000);
+        }
+    }
+
+    ServiceStatus.dwCurrentState = SERVICE_STOPPED;
+    SetServiceStatus(hStatus, &amp;ServiceStatus);
+}
+
+void ControlHandler(DWORD request)
+{
+    switch(request)
+    {
+        case SERVICE_CONTROL_STOP:
+            ServiceStatus.dwWin32ExitCode = 0;
+            ServiceStatus.dwCurrentState = SERVICE_STOPPED;
+            SetServiceStatus(hStatus, &amp;ServiceStatus);
+            MessageBox( 0, "service stopped", "ok", 0 );
+            return;
+        case SERVICE_CONTROL_SHUTDOWN:
+            ServiceStatus.dwWin32ExitCode = 0;
+            ServiceStatus.dwCurrentState = SERVICE_STOPPED;
+            SetServiceStatus(hStatus, &amp;ServiceStatus);
+            return;
+        default:
+            break;
+    }
+    SetServiceStatus(hStatus, &amp;ServiceStatus);
+}
+
+int InitService()
+{
+    // Inicialización del servicio
+    return 0;
+}
+
+#pragma ENDDUMP&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-44870-page-2.html">2</a> <a href="topic-44870-page-3.html">3</a> <a href="topic-44870-page-4.html">4</a> (47 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

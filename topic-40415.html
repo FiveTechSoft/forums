@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cargar un Browse desde GET..ACTION.. - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-40415">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Cargar un Browse desde GET..ACTION..</div>
+  <div class="post" id="p241286">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cargar un Browse desde GET..ACTION..</span><br>
+        Posted: Sun May 16, 2021 06:39 PM
+      </div>
+      <div class="content"><p>Hola foro,</p>
+<p>Necesito cargar un Browse desde un GET y seleccionar un registro para llenar el mismo</p>
+<p>Alguien tiene un ejemplo de como hacerlo?</p>
+<p>Gracias de antemano</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241288">
+    <div class="poster">
+      <div class="name" style="color:#105289">jvtecheto</div>
+      <div class="rank">Posts: 604</div>
+      <img class="avatar avatar-img" src="avatars/2721.jpg" alt="" loading="lazy">
+      Joined: Mon Mar 04, 2013 04:32 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Cargar un Browse desde GET..ACTION..</span><br>
+        Posted: Sun May 16, 2021 07:35 PM
+      </div>
+      <div class="content">Hola amigo:<br>
+<br>
+Yo utilizo algo como lo que pides, pero a ver como te lo explico. Lo intento... Este es el codigo del GET que tiene un bitmap (como puedes comprobar) tambien tengo en cuenta si el usuario pulsa simplemente Enter<br>
+que se lance la busqueda del codigo, tambien que pulse la tecla + , utilizo en ello dos funciones una trivial rellena() en la cual relleno automaticamente con ceros a la izquierda , la puedes desechar si quieres y luego <br>
+la de la busqueda en si que es un dialogo en el que se muestra el browse y permite buscar.<br>
+Se podria mejorar muchisimo con busqueda incremental, no lo he conseguido nunca desde un dialogo, tambien el codigo sera muy mejorable, pero a mi me funciona.<br>
+Ah veras que utilizo listbox en vez de XBrowse , no he conseguido nunca colocar los botones arriba del Xbrowse y que se vean bien, lo tengo pendiente, puedes probar tu.<br>
+Tambien veras que en la funciona hay uN DO CASE, ya que utilizo el mismo dialogo para todas las tablas que busco, ajusta tu, tus alias y las tablas que quieres buscar<br>
+<br>
+A ver por partes.<br>
+codigo del GET<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> REDEFINE GET oObra VAR cObra ID 101 BITMAP "OBRAS1" OF oDlg PICTURE "9999" ;
+   ACTION ( cObra := Busqueda( cAlias ), oInicio:SetFocus(), oDlg:UPDATE() ) ;
+   VALID ( Rellena( oObra ) ) .AND. ;
+   ( IF( Obr-&gt;( dbSeek( cObra ) ), ( oDlg:UPDATE(), .T. ), ;
+         ( cObra := Busqueda( "Obr" ), oSayObra:Refresh(), oInicio:SetFocus(), oDlg:UPDATE(), .T. ) ) ) UPDATE
+
+   oObra:bGotfocus := { || oWndMain:SetMsg( "Codigo de obra.Tecla &lt;+&gt; permite buscar" ) }
+   oObra:bKeyDown := { | nKey | IIf( nKey = VK_ADD, ( cObra := Busqueda( "Obr" ), oDlg:UPDATE(), oInicio:SetFocus() ), ) }</code></pre></div><br>
+<br>
+Codigo funciones Rellena y Busqueda <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FUNCTION Rellena( oVar1 )
+
+   LOCAL cValor
+   cValor := oVar1:cText() // Recupera el valor del Objeto Get
+   IF ! Empty( cValor )
+      cValor := PadL( AllTrim( cValor ), Len( cValor ), "0" )
+      oVar1:cText( cValor ) // Asigna el valor con Ceros al objeto Get
+      oVar1:Refresh() // le indico al objeto Get, que se vuelva a pintar
+   ENDIF
+   RETURN .T.
+
+// ------------------------------------------------------------------------
+
+FUNCTION Busqueda( cAlias )
+
+   LOCAL xVret
+   LOCAL oDlg, oBrw
+   LOCAL oRad, oBusqueda, oSayCodigo, oSayNombre
+   LOCAL nRad, cBusqueda
+   LOCAL oDbf
+   LOCAL lanzaEdit, lanzaAdd
+   LOCAL cBloqueEdit, cBloqueAdd, bBloqueEdit, bBloqueAdd
+   LOCAL cIndice := ( cAlias ) -&gt;( ordSetFocus() )
+
+   dbSelectArea( cAlias )
+   DATABASE oDbf
+
+   DEFINE DIALOG oDlg NAME "BUSCAR" ;
+   TITLE "Buscar Registro"
+
+   // El alias puede ser Prov,Art,Trab,Obr. Hay que adaptarlo a los alias a buscar
+   DO CASE
+      CASE cAlias = "Prov"
+         lanzaEdit := "EditProve(.F.)"
+         lanzaAdd := "EditProve(.T.)"
+      CASE cAlias = "Obr"
+         lanzaEdit := "EditObras(.F.)"
+         lanzaAdd := "EditObras(.T.)"
+      CASE cAlias = "Trab"
+         lanzaEdit := "EditTraba(.F.)"
+         lanzaAdd := "EditTraba(.T.)"
+      CASE cAlias = "Art"
+         lanzaEdit := "EditArti(.F.)"
+         lanzaAdd := "EditArti(.T.)"
+   END CASE
+   cBloqueEdit := "{ |oBrw| " + lanzaEdit + ",oBrw:Refresh(),oBrw:SetFocus() }"
+   cBloqueAdd := "{ |oBrw| " + lanzaAdd + ",oBrw:Refresh(),oBrw:SetFocus() }"
+   bBloqueEdit := &amp;( cBloqueEdit )
+   bBloqueAdd := &amp;( cBloqueAdd )
+
+   nRad := Space( 1 )
+   nRad := 2
+
+  /* oDbf:SetOrder(2)
+   cBusqueda:=SPACE(15) */
+
+   REDEFINE SAY oSayCodigo PROMPT IF( nRad == 1, "Codigo", "Nombre" ) ID 99 OF oDlg COLOR CLR_GREEN UPDATE
+   REDEFINE SAY oSayNombre PROMPT ( cAlias ) -&gt;Nombre ID 98 OF oDlg COLOR CLR_RED UPDATE
+
+   REDEFINE GET oBusqueda VAR cBusqueda ID 100 OF oDlg ;
+   PICTURE "@!"  ON CHANGE ( ::Assign(), IIf( oDbf:SEEK( cBusqueda ), ( oBrw:UpStable(), oDlg:UPDATE() ),  ) )
+
+   REDEFINE RADIO oRad VAR nRad ID 102, 103 OF oDlg ;
+   ON CHANGE ( IF( nRad == 1, ( oDbf:SetOrder( 1 ), cBusqueda := Space( 4 ) ), ( oDbf:SetOrder( 2 ), cBusqueda := Space( 15 ) ) ), oBusqueda:SetFocus() )  ;
+   VALID ( IF( nRad == 1, oSayCodigo := "Codigo", oSayCodigo := "Nombre" ), oDlg:UPDATE(), .T. ) UPDATE
+
+   REDEFINE BTNBMP ID 109 RESOURCE "ADD1" OF oDlg ACTION Eval( bBloqueAdd, oBrw ) TOOLTIP "Añadir egistros" NOBORDER // Añade un registro
+   REDEFINE BTNBMP ID 108 RESOURCE "EDIT1" OF oDlg ACTION Eval( bBloqueEdit, oBrw ) TOOLTIP "Modificar registros" NOBORDER  // Modifica un regitro
+   REDEFINE BTNBMP ID 104 RESOURCE "SELECT1" OF oDlg ACTION ( xVret := ( cAlias ) -&gt;Codigo, oDlg:END() ) TOOLTIP "Seleccionar registro" NOBORDER // Selecciona
+   REDEFINE BTNBMP ID 105 RESOURCE "EXIT3" OF oDlg ACTION ( xVret := ( cAlias ) -&gt;Codigo, oDlg:END() ) TOOLTIP "Abandona busqueda" NOBORDER
+
+   REDEFINE LISTBOX oBrw FIELDS oDbf:Codigo, oDbf:Nombre ;
+   Alias (cAlias) HEADERS "CODIGO", "NOMBRE" ;
+   ON CHANGE ( oSayNombre := ( cAlias ) -&gt;Nombre, oDlg:UPDATE() ) ;
+   ON DBLCLICK ( xVret := ( cAlias ) -&gt;Codigo, oDlg:END() ) ;
+   ID 106 OF oDlg UPDATE
+
+   oDbf:Gotop()
+   oBrw:bSkip = { | nRecs | oDbf:Skipper( nRecs ) }
+   oBrw:nLineStyle := 3 // ( Puede asumir valores 0 a 10 ) 1,3
+   oBrw:bGotFocus := { || oBrw:Refresh() }
+   oBrw:bKeyDown := { | nKey | IIf( nKey = 13, ( xVret := ( cAlias ) -&gt;Codigo, oDlg:END() ), ) }
+
+   ACTIVATE DIALOG oDlg CENTERED ON INIT ( oDbf:SetOrder( 2 ), cBusqueda := Space( 15 ), oBusqueda:SetFocus() ) ;
+                                           VALID ( xVret := ( cAlias ) -&gt;Codigo, ( cAlias ) -&gt;( ordSetFocus( cIndice ) ), .T. )
+
+   RETURN ( xVret )
+
+// -------------------------------------------------------------------------</code></pre></div><br>
+<br>
+y el codigo del del dialogo que debes incluir a tu .RC<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">LANGUAGE LANG_SPANISH, SUBLANG_SPANISH_MODERN
+BUSCAR DIALOG 26, 47, 274, 173
+STYLE DS_3DLOOK | DS_MODALFRAME | DS_SETFONT | WS_CAPTION | WS_POPUP | WS_SYSMENU
+CAPTION "LOCALIZACION REGISTRO"
+FONT 10, "Arial"
+{
+    EDITTEXT        100, 8, 32, 204, 12, WS_GROUP, WS_EX_LEFT
+    CONTROL         "", 106, "TWBrowse", 0x50A30000, 0, 68, 268, 102, 0x00000000
+    AUTORADIOBUTTON "Código", 102, 224, 20, 36, 10, 0, WS_EX_LEFT
+    AUTORADIOBUTTON "Nombre", 103, 224, 40, 36, 10, 0, WS_EX_LEFT
+    GROUPBOX        "Busqueda", 101, 219, 1, 49, 63, 0, WS_EX_LEFT
+    LTEXT           ".", 99, 79, 20, 69, 8, NOT WS_GROUP | SS_LEFT, WS_EX_LEFT
+    LTEXT           "", 98, 12, 10, 121, 8, NOT WS_GROUP | SS_LEFT, WS_EX_LEFT
+    LTEXT           "Búsqueda por :", -1, 11, 20, 51, 9, NOT WS_GROUP | SS_LEFT, WS_EX_LEFT
+    GROUPBOX        "", 4001, 4, 0, 213, 64, 0, WS_EX_LEFT
+    PUSHBUTTON      "", 109, 8, 48, 18, 14, BS_BITMAP, WS_EX_LEFT
+    PUSHBUTTON      "", 108, 28, 48, 18, 14, BS_BITMAP, WS_EX_LEFT
+    PUSHBUTTON      "", 104, 48, 48, 18, 14, BS_BITMAP, WS_EX_LEFT
+    PUSHBUTTON      "", 105, 68, 48, 18, 14, BS_BITMAP, WS_EX_LEFT
+}</code></pre></div><br>
+<br>
+Posdata, si quieres los bitmaps te los puedo enviar pero puedes usar los de tu eleccion eso no es problema.<br>
+Ya te digo que este tema es mejorable pero a mi me funciona.<br>
+<br>
+Un saludo<br>
+<br>
+Jose</div>
+    </div>
+  </div>
+  <div class="post" id="p241289">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Cargar un Browse desde GET..ACTION..</span><br>
+        Posted: Sun May 16, 2021 07:38 PM
+      </div>
+      <div class="content"><blockquote><cite>jvtecheto wrote:</cite>Hola amigo:<br>
+<br>
+Yo utilizo algo como lo que pides, pero a ver como te lo explico. Lo intento... Este es el codigo del GET que tiene un bitmap (como puedes comprobar) tambien tengo en cuenta si el usuario pulsa simplemente Enter<br>
+que se lance la busqueda del codigo, tambien que pulse la tecla + , utilizo en ello dos funciones una trivial rellena() en la cual relleno automaticamente con ceros a la izquierda , la puedes desechar si quieres y luego <br>
+la de la busqueda en si que es un dialogo en el que se muestra el browse y permite buscar.<br>
+Se podria mejorar muchisimo con busqueda incremental, no lo he conseguido nunca desde un dialogo, tambien el codigo sera muy mejorable, pero a mi me funciona.<br>
+Ah veras que utilizo listbox en vez de XBrowse , no he conseguido nunca colocar los botones arriba del Xbrowse y que se vean bien, lo tengo pendiente, puedes probar tu.<br>
+Tambien veras que en la funciona hay uN DO CASE, ya que utilizo el mismo dialogo para todas las tablas que busco, ajusta tu, tus alias y las tablas que quieres buscar<br>
+<br>
+A ver por partes.<br>
+codigo del GET<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> REDEFINE GET oObra VAR cObra ID 101 BITMAP "OBRAS1" OF oDlg PICTURE "9999" ;
+   ACTION ( cObra := Busqueda( cAlias ), oInicio:SetFocus(), oDlg:UPDATE() ) ;
+   VALID ( Rellena( oObra ) ) .AND. ;
+   ( IF( Obr-&gt;( dbSeek( cObra ) ), ( oDlg:UPDATE(), .T. ), ;
+         ( cObra := Busqueda( "Obr" ), oSayObra:Refresh(), oInicio:SetFocus(), oDlg:UPDATE(), .T. ) ) ) UPDATE
+
+   oObra:bGotfocus := { || oWndMain:SetMsg( "Codigo de obra.Tecla &lt;+&gt; permite buscar" ) }
+   oObra:bKeyDown := { | nKey | IIf( nKey = VK_ADD, ( cObra := Busqueda( "Obr" ), oDlg:UPDATE(), oInicio:SetFocus() ), ) }</code></pre></div><br>
+<br>
+Codigo funciones Rellena y Busqueda <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FUNCTION Rellena( oVar1 )
+
+   LOCAL cValor
+   cValor := oVar1:cText() // Recupera el valor del Objeto Get
+   IF ! Empty( cValor )
+      cValor := PadL( AllTrim( cValor ), Len( cValor ), "0" )
+      oVar1:cText( cValor ) // Asigna el valor con Ceros al objeto Get
+      oVar1:Refresh() // le indico al objeto Get, que se vuelva a pintar
+   ENDIF
+   RETURN .T.
+
+// ------------------------------------------------------------------------
+
+FUNCTION Busqueda( cAlias )
+
+   LOCAL xVret
+   LOCAL oDlg, oBrw
+   LOCAL oRad, oBusqueda, oSayCodigo, oSayNombre
+   LOCAL nRad, cBusqueda
+   LOCAL oDbf
+   LOCAL lanzaEdit, lanzaAdd
+   LOCAL cBloqueEdit, cBloqueAdd, bBloqueEdit, bBloqueAdd
+   LOCAL cIndice := ( cAlias ) -&gt;( ordSetFocus() )
+
+   dbSelectArea( cAlias )
+   DATABASE oDbf
+
+   DEFINE DIALOG oDlg NAME "BUSCAR" ;
+   TITLE "Buscar Registro"
+
+   // El alias puede ser Prov,Art,Trab,Obr. Hay que adaptarlo a los alias a buscar
+   DO CASE
+      CASE cAlias = "Prov"
+         lanzaEdit := "EditProve(.F.)"
+         lanzaAdd := "EditProve(.T.)"
+      CASE cAlias = "Obr"
+         lanzaEdit := "EditObras(.F.)"
+         lanzaAdd := "EditObras(.T.)"
+      CASE cAlias = "Trab"
+         lanzaEdit := "EditTraba(.F.)"
+         lanzaAdd := "EditTraba(.T.)"
+      CASE cAlias = "Art"
+         lanzaEdit := "EditArti(.F.)"
+         lanzaAdd := "EditArti(.T.)"
+   END CASE
+   cBloqueEdit := "{ |oBrw| " + lanzaEdit + ",oBrw:Refresh(),oBrw:SetFocus() }"
+   cBloqueAdd := "{ |oBrw| " + lanzaAdd + ",oBrw:Refresh(),oBrw:SetFocus() }"
+   bBloqueEdit := &amp;( cBloqueEdit )
+   bBloqueAdd := &amp;( cBloqueAdd )
+
+   nRad := Space( 1 )
+   nRad := 2
+
+  /* oDbf:SetOrder(2)
+   cBusqueda:=SPACE(15) */
+
+   REDEFINE SAY oSayCodigo PROMPT IF( nRad == 1, "Codigo", "Nombre" ) ID 99 OF oDlg COLOR CLR_GREEN UPDATE
+   REDEFINE SAY oSayNombre PROMPT ( cAlias ) -&gt;Nombre ID 98 OF oDlg COLOR CLR_RED UPDATE
+
+   REDEFINE GET oBusqueda VAR cBusqueda ID 100 OF oDlg ;
+   PICTURE "@!"  ON CHANGE ( ::Assign(), IIf( oDbf:SEEK( cBusqueda ), ( oBrw:UpStable(), oDlg:UPDATE() ),  ) )
+
+   REDEFINE RADIO oRad VAR nRad ID 102, 103 OF oDlg ;
+   ON CHANGE ( IF( nRad == 1, ( oDbf:SetOrder( 1 ), cBusqueda := Space( 4 ) ), ( oDbf:SetOrder( 2 ), cBusqueda := Space( 15 ) ) ), oBusqueda:SetFocus() )  ;
+   VALID ( IF( nRad == 1, oSayCodigo := "Codigo", oSayCodigo := "Nombre" ), oDlg:UPDATE(), .T. ) UPDATE
+
+   REDEFINE BTNBMP ID 109 RESOURCE "ADD1" OF oDlg ACTION Eval( bBloqueAdd, oBrw ) TOOLTIP "Añadir egistros" NOBORDER // Añade un registro
+   REDEFINE BTNBMP ID 108 RESOURCE "EDIT1" OF oDlg ACTION Eval( bBloqueEdit, oBrw ) TOOLTIP "Modificar registros" NOBORDER  // Modifica un regitro
+   REDEFINE BTNBMP ID 104 RESOURCE "SELECT1" OF oDlg ACTION ( xVret := ( cAlias ) -&gt;Codigo, oDlg:END() ) TOOLTIP "Seleccionar registro" NOBORDER // Selecciona
+   REDEFINE BTNBMP ID 105 RESOURCE "EXIT3" OF oDlg ACTION ( xVret := ( cAlias ) -&gt;Codigo, oDlg:END() ) TOOLTIP "Abandona busqueda" NOBORDER
+
+   REDEFINE LISTBOX oBrw FIELDS oDbf:Codigo, oDbf:Nombre ;
+   Alias (cAlias) HEADERS "CODIGO", "NOMBRE" ;
+   ON CHANGE ( oSayNombre := ( cAlias ) -&gt;Nombre, oDlg:UPDATE() ) ;
+   ON DBLCLICK ( xVret := ( cAlias ) -&gt;Codigo, oDlg:END() ) ;
+   ID 106 OF oDlg UPDATE
+
+   oDbf:Gotop()
+   oBrw:bSkip = { | nRecs | oDbf:Skipper( nRecs ) }
+   oBrw:nLineStyle := 3 // ( Puede asumir valores 0 a 10 ) 1,3
+   oBrw:bGotFocus := { || oBrw:Refresh() }
+   oBrw:bKeyDown := { | nKey | IIf( nKey = 13, ( xVret := ( cAlias ) -&gt;Codigo, oDlg:END() ), ) }
+
+   ACTIVATE DIALOG oDlg CENTERED ON INIT ( oDbf:SetOrder( 2 ), cBusqueda := Space( 15 ), oBusqueda:SetFocus() ) ;
+                                           VALID ( xVret := ( cAlias ) -&gt;Codigo, ( cAlias ) -&gt;( ordSetFocus( cIndice ) ), .T. )
+
+   RETURN ( xVret )
+
+// -------------------------------------------------------------------------</code></pre></div><br>
+<br>
+y el codigo del del dialogo que debes incluir a tu .RC<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">LANGUAGE LANG_SPANISH, SUBLANG_SPANISH_MODERN
+BUSCAR DIALOG 26, 47, 274, 173
+STYLE DS_3DLOOK | DS_MODALFRAME | DS_SETFONT | WS_CAPTION | WS_POPUP | WS_SYSMENU
+CAPTION "LOCALIZACION REGISTRO"
+FONT 10, "Arial"
+{
+    EDITTEXT        100, 8, 32, 204, 12, WS_GROUP, WS_EX_LEFT
+    CONTROL         "", 106, "TWBrowse", 0x50A30000, 0, 68, 268, 102, 0x00000000
+    AUTORADIOBUTTON "Código", 102, 224, 20, 36, 10, 0, WS_EX_LEFT
+    AUTORADIOBUTTON "Nombre", 103, 224, 40, 36, 10, 0, WS_EX_LEFT
+    GROUPBOX        "Busqueda", 101, 219, 1, 49, 63, 0, WS_EX_LEFT
+    LTEXT           ".", 99, 79, 20, 69, 8, NOT WS_GROUP | SS_LEFT, WS_EX_LEFT
+    LTEXT           "", 98, 12, 10, 121, 8, NOT WS_GROUP | SS_LEFT, WS_EX_LEFT
+    LTEXT           "Búsqueda por :", -1, 11, 20, 51, 9, NOT WS_GROUP | SS_LEFT, WS_EX_LEFT
+    GROUPBOX        "", 4001, 4, 0, 213, 64, 0, WS_EX_LEFT
+    PUSHBUTTON      "", 109, 8, 48, 18, 14, BS_BITMAP, WS_EX_LEFT
+    PUSHBUTTON      "", 108, 28, 48, 18, 14, BS_BITMAP, WS_EX_LEFT
+    PUSHBUTTON      "", 104, 48, 48, 18, 14, BS_BITMAP, WS_EX_LEFT
+    PUSHBUTTON      "", 105, 68, 48, 18, 14, BS_BITMAP, WS_EX_LEFT
+}</code></pre></div><br>
+<br>
+Posdata, si quieres los bitmaps te los puedo enviar pero puedes usar los de tu eleccion eso no es problema.<br>
+Ya te digo que este tema es mejorable pero a mi me funciona.<br>
+<br>
+Un saludo<br>
+<br>
+Jose</blockquote><br>
+<br>
+Jose,<br>
+<br>
+Muchisimas gracias por tomarte de tu tiempo y responderme tan detalladamente<br>
+<br>
+Voy a probar tu codigo y te estare comentando</div>
+    </div>
+  </div>
+  <div class="post" id="p241291">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Cargar un Browse desde GET..ACTION..</span><br>
+        Posted: Sun May 16, 2021 08:12 PM
+      </div>
+      <div class="content"><p>Lo que necesito es que por medio del boton llamar a un prg que contiene otro Browse. De ese brow se seleccionar un registro y con un click o Enter llenar el campo desde donde ejecute el boton del Get</p>
+<p>Espero haberme hecho entender</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241292">
+    <div class="poster">
+      <div class="name" style="color:#105289">jvtecheto</div>
+      <div class="rank">Posts: 604</div>
+      <img class="avatar avatar-img" src="avatars/2721.jpg" alt="" loading="lazy">
+      Joined: Mon Mar 04, 2013 04:32 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Cargar un Browse desde GET..ACTION..</span><br>
+        Posted: Sun May 16, 2021 08:27 PM
+      </div>
+      <div class="content"><p>Si eso lo hace el código que he adjuntado, adaptarlo a tus tablas y funciona, si pulsas enter, te la + o un código que no existe se abre el diálogo con el browse, eliges el registro y te lo coloca en el get </p>
+<p>Enviado desde mi POCOPHONE F1 mediante Tapatalk</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241305">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Cargar un Browse desde GET..ACTION..</span><br>
+        Posted: Mon May 17, 2021 01:29 PM
+      </div>
+      <div class="content">You may consider using the FWH built-in function PopupBrowse(), which is created for this purpose only.<br>
+Source of the function is available in TGet.prg.<br>
+<br>
+Usage:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+REQUEST DBFCDX
+
+function Main()
+
+   local cState   := PadR( "New York", 25 )
+   local oDlg, oFont, oGet
+
+   SetGetColorFocus()
+
+   USE STATES SHARED VIA "DBFCDX" READONLY
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-16
+   DEFINE DIALOG oDlg SIZE 450,150 PIXEL TRUEPIXEL FONT oFont ;
+      TITLE "Get-PopUpBrowse"
+
+   @ 20,20 SAY "State Name :" SIZE 100,24 PIXEL OF oDlg
+
+   @ 20,140 GET oGet VAR cState SIZE 200,26 PIXEL OF oDlg ;
+      ACTION PopUpBrowse( "STATES", oGet, nil, 2 )
+
+   @ 90,20 BUTTON "CHECK" SIZE 100,30 PIXEL OF oDlg ACTION MsgInfo( cState )
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oFont
+
+return nil</code></pre></div><br>
+<br>
+<a href="https://imageshack.com/i/pmIUi3tRg" rel="noopener"><img src="https://imagizer.imageshack.com/img922/797/IUi3tR.gif" alt="" loading="lazy"></a></div>
+    </div>
+  </div>
+  <div class="post" id="p241306">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Cargar un Browse desde GET..ACTION..</span><br>
+        Posted: Mon May 17, 2021 01:33 PM
+      </div>
+      <div class="content"><p>Hello Mr Rao and thanks</p>
+<p>This is a good apporach but I need to call another Browse in case if the row I'm looking for does not exist I can Add it fron the browser itself</p>
+<p>Please advise</p></div>
+    </div>
+  </div>
+  <div class="post" id="p241307">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Cargar un Browse desde GET..ACTION..</span><br>
+        Posted: Mon May 17, 2021 02:04 PM
+      </div>
+      <div class="content"><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   REDEFINE GET aGet[56] VAR CNOMENECES    PICTURE "@K" ID 76 OF oFld:aDialogs[2] ;
+      UPDATE COLORS CLR_BLACK, CLR_WHITE FONT oFont BITMAP "BUSCAR"               ;
+      ACTION( BUSCA_NECESSIDADES( aGet ) )
+
+   aGet[56]:cToolTip := OemToAnsi( "&lt;F7&gt; - Cadastro de Necessidades" )
+   aGet[56]:lBtnTransparent := .T.       // transparent button
+   aGet[56]:bKeyDown := { |nKey| IF( nKey == VK_F7, Eval( aGet[56]:bAction ), Nil ) }</code></pre></div><br>
+<br>
+Regards, saludos.</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

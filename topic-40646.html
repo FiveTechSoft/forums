@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Using source on other .prgs - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-40646">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-45.html">mod_harbour</a> Using source on other .prgs</div>
+  <div class="post" id="p242870">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Using source on other .prgs</span><br>
+        Posted: Fri Jul 16, 2021 01:01 PM
+      </div>
+      <div class="content">Hello Mod-harbourers;<br>
+<br>
+I have started using ModHarbour but so far not so much to build html pages but to trap webhooks.  A webhook is a POST request sent to a page from services to notify or transmit certain data.<br>
+<br>
+There is something I still can't figure out about Modharbour.   It is the use of other functions and classes on other source files from my Index.prg source.   <br>
+<br>
+For example, my code below receives POST data from a service call Twilio.    Anytime someone texts my Twilio phone number, this code receives and processes POST data from Twilio that contain all the SMS text information.   <br>
+<br>
+Notice how on this code I'm using functions like Connect2DD() and LogData() and ExecuteSQL().  These are my own functions.   In order to be able to use them I find I have to include all their source into Index.prg.  I want to avoid that.<br>
+<br>
+Is there a better way to link other code, classes, and functions and use them on my Index.prg?   Can I use my own created classes like TAdsQuery() that contain many data and methods without having to add all this code into Index.prg?<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "\harbour\include\fileio.ch"
+#include "\harbour\include\ads.ch"
+
+
+#define CRLF Chr(13)+Chr(10)
+#define MAX_LOG_SIZE 65536
+#define LOG_DEBUG .T.
+#define DEBUGFILE "trace.log"
+
+function Main()
+   Local h := AP_PostPairs()
+   Local i, cTel, cConfirmCode
+   Local cSql, lConfirmed
+
+   LogData( DEBUGFILE, { "Twilio Page hit with", AP_Method() }, MAX_LOG_SIZE )
+
+   For i := 1 To  LEN( h )
+      LogData( DEBUGFILE, HGetPairAt( h, i ), MAX_LOG_SIZE )
+   Next
+
+   if AP_Method() == "POST" .AND. ; 
+        hHasKey( h, "MessageSid") .AND. ;
+        hHasKey( h, "AccountSid") .AND. ; 
+        hHasKey( h, "From") .AND. ; 
+        hHasKey( h, "Body") .AND. ;
+        ;//At( ALLTRIM ( h[ "Body "] ),  [1,2] ) &gt; 0  .AND. ;
+        ( AdsGetConnectionType() != AE_NO_CONNECTION .OR. Connect2DD() )
+
+
+      cConfirmCode := AllTrim( hb_ValToStr(  Val(  Left( AllTrim( h[ "Body" ] ), 1 ) ) + 1 ) )
+      cTel         := StrTran( AllTrim( h[ 'From'] ), "+1", "" ) //remove +1 from tel numb
+
+      lConfirmed := isConfirmed( cTel )
+      //we need to first check if appntment hasnt been confirmed already.
+      //patients sometimes send a 1 and then follow with more texts.
+      //if appntmnet is already confirmed, should we ignore further replies...?
+      //+1 was added to cConfirmCode
+      if cConfirmCode != '2' .AND. cConfirmCode != '3' .and. !lconfirmed 
+            cSql := "INSERT INTO SMSMessages( celnumber, Text ) Values( '$1$', '$2$' ) \n"
+            ExecuteSQL( cSql, ADS_ADT, { cTel, "Este sistema automatizado solo entiende 1 para confirmar o 2 para cancelar su cita. Para preguntas marque 787-751-1487" } , LOG_DEBUG )
+
+      elseif lConfirmed //once confirmed stop texting me!  call the office insetad.
+         cSql := "INSERT INTO SMSMessages( celnumber, Text ) Values( '$1$', '$2$' ) \n"
+         ExecuteSQL( cSql, ADS_ADT, { cTel, "Este sistema automatizado ya tiene su cita confirmada o cancelada previamente. Para preguntas marque 787-751-1487" } , LOG_DEBUG )
+
+      else        //it hasn't been confirmed and a 1 or a 2 was received as expected.
+
+         cSql := ; 
+               "DECLARE tbl CURSOR ;                  \n"+;
+               "OPEN tbl AS SELECT Top 1 guid, service, mrec, StartTime \n"+;
+               "              FROM $3$  \n"+;
+               "             WHERE tel = '$2$'        \n"+;
+               "               AND starttime &gt; Now()  \n"+;
+               "               AND ( confirmed is null or confirmed= 1 or confirmed &gt; 3 )\n"+;
+               "          ORDER BY StartTime ;        \n"+;
+               "                                      \n"+;
+               "IF FETCH tbl then                     \n"+;
+               "                                      \n"+;
+               "   UPDATE $3$              \n"+;
+               "      SET confirmed = $1$                \n"+;
+               "    WHERE tel = '$2$'                    \n"+;
+               "      AND CONVERT( starttime, SQL_DATE ) = convert( tbl.starttime, SQL_DATE );\n"+;
+               "                                      \n"+;
+               "end;                                  \n"+;
+               "CLOSE tbl ; \n" 
+                    
+         ExecuteSQL( cSql, ADS_ADT, { cConfirmCode, cTel,'sfi_msk_appntmnts' }, LOG_DEBUG  )
+         ExecuteSQL( cSql, ADS_ADT, { cConfirmCode, cTel,'mo_appntmnts' }, LOG_DEBUG  )
+         ExecuteSQL( cSql, ADS_ADT, { cConfirmCode, cTel,'appntmnts' }, LOG_DEBUG  )
+         ExecuteSQL( cSql, ADS_ADT, { cConfirmCode, cTel,'degetau_appntmnts' }, LOG_DEBUG  )
+
+         if cConfirmCode = '2'   //.and. !isConfirmed?
+            cSql := "INSERT INTO SMSMessages( celnumber, Text ) Values( '$1$', '$2$' ) \n"
+            ExecuteSQL( cSql, ADS_ADT, { cTel, "Es importante llegar 15 minutos antes de la hora de su cita." } , LOG_DEBUG )
+         endif 
+
+      endif 
+
+      AdsDisconnect()
+
+   endif
+
+return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p242884">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Using source on other .prgs</span><br>
+        Posted: Sat Jul 17, 2021 10:05 PM
+      </div>
+      <div class="content">Dear Reinaldo,<br>
+<br>
+mod_harbour provides &quot;meta commands&quot; which are instructions that will be executed <strong>before</strong> running the requested PRG<br>
+<br>
+In example:<br>
+<br>
+Your code ...<br>
+<br>
+at the bottom of it:<br>
+// {% LoadPrg( &quot;extra1.prg&quot; ) %}<br>
+// {% LoadPrg( &quot;extra2.prg&quot; ) %}<br>
+<br>
+Such code will be identified by mod_harbour and macro expanded. function LoadPrg() is quite simple:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">static aPRGs := {}
+
+function LoadPrg( cPrgName )
+
+   local cCode := MemoRead( hb_GetEnv( "PRGPATH" ) + cPrgName )
+   local nLen  := Len( hb_ATokens( cCode, Chr( 10 ) ) )
+   local nAt
+
+   if Len( aPRGs ) == 0
+      AAdd( aPRGs, { AP_FileName(), ProcLine( 2 ) } )
+   endif   
+
+   if AScan( aPRGs, { | aPRG | cPrgName == aPRG[ 1 ] } ) == 0
+      AAdd( aPRGs, { cPrgName, ATail( aPRGs )[ 2 ] + nLen } )
+   else
+      cCode = ""   
+   endif   
+
+return cCode
+
+function GetPrg( nLine )
+
+   local aPrg := { AP_FileName(), ProcLine( 2 ) }
+
+   if Len( aPrgs ) &gt; 0
+      nAt = AScan( aPRGs, { | aPrg | nLine &lt;= aPrg[ 2 ] } ) 
+      if nAt != 0
+         aPrg = aPrgs[ nAt ]
+      endif   
+   endif     
+
+   aPRGs = {}
+
+return aPrg</code></pre></div><br>
+<br>
+The above code must be included into mod_harbour. If you don't want to rebuild mod_harbour then do it this way:<br>
+<br>
+// {% hb_MemoRead( hb_GetEnv( &quot;PRGPATH&quot; ) + &quot;extra1.prg&quot; ) %}<br>
+<br>
+The advantage of using LoadPrg() is that GetPrg( nLine ) will provide you the right PRG name when there is an error in your code</div>
+    </div>
+  </div>
+  <div class="post" id="p242890">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Using source on other .prgs</span><br>
+        Posted: Sun Jul 18, 2021 02:47 PM
+      </div>
+      <div class="content"><p>Hello Antonio and all other Mod_harbour'ers;</p>
+<p>If I am to rebuild mod_harbour; would it make sense to also include some of my most frequently used code as libs linked to libharbour.dll?</p>
+<p>Should I be concerned about speed degradation if I do that?</p>
+<p>Thank you,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p242891">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Using source on other .prgs</span><br>
+        Posted: Sun Jul 18, 2021 03:11 PM
+      </div>
+      <div class="content"><p>Reinaldo,</p>
+<p>&gt; If I am to rebuild mod_harbour; would it make sense to also include some of my most frequently used code as libs linked to libharbour.dll?</p>
+<p>Yes, you can include any library in modharbour.hbp just remember to add this code in apache.prg for each library that you want to include:</p>
+<h1>define __HBEXTERN__HBTIP__REQUEST   // replace HBTIP with your lib name</h1>
+<h1>include &quot;../../harbour/contrib/hbtip/hbtip.hbx&quot; // generated by hbmk2</h1>
+<p>hbx files are generated by hbmk2 when you build your lib using hbmk2:<br>
+-hbx=yourlib.hbx</p>
+<p>This asures that all the symbols in each library will be linked and fully available from mod_harbour.<br>
+Please review any hbx file like &quot;../../harbour/contrib/hbtip/hbtip.hbx&quot; as you can also create them manually using your source code editor.</p>
+<p>&gt; Should I be concerned about speed degradation if I do that?</p>
+<p>not at all. Speed will be practically the same.<br>
+Just a very large libharbour.dll could slow down just a little bit because it is copied on each request. But for a few libs it is not noticeable <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

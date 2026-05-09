@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>FWH Logic with method&#x27;s (Xbrowse ToDbf) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-33295">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> FWH Logic with method&#x27;s (Xbrowse ToDbf)</div>
+  <div class="post" id="p196197">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">FWH Logic with method&#x27;s (Xbrowse ToDbf)</span><br>
+        Posted: Tue Dec 06, 2016 11:45 PM
+      </div>
+      <div class="content">I'm looking a little deeper in the system's of FWH.<br>
+<br>
+As example (I want to learn more about all the options from Xbrowse)<br>
+<br>
+I see lots of Methods like this in the source files :<br>
+<br>
+<br>
+METHOD ToDbf( cFile, bProgress, aCols, lPrompt )<br>
+<br>
+and a corresponding method function like below.<br>
+<br>
+So, It is correct that I can use this to find ALL options that are not reported in the Wiki files ?<br>
+<br>
+If I could read these functions, The use would be something like this (Not tested, just for the idea)<br>
+<br>
+oBrw:ToDbf(MyDbf,???,aCols,???)<br>
+<br>
+Could someone explain this way of working i little more ?  <br>
+<br>
+Thanks<br>
+Marc<br>
+<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD ToDbf( cFile, bProgress, aCols, lPrompt ) CLASS TXBrowse
+
+   local aStruct  := {}
+   local nKeyNo   := ::KeyNo
+   local nRowPos  := ::nRowSel
+   local n, uVal, c, oCol, nCols
+   local nSelect
+
+   if ::nLen &lt; 1
+      return nil
+   endif
+
+   DEFAULT lPrompt := .f.
+
+   if aCols == nil
+      aCols    := ::GetVisibleCols()
+   else
+      AEval( aCols, { |u,i| aCols[ i ] := ::oCol[ u ] } )
+   endif
+
+   ::GoTop()
+   nCols       := Len( aCols )
+
+   for each oCol in aCols
+      uVal     := oCol:Value
+      AAdd( aStruct, { Upper( PadR( oCol:cHeader, 10 ) ), oCol:cDataType, oCol:nDataLen, oCol:nDataDec } )
+      if Empty( oCol:cHeader )
+         ATail( aStruct )[ 1 ]   := "COL" + StrZero( oCol:nCreationOrder, 2 )
+      endif
+      if Empty( c := oCol:cDataType ) .or. !( c $ 'DLMNT' )
+         ATail( aStruct )[ 2 ]   := c := If( uVal == nil, 'C', ValType( uVal ) )
+      endif
+      if Empty( oCol:nDataLen ) .or. c $ "DTLM"
+         ATail( aStruct )[ 3 ]   := HB_DeCode( c, 'C', 40, 'D', 8, 'T', 8, 'L', 1, 'N', 14, 10 )
+      endif
+      if c == 'N'
+         if oCol:nDataDec == nil
+            ATail( aStruct )[ 4 ]   := 0
+         endif
+      else
+         ATail( aStruct )[ 4 ]   := 0
+      endif
+
+   next
+
+   if lPrompt
+      XBROWSER aStruct TITLE cFile + ":STRUCTURE" FASTEDIT ;
+         SETUP (oBrw:cEditPictures := { '@!', '!', '99','99' } )
+   endif
+
+   nSelect  := Select()
+
+   DBCREATE( cFile, aStruct )
+
+   if bProgress == nil
+      if ::oWnd:oMsgBar == nil
+         bProgress := { || nil }
+      else
+         bProgress := { | n, t | ::oWnd:SetMsg( FWString( "To DBF" ) + " : " + ;
+                                 Ltrim( Str( n ) ) + "/" + Ltrim( Str( t ) ) ) }
+      endif
+   endif
+
+   Eval( bProgress, 0, ::nLen )
+
+   USE (cFile) NEW ALIAS XBRTODBF EXCLUSIVE
+   REPEAT
+
+      XBRTODBF-&gt;( DbAppend() )
+      for n := 1 to nCols
+         C     := aStruct[ n ][ 2 ] // datatype
+         uVal  := aCols[ n ]:Value
+         if ! Empty( uVal )
+            if c == 'C'
+               if ValType( uVal ) != 'C'
+                  uVal     := cValToChar( uVal )
+               endif
+            elseif ValType( uVal ) == 'C'
+               uVal  := uCharToVal( uVal, c )
+            endif
+            TRY
+               XBRTODBF-&gt;( FieldPut( n, aCols[ n ]:Value ) )
+            CATCH
+               // datatype mismatch or data len exceeds
+            END
+         endif
+      next
+      Eval( bProgress, XBRTODBF-&gt;( RecNo() ), ::nLen )
+
+   UNTIL ::Skip( 1 ) == 0
+   Eval( bProgress, XBRTODBF-&gt;( LASTREC() ), XBRTODBF-&gt;( LASTREC() ) )
+   CLOSE XBRTODBF
+
+   ::KeyNo     := nKeyNo
+   ::nRowSel   := nRowPos
+   ::Refresh()
+
+   if lPrompt .and. MsgYesNo( If( FWSetLanguage() == 2, "¿ ", "" ) + ;
+                              FWString( "View" ) + " " + cFile + " ?",;
+                              FWString( "Please select" ) )
+      XBrowse( cFile )
+   endif
+
+   ::SetFocus()
+
+return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p196219">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH Logic with method&#x27;s from originale source</span><br>
+        Posted: Wed Dec 07, 2016 04:37 PM
+      </div>
+      <div class="content"><p>Marc,</p>
+<p>&gt; So, It is correct that I can use this to find ALL options that are not reported in the Wiki files ?</p>
+<p>yes</p>
+<p>oBrw:ToDbf( cFile, bProgress, aCols, lPrompt )</p>
+<p>where bProgress is an optional codeblock to evaluate as the DBF is built. lPrompt is a logical value to <br>
+automatically show a browse of the generated cFile</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196582">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH Logic with method&#x27;s (Xbrowse ToDbf)</span><br>
+        Posted: Sun Dec 18, 2016 10:31 AM
+      </div>
+      <div class="content"><p>Are these functions not listed  in the WIKI ?</p>
+<p>FW_SaveArrayToDBF( cList, oBrw:aDeleted )</p>
+<p>Or where to find them ?</p>
+<p>This is for saving data into a existing dbf as I try to see in the samples.</p>
+<p>I do need to create a dbf from the array.  Best from the Xbrowse<br>
+with this function.</p>
+<p>oBrw:ToDbf( cFile, bProgress, aCols, lPrompt )</p>
+<p>Xbrowse with array of fields like aFields</p>
+<p>DEFINE BUTTON OF oBar PROMPT &quot;ToDbf&quot;  ACTION ( oBrw:ToDbf( &quot;Test.dbf&quot; ,, aFields, .f. ))</p>
+<p>and maybe also from a sql record set afther opening online database?</p>
+<p>DEFINE BUTTON OF oBar PROMPT &quot;ToDbf&quot;  ACTION ( oBrw:ToDbf( &quot;Test.dbf&quot; ,, oRs, .f. ))</p></div>
+    </div>
+  </div>
+  <div class="post" id="p196617">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH Logic with method&#x27;s (Xbrowse ToDbf)</span><br>
+        Posted: Mon Dec 19, 2016 10:25 AM
+      </div>
+      <div class="content"><strong>XBrowse METHOD ToDBF( cFile, [bProgress], [aCols], [lPrompt] ) --&gt; NIL<br>
+</strong><br>
+The datasource of the xbrowse can be anything, i.e, DBF, TDatabase, RecordSet, Array, or whatever. Purpose of this method is to save the contents of the browse as dbf.<br>
+<br>
+Parameters:<br>
+<br>
+1. cFile: DBF file name, with extension. A new dbf file with this name is created. If a file with that name exists, attempt is made to overwrite. Failure to overwrite resuls in runtime error. Programmer needs to ensure that a file with that name does not exist or is not open.<br>
+<br>
+2. bProgress: Optional. If specified can be used to display progress. In most cases this is not required since writing is fast.<br>
+<br>
+3. aCols: Optional. By default all Visible columns in the order of their visibility are written. User can hide columns not required and rearrange the columns in the order the wants. If the programmer wants to control the columns to be written, he can specify an array of columns. The array can contain nCreationOrders or HeaderNames or column objects.<br>
+<br>
+4. lPrompt [Optional] Default FALSE. If lPrompt is TRUE,<br>
+<br>
+(a) User is presented with a browse of dbf structure to be created. User can edit the structure before writing. By default, xbrowses uses column headers as field names. If the programmer plans to use this method, he should specify headers which are suitable to be used as field names of dbf. If not editing structure with this option helps.<br>
+<br>
+(b) After writing, user will be presented with an option to view the saved DBF in browse.<br>
+<br>
+<br>
+<strong>function FW_ArrayToDBF( aData, cFieldList, bProgress )<br>
+</strong>source: database.prg<br>
+<br>
+Purpose of the function is to append the contents of array aData at the end of Alias that is already opened in the current workarea.<br>
+<br>
+Parameters:<br>
+1) aData: 2-Dimentional array<br>
+2) cFieldList [optional] By default, contents of the array are copied into fiedls in the order of the fields. If a list of fields is provided the contents are copied into the fields specified in the list. It is the responsibility of the programmer to ensure datatype compatibility with the destination fields.<br>
+3) bProgress: Optional<br>
+<br>
+From the above you can see that the syntax you used for the button actions are not correct. You may revise the usage on the basis of the above explanation</div>
+    </div>
+  </div>
+  <div class="post" id="p196699">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH Logic with method&#x27;s (Xbrowse ToDbf)</span><br>
+        Posted: Wed Dec 21, 2016 08:25 AM
+      </div>
+      <div class="content"><p>Thanks for the full explanation.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

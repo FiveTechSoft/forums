@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ayuda con Objeto Stream de ADO (Solucionado) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-31048">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Ayuda con Objeto Stream de ADO (Solucionado)</div>
+<div class="pagination">Page: <a href="topic-31048.html">1</a> <strong>2</strong> (25 posts)</div>  <div class="post" id="p179282">
+    <div class="poster">
+      <div class="name" style="color:#105289">sjingo</div>
+      <div class="rank">Posts: 229</div>
+      <div class="avatar"></div>
+      Joined: Sat Mar 18, 2006 03:42 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda con Objeto Stream de ADO</span><br>
+        Posted: Thu Jul 09, 2015 11:09 PM
+      </div>
+      <div class="content">Armando<br>
+<br>
+Con las versiones que tu usas, si funciona. El problema es con versiones superiores por ejemplo con la que probé: FWH10.3 + Harbour 3.2 + BCC582 ya no me ha funcionado.<br>
+<br>
+Para ver los datos puedes usar NAVICAT 8 para mysql. Al abrir la tabla puedes dar click en el botón &quot;Image&quot; de la barra de herramientas y podrás ver en la parte inferior el contenido del campo BLOB<br>
+<br>
+Pero si en verdad quieres el código para leer,  el proceso más o menos es el siguiente:<br>
+1. Se lee el contenido de la Tabla en un objeto stream<br>
+2. Con el contenido binario lo podemos pasar a una variable o un objeto TIMAGE<br>
+3. Yo lo que hago es lo contrario a la subida. Con el contenido ya puesto en el objeto Stream lo guardo en el disco y luego lo leo para colocarlo en un control IMAGE.<br>
+<br>
+Te adjunto el código que lee la imagen, no he borrado nada. Hay código que ya ni me acuerdo para qué sirve. Así que si lo puedes minimizar que mejor.<br>
+<br>
+La idea con este código es que cada imagen que se recupera de la base de datos lo guardo en una carpeta temporal en disco, son fotos de un vehículo. Por cada vehículo se crea una carpeta en función de su id y se graban las fotos allí, luego estas fotos de disco son mostradas en un objeto IMAGE.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//--------------------------------------------------------------
+//cnombre : Nombre de la foto
+METHOD LeerFoto(cnombre,oImg) CLASS TVehic
+local nBookMark:=0
+local sumatot:=0,cnom,ncod:="0"
+local oRsFoto,Stream , ofoto,cFold,cfoto
+
+//oRsV es el recordset que ya esta abierto y guarda toda la tabla
+if !::oRsV:EOF .and. !::oRsV:BOF
+    cFold:="V"+alltrim(str(::oRsV:Fields('cod_veh'):Value)) 
+else
+    return nil
+endif
+
+//Recuperamos del nombre pasado el codigo de la foto
+cnom:=cfileNoExt(cnombre)
+ncod:=substr(cnom,at("f",cnom)+1)
+
+//Recordset para la foto grande
+TRY
+    oRsFoto := TOleAuto():New("adodb.recordset") 
+CATCH oError
+    MsgStop( "No se pudo crear el recordset para la Foto !", CAR_VERSION)
+    RETURN .f.
+END
+
+//Configuramos el recordset que me dovolvera una foto
+oRsFoto:CursorLocation := adUseClient
+oRsFoto:LockType := adLockOptimistic
+oRsFoto:CursorType := adOpenKeyset//adOpenDynamic
+oRsFoto:Source := "SELECT cod,foto,tipo FROM fotos_veh where cod ="+ nCod 
+****oRsFoto:ActiveConnection(oCon)
+
+TRY
+    oRsFoto:Open(oRsFoto:Source,oCon)
+CATCH oError
+    MsgStop( "No se pudo abrir la Tabla de la Foto!", car_version)
+    ShowError(oError,oCon)
+    RETURN .f.
+END
+
+TRY
+    ::oStream := TOleAuto():New("adodb.Stream") 
+CATCH oError
+    MsgStop( "No se pudo crear el Stream para leer la Foto !", CAR_VERSION)
+END
+
+// Especifica el tipo de datos ( binario )   
+::oStream:Type := adTypeBinary 
+
+TRY
+    ::oStream:Open()
+CATCH oError
+    MsgStop( "No se pudo establecer la conexion stream!", car_version)
+    ShowError(oError,oCon)
+    return .f.
+END
+
+if !lisDir("imgtmp")
+    lMkDir("imgtmp")
+endif
+if !lisDir("imgtmp\" + cFold )
+     lMkDir("imgtmp\" + cFold )
+endif
+
+if !oRsFoto:EOF .and. !oRsFoto:BOF
+    //Graba los datos en el objeto stream   
+    IF oRsFoto:Fields('foto'):Value !=nil
+        ::Write(oRsFoto:Fields('foto'):Value) 
+        cfoto:="imgtmp\" + cFold+"fg"+alltrim(str(oRsFoto:Fields('cod'):Value)) + "." + alltrim(oRsFoto:Fields('tipo'):Value)
+        if file(cfoto)
+            ferase(cfoto)
+        endif
+        //Se graba un  archivo temporal  en disco
+        ::SaveToFile(cfoto, adSaveCreateOverWrite)   
+        if fsize(cfoto)&gt;0  //aqui se debe cargar una imagen si no hay la precisa
+            oImg:LoadBmp(cfoto)
+        else
+            oImg:LoadImage( "shade" )
+        endif
+        oimg:Refresh()
+    endif
+endif
+
+::Close()
+oRsfoto:Close()
+
+return .t.</code></pre></div><br>
+<br>
+Saludos</div>
+    </div>
+  </div>
+  <div class="post" id="p179291">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda con Objeto Stream de ADO</span><br>
+        Posted: Fri Jul 10, 2015 11:18 AM
+      </div>
+      <div class="content"><p>Marcelo,</p>
+<p>Ya te he enviado el EXE construido a tu email</p>
+<p>aguardo tus noticias</p></div>
+    </div>
+  </div>
+  <div class="post" id="p179300">
+    <div class="poster">
+      <div class="name" style="color:#105289">sjingo</div>
+      <div class="rank">Posts: 229</div>
+      <div class="avatar"></div>
+      Joined: Sat Mar 18, 2006 03:42 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda con Objeto Stream de ADO</span><br>
+        Posted: Fri Jul 10, 2015 02:01 PM
+      </div>
+      <div class="content"><p>Antonio</p>
+<p>Lamentablemente, sigue igual, se obtiene el mismo error :  &quot;La operación en varios pasos generó errores. Compruebe los valores de estado (0x80040E21)&quot;. <br>
+Por si sirve de algo la versión de ado obtenido en oCon:Version es 6.3. </p>
+<p>Decidí regresar a la versión anterior, y ya veré como arreglármelas con actualizaciones que había con la versión mas nueva que tenía.</p>
+<p>Antonio gracias por tu tiempo. Cuando tenga más tiempo seguiré investigando este tema, ojalá alguien encuentre la solución y de seguro es una tontería.</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p179301">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda con Objeto Stream de ADO</span><br>
+        Posted: Fri Jul 10, 2015 02:21 PM
+      </div>
+      <div class="content"><p>Marcelo,</p>
+<p>Yo creo que el problema viene de cambios realizados en Harbour, porque ahi no hay código de FWH<br>
+salvo que me equivoque.</p>
+<p>Algo se ha modificado en el soporte de OLE que ha afectado a tu código.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p179352">
+    <div class="poster">
+      <div class="name" style="color:#105289">sjingo</div>
+      <div class="rank">Posts: 229</div>
+      <div class="avatar"></div>
+      Joined: Sat Mar 18, 2006 03:42 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda con Objeto Stream de ADO(Solucionado)</span><br>
+        Posted: Sun Jul 12, 2015 12:09 AM
+      </div>
+      <div class="content">...UF!!!<br>
+<br>
+Después de buscar y buscar en internet, donde se comenta mucho sobre el mensaje &quot;La operación en varios pasos generó errores. Compruebe los valores de estado (0x80040E21&quot;), que en resumen se trata de un error que ocurre cuando se intenta asignar datos de tipos diferentes o cuando la longitud del campo de la tabla es más pequeño que lo que se quiere asignar, entre otros. Por lo tanto comencé a indagar por él lado de tipos de datos; y las respuestas las obtuve en este mismo foro, encontré este post que me ayudo mucho <!-- l --><a class="postlink-local" href="http://forums.fivetechsupport.com/viewtopic.php?f=6&amp;t=30559&amp;hilit=base64">viewtopic.php?f=6&amp;t=30559&amp;hilit=base64</a><!-- l --> donde Carlos Vargas da una opción. No me funcionó de la forma exacta cómo allí se explica pero fue el camino a la solución.<br>
+<br>
+Para subir las imágenes a mi tabla Mysql en un campo MEDIUMBLOB bastó con cambiar<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oRsfoto:fields('foto'):Value := oStream:Read()</code></pre></div><br>
+Por<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oRsfoto:fields('foto'):Value := HB_STRTOHEX(oStream:Read())</code></pre></div><br>
+<br>
+Con esto se grabó correctamente en la Tabla MySQL. Ahora para leer la imagen creí que funcionaría igual haciendo lo opuesto con HB_HEXTOSTR(), por nop. Creo que son cosas de ADO, o de ODBC, o de Mysql ... no sé. Pero mirando en el visor en hexadecimal para campos blob que tiene NAVICAT, pude darme cuenta que los datos grabados estaban en el mismo formato de imagen y se lo podía visualizar en el visor de imagen de NAVICAT. Con esto pienso que Mysql antes de grabar transforma los datos que yo le envio con strtohex() a su forma original que es binario.<br>
+<br>
+Para la lectura fue otro largo trajinar, porque no funcionó ni hb_strtohex(), ni hb_hextostr(), por lo que tuve que improvisar y se modificó la forma cómo lo hacía antes. Ahora ya no uso ADO Stream para grabar las fotos pequeñas a disco ni para ver la foto grande, sólo lo hago utilizando los datos del recordset directamente  (Hoy me pregunto...por qué no lo hice así antes???).<br>
+<br>
+Antes hacía esto:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">                //Se carga en el objeto stream el valor del campo blob
+        oStrp:Write(::oRsFoto:Fields('foto_p'):Value)
+        //Se graba en un archivo temporal a disco mediante el método del objeto stream
+        ::oStream:SaveToFile(cfile, adSaveCreateOverWrite)</code></pre></div> <br>
+Pero ahora al hacer oStrp:Write se obtiene el mensaje: &quot;argumentos incorrectos, fuera del intervalo permitido o en conflicto con otros &quot;<br>
+<br>
+Po lo que ya no busqué más y opté por no usar el objeto stream, la solución fue:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">                //Con esto grabo el contenido del campo blob a un archivo en disco
+                //cfile es el nombre de un archivo
+            fichero:= fCreate( cfile )
+        fWrite( fichero, ::oRsFoto:Fields('foto_p'):Value) 
+        fClose( fichero )</code></pre></div><br>
+<br>
+Por otro lado para mostrar la imagen, hacemos la consulta SQL para obtener un recordset  y luego con la clase TIMAGE podemos visualizarla así:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oImg:LoadFromMemory(oRsFoto:Fields('foto'):Value)
+oImg:Refresh()</code></pre></div><br>
+<br>
+Me dirán...&quot;sólo para esto te demoraste tanto??&quot;,   pues así pasa cuando sucede. Uno nunca sabe lo que nos depara las actualizaciones, y no sé si es cosa de FWH, de Harbour, de BCC582, de ADO, de MySQL  o mía. Como decimos por aquí: &quot;Dios averigüe y perdone&quot; , je je je.<br>
+<br>
+Gracias Antonio, Gracias Foro por contribuir a esta solución.</div>
+    </div>
+  </div>
+  <div class="post" id="p179353">
+    <div class="poster">
+      <div class="name" style="color:#105289">Armando</div>
+      <div class="rank">Posts: 3354</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 08:20 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda con Objeto Stream de ADO (Solucionado)</span><br>
+        Posted: Sun Jul 12, 2015 02:12 AM
+      </div>
+      <div class="content"><p>Marcelo:</p>
+<p>Excelente que hayas solucionado el problema, como decimos en algunas partes<br>
+de mi país &quot;El que porfia mata venado, aunque a veces lo matan por porfiado&quot;  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --> </p>
+<p>Por cierto, parece que la clase TImage no funciona con imágenes PDF, conoces<br>
+alguna otra clase que me permita mostrar imágenes PDF?</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p179362">
+    <div class="poster">
+      <div class="name" style="color:#105289">sjingo</div>
+      <div class="rank">Posts: 229</div>
+      <div class="avatar"></div>
+      Joined: Sat Mar 18, 2006 03:42 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda con Objeto Stream de ADO (Solucionado)</span><br>
+        Posted: Sun Jul 12, 2015 04:49 PM
+      </div>
+      <div class="content"><p>Armando</p>
+<p>Lamentablemente no tengo experiencia con Visores PDF, para generar un documento PDF lo que hago simplemente es usar cualquier driver estilo impresora como CUTEPDF, y enviar la impresión. </p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p179364">
+    <div class="poster">
+      <div class="name" style="color:#105289">Armando</div>
+      <div class="rank">Posts: 3354</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 08:20 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda con Objeto Stream de ADO (Solucionado)</span><br>
+        Posted: Sun Jul 12, 2015 06:01 PM
+      </div>
+      <div class="content"><p>Marcelo:</p>
+<p>Gracias por la respuesta, para crear el PDF no tengo problema, mi problema es<br>
+mostrarlo en un dialogo o window, tal vez alguien más en el foro nos pueda apoyar</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p179372">
+    <div class="poster">
+      <div class="name" style="color:#105289">sjingo</div>
+      <div class="rank">Posts: 229</div>
+      <div class="avatar"></div>
+      Joined: Sat Mar 18, 2006 03:42 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda con Objeto Stream de ADO (Solucionado)</span><br>
+        Posted: Sun Jul 12, 2015 10:58 PM
+      </div>
+      <div class="content">Armando<br>
+<br>
+Si lo que quieres es sólo visualizar y nada más, podemos hacer uso de los recursos que casi todos los pcs tienen ya instalado: Explorer y Acrobat Reader, para ello podemos aprovechar ActiveX.<br>
+<br>
+Aquí un ejemplo que lo armé al vuelo:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function VerPDF(cfile)  
+    local ownd, oactivex,oFold
+    default cfile:="C:\camisetas\SOFTWARE.pdf"
+    
+   DEFINE WINDOW oWnd TITLE "Archivo: "+alltrim(cfile)
+    @5,25 FOLDER oFold size 100,500;
+    PROMPT "Folder" ;
+    PIXEL of oWnd
+    
+    oActiveX = TActiveX():New( oWnd, "Shell.Explorer.2" )
+   //oWnd:oClient = oActiveX //ocupa toda la ventana
+   oActiveX : Do("Navigate2",cfile)
+   ACTIVATE WINDOW oWnd  maximized on init (oWnd:acontrols[2]:nHeight:=500,oWnd:acontrols[2]:nWidth:=600,oWnd:acontrols[2]:nTop:=25,oWnd:acontrols[2]:nLeft:=150) 
+
+RETUR NIL</code></pre></div><br>
+Es sólo una idea inicial.<br>
+<br>
+Saludos</div>
+    </div>
+  </div>
+  <div class="post" id="p179398">
+    <div class="poster">
+      <div class="name" style="color:#105289">Armando</div>
+      <div class="rank">Posts: 3354</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 08:20 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ayuda con Objeto Stream de ADO (Solucionado)</span><br>
+        Posted: Mon Jul 13, 2015 03:27 PM
+      </div>
+      <div class="content"><p>Marcelo:</p>
+<p>Muchas gracias por el código, voy a tirar por ahí.</p>
+<p>Saludos</p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-31048.html">1</a> <strong>2</strong> (25 posts)</div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

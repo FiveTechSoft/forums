@@ -1,0 +1,2262 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>RichEdit - Mejorando la velocidad de coloreado - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-23574">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> RichEdit - Mejorando la velocidad de coloreado</div>
+  <div class="post" id="p126657">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">RichEdit - Mejorando la velocidad de coloreado</span><br>
+        Posted: Tue Feb 28, 2012 12:14 PM
+      </div>
+      <div class="content">Hace unos dias estaba revisando el editor de código fuente ED de Enrico Maria Giordano <a href="http://www.emagsoftware.it/Ed106.zip" rel="noopener">http&#58;//www&#46;emagsoftware&#46;it/Ed106&#46;zip</a>. Como él me explicó:<br>
+<br>
+<blockquote>Está escrito en C, usa el control RICHEDIT y ofrece la funcionalidad minima que necesito. Puedo proporcionar el código fuente si te puede resultar util.</blockquote><br>
+<br>
+Estaba interesado en revisar cuanta funcionalidad puede ofrecer RichEdit como un editor de código fuente proporcionado por el propio Windows. Recordaba que el coloreado de syntaxis en el RichEdit era lento para ficheros grandes y que ese era su principal problema. Asi que decidí investigarlo un poco más. La primera información interesante que encontré fué esta:<br>
+<br>
+<a href="http://bcbjournal.org/articles/vol3/9910/Faster_rich_edit_syntax_highlighting.htm" rel="noopener">http&#58;//bcbjournal&#46;org/articles/vol3/9910/Faster_rich_edit_syntax_highlighting&#46;htm</a><br>
+<br>
+Su autor usa C++ Builder y ha encontrado algunas maneras de optimizarlo. Asi que decidí crear un ejemplo auto contenido en lenguaje C para probar como de rápido sus optimizaciones son. Puedes construirlo facilmente usando Borland C:<br>
+<br>
+go.bat<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">set path=c:\bcc582\bin
+bcc32 -W test.c
+if errorlevel 0 test</code></pre></div><br>
+<br>
+test.c // Editor basado en RichEdit con coloreado automático de sintaxis<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include &lt;windows.h&gt;
+#include &lt;richedit.h&gt;
+#include &lt;stdio.h&gt;
+
+typedef struct
+{
+   char * txt;
+   long len;
+   FILE * out;
+} COOKIE;
+
+#define CLR_YELLOW  RGB( 255, 255,   0 )
+#define CLR_HCYAN   RGB(   0, 255, 255 )
+#define CLR_HGREEN  RGB(   0, 255,   0 )
+#define CLR_WHITE   RGB( 255, 255, 255 )
+
+void ParseAllText( HWND hRichEdit )
+{
+   LONG pos = 0, start = 1;
+   CHARFORMAT cf;
+   TEXTRANGE tr;
+   char buffer[ 256 ];
+   int eventMask = SendMessage( hRichEdit, EM_SETEVENTMASK, 0, 0 );
+
+   SendMessage( hRichEdit, WM_SETREDRAW, FALSE, 0 );
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = CFM_COLOR;
+                         
+   while( pos != start )
+   {
+      start = pos;
+      pos = SendMessage( hRichEdit, EM_FINDWORDBREAK, WB_MOVEWORDRIGHT, pos );
+
+      SendMessage( hRichEdit, EM_SETSEL, start, pos );
+
+      tr.chrg.cpMin = start;
+      tr.chrg.cpMax = pos;
+      tr.lpstrText  = buffer; // malloc( pos - start + 1 + 1 );
+      SendMessage( hRichEdit, EM_GETTEXTRANGE, 0, ( LPARAM ) &amp;tr );      
+
+      if( strstr( "# define ifdef ifndef endif pragma include ", tr.lpstrText ) )
+      {
+         cf.crTextColor = CLR_YELLOW;       
+         SendMessage( hRichEdit, EM_SETCHARFORMAT, SCF_SELECTION, ( LPARAM ) &amp;cf );
+      }   
+      else if( strstr( "local static extern public private nil for next if else endif do case endcase ", tr.lpstrText ) ) 
+      {
+         cf.crTextColor = CLR_HCYAN;                
+         SendMessage( hRichEdit, EM_SETCHARFORMAT, SCF_SELECTION, ( LPARAM ) &amp;cf );
+      }   
+      else if( strstr( "function CLASS  DATA  INIT METHOD INLINE VIRTUAL SETGET ENDCLASS procedure return ",  tr.lpstrText ) )
+      {
+         cf.crTextColor = CLR_HGREEN;               
+         SendMessage( hRichEdit, EM_SETCHARFORMAT, SCF_SELECTION, ( LPARAM ) &amp;cf );
+      }   
+      else if( strstr( "= + - ++ -- += -= *= /= / * &lt; &gt; &lt;= &gt;= % $ | ! ^ @ {} {}, { } {| [ ] ]: ( ) (- ), ): ); ),; () (): :: := != == += -= . , ; ,; .,; ",  tr.lpstrText ) )
+      {
+         cf.crTextColor = CLR_WHITE;                
+         SendMessage( hRichEdit, EM_SETCHARFORMAT, SCF_SELECTION, ( LPARAM ) &amp;cf );
+      }   
+         
+      // free( tr.lpstrText );
+   } 
+
+   SendMessage( hRichEdit, WM_SETREDRAW, TRUE, 0 );
+   SendMessage( hRichEdit, EM_SETEVENTMASK, 0, eventMask );
+   InvalidateRect( hRichEdit, 0, TRUE );
+}   
+
+#pragma argsused
+
+DWORD CALLBACK StreamIn( DWORD dwCookie, LPBYTE pbBuff, LONG cb, LONG FAR *pcb )
+{
+   COOKIE * Cookie = ( COOKIE * ) dwCookie;
+
+   if( cb &gt; Cookie-&gt;len ) 
+      cb = Cookie-&gt;len;
+
+   if( cb &gt; 0 )
+   {
+      memcpy( ( char * ) pbBuff, Cookie -&gt; txt, cb );
+
+      Cookie-&gt;txt += cb;
+      Cookie-&gt;len -= cb;
+   }
+
+   * pcb = cb;
+
+   return 0;
+}
+
+BOOL LoadText( HWND hRichEdit, const char * FileName )
+{
+   FILE * in = fopen( FileName, "rb" );
+   int len;
+
+   if( ! in ) 
+      return FALSE;
+
+   fseek( in, 0, SEEK_END );
+   len = ftell( in );
+   fseek( in, 0, SEEK_SET );
+
+   if( len &gt; 0 )
+   {
+      COOKIE Cookie;
+      EDITSTREAM es;
+      char * txt = malloc( len + 1 );
+
+      fread( txt, 1, len, in );
+
+      Cookie.txt = txt;
+      Cookie.len = len;
+
+      es.dwCookie    = ( DWORD ) &amp;Cookie;
+      es.pfnCallback = StreamIn;
+
+      SendMessage( hRichEdit, EM_STREAMIN, SF_TEXT, ( LPARAM ) &amp;es );
+
+      free( txt );
+   }
+
+   fclose( in );
+   
+   return TRUE;
+}
+
+LRESULT WINAPI ParentWindowProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam )
+{
+     static HWND hRichEdit;
+   static HFONT hFont;
+
+     switch( msg )
+   {
+        case WM_CREATE:
+               {
+                  RECT r;
+                  GetClientRect( hWnd, &amp;r );
+                  hRichEdit = CreateWindow( "RICHEDIT", "", 
+                                              WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_SUNKEN, 
+                                              0, 30, r.right - r.left, r.bottom - r.top - 50, 
+                                              hWnd, NULL, NULL, NULL );
+              hFont  = CreateFont( 18, 0, 0, 0, 0, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Courier New" );
+              SendMessage( hRichEdit, WM_SETFONT, ( WPARAM ) hFont, 0 );
+                  LoadText( hRichEdit, "window.prg" );
+                  SendMessage( hRichEdit, EM_EXLIMITTEXT, 0, 0xFFFFFFF );
+              ParseAllText( hRichEdit );
+              SetFocus( hRichEdit );
+               }   
+             break;
+        
+        case WM_CLOSE:
+               DeleteObject( hFont );
+               DestroyWindow( hWnd );
+               break;
+              
+        case WM_LBUTTONDOWN:
+               break;
+             
+          case WM_SIZE:
+               MoveWindow( hRichEdit, 0, 30, LOWORD( lParam ), HIWORD( lParam ) - 50, FALSE );
+               break;   
+               
+        case WM_DESTROY:
+               PostQuitMessage( 0 );
+               break;
+     }
+    
+   return DefWindowProc( hWnd, msg, wParam, lParam );
+}
+
+int PASCAL WinMain( HINSTANCE hInstance, HINSTANCE prev, LPSTR cmdline, int show )
+{
+   WNDCLASS cls;
+     HWND hWnd;
+     MSG msg;
+   HINSTANCE hDll = LoadLibrary( "riched32" );
+
+   cls.style         = CS_HREDRAW | CS_VREDRAW | CS_GLOBALCLASS;
+   cls.lpfnWndProc   = ParentWindowProc;
+   cls.cbClsExtra    = 0;
+   cls.cbWndExtra    = 0;
+     cls.hInstance     = hInstance;
+   cls.hIcon         = LoadIcon( 0, IDI_APPLICATION );
+   cls.hCursor       = LoadCursor( 0, IDC_ARROW );
+   cls.hbrBackground = GetStockObject( WHITE_BRUSH );
+   cls.lpszMenuName  = 0;
+   cls.lpszClassName = "parentclass";
+
+   if( ! RegisterClass( &amp;cls ) ) 
+        return FALSE;
+
+   hWnd = CreateWindow( "parentClass", "RichEdit syntax highlight", WS_OVERLAPPEDWINDOW ,
+                        100, 100, 1100, 600, 0, NULL, hInstance, 0 );
+
+   ShowWindow( hWnd, SW_MAXIMIZE );
+   UpdateWindow( hWnd );
+
+     while( GetMessage( &amp;msg, 0, 0, 0 ) )
+     {
+        TranslateMessage( &amp;msg );
+        DispatchMessage( &amp;msg );
+     }
+
+   FreeLibrary( hDll );
+
+     return 0;
+}</code></pre></div><br>
+<br>
+Nada de Harbour, ni FWH, puro lenguaje C para probar su velocidad, pero desafortunadamente aún lento para grandes ficheros PRG. Así que decidí seguir googleando y encontré esto:<br>
+<br>
+<a href="http://win32assembly.online.fr/tut35.html" rel="noopener">http&#58;//win32assembly&#46;online&#46;fr/tut35&#46;html</a><br>
+<br>
+Puede asustar en un principio pues está desarrollado en ensamblador (ouch!)  pero su autor tiene una interesante idea: hacer &quot;subclass&quot; del control RichEdit y hacer el coloreado él mismo. Bien, decidí pasarlo desde ensamblador a lenguaje C para probarlo. Algunas partes las he implementado yo una vez entendí su intención. Aqui está:<br>
+<br>
+fresh.c // Se me ocurrió este nombre como acrónimo de &quot;<strong>F</strong>ree <strong>R</strong>ichEdit <strong>E</strong>ditor <strong>S</strong>yntax <strong>H</strong>ighlighted&quot; <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#pragma resource "fresh.res"
+
+#include &lt;windows.h&gt;
+#include &lt;richedit.h&gt;
+#include &lt;stdio.h&gt;
+
+typedef struct
+{
+   DWORD    WordLen;    // the length of the word: used as a quick comparison
+     char * pszWord;    // pointer to the word
+     COLORREF * pColor; // point to the dword that contains the color used to hilite the word
+     void * NextLink;   // point to the next WORDINFO structure
+} WORDINFO; 
+
+#define IDR_MAINMENU               101
+#define IDM_OPEN                 40001
+#define IDM_SAVE                 40002
+#define IDM_CLOSE                40003
+#define IDM_SAVEAS               40004
+#define IDM_EXIT                 40005
+#define IDM_COPY                 40006
+#define IDM_CUT                  40007
+#define IDM_PASTE                40008
+#define IDM_DELETE               40009
+#define IDM_SELECTALL            40010
+#define IDM_OPTION                   40011
+#define IDM_UNDO                       40012
+#define IDM_REDO                       40013
+#define IDD_OPTIONDLG              101
+#define IDC_BACKCOLORBOX          1000
+#define IDC_TEXTCOLORBOX          1001
+#define IDR_MAINACCEL              105
+#define IDD_FINDDLG                102
+#define IDD_GOTODLG                103
+#define IDD_REPLACEDLG             104
+#define IDC_FINDEDIT              1000
+#define IDC_MATCHCASE             1001
+#define IDC_REPLACEEDIT           1001
+#define IDC_WHOLEWORD             1002
+#define IDC_DOWN                  1003
+#define IDC_UP                    1004
+#define IDC_LINENO                1005
+#define IDM_FIND                 40014
+#define IDM_FINDNEXT             40015
+#define IDM_REPLACE              40016
+#define IDM_GOTOLINE             40017
+#define IDM_FINDPREV             40018
+
+#define RichEditID                     300
+
+#define CLR_HRED      RGB( 255,   0,   0 )
+#define CLR_HGREEN    RGB(   0, 255,   0 )
+#define CLR_HBLUE     RGB(   0,   0, 255 )
+#define CLR_BLACK     RGB(   0,   0,   0 )
+#define CLR_WHITE     RGB( 255, 255, 255 )
+
+char FindBuffer[ 256 ];
+char ReplaceBuffer[ 256 ];
+HWND hWndRichEdit;
+WNDPROC OldWndProc;
+int RichEditVersion;
+
+COLORREF BackGroundColor = CLR_WHITE;
+COLORREF TextColor = CLR_BLACK;
+COLORREF CommentColor = CLR_HBLUE;
+COLORREF ColorArray[ 10 ] = { CLR_HRED, CLR_HGREEN, CLR_HBLUE, CLR_WHITE, CLR_BLACK,
+                              CLR_BLACK, CLR_BLACK, CLR_BLACK, CLR_BLACK, CLR_BLACK };  
+BOOL FileOpened = FALSE;
+char * szFileFilter = "PRG source code (*.prg)\0*.prg\0All Files (*.*)\0*.*\0";
+char FileName[ 256 ];
+char AlternateFileName[ 256 ];
+HANDLE hSearch = NULL;
+char * OpenFileFail = "Cannot open the file";
+char * AppName = "Fresh 1.0";
+char * WordFileName = "wordfile.txt";
+FINDTEXTEX findtext;
+char * WannaSave = "The data in the control is modified. Want to save it ?";
+HFONT hFont;
+WORDINFO SyntaxArray[ 256 ];
+
+void SetColor( void )
+{
+     CHARFORMAT cfm;     
+    
+     SendMessage( hWndRichEdit, EM_SETBKGNDCOLOR, 0, BackGroundColor );
+     memset( &amp;cfm, 0, sizeof( cfm ) );
+     cfm.cbSize = sizeof( cfm );
+     cfm.dwMask = CFM_COLOR;
+     cfm.crTextColor = TextColor;
+     SendMessage( hWndRichEdit, EM_SETCHARFORMAT, SCF_ALL, ( LPARAM ) &amp;cfm );
+}
+
+void CenterWindow( HWND hWnd )
+{
+   RECT rWnd, rDsk;
+   LONG Left, Top, Width, Height;
+
+   GetWindowRect( hWnd, &amp;rWnd );
+   GetWindowRect( GetDesktopWindow(), &amp;rDsk );
+
+   Width  = rWnd.right - rWnd.left;
+   Height = rWnd.bottom - rWnd.top;
+   Left   = ( rDsk.right / 2 ) - ( Width / 2 );
+   Top    = ( rDsk.bottom / 2 ) - ( Height / 2 );
+
+   MoveWindow( hWnd, Left, Top, Width, Height, FALSE );
+}
+
+void ParseBuffer( char * pszTokens, DWORD dwGroup )
+{
+   char buffer[ 128 ];
+   char * pStart = pszTokens;
+   // BOOL InProgress = FALSE;
+   BOOL bFound = FALSE;
+   WORDINFO * pWordInfo;
+   
+   if( ! strlen( pszTokens ) )
+      return;
+        
+   CharLower( pszTokens );
+   
+   while( * pszTokens )
+   {
+      if( ( ( * pszTokens ) == ' ' ) || ( ( * pszTokens ) == 9 ) ) // tab
+         bFound = TRUE; 
+         
+      if( * pszTokens &amp;&amp; bFound )
+      { 
+         pWordInfo = SyntaxArray + pStart[ 0 ];
+
+         if( SyntaxArray[ pStart[ 0 ] ].WordLen )
+         {
+            while( pWordInfo-&gt;NextLink )
+               pWordInfo = pWordInfo-&gt;NextLink;     
+                
+            pWordInfo-&gt;NextLink = ( WORDINFO * ) malloc( sizeof( WORDINFO ) );   
+            memset( ( void * ) pWordInfo-&gt;NextLink, 0, sizeof( WORDINFO ) );
+         }   
+
+         pWordInfo-&gt;WordLen = pszTokens - pStart;
+         pWordInfo-&gt;pszWord = ( char * ) malloc( pWordInfo-&gt;WordLen + 1 );
+         strncpy( pWordInfo-&gt;pszWord, pStart, pWordInfo-&gt;WordLen );
+         pWordInfo-&gt;pszWord[ pWordInfo-&gt;WordLen ] = 0;
+         pWordInfo-&gt;pColor = ColorArray + dwGroup - 1;
+         pWordInfo-&gt;NextLink = NULL;
+         bFound = FALSE;
+         // MessageBox( 0, pWordInfo-&gt;pszWord, "token", 0 );
+         
+         while( ( ( ( * pszTokens ) == ' ' ) || ( ( * pszTokens ) == 9 ) ) &amp;&amp; ( * pszTokens ) )
+            pszTokens++;
+            
+         pStart = pszTokens;
+      }   
+      
+      if( * pszTokens )
+         pszTokens++;
+   }      
+}   
+
+void FillHiliteInfo( void )
+{
+   char filename[ 1024 ];
+   char buffer[ 1024 ];
+   char * pTemp;
+   
+   RtlZeroMemory( SyntaxArray, sizeof( SyntaxArray ) ); 
+
+   GetModuleFileName( GetModuleHandle( NULL ), filename, sizeof( filename ) );
+   pTemp = filename + lstrlen( filename );
+   
+   while( ( pTemp &gt; filename ) &amp;&amp; ( ( * pTemp ) != '\\' ) )
+      pTemp--;
+      
+   * ++pTemp = 0;   
+   lstrcat( pTemp, WordFileName );
+   
+   if( GetFileAttributes( filename ) != INVALID_FILE_ATTRIBUTES )
+   {
+      if( GetPrivateProfileString( "ASSEMBLY", "C1", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 1 );
+
+      if( GetPrivateProfileString( "ASSEMBLY", "C2", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 2 );
+         
+      if( GetPrivateProfileString( "ASSEMBLY", "C3", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 3 );
+
+      if( GetPrivateProfileString( "ASSEMBLY", "C4", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 4 );
+         
+      if( GetPrivateProfileString( "ASSEMBLY", "C5", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 5 );
+
+      if( GetPrivateProfileString( "ASSEMBLY", "C6", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 6 );
+
+      if( GetPrivateProfileString( "ASSEMBLY", "C7", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 7 );
+         
+      if( GetPrivateProfileString( "ASSEMBLY", "C8", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 8 );
+
+      if( GetPrivateProfileString( "ASSEMBLY", "C9", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 9 );
+         
+      if( GetPrivateProfileString( "ASSEMBLY", "C10", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 10 );
+   }  
+   else
+      MessageBox( 0, "wordfile.txt does not exist", "Attention", MB_ICONINFORMATION );                        
+}   
+   
+BOOL CheckModifyState( HWND hWnd )
+{
+     int nResult;
+     
+   if( SendMessage( hWndRichEdit, EM_GETMODIFY, 0, 0 ) )
+        if( ( nResult = MessageBox( hWnd, WannaSave, AppName, MB_YESNOCANCEL ) ) == IDYES )
+               SendMessage( hWnd, WM_COMMAND, IDM_SAVE, 0 );
+            else if( nResult == IDCANCEL )
+               return FALSE;
+                   
+   return TRUE;
+}
+
+void PrepareEditMenu( HMENU hSubMenu )
+{
+   CHARRANGE chrg;
+
+     if( ! SendMessage( hWndRichEdit, EM_CANPASTE, CF_TEXT, 0 ) )
+        EnableMenuItem( hSubMenu, IDM_PASTE, MF_GRAYED );
+     else   
+          EnableMenuItem( hSubMenu, IDM_PASTE, MF_ENABLED );
+
+     if( ! SendMessage( hWndRichEdit, EM_CANUNDO, 0, 0 ) )
+        EnableMenuItem( hSubMenu, IDM_UNDO, MF_GRAYED );
+     else   
+          EnableMenuItem( hSubMenu, IDM_UNDO, MF_ENABLED );
+
+     if( ! SendMessage( hWndRichEdit, EM_CANREDO, 0, 0 ) )
+          EnableMenuItem( hSubMenu, IDM_REDO, MF_GRAYED );
+     else
+        EnableMenuItem( hSubMenu, IDM_REDO, MF_ENABLED );
+
+     chrg.cpMin = SendMessage( hWndRichEdit, EM_EXGETSEL, 0, ( LPARAM ) &amp;chrg );
+     
+     if( chrg.cpMin == chrg.cpMax )
+     {  
+        EnableMenuItem( hSubMenu, IDM_COPY,   MF_GRAYED );
+          EnableMenuItem( hSubMenu, IDM_CUT,    MF_GRAYED );
+          EnableMenuItem( hSubMenu, IDM_DELETE, MF_GRAYED );
+     }    
+     else
+     {  
+        EnableMenuItem( hSubMenu, IDM_COPY,   MF_ENABLED );
+          EnableMenuItem( hSubMenu, IDM_CUT,    MF_ENABLED );
+          EnableMenuItem( hSubMenu, IDM_DELETE, MF_ENABLED );
+     }    
+}
+
+#pragma argsused 
+
+static INT_PTR CALLBACK OptionProc( HWND hDlg, UINT wMsg, WPARAM wParam, LPARAM lParam )
+{
+   switch( wMsg )
+   {
+      case WM_INITDIALOG:
+           CenterWindow( hDlg );
+           return TRUE;
+
+      case WM_COMMAND:
+           switch( wParam )
+           {
+              case IDOK:
+                   EndDialog( hDlg, IDOK );
+                   break;
+
+              case IDCANCEL:
+                   EndDialog( hDlg, IDCANCEL );
+                   break;
+           }
+           break;
+   }
+   return FALSE;
+}
+
+#pragma argsused
+
+static INT_PTR CALLBACK SearchProc( HWND hDlg, UINT wMsg, WPARAM wParam, LPARAM lParam )
+{
+   switch( wMsg )
+   {
+      case WM_INITDIALOG:
+           CenterWindow( hDlg );
+           return TRUE;
+
+      case WM_COMMAND:
+           switch( wParam )
+           {
+              case IDOK:
+                   EndDialog( hDlg, IDOK );
+                   break;
+
+              case IDCANCEL:
+                   EndDialog( hDlg, IDCANCEL );
+                   break;
+           }
+           break;
+   }
+   return FALSE;
+}
+
+#pragma argsused
+
+static INT_PTR CALLBACK ReplaceProc( HWND hDlg, UINT wMsg, WPARAM wParam, LPARAM lParam )
+{
+   switch( wMsg )
+   {
+      case WM_INITDIALOG:
+           CenterWindow( hDlg );
+           return TRUE;
+
+      case WM_COMMAND:
+           switch( wParam )
+           {
+              case IDOK:
+                   EndDialog( hDlg, IDOK );
+                   break;
+
+              case IDCANCEL:
+                   EndDialog( hDlg, IDCANCEL );
+                   break;
+           }
+           break;
+   }
+   return FALSE;
+}
+
+#pragma argsused
+
+static INT_PTR CALLBACK GoToProc( HWND hDlg, UINT wMsg, WPARAM wParam, LPARAM lParam )
+{
+   switch( wMsg )
+   {
+      case WM_INITDIALOG:
+           CenterWindow( hDlg );
+           return TRUE;
+
+      case WM_COMMAND:
+           switch( wParam )
+           {
+              case IDOK:
+                   EndDialog( hDlg, IDOK );
+                   break;
+
+              case IDCANCEL:
+                   EndDialog( hDlg, IDCANCEL );
+                   break;
+           }
+           break;
+   }
+   return FALSE;
+}
+
+LRESULT WINAPI NewRichEditProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam )
+{
+   HDC hDC;
+   HFONT hOldFont;
+   RECT rect;
+   TEXTRANGE txtrange;
+   char buffer[ 1024 * 10 ];
+   HRGN hRgn, hOldRgn;
+   POINT pt;
+   DWORD nChar, nLine, dwPos;
+   WORDINFO * pWordInfo;
+   BOOL bExit;
+
+   switch( msg )
+   {
+      case WM_PAINT:       
+           HideCaret( hWnd );
+               CallWindowProc( OldWndProc, hWnd, msg, wParam, lParam );
+               hDC = GetDC( hWnd );
+               SetBkMode( hDC, TRANSPARENT );
+               hOldFont = SelectObject( hDC, hFont );
+
+               SendMessage( hWnd, EM_GETRECT, 0, ( LPARAM ) &amp;rect );
+               
+             nChar = SendMessage( hWnd, EM_CHARFROMPOS, 0, ( LPARAM ) &amp;rect );
+               nLine = SendMessage( hWnd, EM_LINEFROMCHAR, nChar, 0 );
+               txtrange.chrg.cpMin = SendMessage( hWnd, EM_LINEINDEX, nLine, 0 );
+           txtrange.chrg.cpMax = SendMessage( hWnd, EM_CHARFROMPOS, 0, ( LPARAM ) &amp;rect.right );               
+               
+               hRgn = CreateRectRgn( rect.left, rect.top, rect.right, rect.bottom );
+           hOldRgn = SelectObject( hDC, hRgn );
+
+           txtrange.lpstrText = buffer;
+           if( SendMessage( hWnd, EM_GETTEXTRANGE, 0, ( LPARAM ) &amp;txtrange ) )
+           {
+              char * pPos = buffer;
+              char * pStart = buffer;
+              char * pToken;
+              
+              while( * pPos )
+              {
+                 if( * pPos == ' ' || * pPos == 9 || * pPos == 0xD || * pPos == 0xA )
+                 {
+                    pToken = ( char * ) malloc( pPos - pStart + 1 );
+                    strncpy( pToken, pStart, pPos - pStart );
+                    pToken[ pPos - pStart ] = 0;
+                    // MessageBox( 0, pToken, "token", 0 );
+                    
+                    if( RichEditVersion == 3 )
+                                   SendMessage( hWnd, EM_POSFROMCHAR, ( WPARAM ) &amp;rect, ( LPARAM ) ( pStart - buffer ) + nChar );
+                                else   
+                                {   
+                                 dwPos = SendMessage( hWnd, EM_POSFROMCHAR, ( WPARAM ) pStart, 0 );
+                                   rect.left = LOWORD( dwPos );
+                                   rect.top  = HIWORD( dwPos ); 
+                                }
+                                
+                                if( pToken[ 0 ] &gt;= 'A' &amp;&amp; pToken[ 0 ] &lt;= 'Z' )
+                                   pWordInfo = SyntaxArray + pToken[ 0 ] - 'A' + 'a';
+                                else   
+                                   pWordInfo = SyntaxArray + pToken[ 0 ];
+                                
+                                bExit = FALSE;
+                                
+                                while( pWordInfo-&gt;WordLen &amp;&amp; ! bExit )
+                                {
+                                   if( strlen( pToken ) == pWordInfo-&gt;WordLen &amp;&amp; 
+                                         lstrcmpi( pWordInfo-&gt;pszWord, pToken ) == 0 )
+                                   {    
+                                      bExit = TRUE;
+                                      SetTextColor( hDC, * pWordInfo-&gt;pColor ); 
+                                      DrawText( hDC, pToken, -1, &amp;rect, 0 );   
+                                   }
+                                   else
+                                   {
+                                      if( pWordInfo-&gt;NextLink )
+                                         pWordInfo= pWordInfo-&gt;NextLink;
+                                      else
+                                         bExit = TRUE;   
+                                   }                
+                                }
+                                   
+                    free( pToken );
+                    
+                    while( * pPos == ' ' || * pPos == 9 || * pPos == 0xD || * pPos == 0xA &amp;&amp; * pPos )
+                       pPos++;
+                       
+                    if( ! * pPos )
+                       pPos++;   
+                       
+                    pStart = pPos;     
+                 }   
+                 pPos++;
+              }   
+           }   
+
+           SelectObject( hDC, hOldRgn );
+           DeleteObject( hRgn );
+           SelectObject( hDC, hOldFont );
+           ReleaseDC( hWnd, hDC );
+           ShowCaret( hWnd );
+           return 0;
+    
+      case WM_CLOSE: 
+             SetWindowLong( hWnd, GWL_WNDPROC, ( LONG ) OldWndProc );
+             break;
+   }
+                
+   return CallWindowProc( OldWndProc, hWnd, msg, wParam, lParam );
+}
+
+DWORD CALLBACK StreamInProc( DWORD dwCookie, LPBYTE pbBuff, LONG cb, LONG FAR * pcb )
+{       
+     ReadFile( ( HANDLE ) dwCookie, ( LPVOID ) pbBuff, ( DWORD ) cb, ( LPDWORD ) pcb, 0 );
+   return 0;
+}   
+
+DWORD CALLBACK StreamOutProc( DWORD dwCookie, LPBYTE pbBuff, LONG cb, LONG FAR * pcb )
+{
+     WriteFile( ( HANDLE ) dwCookie, ( LPVOID ) pbBuff, ( DWORD ) cb, ( LPDWORD ) pcb, 0 );
+   return 0;
+}   
+    
+LRESULT WINAPI WndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam )
+{
+     RECT rect;
+   OPENFILENAME ofn;
+     char buffer[ 256 ];
+     EDITSTREAM editstream;
+     FILE * hFile;
+     HMENU hPopup;
+     POINT pt;
+     CHARRANGE chrg;
+    
+     switch( msg )
+   {
+        case WM_CREATE:
+               GetClientRect( hWnd, &amp;rect );
+               hWndRichEdit = CreateWindowEx( WS_EX_CLIENTEDGE, "RichEdit20A", 0, 
+                                              WS_CHILD | WS_VISIBLE | ES_MULTILINE | WS_VSCROLL |
+                                              WS_HSCROLL | ES_NOHIDESEL, 0, 0,
+                                              rect.right - rect.left, rect.bottom - rect.top, 
+                                              hWnd, ( HMENU ) RichEditID, GetModuleHandle( NULL ), 0 );
+           
+           SendMessage( hWndRichEdit, EM_SETTYPOGRAPHYOPTIONS, TO_SIMPLELINEBREAK, TO_SIMPLELINEBREAK ); 
+           if( ! SendMessage( hWndRichEdit, EM_GETTYPOGRAPHYOPTIONS, 1, 1 ) )
+                    RichEditVersion = 2;
+               else
+                    RichEditVersion = 3;
+                 
+                 SendMessage( hWndRichEdit, EM_SETEDITSTYLE, SES_EMULATESYSEDIT, SES_EMULATESYSEDIT );
+        
+               OldWndProc = ( WNDPROC ) SetWindowLong( hWndRichEdit, GWL_WNDPROC, ( LONG ) NewRichEditProc );
+               SendMessage( hWndRichEdit, EM_LIMITTEXT, -1, 0 );
+           // SetColor();
+               SendMessage( hWndRichEdit, EM_SETMODIFY, FALSE, 0 );
+               SendMessage( hWndRichEdit, EM_SETEVENTMASK, 0, ENM_MOUSEEVENTS );
+               SendMessage( hWndRichEdit, EM_EMPTYUNDOBUFFER, 0, 0 );
+
+           hFont  = CreateFont( 18, 0, 0, 0, 0, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Courier New" );
+           SendMessage( hWndRichEdit, WM_SETFONT, ( WPARAM ) hFont, 0 );
+
+               FillHiliteInfo();
+               SetFocus( hWndRichEdit );
+               break;
+               
+        case WM_NOTIFY:
+               if( ( ( NMHDR * ) lParam )-&gt;code == EN_MSGFILTER )
+               {
+              if( ( ( MSGFILTER * ) lParam )-&gt;msg == WM_RBUTTONDOWN )                                   
+                      { 
+                         hPopup = GetSubMenu( GetMenu( hWnd ), 1 );
+                         PrepareEditMenu( hPopup );
+                         pt.x = LOWORD( lParam );
+                         pt.y = HIWORD( lParam );
+                         ClientToScreen( hWnd, &amp;pt );
+                         TrackPopupMenu( hPopup, TPM_LEFTALIGN | TPM_BOTTOMALIGN, pt.x, pt.y,
+                                         NULL, hWnd, NULL );
+              }
+            }
+            break;     
+        
+           case WM_INITMENUPOPUP:
+            if( lParam == 0 )
+            {
+               if( FileOpened )
+               {    
+                          EnableMenuItem( ( HMENU ) wParam, IDM_OPEN,   MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_CLOSE,  MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_SAVE,   MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_SAVEAS, MF_ENABLED );
+                     }
+                     else
+                     {  
+                          EnableMenuItem( ( HMENU ) wParam, IDM_OPEN, MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_CLOSE, MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_SAVE, MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_SAVEAS, MF_GRAYED );
+                       }   
+                    }
+                    
+                    else if( lParam == 1 )   
+                     PrepareEditMenu( ( HMENU ) wParam );
+                  
+                  else if( lParam == 2 )   
+            {
+               if( FileOpened )
+               {
+                  EnableMenuItem( ( HMENU ) wParam, IDM_FIND,     MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_FINDNEXT, MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_FINDPREV, MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_REPLACE,  MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_GOTOLINE, MF_ENABLED );
+                       }
+                       else
+                       {
+                          EnableMenuItem( ( HMENU ) wParam, IDM_FIND,     MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_FINDNEXT, MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_FINDPREV, MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_REPLACE,  MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_GOTOLINE, MF_GRAYED );
+                       }
+                    }
+                    break;
+                
+                case WM_COMMAND:
+                 if( ! lParam ) // menu commands
+                 {  
+                      switch( LOWORD( wParam ) )
+                      {
+                         case IDM_OPEN:
+                         {  
+                              memset( &amp;ofn, 0, sizeof( ofn ) );
+                              ofn.lStructSize = sizeof( ofn );
+                              ofn.hwndOwner = hWnd;
+                              ofn.hInstance = GetModuleHandle( NULL );
+                              ofn.lpstrFilter = szFileFilter;
+                              FileName[ 0 ] = 0;
+                              ofn.lpstrFile = FileName;
+                            ofn.nMaxFile = sizeof( FileName );
+                              ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST;
+                           
+                              if( GetOpenFileName( &amp;ofn ) )
+                              { 
+                                   if( ( hFile = CreateFile( FileName, GENERIC_READ, FILE_SHARE_READ, NULL, 
+                                                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0 ) ) != 
+                                                               INVALID_HANDLE_VALUE )
+                                   {
+                                        editstream.dwCookie = ( DWORD_PTR ) hFile;
+                                        editstream.pfnCallback = StreamInProc;
+                                        SendMessage( hWndRichEdit, EM_STREAMIN, SF_TEXT, ( LPARAM ) &amp;editstream );
+                                        SendMessage( hWndRichEdit, EM_SETMODIFY, FALSE, 0 );
+                                        CloseHandle( hFile );
+                                        FileOpened = TRUE;
+                                     }
+                                     else   
+                                      MessageBox( hWnd, OpenFileFail, AppName, MB_OK | MB_ICONERROR );
+                            }          
+                     }
+                     break; 
+
+                   case IDM_CLOSE:
+                        {
+                                 if( CheckModifyState( hWnd ) )
+                                        SetWindowText( hWndRichEdit, NULL );
+                                     FileOpened = FALSE;
+                                  }
+                                  break;   
+
+                   case IDM_SAVE:
+                        {
+                           if( ( hFile = CreateFile( FileName, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                                                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0 ) ) != 
+                                                       INVALID_HANDLE_VALUE )
+                           {                            
+                                        editstream.dwCookie = ( DWORD_PTR ) hFile;
+                                        editstream.pfnCallback = StreamOutProc;
+                                        SendMessage( hWndRichEdit, EM_STREAMOUT, SF_TEXT, ( LPARAM ) &amp;editstream );
+                                        SendMessage( hWndRichEdit, EM_SETMODIFY, FALSE, 0 );
+                                        CloseHandle( hFile );
+                                     }   
+                               else                  
+                                        MessageBox( hWnd, OpenFileFail, AppName, MB_OK | MB_ICONERROR );
+                                  }      
+                                  break;
+
+                   case IDM_COPY:
+                                SendMessage( hWndRichEdit, WM_COPY, 0, 0 );
+                                break;
+
+                   case IDM_CUT:
+                                SendMessage( hWndRichEdit, WM_CUT, 0, 0 );
+                                break;
+                        
+                   case IDM_PASTE:
+                                SendMessage( hWndRichEdit, WM_PASTE, 0, 0 );
+                                break;
+                        
+                   case IDM_DELETE:
+                                SendMessage( hWndRichEdit, EM_REPLACESEL, TRUE, 0 );
+                                break;
+
+                   case IDM_SELECTALL:
+                        {
+                           chrg.cpMin = 0;
+                                   chrg.cpMax = -1;
+                                   SendMessage( hWndRichEdit, EM_EXSETSEL, 0, ( LPARAM ) &amp;chrg );
+                                }
+                                break;   
+
+                   case IDM_UNDO:
+                        SendMessage( hWndRichEdit, EM_UNDO, 0, 0 );
+                        break;
+
+                   case IDM_REDO:
+                                SendMessage( hWndRichEdit, EM_REDO, 0, 0 );
+                                break;
+
+                   case IDM_OPTION:
+                                DialogBoxParam( GetModuleHandle( NULL ), ( LPCTSTR ) IDD_OPTIONDLG, hWnd, OptionProc, 0 );
+                                break;
+
+                   case IDM_SAVEAS:
+                        {
+                           RtlZeroMemory( &amp;ofn, sizeof( ofn ) );
+                                   ofn.lStructSize = sizeof( ofn );
+                                   ofn.hwndOwner = hWnd;
+                                   ofn.hInstance = GetModuleHandle( NULL );
+                                   ofn.lpstrFilter = szFileFilter;
+                                   AlternateFileName[ 0 ] = 0;
+                                   ofn.lpstrFile = AlternateFileName;
+                                   ofn.nMaxFile = sizeof( AlternateFileName );
+                                   ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST;
+                        
+                                   if( GetSaveFileName( &amp;ofn ) )
+                                   {    
+                              if( CreateFile( AlternateFileName, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                                              CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0 ) != 
+                                              INVALID_HANDLE_VALUE )
+                              {
+                              }             
+                                       }
+                                    }
+                                    break;      
+
+                   case IDM_FIND:
+                        if( ! hSearch )
+                                     CreateDialogParam( GetModuleHandle( NULL ), ( LPCTSTR ) IDD_FINDDLG, hWnd, SearchProc, 0 );
+                        break;
+
+                   case IDM_REPLACE:
+                        if( ! hSearch )
+                           CreateDialogParam( GetModuleHandle( NULL ), ( LPCTSTR ) IDD_REPLACEDLG, hWnd, ReplaceProc, 0 );
+                        break;
+
+                   case IDM_GOTOLINE:
+                        if( ! hSearch )
+                                     CreateDialogParam( GetModuleHandle( NULL ), ( LPCTSTR ) IDD_GOTODLG, hWnd, GoToProc, 0 );
+                        break;
+
+                   case IDM_FINDNEXT:
+                        if( lstrlen( FindBuffer ) )
+                        {   
+                                     SendMessage( hWndRichEdit, EM_EXGETSEL, 0, ( LPARAM ) &amp;findtext.chrg );
+
+                                     if( findtext.chrg.cpMin != findtext.chrg.cpMax )
+                                          findtext.chrg.cpMin = findtext.chrg.cpMax;
+                             
+                                     findtext.chrg.cpMax = -1;
+                                     findtext.lpstrText = FindBuffer;
+
+                                     if( SendMessage( hWndRichEdit, EM_FINDTEXTEX, FR_DOWN, ( LPARAM ) &amp;findtext ) != -1 )
+                                        SendMessage( hWndRichEdit, EM_EXSETSEL, 0, ( LPARAM ) &amp;findtext.chrgText );
+                                  }
+                                  break;      
+
+                   case IDM_FINDPREV:
+                        if( lstrlen( FindBuffer ) )
+                        {   
+                                     SendMessage( hWndRichEdit, EM_EXGETSEL, 0, ( LPARAM ) &amp;findtext.chrg );
+                             
+                                     findtext.chrg.cpMax = 0;
+                                     findtext.lpstrText = FindBuffer;
+                             
+                                     if( SendMessage( hWndRichEdit, EM_FINDTEXTEX, 0, ( LPARAM ) &amp;findtext ) != -1 )
+                                          SendMessage( hWndRichEdit, EM_EXSETSEL, 0, ( LPARAM ) &amp;findtext.chrgText );
+                                    }
+                                    break;      
+
+                   case IDM_EXIT:
+                        SendMessage( hWnd, WM_CLOSE, 0, 0 );
+                        break;
+                }
+             }   
+             break;   
+    
+          case WM_CLOSE:
+               if( CheckModifyState( hWnd ) )
+               {
+                    DeleteObject( hFont );  
+                      DestroyWindow( hWnd );
+                   }   
+                   break;
+                  
+          case WM_SIZE:
+                 MoveWindow( hWndRichEdit, 0, 0, LOWORD( lParam ), HIWORD( lParam ), TRUE );
+                 break;     
+    
+          case WM_DESTROY:
+                 PostQuitMessage( 0 );
+                 break;
+     }      
+   return DefWindowProc( hWnd, msg, wParam, lParam );       
+}  
+
+#pragma argsused
+
+int PASCAL WinMain( HINSTANCE hInstance, HINSTANCE prev, LPSTR cmdline, int show )
+{
+   WNDCLASSEX wc;
+   MSG msg;
+   HWND hWnd;
+   char * szClassName = "FreshClass";
+   HACCEL hAccel;
+   HINSTANCE hDll = LoadLibrary( "riched32" );
+   
+   wc.cbSize = sizeof( WNDCLASSEX );
+   wc.style  = CS_HREDRAW | CS_VREDRAW;
+   wc.lpfnWndProc = WndProc;
+   wc.cbClsExtra  = 0;
+   wc.cbWndExtra  = 0;
+   wc.hInstance   = hInstance;
+   wc.hbrBackground = GetStockObject( WHITE_BRUSH );
+   wc.lpszMenuName  = ( LPCTSTR ) IDR_MAINMENU;
+   wc.lpszClassName = szClassName;
+   wc.hIcon = wc.hIconSm = LoadIcon( NULL, IDI_APPLICATION );
+   wc.hCursor = LoadCursor( NULL, IDC_ARROW );
+   RegisterClassEx( &amp;wc );
+   
+   hWnd = CreateWindowEx( NULL, szClassName, "Fresh 1.0",
+                          WS_OVERLAPPEDWINDOW, 70, 70,
+                          1130, 630, 0, NULL, hInstance, NULL );
+ 
+   ShowWindow( hWnd, SW_SHOWNORMAL );
+   UpdateWindow( hWnd );
+ 
+   hAccel = LoadAccelerators( hInstance, ( LPCTSTR ) IDR_MAINACCEL );
+                 
+     while( GetMessage( &amp;msg, 0, 0, 0 ) )
+     {
+        if( IsDialogMessage( hSearch, &amp;msg ) )
+               TranslateAccelerator( hWnd, hAccel, &amp;msg );
+            else
+            {
+               TranslateMessage( &amp;msg );
+                 DispatchMessage( &amp;msg );
+            }
+     }       
+
+   FreeLibrary( hDll );
+
+   return 0;
+}</code></pre></div><br>
+<br>
+fresh.rc<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// #include "resource.h"
+
+#define IDC_NEXT                        1003
+#define IDR_MAINMENU                    101
+#define IDD_OPTIONDLG                   101
+#define IDD_FINDDLG                     102
+#define IDD_GOTODLG                     103
+#define IDD_REPLACEDLG                  104
+#define IDR_MAINACCEL                   105
+#define IDC_BACKCOLORBOX                1000
+#define IDC_FINDEDIT                    1000
+#define IDC_TEXTCOLORBOX                1001
+#define IDC_MATCHCASE                   1001
+#define IDC_REPLACEEDIT                 1001
+#define IDC_WHOLEWORD                   1002
+#define IDC_DOWN                        1003
+#define IDC_UP                          1004
+#define IDC_LINENO                      1005
+#define IDM_OPEN                        40001
+#define IDM_SAVE                        40002
+#define IDM_CLOSE                       40003
+#define IDM_SAVEAS                      40004
+#define IDM_EXIT                        40005
+#define IDM_COPY                        40006
+#define IDM_CUT                         40007
+#define IDM_PASTE                       40008
+#define IDM_DELETE                      40009
+#define IDM_SELECTALL                   40010
+#define IDM_OPTION                      40011
+#define IDM_UNDO                        40012
+#define IDM_REDO                        40013
+#define IDM_FIND                        40014
+#define IDM_FINDNEXT                    40015
+#define IDM_REPLACE                     40016
+#define IDM_GOTOLINE                    40017
+#define IDM_FINDPREV                    40018
+
+IDR_MAINMENU MENU DISCARDABLE 
+BEGIN
+    POPUP "&amp;File"
+    BEGIN
+        MENUITEM "&amp;Open",                       IDM_OPEN
+        MENUITEM "&amp;Close",                      IDM_CLOSE
+        MENUITEM "&amp;Save",                       IDM_SAVE
+        MENUITEM "Save &amp;As",                    IDM_SAVEAS
+        MENUITEM SEPARATOR
+        MENUITEM "E&amp;xit",                       IDM_EXIT
+    END
+    POPUP "&amp;Edit"
+    BEGIN
+        MENUITEM "&amp;Undo",                       IDM_UNDO
+        MENUITEM "&amp;Redo",                       IDM_REDO
+        MENUITEM "&amp;Copy",                       IDM_COPY
+        MENUITEM "C&amp;ut",                        IDM_CUT
+        MENUITEM "&amp;Paste",                      IDM_PASTE
+        MENUITEM SEPARATOR
+        MENUITEM "&amp;Delete",                     IDM_DELETE
+        MENUITEM SEPARATOR
+        MENUITEM "Select &amp;All",                 IDM_SELECTALL
+    END
+    POPUP "&amp;Search"
+    BEGIN
+        MENUITEM "&amp;Find...\tCtrl+F",            IDM_FIND
+        MENUITEM "Find &amp;Next\tF3",              IDM_FINDNEXT
+        MENUITEM "Find &amp;Prev.\tCtrl+F3",        IDM_FINDPREV
+        MENUITEM "&amp;Replace..\tCtrl+R",          IDM_REPLACE
+        MENUITEM SEPARATOR
+        MENUITEM "&amp;Go To Line\tCtrl+G",         IDM_GOTOLINE
+    END
+    MENUITEM "Options",                     IDM_OPTION
+END
+
+IDD_OPTIONDLG DIALOG DISCARDABLE  0, 0, 183, 54
+STYLE DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_VISIBLE | WS_CAPTION | 
+    WS_SYSMENU
+CAPTION "Options"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,137,7,39,14
+    PUSHBUTTON      "Cancel",IDCANCEL,137,25,39,14
+    GROUPBOX        "",IDC_STATIC,5,0,124,49
+    LTEXT           "Background Color:",IDC_STATIC,20,14,60,8
+    LTEXT           "",IDC_BACKCOLORBOX,85,11,28,14,SS_NOTIFY | WS_BORDER
+    LTEXT           "Text Color:",IDC_STATIC,20,33,35,8
+    LTEXT           "",IDC_TEXTCOLORBOX,85,29,28,14,SS_NOTIFY | WS_BORDER
+END
+
+IDD_FINDDLG DIALOG DISCARDABLE  0, 0, 186, 54
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Find.."
+FONT 8, "MS Sans Serif"
+BEGIN
+    EDITTEXT        IDC_FINDEDIT,42,3,94,12,ES_AUTOHSCROLL
+    CONTROL         "Match Case",IDC_MATCHCASE,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,6,24,54,10
+    CONTROL         "Whole Word",IDC_WHOLEWORD,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,6,37,56,10
+    CONTROL         "Down",IDC_DOWN,"Button",BS_AUTORADIOBUTTON | WS_TABSTOP,
+                    83,27,35,10
+    CONTROL         "Up",IDC_UP,"Button",BS_AUTORADIOBUTTON | WS_TABSTOP,83,
+                    38,25,10
+    DEFPUSHBUTTON   "OK",IDOK,141,3,39,12
+    PUSHBUTTON      "Cancel",IDCANCEL,141,18,39,12
+    LTEXT           "Find what:",IDC_STATIC,5,4,34,8
+    GROUPBOX        "Direction",IDC_STATIC,70,18,64,32
+END
+
+IDD_GOTODLG DIALOGEX 0, 0, 106, 30
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_TOOLWINDOW
+CAPTION "Go To Line"
+FONT 8, "MS Sans Serif", 0, 0
+BEGIN
+    EDITTEXT        IDC_LINENO,29,4,35,11,ES_AUTOHSCROLL | ES_NUMBER,
+                    WS_EX_CLIENTEDGE
+    DEFPUSHBUTTON   "OK",IDOK,70,4,31,11
+    PUSHBUTTON      "Cancel",IDCANCEL,70,17,31,11
+    LTEXT           "Line :",IDC_STATIC,8,5,18,8
+END
+
+IDD_REPLACEDLG DIALOG DISCARDABLE  0, 0, 186, 33
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Replace"
+FONT 8, "MS Sans Serif"
+BEGIN
+    EDITTEXT        IDC_FINDEDIT,51,3,84,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_REPLACEEDIT,51,17,84,11,ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK",IDOK,142,3,39,11
+    PUSHBUTTON      "Cancel",IDCANCEL,142,17,39,11
+    LTEXT           "Find what:",IDC_STATIC,3,4,34,8
+    LTEXT           "Replace with",IDC_STATIC,3,18,42,8
+END
+
+IDR_MAINACCEL ACCELERATORS DISCARDABLE 
+BEGIN
+    "F",            IDM_FIND,               VIRTKEY, CONTROL, NOINVERT
+    "G",            IDM_GOTOLINE,           VIRTKEY, CONTROL, NOINVERT
+    "R",            IDM_REPLACE,            VIRTKEY, CONTROL, NOINVERT
+    VK_F3,          IDM_FINDNEXT,           VIRTKEY, NOINVERT
+    VK_F3,          IDM_FINDPREV,           VIRTKEY, CONTROL, NOINVERT
+END</code></pre></div><br>
+<br>
+go.bat:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">set path=c:\bcc582\bin
+brc32 -r fresh.rc
+bcc32 -W fresh.c
+if errorlevel 0 fresh</code></pre></div><br>
+<br>
+Usa un fichero wordfile.txt para indicar los tokens que resaltar:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">[ASSEMBLY]
+C1=CLASS ENDCLASS DATA METHOD INLINE
+C2=#include #pragma #ifdef #endif #define another
+C3=local static public private
+C4=if else endif return do case end endcase 
+C5=
+C6=
+C7=
+C8=
+C9=
+C10=</code></pre></div><br>
+<br>
+Ya funciona aunque no está completo y aún tiene algunos bugs al analizar las palabras. Pero el concepto está ahí y es muy interesante <br>
+<br>
+El código fuente original (en ensamblador) y la idea pertenecen a <!-- e --><a href="mailto:Iczelion@win32asm.cjb.net">Iczelion@win32asm.cjb.net</a><!-- e -->.</div>
+    </div>
+  </div>
+  <div class="post" id="p126691">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: RichEdit - Mejorando la velocidad de coloreado</span><br>
+        Posted: Tue Feb 28, 2012 10:03 PM
+      </div>
+      <div class="content">Version mejorada<br>
+<br>
+fresh.c<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#pragma resource "fresh.res"
+
+#include &lt;windows.h&gt;
+#include &lt;richedit.h&gt;
+#include &lt;stdio.h&gt;
+
+typedef struct
+{
+   DWORD    WordLen;    // the length of the word: used as a quick comparison
+     char * pszWord;    // pointer to the word
+     COLORREF * pColor; // point to the dword that contains the color used to hilite the word
+     void * NextLink;   // point to the next WORDINFO structure
+} WORDINFO; 
+
+#define IDR_MAINMENU               101
+#define IDM_OPEN                 40001
+#define IDM_SAVE                 40002
+#define IDM_CLOSE                40003
+#define IDM_SAVEAS               40004
+#define IDM_EXIT                 40005
+#define IDM_COPY                 40006
+#define IDM_CUT                  40007
+#define IDM_PASTE                40008
+#define IDM_DELETE               40009
+#define IDM_SELECTALL            40010
+#define IDM_OPTION                   40011
+#define IDM_UNDO                       40012
+#define IDM_REDO                       40013
+#define IDD_OPTIONDLG              101
+#define IDC_BACKCOLORBOX          1000
+#define IDC_TEXTCOLORBOX          1001
+#define IDR_MAINACCEL              105
+#define IDD_FINDDLG                102
+#define IDD_GOTODLG                103
+#define IDD_REPLACEDLG             104
+#define IDC_FINDEDIT              1000
+#define IDC_MATCHCASE             1001
+#define IDC_REPLACEEDIT           1001
+#define IDC_WHOLEWORD             1002
+#define IDC_DOWN                  1003
+#define IDC_UP                    1004
+#define IDC_LINENO                1005
+#define IDM_FIND                 40014
+#define IDM_FINDNEXT             40015
+#define IDM_REPLACE              40016
+#define IDM_GOTOLINE             40017
+#define IDM_FINDPREV             40018
+
+#define RichEditID                     300
+
+#define CLR_HRED      RGB( 255,   0,   0 )
+#define CLR_HGREEN    RGB(   0, 255,   0 )
+#define CLR_GREEN     RGB(   0, 128,   0 )
+#define CLR_HBLUE     RGB(   0,   0, 255 )
+#define CLR_YELLOW    RGB( 255, 255,   0 )
+#define CLR_HCYAN     RGB(   0, 255, 255 )
+#define CLR_BLACK     RGB(   0,   0,   0 )
+#define CLR_WHITE     RGB( 255, 255, 255 )
+
+char FindBuffer[ 256 ];
+char ReplaceBuffer[ 256 ];
+HWND hWndRichEdit;
+WNDPROC OldWndProc;
+int RichEditVersion;
+
+COLORREF BackGroundColor = CLR_WHITE;
+COLORREF TextColor = CLR_BLACK;
+COLORREF CommentColor = CLR_HBLUE;
+COLORREF ColorArray[ 10 ] = { CLR_HBLUE, CLR_GREEN, CLR_HCYAN, CLR_HBLUE, CLR_BLACK,
+                                CLR_BLACK, CLR_BLACK, CLR_BLACK, CLR_BLACK, CLR_BLACK };  
+BOOL FileOpened = FALSE;
+char * szFileFilter = "PRG source code (*.prg)\0*.prg\0All Files (*.*)\0*.*\0";
+char FileName[ 256 ];
+char AlternateFileName[ 256 ];
+HANDLE hSearch = NULL;
+char * OpenFileFail = "Cannot open the file";
+char * AppName = "Fresh 1.0";
+char * WordFileName = "wordfile.txt";
+FINDTEXTEX findtext;
+char * WannaSave = "The data in the control is modified. Want to save it ?";
+HFONT hFont;
+WORDINFO SyntaxArray[ 256 ];
+
+void SetColor( void )
+{
+     CHARFORMAT cfm;     
+    
+     SendMessage( hWndRichEdit, EM_SETBKGNDCOLOR, 0, BackGroundColor );
+     memset( &amp;cfm, 0, sizeof( cfm ) );
+     cfm.cbSize = sizeof( cfm );
+     cfm.dwMask = CFM_COLOR;
+     cfm.crTextColor = TextColor;
+     SendMessage( hWndRichEdit, EM_SETCHARFORMAT, SCF_ALL, ( LPARAM ) &amp;cfm );
+}
+
+void CenterWindow( HWND hWnd )
+{
+   RECT rWnd, rDsk;
+   LONG Left, Top, Width, Height;
+
+   GetWindowRect( hWnd, &amp;rWnd );
+   GetWindowRect( GetDesktopWindow(), &amp;rDsk );
+
+   Width  = rWnd.right - rWnd.left;
+   Height = rWnd.bottom - rWnd.top;
+   Left   = ( rDsk.right / 2 ) - ( Width / 2 );
+   Top    = ( rDsk.bottom / 2 ) - ( Height / 2 );
+
+   MoveWindow( hWnd, Left, Top, Width, Height, FALSE );
+}
+
+void ParseBuffer( char * pszTokens, DWORD dwGroup )
+{
+   char * pStart;
+   WORDINFO * pWordInfo;
+   
+   if( ! strlen( pszTokens ) )
+      return;
+        
+   CharLower( pszTokens );
+   
+   while( * pszTokens )
+   {
+      while( * pszTokens == ' ' || * pszTokens == 9 &amp;&amp; * pszTokens )
+         pszTokens++;
+         
+      if( * pszTokens )
+      { 
+         pStart = pszTokens;
+
+         while( * pszTokens != ' ' &amp;&amp; * pszTokens != 9 &amp;&amp; * pszTokens )
+            pszTokens++;
+         
+         pWordInfo = SyntaxArray + pStart[ 0 ];
+
+         if( SyntaxArray[ pStart[ 0 ] ].WordLen )
+         {
+            while( pWordInfo-&gt;NextLink )
+               pWordInfo = pWordInfo-&gt;NextLink;     
+                
+            pWordInfo-&gt;NextLink = ( WORDINFO * ) malloc( sizeof( WORDINFO ) );   
+            memset( ( void * ) pWordInfo-&gt;NextLink, 0, sizeof( WORDINFO ) );
+            pWordInfo = pWordInfo-&gt;NextLink;
+         }   
+
+         pWordInfo-&gt;WordLen = pszTokens - pStart;
+         pWordInfo-&gt;pszWord = ( char * ) malloc( pWordInfo-&gt;WordLen + 1 );
+         strncpy( pWordInfo-&gt;pszWord, pStart, pWordInfo-&gt;WordLen );
+         // pWordInfo-&gt;pszWord[ 0 ] = '*';
+         // pWordInfo-&gt;pszWord[ pWordInfo-&gt;WordLen - 1 ] = '*';
+         pWordInfo-&gt;pszWord[ pWordInfo-&gt;WordLen ] = 0;
+         pWordInfo-&gt;pColor = ColorArray + dwGroup - 1;
+         pWordInfo-&gt;NextLink = NULL;
+         // MessageBox( 0, pWordInfo-&gt;pszWord, "token", 0 );
+      }   
+   }      
+}   
+
+void FillHiliteInfo( void )
+{
+   char filename[ 1024 ];
+   char buffer[ 1024 ];
+   char * pTemp;
+   
+   RtlZeroMemory( SyntaxArray, sizeof( SyntaxArray ) ); 
+
+   GetModuleFileName( GetModuleHandle( NULL ), filename, sizeof( filename ) );
+   pTemp = filename + lstrlen( filename );
+   
+   while( ( pTemp &gt; filename ) &amp;&amp; ( ( * pTemp ) != '\\' ) )
+      pTemp--;
+      
+   * ++pTemp = 0;   
+   lstrcat( pTemp, WordFileName );
+   
+   if( GetFileAttributes( filename ) != INVALID_FILE_ATTRIBUTES )
+   {
+      if( GetPrivateProfileString( "ASSEMBLY", "C1", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 1 );
+
+      if( GetPrivateProfileString( "ASSEMBLY", "C2", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 2 );
+         
+      if( GetPrivateProfileString( "ASSEMBLY", "C3", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 3 );
+
+      if( GetPrivateProfileString( "ASSEMBLY", "C4", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 4 );
+         
+      if( GetPrivateProfileString( "ASSEMBLY", "C5", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 5 );
+
+      if( GetPrivateProfileString( "ASSEMBLY", "C6", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 6 );
+
+      if( GetPrivateProfileString( "ASSEMBLY", "C7", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 7 );
+         
+      if( GetPrivateProfileString( "ASSEMBLY", "C8", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 8 );
+
+      if( GetPrivateProfileString( "ASSEMBLY", "C9", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 9 );
+         
+      if( GetPrivateProfileString( "ASSEMBLY", "C10", NULL, buffer, sizeof( buffer ), filename ) )
+         ParseBuffer( buffer, 10 );
+   }  
+   else
+      MessageBox( 0, "wordfile.txt does not exist", "Attention", MB_ICONINFORMATION );                        
+}   
+   
+BOOL CheckModifyState( HWND hWnd )
+{
+     int nResult;
+     
+   if( SendMessage( hWndRichEdit, EM_GETMODIFY, 0, 0 ) )
+        if( ( nResult = MessageBox( hWnd, WannaSave, AppName, MB_YESNOCANCEL ) ) == IDYES )
+               SendMessage( hWnd, WM_COMMAND, IDM_SAVE, 0 );
+            else if( nResult == IDCANCEL )
+               return FALSE;
+                   
+   return TRUE;
+}
+
+void PrepareEditMenu( HMENU hSubMenu )
+{
+   CHARRANGE chrg;
+
+     if( ! SendMessage( hWndRichEdit, EM_CANPASTE, CF_TEXT, 0 ) )
+        EnableMenuItem( hSubMenu, IDM_PASTE, MF_GRAYED );
+     else   
+          EnableMenuItem( hSubMenu, IDM_PASTE, MF_ENABLED );
+
+     if( ! SendMessage( hWndRichEdit, EM_CANUNDO, 0, 0 ) )
+        EnableMenuItem( hSubMenu, IDM_UNDO, MF_GRAYED );
+     else   
+          EnableMenuItem( hSubMenu, IDM_UNDO, MF_ENABLED );
+
+     if( ! SendMessage( hWndRichEdit, EM_CANREDO, 0, 0 ) )
+          EnableMenuItem( hSubMenu, IDM_REDO, MF_GRAYED );
+     else
+        EnableMenuItem( hSubMenu, IDM_REDO, MF_ENABLED );
+
+     chrg.cpMin = SendMessage( hWndRichEdit, EM_EXGETSEL, 0, ( LPARAM ) &amp;chrg );
+     
+     if( chrg.cpMin == chrg.cpMax )
+     {  
+        EnableMenuItem( hSubMenu, IDM_COPY,   MF_GRAYED );
+          EnableMenuItem( hSubMenu, IDM_CUT,    MF_GRAYED );
+          EnableMenuItem( hSubMenu, IDM_DELETE, MF_GRAYED );
+     }    
+     else
+     {  
+        EnableMenuItem( hSubMenu, IDM_COPY,   MF_ENABLED );
+          EnableMenuItem( hSubMenu, IDM_CUT,    MF_ENABLED );
+          EnableMenuItem( hSubMenu, IDM_DELETE, MF_ENABLED );
+     }    
+}
+
+#pragma argsused 
+
+static INT_PTR CALLBACK OptionProc( HWND hDlg, UINT wMsg, WPARAM wParam, LPARAM lParam )
+{
+   switch( wMsg )
+   {
+      case WM_INITDIALOG:
+           CenterWindow( hDlg );
+           return TRUE;
+
+      case WM_COMMAND:
+           switch( wParam )
+           {
+              case IDOK:
+                   EndDialog( hDlg, IDOK );
+                   break;
+
+              case IDCANCEL:
+                   EndDialog( hDlg, IDCANCEL );
+                   break;
+           }
+           break;
+   }
+   return FALSE;
+}
+
+#pragma argsused
+
+static INT_PTR CALLBACK SearchProc( HWND hDlg, UINT wMsg, WPARAM wParam, LPARAM lParam )
+{
+   switch( wMsg )
+   {
+      case WM_INITDIALOG:
+           CenterWindow( hDlg );
+           return TRUE;
+
+      case WM_COMMAND:
+           switch( wParam )
+           {
+              case IDOK:
+                   EndDialog( hDlg, IDOK );
+                   break;
+
+              case IDCANCEL:
+                   EndDialog( hDlg, IDCANCEL );
+                   break;
+           }
+           break;
+   }
+   return FALSE;
+}
+
+#pragma argsused
+
+static INT_PTR CALLBACK ReplaceProc( HWND hDlg, UINT wMsg, WPARAM wParam, LPARAM lParam )
+{
+   switch( wMsg )
+   {
+      case WM_INITDIALOG:
+           CenterWindow( hDlg );
+           return TRUE;
+
+      case WM_COMMAND:
+           switch( wParam )
+           {
+              case IDOK:
+                   EndDialog( hDlg, IDOK );
+                   break;
+
+              case IDCANCEL:
+                   EndDialog( hDlg, IDCANCEL );
+                   break;
+           }
+           break;
+   }
+   return FALSE;
+}
+
+#pragma argsused
+
+static INT_PTR CALLBACK GoToProc( HWND hDlg, UINT wMsg, WPARAM wParam, LPARAM lParam )
+{
+   switch( wMsg )
+   {
+      case WM_INITDIALOG:
+           CenterWindow( hDlg );
+           return TRUE;
+
+      case WM_COMMAND:
+           switch( wParam )
+           {
+              case IDOK:
+                   EndDialog( hDlg, IDOK );
+                   break;
+
+              case IDCANCEL:
+                   EndDialog( hDlg, IDCANCEL );
+                   break;
+           }
+           break;
+   }
+   return FALSE;
+}
+
+LRESULT WINAPI NewRichEditProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam )
+{
+   HDC hDC;
+   HFONT hOldFont;
+   RECT rect;
+   TEXTRANGE txtrange;
+   char buffer[ 1024 * 10 ];
+   HRGN hRgn, hOldRgn;
+   POINT pt;
+   DWORD nChar, nLine, dwPos;
+   WORDINFO * pWordInfo;
+   BOOL bExit;
+
+   switch( msg )
+   {
+      case WM_PAINT:       
+           HideCaret( hWnd );
+               CallWindowProc( OldWndProc, hWnd, msg, wParam, lParam );
+               hDC = GetDC( hWnd );
+               SetBkMode( hDC, TRANSPARENT );
+               hOldFont = SelectObject( hDC, hFont );
+
+               SendMessage( hWnd, EM_GETRECT, 0, ( LPARAM ) &amp;rect );
+               
+             nChar = SendMessage( hWnd, EM_CHARFROMPOS, 0, ( LPARAM ) &amp;rect );
+               nLine = SendMessage( hWnd, EM_LINEFROMCHAR, nChar, 0 );
+               txtrange.chrg.cpMin = SendMessage( hWnd, EM_LINEINDEX, nLine, 0 );
+           txtrange.chrg.cpMax = SendMessage( hWnd, EM_CHARFROMPOS, 0, ( LPARAM ) &amp;rect.right );               
+               
+               hRgn = CreateRectRgn( rect.left, rect.top, rect.right, rect.bottom );
+           hOldRgn = SelectObject( hDC, hRgn );
+
+           txtrange.lpstrText = buffer;
+           if( SendMessage( hWnd, EM_GETTEXTRANGE, 0, ( LPARAM ) &amp;txtrange ) )
+           {
+              char * pPos = buffer;
+              char * pStart = buffer;
+              char * pToken;
+              
+              while( * pPos )
+              {
+                 if( * pPos == ' ' || * pPos == 9 || * pPos == 0xD || * pPos == 0xA )
+                 {
+                    pToken = ( char * ) malloc( pPos - pStart + 1 );
+                    strncpy( pToken, pStart, pPos - pStart );
+                    pToken[ pPos - pStart ] = 0;
+                    // MessageBox( 0, pToken, "token", 0 );
+                    
+                    if( RichEditVersion == 3 )
+                                   SendMessage( hWnd, EM_POSFROMCHAR, ( WPARAM ) &amp;rect, ( LPARAM ) ( pStart - buffer ) + nChar );
+                                else   
+                                {   
+                                 dwPos = SendMessage( hWnd, EM_POSFROMCHAR, ( WPARAM ) pStart, 0 );
+                                   rect.left = LOWORD( dwPos );
+                                   rect.top  = HIWORD( dwPos ); 
+                                }
+                                
+                                if( pToken[ 0 ] &gt;= '0' &amp;&amp; pToken[ 0 ] &lt;= '9' )
+                                {   
+                                   SetTextColor( hDC, CLR_HRED );   
+                                   DrawText( hDC, pToken, -1, &amp;rect, 0 );
+                                }
+                                else if( pToken[ 0 ] == '"' || pToken[ 0 ] == '\'' )
+                                {
+                                   SetTextColor( hDC, CLR_YELLOW ); 
+                                   DrawText( hDC, pToken, -1, &amp;rect, 0 );
+                                }       
+                    else
+                    {   
+                                   if( pToken[ 0 ] &gt;= 'A' &amp;&amp; pToken[ 0 ] &lt;= 'Z' )
+                                      pWordInfo = SyntaxArray + pToken[ 0 ] - 'A' + 'a';
+                                   else   
+                                      pWordInfo = SyntaxArray + pToken[ 0 ];
+                                
+                                   bExit = FALSE;
+                                
+                                   while( pWordInfo-&gt;WordLen &amp;&amp; ! bExit )
+                                   {
+                                      if( ( strlen( pToken ) == pWordInfo-&gt;WordLen ) &amp;&amp; 
+                                            ( lstrcmpi( pWordInfo-&gt;pszWord, pToken ) == 0 ) )
+                                      { 
+                                         bExit = TRUE;
+                                         SetTextColor( hDC, * pWordInfo-&gt;pColor );  
+                                         DrawText( hDC, pToken, -1, &amp;rect, 0 );   
+                                      }
+                                      else
+                                      {
+                                         if( pWordInfo-&gt;NextLink )
+                                            pWordInfo= pWordInfo-&gt;NextLink;
+                                         else
+                                            bExit = TRUE;   
+                                      }                 
+                                   }
+                                }   
+                                   
+                    free( pToken );
+                    
+                    while( * pPos == ' ' || * pPos == 9 || * pPos == 0xD || * pPos == 0xA &amp;&amp; * pPos )
+                       pPos++;
+                       
+                    if( ! * pPos )
+                       pPos++;   
+                       
+                    pStart = pPos;     
+                 }   
+                 pPos++;
+              }   
+           }   
+
+           SelectObject( hDC, hOldRgn );
+           DeleteObject( hRgn );
+           SelectObject( hDC, hOldFont );
+           ReleaseDC( hWnd, hDC );
+           ShowCaret( hWnd );
+           return 0;
+    
+      case WM_CLOSE: 
+             SetWindowLong( hWnd, GWL_WNDPROC, ( LONG ) OldWndProc );
+             break;
+   }
+                
+   return CallWindowProc( OldWndProc, hWnd, msg, wParam, lParam );
+}
+
+DWORD CALLBACK StreamInProc( DWORD dwCookie, LPBYTE pbBuff, LONG cb, LONG FAR * pcb )
+{       
+     ReadFile( ( HANDLE ) dwCookie, ( LPVOID ) pbBuff, ( DWORD ) cb, ( LPDWORD ) pcb, 0 );
+   return 0;
+}   
+
+DWORD CALLBACK StreamOutProc( DWORD dwCookie, LPBYTE pbBuff, LONG cb, LONG FAR * pcb )
+{
+     WriteFile( ( HANDLE ) dwCookie, ( LPVOID ) pbBuff, ( DWORD ) cb, ( LPDWORD ) pcb, 0 );
+   return 0;
+}   
+    
+LRESULT WINAPI WndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam )
+{
+     RECT rect;
+   OPENFILENAME ofn;
+     char buffer[ 256 ];
+     EDITSTREAM editstream;
+     FILE * hFile;
+     HMENU hPopup;
+     POINT pt;
+     CHARRANGE chrg;
+    
+     switch( msg )
+   {
+        case WM_CREATE:
+               GetClientRect( hWnd, &amp;rect );
+               hWndRichEdit = CreateWindowEx( WS_EX_CLIENTEDGE, "RichEdit20A", 0, 
+                                              WS_CHILD | WS_VISIBLE | ES_MULTILINE | WS_VSCROLL |
+                                              WS_HSCROLL | ES_NOHIDESEL, 0, 0,
+                                              rect.right - rect.left, rect.bottom - rect.top, 
+                                              hWnd, ( HMENU ) RichEditID, GetModuleHandle( NULL ), 0 );
+           
+           SendMessage( hWndRichEdit, EM_SETTYPOGRAPHYOPTIONS, TO_SIMPLELINEBREAK, TO_SIMPLELINEBREAK ); 
+           if( ! SendMessage( hWndRichEdit, EM_GETTYPOGRAPHYOPTIONS, 1, 1 ) )
+                    RichEditVersion = 2;
+               else
+                    RichEditVersion = 3;
+                 
+                 SendMessage( hWndRichEdit, EM_SETEDITSTYLE, SES_EMULATESYSEDIT, SES_EMULATESYSEDIT );
+        
+               OldWndProc = ( WNDPROC ) SetWindowLong( hWndRichEdit, GWL_WNDPROC, ( LONG ) NewRichEditProc );
+               SendMessage( hWndRichEdit, EM_LIMITTEXT, -1, 0 );
+           // SetColor();
+               SendMessage( hWndRichEdit, EM_SETMODIFY, FALSE, 0 );
+               SendMessage( hWndRichEdit, EM_SETEVENTMASK, 0, ENM_MOUSEEVENTS );
+               SendMessage( hWndRichEdit, EM_EMPTYUNDOBUFFER, 0, 0 );
+
+           hFont  = CreateFont( 18, 0, 0, 0, 0, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Courier New" );
+           SendMessage( hWndRichEdit, WM_SETFONT, ( WPARAM ) hFont, 0 );
+
+               FillHiliteInfo();
+               SetFocus( hWndRichEdit );
+               break;
+               
+        case WM_NOTIFY:
+               if( ( ( NMHDR * ) lParam )-&gt;code == EN_MSGFILTER )
+               {
+              if( ( ( MSGFILTER * ) lParam )-&gt;msg == WM_RBUTTONDOWN )                                   
+                      { 
+                         hPopup = GetSubMenu( GetMenu( hWnd ), 1 );
+                         PrepareEditMenu( hPopup );
+                         pt.x = LOWORD( lParam );
+                         pt.y = HIWORD( lParam );
+                         ClientToScreen( hWnd, &amp;pt );
+                         TrackPopupMenu( hPopup, TPM_LEFTALIGN | TPM_BOTTOMALIGN, pt.x, pt.y,
+                                         NULL, hWnd, NULL );
+              }
+            }
+            break;     
+        
+           case WM_INITMENUPOPUP:
+            if( lParam == 0 )
+            {
+               if( FileOpened )
+               {    
+                          EnableMenuItem( ( HMENU ) wParam, IDM_OPEN,   MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_CLOSE,  MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_SAVE,   MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_SAVEAS, MF_ENABLED );
+                     }
+                     else
+                     {  
+                          EnableMenuItem( ( HMENU ) wParam, IDM_OPEN, MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_CLOSE, MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_SAVE, MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_SAVEAS, MF_GRAYED );
+                       }   
+                    }
+                    
+                    else if( lParam == 1 )   
+                     PrepareEditMenu( ( HMENU ) wParam );
+                  
+                  else if( lParam == 2 )   
+            {
+               if( FileOpened )
+               {
+                  EnableMenuItem( ( HMENU ) wParam, IDM_FIND,     MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_FINDNEXT, MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_FINDPREV, MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_REPLACE,  MF_ENABLED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_GOTOLINE, MF_ENABLED );
+                       }
+                       else
+                       {
+                          EnableMenuItem( ( HMENU ) wParam, IDM_FIND,     MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_FINDNEXT, MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_FINDPREV, MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_REPLACE,  MF_GRAYED );
+                          EnableMenuItem( ( HMENU ) wParam, IDM_GOTOLINE, MF_GRAYED );
+                       }
+                    }
+                    break;
+                
+                case WM_COMMAND:
+                 if( ! lParam ) // menu commands
+                 {  
+                      switch( LOWORD( wParam ) )
+                      {
+                         case IDM_OPEN:
+                         {  
+                              memset( &amp;ofn, 0, sizeof( ofn ) );
+                              ofn.lStructSize = sizeof( ofn );
+                              ofn.hwndOwner = hWnd;
+                              ofn.hInstance = GetModuleHandle( NULL );
+                              ofn.lpstrFilter = szFileFilter;
+                              FileName[ 0 ] = 0;
+                              ofn.lpstrFile = FileName;
+                            ofn.nMaxFile = sizeof( FileName );
+                              ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST;
+                           
+                              if( GetOpenFileName( &amp;ofn ) )
+                              { 
+                                   if( ( hFile = CreateFile( FileName, GENERIC_READ, FILE_SHARE_READ, NULL, 
+                                                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0 ) ) != 
+                                                               INVALID_HANDLE_VALUE )
+                                   {
+                                        editstream.dwCookie = ( DWORD_PTR ) hFile;
+                                        editstream.pfnCallback = StreamInProc;
+                                        SendMessage( hWndRichEdit, EM_STREAMIN, SF_TEXT, ( LPARAM ) &amp;editstream );
+                                        SendMessage( hWndRichEdit, EM_SETMODIFY, FALSE, 0 );
+                                        CloseHandle( hFile );
+                                        FileOpened = TRUE;
+                                     }
+                                     else   
+                                      MessageBox( hWnd, OpenFileFail, AppName, MB_OK | MB_ICONERROR );
+                            }          
+                     }
+                     break; 
+
+                   case IDM_CLOSE:
+                        {
+                                 if( CheckModifyState( hWnd ) )
+                                        SetWindowText( hWndRichEdit, NULL );
+                                     FileOpened = FALSE;
+                                  }
+                                  break;   
+
+                   case IDM_SAVE:
+                        {
+                           if( ( hFile = CreateFile( FileName, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                                                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0 ) ) != 
+                                                       INVALID_HANDLE_VALUE )
+                           {                            
+                                        editstream.dwCookie = ( DWORD_PTR ) hFile;
+                                        editstream.pfnCallback = StreamOutProc;
+                                        SendMessage( hWndRichEdit, EM_STREAMOUT, SF_TEXT, ( LPARAM ) &amp;editstream );
+                                        SendMessage( hWndRichEdit, EM_SETMODIFY, FALSE, 0 );
+                                        CloseHandle( hFile );
+                                     }   
+                               else                  
+                                        MessageBox( hWnd, OpenFileFail, AppName, MB_OK | MB_ICONERROR );
+                                  }      
+                                  break;
+
+                   case IDM_COPY:
+                                SendMessage( hWndRichEdit, WM_COPY, 0, 0 );
+                                break;
+
+                   case IDM_CUT:
+                                SendMessage( hWndRichEdit, WM_CUT, 0, 0 );
+                                break;
+                        
+                   case IDM_PASTE:
+                                SendMessage( hWndRichEdit, WM_PASTE, 0, 0 );
+                                break;
+                        
+                   case IDM_DELETE:
+                                SendMessage( hWndRichEdit, EM_REPLACESEL, TRUE, 0 );
+                                break;
+
+                   case IDM_SELECTALL:
+                        {
+                           chrg.cpMin = 0;
+                                   chrg.cpMax = -1;
+                                   SendMessage( hWndRichEdit, EM_EXSETSEL, 0, ( LPARAM ) &amp;chrg );
+                                }
+                                break;   
+
+                   case IDM_UNDO:
+                        SendMessage( hWndRichEdit, EM_UNDO, 0, 0 );
+                        break;
+
+                   case IDM_REDO:
+                                SendMessage( hWndRichEdit, EM_REDO, 0, 0 );
+                                break;
+
+                   case IDM_OPTION:
+                                DialogBoxParam( GetModuleHandle( NULL ), ( LPCTSTR ) IDD_OPTIONDLG, hWnd, OptionProc, 0 );
+                                break;
+
+                   case IDM_SAVEAS:
+                        {
+                           RtlZeroMemory( &amp;ofn, sizeof( ofn ) );
+                                   ofn.lStructSize = sizeof( ofn );
+                                   ofn.hwndOwner = hWnd;
+                                   ofn.hInstance = GetModuleHandle( NULL );
+                                   ofn.lpstrFilter = szFileFilter;
+                                   AlternateFileName[ 0 ] = 0;
+                                   ofn.lpstrFile = AlternateFileName;
+                                   ofn.nMaxFile = sizeof( AlternateFileName );
+                                   ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST;
+                        
+                                   if( GetSaveFileName( &amp;ofn ) )
+                                   {    
+                              if( CreateFile( AlternateFileName, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                                              CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0 ) != 
+                                              INVALID_HANDLE_VALUE )
+                              {
+                              }             
+                                       }
+                                    }
+                                    break;      
+
+                   case IDM_FIND:
+                        if( ! hSearch )
+                                     CreateDialogParam( GetModuleHandle( NULL ), ( LPCTSTR ) IDD_FINDDLG, hWnd, SearchProc, 0 );
+                        break;
+
+                   case IDM_REPLACE:
+                        if( ! hSearch )
+                           CreateDialogParam( GetModuleHandle( NULL ), ( LPCTSTR ) IDD_REPLACEDLG, hWnd, ReplaceProc, 0 );
+                        break;
+
+                   case IDM_GOTOLINE:
+                        if( ! hSearch )
+                                     CreateDialogParam( GetModuleHandle( NULL ), ( LPCTSTR ) IDD_GOTODLG, hWnd, GoToProc, 0 );
+                        break;
+
+                   case IDM_FINDNEXT:
+                        if( lstrlen( FindBuffer ) )
+                        {   
+                                     SendMessage( hWndRichEdit, EM_EXGETSEL, 0, ( LPARAM ) &amp;findtext.chrg );
+
+                                     if( findtext.chrg.cpMin != findtext.chrg.cpMax )
+                                          findtext.chrg.cpMin = findtext.chrg.cpMax;
+                             
+                                     findtext.chrg.cpMax = -1;
+                                     findtext.lpstrText = FindBuffer;
+
+                                     if( SendMessage( hWndRichEdit, EM_FINDTEXTEX, FR_DOWN, ( LPARAM ) &amp;findtext ) != -1 )
+                                        SendMessage( hWndRichEdit, EM_EXSETSEL, 0, ( LPARAM ) &amp;findtext.chrgText );
+                                  }
+                                  break;      
+
+                   case IDM_FINDPREV:
+                        if( lstrlen( FindBuffer ) )
+                        {   
+                                     SendMessage( hWndRichEdit, EM_EXGETSEL, 0, ( LPARAM ) &amp;findtext.chrg );
+                             
+                                     findtext.chrg.cpMax = 0;
+                                     findtext.lpstrText = FindBuffer;
+                             
+                                     if( SendMessage( hWndRichEdit, EM_FINDTEXTEX, 0, ( LPARAM ) &amp;findtext ) != -1 )
+                                          SendMessage( hWndRichEdit, EM_EXSETSEL, 0, ( LPARAM ) &amp;findtext.chrgText );
+                                    }
+                                    break;      
+
+                   case IDM_EXIT:
+                        SendMessage( hWnd, WM_CLOSE, 0, 0 );
+                        break;
+                }
+             }   
+             break;   
+    
+          case WM_CLOSE:
+               if( CheckModifyState( hWnd ) )
+               {
+                    DeleteObject( hFont );  
+                      DestroyWindow( hWnd );
+                   }   
+                   break;
+                  
+          case WM_SIZE:
+                 MoveWindow( hWndRichEdit, 0, 0, LOWORD( lParam ), HIWORD( lParam ), TRUE );
+                 break;     
+    
+          case WM_DESTROY:
+                 PostQuitMessage( 0 );
+                 break;
+     }      
+   return DefWindowProc( hWnd, msg, wParam, lParam );       
+}  
+
+#pragma argsused
+
+int PASCAL WinMain( HINSTANCE hInstance, HINSTANCE prev, LPSTR cmdline, int show )
+{
+   WNDCLASSEX wc;
+   MSG msg;
+   HWND hWnd;
+   char * szClassName = "FreshClass";
+   HACCEL hAccel;
+   HINSTANCE hDll = LoadLibrary( "riched32" );
+   
+   wc.cbSize = sizeof( WNDCLASSEX );
+   wc.style  = CS_HREDRAW | CS_VREDRAW;
+   wc.lpfnWndProc = WndProc;
+   wc.cbClsExtra  = 0;
+   wc.cbWndExtra  = 0;
+   wc.hInstance   = hInstance;
+   wc.hbrBackground = GetStockObject( WHITE_BRUSH );
+   wc.lpszMenuName  = ( LPCTSTR ) IDR_MAINMENU;
+   wc.lpszClassName = szClassName;
+   wc.hIcon = wc.hIconSm = LoadIcon( NULL, IDI_APPLICATION );
+   wc.hCursor = LoadCursor( NULL, IDC_ARROW );
+   RegisterClassEx( &amp;wc );
+   
+   hWnd = CreateWindowEx( NULL, szClassName, "Fresh 1.0",
+                          WS_OVERLAPPEDWINDOW, 70, 70,
+                          1130, 630, 0, NULL, hInstance, NULL );
+ 
+   ShowWindow( hWnd, SW_SHOWNORMAL );
+   UpdateWindow( hWnd );
+ 
+   hAccel = LoadAccelerators( hInstance, ( LPCTSTR ) IDR_MAINACCEL );
+                 
+     while( GetMessage( &amp;msg, 0, 0, 0 ) )
+     {
+        if( IsDialogMessage( hSearch, &amp;msg ) )
+               TranslateAccelerator( hWnd, hAccel, &amp;msg );
+            else
+            {
+               TranslateMessage( &amp;msg );
+                 DispatchMessage( &amp;msg );
+            }
+     }       
+
+   FreeLibrary( hDll );
+
+   return 0;
+}</code></pre></div><br>
+<br>
+wordfile.txt<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">[ASSEMBLY]
+C1=#include #pragma #ifdef #ifndef #else #endif #define
+C2=CLASS ENDCLASS DATA CLASSDATA METHOD INLINE VIRTUAL SETGET ACCESS DEFAULT
+C3=local static public private nil
+C4=if else endif function return do case end otherwise endcase 
+C5=
+C6=
+C7=
+C8=
+C9=
+C10=</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

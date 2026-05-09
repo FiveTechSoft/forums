@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>very strange behavior in xBrowse (Bug?) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-22275">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> very strange behavior in xBrowse (Bug?)</div>
+  <div class="post" id="p118552">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">very strange behavior in xBrowse (Bug?)</span><br>
+        Posted: Tue Aug 30, 2011 01:09 AM
+      </div>
+      <div class="content">Dears all.<br>
+By chance, I noticed a very strange behavior in xBrowse (ver. 10.06). Let me explain:<br>
+<br>
+In MDI environment, I have a window oChild (of oWnd)  containing a xBrowse to edit data.<br>
+This browser is conditioned to come to the end and beyond it (bPastEof), add a blank record ready for editing. If you do not enter any value and press enter, this state is evaluated and displays a dialog to choose the necessary data. (imagine that this dialog contains the catalog of products).<br>
+<br>
+Well, if you use the directional keys on the items exceed xBrowse, everything works fine.<br>
+But ... if you use the arrow below the vertical scroll by surpassing add a blank record, and if it takes another click on the arrow and keep the mouse cursor over it, it triggers an event so overwhelming,  opening the dialog, and this action does not stop until the mouse is placed on dialog, having to close each of them to continue. If this is not done immediately, it can consume all the resources of the cpu, and we know the results when this happens.<br>
+<br>
+I coded a small example show here, in order to test the above.  Use Clientes.dbf file found in the Samples folder.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+#include "xbrowse.ch"
+
+static oWnd
+
+//----------------
+Function Main()
+   SET DELETED ON
+   DEFINE WINDOW oWnd MDI TITLE "PRUEBA DE XBROWSE" 
+   ACTIVATE WINDOW oWnd MAXIMIZED ;
+       ON INIT Prueba()
+return nil
+
+//----------------------------//
+Function Prueba()
+local oChild, oBrw, oCol
+local cAlias
+local oBotSave,oBotCanc
+
+DbUseArea(.t.,,"Clientes","Clientes",.F.)
+cAlias:=Alias()
+
+  DEFINE WINDOW oChild MDICHILD OF oWnd TITLE "PRUEBA XBROWSE"
+
+  @34,700 BTNBMP oBotSave LEFT 2007 PROMPT "Guardar" SIZE 100,28 OF oChild ACTION  msgInfo("Hola")
+  @oBotSave:nBottom+8,700 BTNBMP oBotCanc LEFT 2007 PROMPT "Cancelar" SIZE 100,28 OF oChild ACTION oWnd:End()
+
+
+   oBrw := TXBrowse():New( oChild )
+   oBrw:cAlias := cAlias 
+
+   oBrw:nMarqueeStyle    := MARQSTYLE_HIGHLCELL 
+   oBrw:nColDividerStyle     := LINESTYLE_INSET
+   oBrw:nRowDividerStyle     := LINESTYLE_INSET
+   oBrw:lColDividerComplete  := .t. 
+   oBrw:lFooter              := .t. 
+   oBrw:lRecordSelector      := .t.
+
+   oBrw:lFastEdit := .t. 
+
+   oBrw:bPastEof = {|| if( lCCtaOK(oBrw), (Dbappend(), oBrw:GoLeftMost(), oBrw:Refresh(), oBrw:aCols[ 1 ]:Edit() ),) }
+
+   oCol = oBrw:AddCol() 
+   oCol:bEditValue = { || (cAlias)-&gt;telefono } 
+   oCol:cHeader := "TELEFONO"
+   oCol:nEditType = EDIT_GET 
+   oCol:nWidth = 140
+   oCol:bGetChange = {| k, f, o, oCol | If( Len( RTrim( o:oGet:Buffer ) ) == Len( o:oGet:Buffer ),;   //Daniel
+                                           ( o:SendMsg( WM_KEYDOWN, VK_RETURN ) ), ) }                //Daniel
+   oCol:bOnPostEdit = { | oCol, xVal, nKey | If( RecCount() == 0, ( DbAppend(), oBrw:Refresh() ),) ,;
+                        If( nKey == VK_RETURN, ((cAlias)-&gt;telefono := xVal,if(lCCtaOK(oBrw),oBrw:nColSel:=1,)) , ) ,;
+                        If( nKey == VK_ESCAPE .and. Empty((cAlias)-&gt;telefono), ( (cAlias)-&gt;(dbDelete()),(cAlias)-&gt;(__dbPack()),(cAlias)-&gt;(dbGoBottom()),oBrw:Refresh() ), ) } 
+
+   oCol = oBrw:AddCol() 
+   oCol:bEditValue = { || (cAlias)-&gt;nombre } 
+   oCol:cHeader := "NOMBRE"
+   oCol:nEditType = EDIT_GET 
+   oCol:nWidth = 230
+   oCol:bGetChange = {| k, f, o, oCol | If( Len( RTrim( o:oGet:Buffer ) ) == Len( o:oGet:Buffer ),;    //Daniel
+                                           ( o:SendMsg( WM_KEYDOWN, VK_RETURN ) ), ) }                 //Daniel
+   oCol:bOnPostEdit = { | oCol, xVal, nKey | If( RecCount() == 0, ( DbAppend(), oBrw:Refresh() ),) ,;
+                        If( nKey == VK_RETURN, ((cAlias)-&gt;nombre := xVal,if(lCCtaOK(oBrw),oBrw:nColSel:=1,)), ) }
+
+   oBrw:SetRDD()
+   oBrw:CreateFromCode()
+
+   oBrw:bKeyDown :={ | nKey | if(nKey == VK_DELETE, ( (oBrw:cAlias)-&gt;(dbdelete()), (oBrw:cAlias)-&gt;(dbpack()), oBrw:Refresh() ),) }
+
+   oChild:bGotFocus = { || dbselectarea( cAlias ) }  
+
+   ACTIVATE WINDOW oChild MAXIMIZED;
+      ON INIT (  oBrw:nHeight := oChild:nHeight-163, oBrw:nWidth := oChild:nWidth-12, oBrw:nTop:=130 ) ;
+         VALID ( oBrw:CancelEdit(),(cAlias)-&gt;(dbCloseArea()), .T. )
+
+   RETURN NIL
+
+//----------------//
+Function lCCtaOK(oBrw)
+local oDlg
+local cCodigo:=(oBrw:cAlias)-&gt;telefono
+
+if empty(cCodigo)
+   DEFINE DIALOG oDlg FROM 1,1 TO 30,60
+   ACTIVATE DIALOG oDlg CENTERED
+   return .f.
+endif
+
+Return .t.</code></pre></div><br>
+<br>
+Can you help me?<br>
+Sorry for my English.<br>
+<br>
+Regards.<br>
+<br>
+Francisco.</div>
+    </div>
+  </div>
+  <div class="post" id="p118566">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: very strange behavior in xBrowse (Bug?)</span><br>
+        Posted: Tue Aug 30, 2011 09:12 AM
+      </div>
+      <div class="content">Not a bug with XBrowse.<br>
+<br>
+Using bPastEof is a bit tricky. We need to ensure that (1) repeated append is prevented as long as there is an unfinished append and (2) when the cursor row moves away from the appending row while the append is unfinished, the append should be cancelled properly.<br>
+<br>
+Extreme care should be taken for bOnPostEdit.  It is highly desirable not to code this block inside the application program and leave it to xbrowse to automatically generate this codeblock, which is well tested and bugfree. It is highly recommended to use commend syntax using columns clause or if SetRdd() is used, create the columns with the columns parameter of the setrdd method. This way we avoid many possibilties of introducing bugs and facing enexpected behavior.<br>
+<br>
+I am giving here a test program. This can be compiled and tested. This is my approach to achieve similar results like the above sample.<br>
+Please try and see if you find any problems with the sample I posted below. The same logic can be adopted.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+#include "xbrowse.ch"
+
+REQUEST DBFCDX
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oWnd, oBar, oFont
+
+   RDDSetDefault( "DBFCDX" )
+   SET DELETED ON
+
+   if ! File( 'TestTrn.Dbf' )
+      CreateTestDbf()
+   endif
+
+   DEFINE FONT oFont NAME 'TAHOMA' SIZE 0,-12
+   DEFINE WINDOW oWnd MDI
+   oWnd:SetFont( oFont )
+
+   DEFINE BUTTONBAR oBar OF oWnd SIZE 100,32 2007
+   SET MESSAGE OF oWnd TO '' 2007
+
+   DEFINE BUTTON OF oBar PROMPT "XBrowse" ACTION XbrAppend( This )
+   DEFINE BUTTON OF oBar PROMPT "Quit" ACTION oWnd:End()
+
+   ACTIVATE WINDOW oWnd
+   RELEASE FONT oFont
+
+return 0
+
+static function XbrAppend( oBtn )
+
+   local oWnd, oBrw
+
+   oBtn:Disable()
+
+   USE TESTTRN NEW ALIAS TRN EXCLUSIVE
+
+   DEFINE WINDOW oWnd MDICHILD OF WndMain()
+
+   @ 0,0 XBROWSE oBrw OF oWnd ;
+      COLUMNS 'Code', 'Item', 'Rate', 'Quantity' ;
+      ALIAS 'TRN' CELL LINES FASTEDIT
+
+   oBrw:Amount    := { || oBrw:Rate:Value * oBrw:Quantity:Value }
+
+   WITH OBJECT oBrw
+      :Cargo            := 0 // While appending assign the new record to cargo
+      WITH OBJECT :Code
+         :nEditType     := EDIT_BUTTON
+         :bEditBlock    := { || SelectItem( oBrw ) }
+      END
+
+      :Quantity:nEditType  := EDIT_GET
+      :bPastEof         := { || (oBrw:cAlias)-&gt;( AppendRec( oBrw ) ) }
+      :bChange          := { || (oBrw:cAlias)-&gt;( CheckAppend( oBrw ) ) }
+   END
+
+   oBrw:CreateFromCode()
+   oWnd:oClient   := oBrw
+
+   oWnd:bPostEnd := { || TRN-&gt;( DbCloseArea() ), oBtn:Enable() }
+
+   ACTIVATE WINDOW oWnd ON INIT oBrw:SetFocus() ;
+      VALID CheckAppend( oBrw, .t. )
+
+return nil
+
+static function AppendRec( oBrw )
+
+   if oBrw:Cargo == 0  // not in append mode
+      APPEND BLANK
+      GO BOTTOM
+      oBrw:Cargo  := RecNo()
+      oBrw:Refresh()
+      oBrw:GoLeftMost()
+      oBrw:Code:Edit()
+   endif
+
+return nil
+
+static function CheckAppend( oBrw, lExit )
+
+   local nRecNo   := RecNo()
+
+   DEFAULT lExit  := .f.
+
+   if oBrw:Cargo &gt; 0 .and. ( lExit .or. oBrw:Cargo != nRecNo )
+      // there is an unfinished append
+      // cancel it
+      GOTO oBrw:Cargo
+      DELETE
+      oBrw:Cargo  := 0
+      if ! lExit
+         GOTO nRecNo
+         oBrw:Refresh()
+      endif
+   endif
+   if lExit
+      PACK
+   endif
+
+return .t.
+
+static function SelectItem( oBrw1 )
+
+   local aItems := { { 1, "Item.1", 20 }, { 2, "Item.2", 30 }, { 3, "Item.3", 40 } }
+   local nRet     := oBrw1:Code:Value
+
+   XBROWSER aItems ;
+      SETUP ( oBrw:cHeaders := { "Code", "Item", "Rate" } ) ;
+      SELECT ( nRet := oBrw:aRow[ 1 ], ;
+               oBrw1:Item:Value := oBrw:aRow[ 2 ], ;
+               oBrw1:Rate:Value := oBrw:aRow[ 3 ], ;
+               oBrw1:Cargo  := 0, ;
+               oBrw1:nColSel := 4, ;
+               oBrw1:Refresh() )
+
+return nRet
+
+//----------------------------------------------------------------------------//
+
+static function CreateTestDbf()
+
+   local aCols    := { ;
+      { "CODE",      "N",  4, 0  }, ;
+      { "ITEM",      "C", 20, 0  }, ;
+      { "RATE",      "N",  6, 2  }, ;
+      { "QUANTITY",  "N",  4, 0  }  }
+
+   DBCREATE( "TESTTRN", aCols )
+
+   USE TESTTRN EXCLUSIVE
+   APPEND BLANK
+   FIELD-&gt;CODE       := 1
+   FIELD-&gt;ITEM       := "Item.1"
+   FIELD-&gt;RATE       := 20
+   FIELD-&gt;QUANTITY   := 3
+   CLOSE TESTTRN
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p118577">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: very strange behavior in xBrowse (Bug?)</span><br>
+        Posted: Tue Aug 30, 2011 02:36 PM
+      </div>
+      <div class="content"><p>Thanks, Rao. Your example works fine, but the current get field keeps flashing. It is consuming resources?</p>
+<p>I need to make many evaluations before recording the corresponding item, so use bPastEof and bOnPostEdit.<br>
+I'll try to adapt your code to mine.</p>
+<p>Thanks, again.</p>
+<p>Regards.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p118581">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: very strange behavior in xBrowse (Bug?)</span><br>
+        Posted: Tue Aug 30, 2011 03:31 PM
+      </div>
+      <div class="content"><p>For this purpose I installed 10.6 and worked out this sample and is working well. If you still have specific problems please let us know. Whatever that is possible with 10.6, we shall try to help.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p118593">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: very strange behavior in xBrowse (Bug?)</span><br>
+        Posted: Tue Aug 30, 2011 05:20 PM
+      </div>
+      <div class="content"><p>Rao, for the moment I've solved it by omitting the vertical scroll bar. I will try to fix it via code.</p>
+<p>regards</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

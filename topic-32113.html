@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>HDO acceso a bases de datos SQLite - Betatesters - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-32113">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> HDO acceso a bases de datos SQLite - Betatesters</div>
+  <div class="post" id="p187900">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">HDO acceso a bases de datos SQLite - Betatesters</span><br>
+        Posted: Tue Mar 15, 2016 08:14 PM
+      </div>
+      <div class="content">Hola a todos Harbour Data Objects HDO pretende ser una manera universal para acceder a cualquier base de datos con unos drivers que yo llamo Replaceable Data Link RDL muy parecidos a a los actuales RDD de las DBF pero para SQL.<br>
+Algunas caracteristicas de la libreria son:<br>
+<br>
+- Está hecha al 100*100 en Lenguaje C (tanto las clases como las funciones) por lo que la velocidad está muy por encima de lo que se conoce hasta ahora.<br>
+- Es 100*100 POO. Se puede heredar de ellas en PRG para hacer clases más especializadas.<br>
+- Está formadas por varias clases muy faciles de usar:<br>
+    * THDO: encargada de establecer la conexión con la base de datos y hacer el mantenimiento de la misma además de controlar las transacciones, y obtener objetos para la gestión de consulta y demás sentencias SQL. También se pueden ejecutar sentencias directamente y establecer atributos y controlar las excepciones.<br>
+    * THDOStatetent: encargada de las sentencias de todo tipo que se le pueden enviar al servidor. Estas sentencias pueden ser directas o preparadas. Las sentencias preparadas son mucho más eficientes y evitan la inyección de codigo malintencionado en el servidor. La novedad de las sentencias preparadas en el lado del servidor es que se pueden usar BIND en los parametros y en los resultados de tal manera que esos BIND se pueden asociar a variables de Harbour y se actualizarán automaticamente sin tener que asignarlas &quot;a mano&quot;. En el caso de un BIND de parametro cada vez que se le asigna un valor a la variable enlazada y se envía el metodo execute esta quedará actualizada y respondera como es debido. He aquí un ejemplo:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+ * Proyecto: hdo
+ * Fichero: ej07.prg
+ * Descripcion: Uso de sentencias compiladas con variables vinculadas. Consultas
+ * Autor: Manu Exposito 2015-16
+ * Fecha: 21/08/2015
+ */
+
+#include "hdo.ch"
+
+//------------------------------------------------------------------------------
+
+procedure main07b()
+
+    local oDb, oStmt, oCur, e
+    local nSocIni := 0, nSocFin := 999999, getlist := {}
+    local cDb := "agenda.db"
+    local cTabla := "socios"
+    local cSql := "SELECT * FROM " + cTabla + " WHERE clavesocio BETWEEN ? AND ? ;"
+
+    cls
+
+    oDb := THDO():new( "sqlite" )
+
+    oDb:setAttribute( ATTR_ERRMODE, .t. )
+
+    if oDb:connect( cDb )
+        TRY
+            oStmt := oDb:prepare( cSql )  // Prepara la sentencia y crea el objeto oStmt
+
+            oStmt:bindParam( 1, @nSocIni ) // Asocia variables PRG
+            oStmt:bindParam( 2, @nSocFin )
+
+            @ MaxRow(), 00 SAY "Presiona &lt;INTRO&gt; para selecionar rangos o &lt;ESC&gt; para salir..."
+
+            while Inkey( 0 ) != 27
+
+                cls
+
+                @ 02, 02 SAY "Entrada de datos:"
+                @ 04, 02 SAY "Entre rango inicial:" get nSocIni PICTURE "@K"
+                @ 05, 02 SAY "Entre rango final..:" get nSocFin PICTURE "@K" VALID validaRango( nSocIni, nSocFin )
+                READ
+
+                oStmt:execute() // Ejecuta la sentencia
+                /*
+                for e := 1 to 6
+                    muestra( oStmt:GETCOLUMNMETA( e ) )
+                next
+                */
+                // Creamos un cursor local (navigator) como un hash table
+                oCur := THashCursor():new( oStmt:fetchAll( FETCH_HASH ) )
+
+                cls
+
+                @ 00, 00 SAY "Resultado de la consulta -&gt; " + hb_ntos( oStmt:rowCount() ) + " registros:" COLOR "W+/R"
+                @ MaxRow(), 00 SAY "&lt;ESC&gt; para volver al menu..." COLOR "W+/R"
+
+                if oCur:recCount() &gt; 0
+                    miBrwCursor( oCur, 1, 0, MaxRow() - 1, MaxCol() )
+                else
+                    msg( "No hay registros en ese rango" )
+                endif
+
+                oCur:free()
+
+                cls
+                @ MaxRow(), 00 SAY "Presiona &lt;INTRO&gt; para selecionar rangos o &lt;ESC&gt; para salir..."
+            end
+        CATCH e
+            Eval( ErrorBlock(), e )
+        FINALLY
+            if oStmt:className() == "THDOSTATEMENT"
+                oStmt:free()
+            endif
+            msg( "Se acabo" )
+        END
+
+    endif
+
+    oDb:disconnect()
+
+return
+
+//------------------------------------------------------------------------------
+
+static function validaRango( r1, r2 )
+
+    local lRet := ( r1 &gt; r2 )
+
+    if lRet
+         msg( "Priemero mayor que segundo: "  + ;
+                hb_ntos( r1 ) + " &gt; " + ;
+                hb_ntos( r2 ), "Error en rangos" )
+    endif
+
+return !lRet</code></pre></div><br>
+<br>
+    * THashCursor y TMemCursor: clases para manejar el resultado de una sentencia SQL que devuelva un conjunto de datos. La primera basada en tablas hash y la segunda en array.<br>
+<br>
+Ya se puede usar Harbour Data Objects HDO para SQLite.<br>
+<br>
+Voy a necesitar varios betatester, si hay alguien interesado puede ponerse en contacto conmigo  <br>
+<br>
+Saludos de vuestro vecino Manu Expósito</div>
+    </div>
+  </div>
+  <div class="post" id="p187903">
+    <div class="poster">
+      <div class="name" style="color:#105289">horacio</div>
+      <div class="rank">Posts: 1364</div>
+      <div class="avatar"></div>
+      Joined: Wed Jun 21, 2006 12:39 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO acceso a bases de datos SQLite - Betatesters</span><br>
+        Posted: Tue Mar 15, 2016 08:21 PM
+      </div>
+      <div class="content"><p>Manú, Me interesaría probar tu clase. Hay algún repositorio donde pueda obtenerla. </p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p187955">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO acceso a bases de datos SQLite - Betatesters</span><br>
+        Posted: Wed Mar 16, 2016 02:14 PM
+      </div>
+      <div class="content"><p>Manu,</p>
+<p>añádeme a la lista. </p>
+<p>Tenemos que hablar.</p>
+<p>Un abrazo,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p188062">
+    <div class="poster">
+      <div class="name" style="color:#105289">ruben Dario</div>
+      <div class="rank">Posts: 1078</div>
+      <img class="avatar avatar-img" src="avatars/1178.jpg" alt="" loading="lazy">
+      Joined: Thu Sep 27, 2007 03:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO acceso a bases de datos SQLite - Betatesters</span><br>
+        Posted: Fri Mar 18, 2016 07:33 PM
+      </div>
+      <div class="content"><p>Saludos</p>
+<p>ME uno a tu lista.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p188067">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">leandro</div>
+      <div class="rank">Posts: 1816</div>
+      <img class="avatar avatar-img" src="avatars/228.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 26, 2005 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO acceso a bases de datos SQLite - Betatesters</span><br>
+        Posted: Fri Mar 18, 2016 08:51 PM
+      </div>
+      <div class="content"><p>Que bien  <!-- s:) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":)" title="Smile" /><!-- s:) --> <br>
+Me uno <!-- s:mrgreen: --><img src="{SMILIES_PATH}/icon_mrgreen.gif" alt=":mrgreen:" title="Mr. Green" /><!-- s:mrgreen: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p188249">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: HDO acceso a bases de datos SQLite - Betatesters</span><br>
+        Posted: Tue Mar 22, 2016 08:23 PM
+      </div>
+      <div class="content"><!-- s:D -->
+<p>Proto tendreis noticias...</p>
+<p><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

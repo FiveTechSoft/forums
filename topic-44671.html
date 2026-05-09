@@ -1,0 +1,1334 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Calex - sample01 - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-44671">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Calex - sample01</div>
+  <div class="post" id="p271449">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Calex - sample01</span><br>
+        Posted: Sun Jul 07, 2024 09:31 AM
+      </div>
+      <div class="content"><r>Someone use sample01 with tdatabase?<br/><br>
+I Wish converte this calex  sample with tdatabase system<br/><br>
+<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "fivewin.ch"
+#include "Splitter.ch"
+#include "calendar.ch"
+#include "calex.ch"
+#include "tselex.ch"
+#include "ord.ch"
+#include "report.ch"
+
+//----------------------------------------------------------------------------//
+//
+// Remove this comment for append records for test automatically
+//
+//#define DEMO
+//
+//----------------------------------------------------------------------------//
+
+REQUEST DBFCDX
+request hb_lang_it
+request hb_codepage_itwin
+
+Static nPop   := 0
+Static oItems
+Static aChecks
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oBrush
+   local oMenu
+   local oWnd
+
+   oItems   := Array( 6 )
+   aChecks  := { .F., .F., .F., .F., .F., .F. }
+
+
+   HB_LANGSELECT( "IT" )
+       HB_SETCODEPAGE( "ITWIN" )
+   SET DATE FORMAT "MM/DD/YYYY"
+   SET DELETE ON
+   //RDDSETDEFAULT( "DBFCDX" )
+
+/*
+   DEFINE BRUSH oBrush COLOR CLR_GRAY
+   DEFINE WINDOW oWnd BRUSH oBrush MDI
+   ACTIVATE WINDOW oWnd MAXIMIZED ;
+      ON INIT SampleCalex():New( oWnd )
+
+   oBrush:End()
+ */
+
+   SampleCalex():New()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+Function FechaServer()
+Return Date()
+
+//---------------------------------------------------//
+
+CLASS SampleCalex
+
+   DATA dDateStart
+   DATA dDateEnd
+
+   DATA cAlias
+   DATA cFile
+
+   DATA lOnPreNext
+
+   DATA oCalex
+   DATA oDtPick
+   DATA oExBar
+   DATA oPanelExplorer
+   DATA oPanelCalex
+   DATA oWnd
+   DATA oSelex
+   DATA nOptSelex
+
+   DATA oVSplit
+   DATA lFld          INIT .F.
+   DATA oFld
+
+   DATA oDbf
+
+   METHOD New()
+
+   METHOD AddDates()
+
+   METHOD BuildCalex()
+   METHOD BuildDbf()
+   METHOD BuildDialog()
+   METHOD BuildExplorer()
+   METHOD BuildPanels()
+   METHOD BuildPop( oView, dDateFrom, dDateTo, nTimeFrom, nTimeTo )
+   METHOD BuildSplitterV()
+
+   METHOD ChangeCheck( nPos )
+   METHOD ChangeDate()
+   METHOD ChangeSelex()
+   METHOD ChangeView( oView, nInterval )
+   METHOD ColorStatus( dFecha )
+   METHOD DeleteInfo( oView, nIdx )
+   METHOD GetDateMonth( r, c, lView )
+   METHOD Imprime( dFecha )
+   METHOD SetSize( nType, nWidth, nHeight )
+   METHOD ViewDatabase()
+
+ENDCLASS
+
+//---------------------------------------------------//
+
+METHOD New( oWnd ) CLASS SampleCalex
+
+   local oMenu
+   local oSelf    := Self
+   local oBrush
+   local cPath    := "\DATA\" //cFilePath( HB_ARGV( 0 ) )
+
+   SetCurDir( cPath )
+   MENU oMenu
+   ENDMENU
+
+   ::dDateStart := Date()
+   ::dDateEnd   := Date()
+
+   ::lOnPreNext := .F.
+
+   ::cAlias     := "citas"
+   ::cFile      := Upper( cPath + ::cAlias + ".dbf" )
+
+   ::BuildDbf()
+
+       ::=TCitas():New()
+       ::setorder(1)
+       ::Gotop()
+
+
+
+   ::ChangeSelex()
+
+   ::nOptSelex  := 3
+
+   DEFINE BRUSH oBrush COLOR CLR_HGRAY
+
+   if Empty( oWnd )
+      DEFINE WINDOW ::oWnd MDI MENU oMenu BRUSH oBrush
+   else
+      DEFINE WINDOW ::oWnd MDICHILD MENU oMenu BRUSH oBrush OF oWnd
+   endif
+
+   //::lFld            := .T.
+
+   ::BuildPanels()
+   ::BuildSplitterV()
+   ::BuildExplorer()
+   ::BuildCalex()
+   //::AddDates()
+
+
+   ACTIVATE WINDOW oSelf:oWnd MAXIMIZED ;
+      ON RESIZE oSelf:SetSize( nSizeType, nWidth, nHeight ) ;
+      VALID ( DbCloseAll(), .T. )
+
+   oBrush:End()
+
+RETURN Self
+
+//----------------------------------------------------------------------------//
+
+METHOD BuildSplitterV() CLASS SampleCalex
+
+   local oSelf    := Self
+   local oParent
+
+   if ::ClassName() == "TMDICHILD"
+      oParent := ::oWnd
+   else
+      oParent  := ::oWndClient
+   endif
+
+   @ 0, oSelf:oPanelExplorer:nWidth + 2 SPLITTER oSelf:oVSplit ;
+        VERTICAL ;
+        PREVIOUS CONTROLS oSelf:oPanelExplorer ;
+        HINDS CONTROLS oSelf:oPanelCalex ;
+        LEFT MARGIN 10 ;
+        RIGHT MARGIN 80 ;
+        SIZE 2, ScreenHeight() - 2 ;
+        PIXEL ;
+        COLOR CLR_RED ;
+        OF oParent UPDATE
+
+Return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD AddDates( dStart, dEnd, nStart, nEnd ) CLASS SampleCalex
+
+   local dDate
+   local aGrad
+
+   DEFAULT dStart := CToD( "  /  /  " )
+   DEFAULT dEnd   := CToD( "  /  /  " )
+   DEFAULT nStart := 0
+   DEFAULT nEnd   := 0
+
+   //Clear scopes
+  * ( ::cAlias )-&gt;( OrdSetFocus( "fecha" ) )
+  * ( ::cAlias )-&gt;( OrdScope( TOPSCOPE, NIL ) )
+ *  ( ::cAlias )-&gt;( OrdScope( BOTTOMSCOPE, NIL ) )
+
+       ::setorder("fecha")
+       ::SetScope( TOPSCOPE, NIL )
+       ::SetScope( BOTTOMSCOPE, NIL )
+
+   //Set New scopes
+  * ( ::cAlias )-&gt;( DBGoTop() )
+  * ( ::cAlias )-&gt;( OrdScope( TOPSCOPE,    DToS( dStart ) + Str( nStart * 100, 4 ) ) )
+  * ( ::cAlias )-&gt;( OrdScope( BOTTOMSCOPE, DToS( dEnd )   + Str( nEnd * 100, 4 ) ) )
+  * ( ::cAlias )-&gt;( DBGoTop() )
+
+          ::gotop()
+          ::SetScope( TOPSCOPE, DToS( dStart ) + Str( nStart * 100, 4 ) )
+          ::SetScope( BOTTOMSCOPE,DToS( dEnd )   + Str( nEnd * 100, 4 ) )
+          ::gotop()
+
+   ::Reset()
+ *  DO WHILE ! ( ::cAlias )-&gt;( Eof() )
+   DO WHILE ! ::Eof()
+      //nStart, nEnd, dStart, dEnd, cText, cSubject, nIdx, lND, lAplicado, lBloqueoT, aGrad, nClrT, nStatus
+      aGrad   := ::ColorStatus( ::nStatus, ::DSTART )
+      ::LoadDates( ::START,;
+                          ::END, ;
+                          ::DSTART, ;
+                          ::DEND, ;
+                          ::TEXT, ;
+                          ::SUBJECT,;
+                          ::IDX, , , , ;
+                          aGrad[ 1 ], ;
+                          aGrad[ 2 ], ;
+                          ::nStatus )
+                   ::Skip()
+   ENDDO
+
+RETURN nil
+
+//---------------------------------------------------//
+
+METHOD BuildCalex() CLASS SampleCalex
+
+   local oSelf := Self
+
+   if !Empty( ::oFld ) .and. ::lFld
+   DEFINE CALEX ::oCalex OF ::aDialogs[ 1 ] ; //::oPanelCalex ;
+          FROM 1, 10 TO 600*1.15, 600*1.78 ;
+          FIRST_DATE 0 //ALL //TOP //LEFT //BOTTOM //RIGHT
+   else
+   DEFINE CALEX ::oCalex OF ::oPanelCalex ;
+          FROM 1, 10 TO 600, 600 ;
+          FIRST_DATE 0 ALL //TOP //LEFT //BOTTOM //RIGHT
+   endif
+   //::bRClicked := { | r, c | MsgInfo( ::GetInfoFromCoors( r, c ) ) }
+   //::bRClicked := { | r, c | MsgInfo( ::hCalInfo[1] ) }
+   //::bRClicked := { | r, c | XBrowse( ::hCalInfo ), MsgInfo( r ), MsgInfo( c ) }
+   ::bRClicked   := { | r, c | ::GetDateMonth( r, c ) }
+   //::bMouseWheel := { | nK, nD, c, r |
+
+   DEFINE MONTH VIEW OF ::oCalex;
+          ON SELECT VIEW ( oSelf:AddDates( ::dStart, ::dEnd, ::nStartHour, ::nEndHour ), ;
+                           oSelf:SetDate( ::dDateSelected )  ) ;
+          ON SELECT DAY  oSelf:SetDate( dDate ) ;
+          ON SELECT WEEK oSelf:SetDate( dDate ) ;
+          ON NEXT        ( oSelf:SetDate( dDate ), ;
+                           oSelf:AddDates( ::dStart, ::dEnd, ::nStartHour, ::nEndHour ) );
+          ON PREV        ( oSelf:SetDate( dDate ), ;
+                           oSelf:AddDates( ::dStart, ::dEnd, ::nStartHour, ::nEndHour ) );
+          ACTIVATE
+
+   //Day
+
+   DEFINE DAY VIEW OF ::oCalex ;
+          INTERVAL ::aOldInterval[ ::nOptSelex ] ; // 30 ;
+          START HOUR 0 ;
+          END HOUR 24;
+          ON SELECT VIEW ( oSelf:AddDates( ::dStart, ::dEnd, ::nStartHour, ::nEndHour ), ;
+                           oSelf:SetDate( ::dDateSelected )  ) ;
+          ON NEXT        ( oSelf:SetDate( dDate ), ;
+                           oSelf:AddDates( ::dStart, ::dEnd, ::nStartHour, ::nEndHour ) );
+          ON PREV        ( oSelf:SetDate( dDate ), ;
+                           oSelf:AddDates( ::dStart, ::dEnd, ::nStartHour, ::nEndHour ) );
+          ON RIGHT CLICK ( oSelf:BuildPop( nRow, nCol, Self, dDateFrom, dDateTo, nTimeFrom, nTimeTo ) );
+          ON DELETE      ( oSelf:DeleteInfo( Self, nIdx ) )
+
+
+   //Week
+
+   DEFINE WEEK VIEW OF ::oCalex ;
+          INTERVAL ::aOldInterval[ ::nOptSelex ] ; // 30 ;
+          START HOUR 0 ;
+          END HOUR 24;
+          ON SELECT VIEW ( oSelf:SetDate( oLast:dDateSelected - DoW( oLast:dDateSelected ) + 1 ),;
+                           oSelf:AddDates( ::dStart, ::dEnd, ::nStartHour, ::nEndHour ) ) ;
+          ON RIGHT CLICK ( oSelf:BuildPop( nRow, nCol, Self, dDateFrom, dDateTo, nTimeFrom, nTimeTo ) ) ;
+          ON NEXT        ( oSelf:SetDate( dDate ), ;
+                           oSelf:AddDates( ::dStart, ::dEnd, ::nStartHour, ::nEndHour ) );
+          ON PREV        ( oSelf:SetDate( dDate ), ;
+                           oSelf:AddDates( ::dStart, ::dEnd, ::nStartHour, ::nEndHour ) );
+          ON DELETE      ( oSelf:DeleteInfo( Self, nIdx ) )
+
+RETURN nil
+
+//---------------------------------------------------//
+
+METHOD BuildDbf() CLASS SampleCalex
+
+    FIELD dstart,start,idx,nStatus
+
+   local oSelf       := Self
+   local lAppend     := .F.
+   local i
+   local nDay
+   local nMonth
+   local nYear
+   local nStat
+   local nTime1
+   local nTime2
+   local nOpc
+   local aVals       := { "00", "05", "10", "15", "20", "30", "45" }
+   local cLastOrd
+   local cDbfPath := ".\data\"
+
+    local  aStructure := {  { "start"    , "N",   4, 0 },;
+                      { "end"      , "N",   4, 0 },;
+                      { "dstart"   , "D",   8, 0 },;
+                      { "subject"  , "C", 100, 0 },;
+                      { "text"     , "M",  10, 0 },;
+                      { "idx"      , "N",  10, 0 },;
+                      { "dend"     , "D",   8, 0 },;
+                      { "lRemember", "L",   1, 0 },;
+                      { "nMinutes",  "N",   4, 0 },;
+                      { "nStatus",   "N",   2, 0 } }
+
+
+
+
+
+    IF !lIsDir(alltrim(cDbfPath))
+       IF !lMkDir(cDbfPath)
+          MsgAlert("I cannot create the folder "+cDbfPath,"Attention" )
+       ENDIf
+   ENDIf
+
+
+
+       if File( cDbfPath+"citas.dbf" )
+      if !File( cDbfPath+"citas.cdx" )
+         USE  &amp;(cDbfPath+"citas") NEW EXCLUSIVE ALIAS DB
+         INDEX ON DToS( dstart ) + StrZero( start, 4 ) TAG fecha FOR !deleted()
+         INDEX ON idx TAG idx FOR !deleted()
+         INDEX ON nStatus TAG status FOR !deleted()
+           CLOSE DB
+      endif
+   else
+      lAppend :=.t.
+    DbCreate( cDbfPath+"citas.dbf", aStructure, "DBFCDX", .T., "DB" )
+      INDEX ON DToS( dstart ) + StrZero( start, 4 ) TAG fecha FOR !deleted()
+      INDEX ON idx TAG idx FOR !deleted()
+      INDEX ON nStatus TAG status FOR !deleted()
+      CLOSE DB
+   endif
+
+
+
+/*
+#ifdef DEMO
+   if lAppend
+      cLastOrd := ( ::cAlias )-&gt;( OrdSetFocus( "fecha" ) )
+      CursorWait()
+      for i := 1 to 6000
+         nMonth := StrZero( HB_RandomInt( 1, 12 ), 2 )
+         nDay   := StrZero( HB_RandomInt( 1, if( nMonth != "02", 30, 28 ) ), 2 )
+         nYear  := StrZero( HB_RandomInt( 2016, 2018 ), 4 )
+         nTime1 := StrZero( HB_RandomInt( 5, 22 ), 2 )
+         nTime2 := StrZero( HB_RandomInt( nTime1, 23 ), 2 )
+         nStat  := HB_RandomInt( 1, 10 )
+         nOpc   := HB_RandomInt( 1,  7 )
+         if !( ::cAlias )-&gt;( DbSeek( Dtos( Ctod( nMonth + "/" + nDay + "/" + nYear ) ) + nTime1 + aVals[ nOpc ] ) )
+         ( ::cAlias )-&gt;( DbAppend() )
+         REPLACE ( ::cAlias )-&gt;idx       WITH i
+         REPLACE ( ::cAlias )-&gt;start     WITH Val( nTime1 + aVals[ nOpc ] )
+         nOpc   := nOpc + 1
+         nOpc   := if( nOpc &gt; 7, 1, nOpc )
+         REPLACE ( ::cAlias )-&gt;end       WITH Val( nTime2 + aVals[ nOpc ] )
+         REPLACE ( ::cAlias )-&gt;dstart    WITH Ctod( nMonth + "/" + nDay + "/" + nYear )
+         REPLACE ( ::cAlias )-&gt;dend      WITH Ctod( nMonth + "/" + nDay + "/" + nYear )
+         REPLACE ( ::cAlias )-&gt;subject   WITH "Subject: " + nDay + "/" + nMonth
+         REPLACE ( ::cAlias )-&gt;text      WITH "Text: " + nDay + "/" + nMonth + "/" + nYear
+         REPLACE ( ::cAlias )-&gt;nStatus   WITH nStat
+         REPLACE ( ::cAlias )-&gt;lRemember WITH .T.
+         REPLACE ( ::cAlias )-&gt;nMinutes  WITH 5 * nStat
+         endif
+      next
+      CursorArrow()
+      ( ::cAlias )-&gt;( OrdSetFocus( cLastOrd ) )
+      ( ::cAlias )-&gt;( DbGoTop() )
+   endif
+#endif
+*/
+RETURN nil
+
+//---------------------------------------------------//
+
+METHOD ViewDatabase() CLASS SampleCalex
+
+   local oSelf    := Self
+  * local nOldRec  := ( ::cAlias )-&gt;( RecNo() )
+  * local cLastOrd := ( ::cAlias )-&gt;( OrdSetFocus( "fecha" ) )
+  local nOldRec  := ::RecNo()
+  local cLastOrd :=::SetOrder( "fecha" )
+
+  * ( ::cAlias )-&gt;( DBGoTop() )
+  ::gotop()
+
+   XBROWSER ::oDbf SETUP ( oBrw:lFooter := .F. ) SHOW SLNUM //AUTOSORT // OR SHOW RECID
+
+  * ( ::cAlias )-&gt;( OrdSetFocus( cLastOrd ) )
+   ::SetOrder( cLastOrd )
+  * ( ::cAlias )-&gt;( DBGoTo( nOldRec ) )
+   ::goto(nOldRec)
+
+Return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD BuildDialog( oView, dDateFrom, dDateTo, nTimeFrom, nTimeTo ) CLASS SampleCalex
+
+   local oDlg
+   local cSubject := Space( 100 )
+   local cText
+   local lSave    := .F.
+   local lNew     := oView:oCalInfoSelected == NIL
+   local o, nID, cLastOrd
+   local nStatus  := 1
+   local lRemember := .F.
+   local nMinutes := 0
+
+   DEFINE DIALOG oDlg ;
+   TITLE If( lNew, "Add Appointment", "Edit Appointment" ) ;
+   SIZE 600, 600
+
+   if ! lNew
+      o        := oView:oCalInfoSelected
+      cSubject := o:cSubject
+      cText    := o:cText
+
+      nStatus  := o:nStatus
+      lRemember := o:lRemember
+      nMinutes := o:nMinutes
+
+
+   endif
+
+
+   @ 10, 10 SAY "Date: " + DToC( dDateFrom ) OF oDlg PIXEL
+   @ 10, 10 SAY "Date: " + DToC( dDateTo ) OF oDlg PIXEL
+   @ 25, 10 SAY "Time Start: [" + oView:ConvertTime( nTimeFrom, oView:lAmPm ) +;
+                "] -- Time End: [" + oView:ConvertTime( nTimeTo, oView:lAmPm ) + "]" OF oDlg PIXEL
+   @ 40, 10 SAY "Subject" OF oDlg PIXEL
+   @ 40, 30 GET cSubject OF oDlg PIXEL SIZE 100, 10
+   @ 55, 10 SAY "Text" OF oDlg PIXEL
+   @ 70, 10 GET cText MEMO OF oDlg PIXEL SIZE 130, 95
+   @ 190, 10 SAY "Status" OF oDlg PIXEL
+   @ 190, 30 COMBOBOX nStatus ITEMS { "Pending", "In Progress", "Completed" } OF oDlg PIXEL SIZE 100, 90
+   @ 200, 10 CHECKBOX lRemember PROMPT "Set Reminder" OF oDlg PIXEL
+
+
+
+   @ 280, 10 BUTTON "OK" PIXEL ACTION ( lSave := .T., oDlg:End() )
+   @ 280, 120 BUTTON "CANCEL" PIXEL ACTION ( oDlg:End() )
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   IF lSave
+
+     * cLastOrd = ( ::cAlias )-&gt;( OrdSetFocus( "idx" ) )
+        cLastOrd := ::setorder("idx")
+
+      if lNew
+        * nID = ( ::cAlias )-&gt;( DBGoBottom() )
+          nID := ::gobottom()
+          * nID = ( ::cAlias )-&gt;IDX + 1
+           nID := ::IDX + 1
+          * ( ::cAlias )-&gt;( DBAppend() )
+           ::Append()
+          * REPLACE ( ::cAlias )-&gt;IDX  WITH nID
+           ::idx := nId
+      else
+         *  ( ::cAlias )-&gt;( DBSeek( o:nIdx ) )
+         ::seek(o:nIdx)
+         o:cSubject = cSubject
+         o:cText    = cText
+         o:nStatus   := nStatus
+         o:lRemember := lRemember
+         o:nMinutes  := nMinutes
+      endif
+
+     /* REPLACE ( ::cAlias )-&gt;start   WITH nTimeFrom
+      REPLACE ( ::cAlias )-&gt;end     WITH nTimeTo
+      REPLACE ( ::cAlias )-&gt;dstart  WITH dDateFrom
+      //REPLACE ( ::cAlias )-&gt;dend    WITH dDateTo
+      REPLACE ( ::cAlias )-&gt;subject WITH cSubject
+      REPLACE ( ::cAlias )-&gt;text    WITH cText
+      */
+            ::start    :=  nTimeFrom
+            ::end      :=  nTimeTo
+            ::dstart   :=  dDateFrom
+            ::dend     :=  dDateTo
+            ::subject  :=  cSubject
+            ::text     :=  cText
+            ::lRemember:= lRemember
+            ::nMinutes := nMinutes
+
+
+            *  ( ::cAlias )-&gt;( DBCommitAll() )
+            ::save()
+
+      ::AddDates( oView:dStart, oView:dEnd, oView:nStartHour, oView:nEndHour )
+      oView:BuildDates()
+     * ( ::cAlias )-&gt;( OrdSetFocus( cLastOrd ) )
+        ::setorder(cLastOrd)
+   ENDIF
+
+RETURN nil
+
+//---------------------------------------------------//
+
+METHOD BuildExplorer() CLASS SampleCalex
+
+   local oPanel
+   local oSelf := Self
+   local nOption := 5
+
+   ::oExBar := TExplorerBar():New( 0, 0, 250, 300, ::oPanelExplorer )
+
+   oPanel := ::AddPanel( Upper( "Jump To Date" ), "c:\work\fwh\bitmaps\32x32\calendar.bmp", 200 )
+   @ 40, 15 CALENDAR ::oDtPick VAR ::dDateStart OF oPanel PIXEL SIZE 250, 157 WEEKNUMBER DAYSTATE
+
+   ::bChange = { | o | ::ChangeDate( o ) }
+
+   oPanel := ::AddPanel( Upper( "View" ), "c:\work\fwh\bitmaps\32x32\view.bmp", 130 )
+   oPanel:AddLink( "View Daily"  , { || ::SetDayView(), ::ChangeSelex()  }, "d:\fwh\bitmaps\16x16\inspect.bmp" )
+   oPanel:AddLink( "View Weekly" , { || ::SetWeekView(), ::ChangeSelex() }, "d:\fwh\bitmaps\16x16\additem.bmp" )
+   oPanel:AddLink( "View Monthly", { || ::SetMonthView() }, "c:\work\fwh\bitmaps\16x16\calendar.bmp" )
+
+   @ 100, 10 SELEX ::oSelex VAR nOption of oPanel PIXEL SIZE 220, 45;
+      ITEMS "5", "10", "15", "20", "30", "60" ;
+      GRADIENT OUTTRACK { { 1/2, nRGB( 219, 230, 244 ), nRGB( 207-50, 221-25, 255 ) }, ;
+                          { 1/2, nRGB( 201-50, 217-25, 255 ), nRGB( 231, 242, 255 ) } };
+      LINECOLORS nRGB( 237, 242, 248 ), nRGB( 141, 178, 227 );
+      COLORTEXT  CLR_BLUE, CLR_RED ;
+      ACTION (::SetInterval( Val( ::aOptions[ nOption ] ) ), ::Refresh() )
+
+   oPanel := ::AddPanel( Upper( "Actions" ), "c:\work\fwh\bitmaps\32x32\index2.bmp", 140 )
+   oPanel:AddLink( "New record",  { || msginfo("New")  }, "c:\work\fwh\bitmaps\16x16\adddbf.bmp" )
+   oPanel:AddLink( "Modify record", { || msginfo("Modify")  }, "c:\work\fwh\bitmaps\16x16\edit.bmp" )
+   oPanel:AddLink( "Delete record",  { || msginfo("Delete")  }, "c:\work\fwh\bitmaps\16x16\deldbf.bmp" )
+   //oPanel:AddLink( "Copy record",  { || msginfo("Copy")  }, "c:\work\fwh\bitmaps\16x16\copy.bmp" )
+   oPanel:AddLink( "Informes",  { || oSelf:Imprime()  }, "c:\work\fwh\bitmaps\16x16\print.bmp" )
+   oPanel:AddLink( "View Database",  { || oSelf:ViewDatabase() }, "c:\work\fwh\bitmaps\16x16\prg.bmp" )
+   oPanel:AddLink( "Exit",  { || oSelf:End()  }, "c:\work\fwh\bitmaps\16x16\exit2.bmp" )
+
+   oPanel := ::AddPanel( Upper( "INFO" ), "c:\work\fwh\bitmaps\32x32\notes.bmp", 52 )
+   oPanel:AddLink( "Info",  { || XBrowse( ::hCalInfo ) }, "c:\work\fwh\bitmaps\16x16\prg.bmp" )
+
+   ::oPanelExplorer:oClient := ::oExBar
+   ::oPanelExplorer:bMouseWheel := { || MsgInfo( "ok" ) }
+
+Return nil
+
+//---------------------------------------------------//
+
+METHOD BuildPanels() CLASS SampleCalex
+
+   local oBrush
+   local oParent
+
+   if ::ClassName() == "TMDICHILD"
+      oParent  := ::oWnd
+   else
+      oParent  := ::oWndClient
+   endif
+   ::oPanelExplorer := TPanel():New( 1, 0, ::nHeight, 280, oParent )
+   ::oPanelCalex    := TPanel():New( 1, ::oPanelExplorer:nWidth + 6, ::nHeight, ;
+                                     ::nWidth - ::oPanelExplorer:nWidth + 6, oParent )
+
+   DEFINE BRUSH oBrush COLOR CLR_WHITE
+   ::oPanelExplorer:SetBrush( oBrush )
+   ::oPanelCalex:SetBrush( oBrush )
+   oBrush:End()
+
+   if ::lFld
+   @ 1, 1 FOLDEREX ::oFld ;
+         PROMPTS "Calex" OF ::oPanelCalex ;
+         TAB HEIGHT 22 ;
+         SIZE  2 *::oPanelCalex:nWidth - 70, 2* ::oPanelCalex:nHeight - 266 ;
+         PIXEL //FONT oThis:oFontXF
+   endif
+
+Return nil
+
+//---------------------------------------------------//
+
+METHOD ChangeSelex() CLASS SampleCalex
+
+   local cInterval //:= AllTrim( Str( ::nInterval ) )
+   local nAt       //:= AScan( ::aOptions, cInterval )
+
+   if !Empty( ::oSelex )
+      nAt       := AScan( ::aOptions, cInterval )
+      if nAt != 0  .and. ::nOption != nAt
+         cInterval := AllTrim( Str( ::nInterval ) )
+         ::SetOption( nAt )
+         ::Refresh()
+      endif
+   endif
+
+Return nil
+
+//---------------------------------------------------//
+
+METHOD SetSize( nType, nWidth, nHeight ) CLASS SampleCalex
+
+   if nWidth != nil
+      ::oPanelExplorer:Move( , , , nHeight )
+      ::oPanelCalex:Move( , , nWidth - ( ::oPanelExplorer:nRight + 6 ), nHeight )
+   endif
+
+Return nil
+
+//---------------------------------------------------//
+
+METHOD GetDateMonth( r, c, lView ) CLASS SampleCalex
+
+   local dDate
+   local aPos      := {}
+   local oCalInfo
+   local cStrDay
+   local aInfo
+   local hDays
+   local aDates    := {}
+   local nH
+   local nW
+   DEFAULT lView   := .T.
+
+   if ::ClassName() == Upper( "TMonthView" )
+      aPos   := ::GetPosition( r, c )
+      dDate  := ::GetDateFromPos( aPos[ 1 ], aPos[ 2 ] )
+      //XBrowse( ::GetCoorFromPos( aPos[ 1 ], aPos[ 2 ] ) )
+      cStrDay := DToS( dDate )
+      hDays = hb_HASH()
+      for each oCalInfo in ::hCalInfo
+         aInfo = {}
+#ifdef __XHARBOUR__
+         oCalInfo := oCalInfo:Value
+#endif
+         if oCalInfo:dStart == dDate
+            if hb_HHASKEY( hDays, cStrDay )
+               aInfo := hb_HGET( hDays, cStrDay )
+            endif
+            AAdd( aInfo, oCalInfo )
+            ASort( aInfo, , ,{ | o1, o2 | o1:nStart &lt; o2:nStart } )
+            //AAdd( aDates, { oCalInfo:nIdx, oCalInfo:dStart, oCalInfo:dEnd, oCalInfo:nStart, oCalInfo:nEnd, RTrim( oCalinfo:cSubject ), oCalInfo:nStatus } )
+            AAdd( aDates, { oCalInfo:nStart, oCalInfo:nStart + oCalInfo:nEnd, RTrim( oCalinfo:cSubject ), oCalInfo:nStatus, oCalInfo:nIdx } )
+            //XBrowse( aInfo )
+            hb_HSET( hDays, cStrDay, aInfo )
+         endif
+      next
+   endif
+
+   if lView .and. !Empty( aDates )
+      //XBrowse( aDates ) //hDays )
+      //XBrowse( ::aCoords )
+      if !Empty( ::oCalInfo )
+      //r  := ::aCoords[ 1 ]
+      //c  := ::aCoords[ 2 ]
+
+      //nH := Int( ::aCoords[ 3 ] / 2 ) - 1
+      //nW := Int( ::aCoords[ 4 ] / 2 ) + 1
+      nH := ::nRowHeight - 21
+      nW := ::nColWidth  - 3
+
+      APopupBrowse( aDates, ::oWnd, r - 1, c - 9, nH, nW, ;
+          { | o | ( o:lHeader := .F. ) }, 5 )
+          //{ | o | ( o:cHeaders := { "HourS", "HourE", "Subject", "St", "Id" } ) }, 1 )
+          //{ | o | ( o:cHeaders := { "Id", "Start", "End", "HourS", "HourE", "Subject", "St" } ) }, 1 )
+      endif
+   endif
+
+Return dDate
+
+//----------------------------------------------------------------------------//
+
+METHOD BuildPop( nRow, nCol, oView, dDateFrom, dDateTo, nTimeFrom, nTimeTo ) CLASS SampleCalex
+
+   local oMenu
+   local oSelf    := Self
+   local lNew     := oView:oCalInfoSelected == NIL
+   local oCalex   := oView:oCalex
+
+   MENU oMenu POPUP
+      MENUITEM If( lNew, "New appointment", "Modify appointment" ) ;
+         ACTION oSelf:BuildDialog( oView, dDateFrom, dDateTo, nTimeFrom, nTimeTo )
+      SEPARATOR
+      if ! lNew
+         MENUITEM "Delete appointment"  ACTION If( MsgYesNo( "Are you sure?" ), oView:DelCalInfo(), )
+      endif
+
+      MENUITEM "Today" ACTION ( oView:SetDate( date() ), If( oView:IsKindOf( "TWEEKVIEW" ),;
+                                 oView:SetWeekView(), oView:SetDayView() ) )
+      SEPARATOR
+
+      MENUITEM  oItems[ 1 ] PROMPT "5  minutes" CHECKED ACTION ( oSelf:ChangeView( oView,  5 ) )
+      MENUITEM  oItems[ 2 ] PROMPT "10 minutes" CHECKED ACTION ( oSelf:ChangeView( oView, 10 ) )
+      MENUITEM  oItems[ 3 ] PROMPT "15 minutes" CHECKED ACTION ( oSelf:ChangeView( oView, 15 ) )
+      MENUITEM  oItems[ 4 ] PROMPT "20 minutes" CHECKED ACTION ( oSelf:ChangeView( oView, 20 ) )
+      MENUITEM  oItems[ 5 ] PROMPT "30 minutes" CHECKED ACTION ( oSelf:ChangeView( oView, 30 ) )
+      MENUITEM  oItems[ 6 ] PROMPT "60 minutes" CHECKED ACTION ( oSelf:ChangeView( oView, 60 ) )
+
+   ENDMENU
+   ::ChangeCheck()
+
+   ACTIVATE POPUP oMenu OF oView:oCalex AT nRow, nCol
+
+Return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD ChangeView( oView, nInterval ) CLASS SampleCalex
+
+   local oCalex   := oView:oCalex
+   local nPos     := AsCan( ::aOldInterval, nInterval )
+
+   if !Empty( nPos )
+      oCalex:oWeekView:SetInterval( nInterval )
+      oCalex:oWeekView:Refresh()
+      oCalex:SetInterval( nInterval )
+      oCalex:Refresh()
+      ::ChangeCheck( nPos )
+   endif
+
+Return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD ChangeCheck( nPos ) CLASS SampleCalex
+
+   local x
+   DEFAULT nPos  := 0
+
+   if !Empty( nPos )
+      aChecks[ nPos ] := ! aChecks[ nPos ]
+      For x = 1 to Len( oItems )
+         if nPos != x
+            if aChecks[ x ]
+               aChecks[ x ] := ! aChecks[ x ]
+            endif
+         else
+            if ! aChecks[ x ]
+               aChecks[ x ] := ! aChecks[ x ]
+            endif
+         endif
+         oItems[ x ]:SetCheck( aChecks[ x ] )
+      Next x
+      if !Empty( ::oSelex )
+         ::ChangeSelex()
+      endif
+   else
+      For x = 1 to Len( oItems )
+          oItems[ x ]:SetCheck( aChecks[ x ] )
+      Next x
+   endif
+Return nil
+
+//---------------------------------------------------//
+
+METHOD DeleteInfo( oView, nIdx ) CLASS SampleCalex
+
+   local cLastOrd  := ( ::cAlias )-&gt;( OrdSetFocus( "idx" ) )
+
+   ( ::cAlias )-&gt;( DBSeek( nIdx ) )
+   ( ::cAlias )-&gt;( DBDelete() )
+   ( ::cAlias )-&gt;( OrdSetFocus( cLastOrd ) )
+
+RETURN NIL
+
+//---------------------------------------------------//
+
+METHOD ChangeDate( oDatePick ) CLASS SampleCalex
+
+   ::SetDate( oDatePick:GetDate() )
+
+   if ::IsKindOf( "TMONTHVIEW" )
+      ::SetMonthView()
+   elseif ::IsKindOf( "TWEEKVIEW" )
+      ::SetWeekView()
+   else
+      ::SetDayView()
+   endif
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD ColorStatus( nType, dFecha ) CLASS SampleCalex
+
+   local aGrad
+   local nClrT     := CLR_BLACK
+   DEFAULT nType   := 0
+
+   DO CASE
+      case nType = 1
+         aGrad := { { 1, RGB(0x9a,0xcd,0x32), RGB(0x9a,0xcd,0x32) } }
+         nClrT     := CLR_BLACK
+      case nType = 2
+         aGrad := { { 1, RGB(0x00,0x80,0xff) , RGB(0x00,0x80,0xff) } }
+         nClrT     := CLR_BLACK
+      case nType = 3
+         aGrad := { { 1, RGB(0xff,0xff,0x80), RGB(0xff,0xff,0x80) } }
+         nClrT     := CLR_BLACK
+      case nType = 4
+         aGrad := { { 1, RGB(0xff,0x00,0x00), RGB(0xff,0x00,0x00) } }
+         nClrT := CLR_WHITE
+      case nType = 5
+         aGrad := { { 1, RGB(0xc0,0xc0,0xc0), RGB(0xc0,0xc0,0xc0) } }
+         nClrT     := CLR_BLACK
+      case nType = 6
+         aGrad := { { 1, METRO_ORANGE, METRO_ORANGE } }
+         nClrT     := CLR_BLACK
+      case nType = 7
+         aGrad := { { 1, METRO_LIME, METRO_LIME } }
+         nClrT     := CLR_BLACK
+      case nType = 8
+         aGrad := { { 1, METRO_CRIMSON, METRO_CRIMSON } }
+         nClrT     := CLR_BLACK
+      case nType = 9
+         aGrad := { { 1, METRO_OLIVE, METRO_OLIVE } }
+         nClrT     := CLR_BLACK
+      case nType = 10
+         aGrad := { { 1, METRO_STEEL, METRO_STEEL } }
+         nClrT     := CLR_BLUE
+      Otherwise
+         aGrad := { { 1, RGB(0x9a,0xcd,0x32), RGB(0x9a,0xcd,0x32) } }
+  ENDCASE
+
+return { aGrad, nClrT }
+
+//----------------------------------------------------------------------------//
+
+METHOD Imprime( dFecha ) CLASS SampleCalex
+
+   local oRep
+   local oFont1, oFont2, acor, oDlg1, oGet1, oGet2, oGet3, oBot1, oBot2
+   local lRep    := .f.
+   local dDesde
+   local dHasta
+   local mestado := 1
+
+   DEFAULT dFecha := ::dDateSelected
+
+   dDesde := dFecha
+   dHasta := dFecha
+
+   // Defino los distintos tipos de letra
+   DEFINE FONT oFont1 NAME "ARIAL" SIZE 0,-10
+   DEFINE FONT oFont2 NAME "ARIAL" SIZE 0,-10 BOLD
+
+
+   DEFINE DIALOG oDlg1 TITLE "Informe de Citas" FROM 03,15 TO 13,70 //       OF oApp:oWnd
+
+   @ 07, 05 SAY "Estado:"               OF oDlg1 PIXEL SIZE 50,12 RIGHT
+   @ 22, 05 SAY "Desde Fecha:"          OF oDlg1 PIXEL SIZE 50,12 RIGHT
+   @ 37, 05 SAY "Hasta Fecha:"          OF oDlg1 PIXEL SIZE 50,12 RIGHT
+
+   @ 05, 60 COMBOBOX oGet1 VAR mestado OF oDlg1 SIZE 60,12 PIXEL ;
+      ITEMS { "Todas", "Solo pendientes", "Solo Realizadas" }
+   @ 20, 60 GET oGet2 VAR dDesde  OF oDlg1 PIXEL
+   @ 35, 60 GET oGet3 VAR dHasta  OF oDlg1 PIXEL VALID ( dHasta &gt;= dDesde )
+   @ 50,40 BUTTON oBot1 PROMPT "&amp;Imprimir" OF oDlg1 SIZE 30,10 ;
+           ACTION ( lRep := .t., oDlg1:End() ) PIXEL
+   @ 50,90 BUTTON oBot2 PROMPT "&amp;Cancelar" OF oDlg1 SIZE 30,10 ;
+           ACTION ( lRep := .f., oDlg1:End() ) PIXEL
+   ACTIVATE DIALOG oDlg1 CENTER
+
+   IF !lRep
+      RETURN nil
+   ENDIF
+
+   REPORT oRep ;
+       TITLE "Citas de " + ALLTRIM( "TCalex" )  + " del " + DTOC( dDesde ) + " al " + DTOC( dHasta ) LEFT ;
+       FONT  oFont1, oFont2 ;
+       HEADER OemToAnsi( "Sample01" ) RIGHT ;
+       FOOTER "Hoja: " + STR( oRep:nPage, 3 ) ,"Fecha: " + DToc( DATE() ) LEFT ;
+       PREVIEW CAPTION "Citas"
+   COLUMN TITLE "Id"      DATA ( ::cAlias )-&gt;idx     SIZE 07 FONT 1
+   COLUMN TITLE "Subject" DATA Left( ( ::cAlias )-&gt;subject, 40 ) SIZE 20 FONT 1
+   COLUMN TITLE "Fecha"   DATA ( ::cAlias )-&gt;dStart SIZE 08 FONT 2
+   COLUMN TITLE "Desde"   DATA TRANSFORM( ( ::cAlias )-&gt;start, "999:99" ) SIZE 05 FONT 1 RIGHT
+   COLUMN TITLE "Hasta"   DATA TRANSFORM( ( ::cAlias )-&gt;end,   "999:99" ) SIZE 05 FONT 1 RIGHT
+   COLUMN TITLE "Asunto"  DATA ( ::cAlias )-&gt;text    SIZE 25 FONT 1 MEMO
+   //COLUMN TITLE "Motivo"  DATA ( ::cAlias )-&gt;motivo  SIZE 20 FONT 1
+   //COLUMN TITLE "Alarma"  DATA IF( ( ::cAlias )-&gt;lRemember, "SI", "NO" ) SIZE 05 FONT 1
+   //COLUMN TITLE "Estado"  DATA IF( ( ::cAlias )-&gt;nStatus,"REALIZADA  ","PENDIENTE") SIZE 10 FONT 1
+
+   // Digo que el titulo lo escriba con al letra 2
+   oRep:aFont[1] := {|| 2 }
+   oRep:aFont[1] := {|| 2 }
+   oRep:bInit           := {|| ( ::cAlias )-&gt;( DbGoTop() ) }
+   //oRep:bSkip := {|| ( ::cAlias )-&gt;Skip() }
+
+   END REPORT
+
+   ACTIVATE REPORT oRep //WHILE ( ::cAlias )-&gt;EOF() //;
+      //ON INIT CursorArrow() ;
+      //ON STARTPAGE oRep:SayBitmap( .1, .1, "LOGO.BMP", .5, .5 )
+
+   RELEASE oFont1
+   RELEASE oFont2
+
+RETURN nil
+
+//----------------------------------------------------------------------------//
+
+function APopupBrowse( aValue, oWnd, nRow, nCol, nH, nW, bInit, nColumn )
+
+   local oDlg
+   local oBrw
+   local bGetValid
+   local uOrgl
+   local uRet
+   local aPoint    := { nRow, nCol }
+   local cFace     := "Calibri"
+   local nHFont    := -10
+   local oFont
+
+   DEFAULT oWnd    := GetWndDefault()
+   DEFAULT nW      := 500
+   DEFAULT nH      := 180
+   DEFAULT nColumn := 1
+
+   if !Empty( aValue )
+      aPoint = ClientToScreen( oWnd:hWnd, aPoint )
+      DEFINE FONT oFont        NAME cFace SIZE 0, nHFont
+      DEFINE DIALOG oDlg OF oWnd STYLE WS_POPUP ;
+         SIZE nW, nH
+
+      ACTIVATE DIALOG oDlg NOWAIT ;
+         ON INIT oDlg:SetPos( aPoint[ 1 ], aPoint[ 2 ] ) ;
+         VALID ( oFont:End(), .T. )
+
+      @ 0, 0 XBROWSE oBrw DATASOURCE aValue AUTOCOLS AUTOSORT ;
+         SIZE oDlg:nWidth, oDlg:nHeight OF oDlg PIXEL NOBORDER FONT oFont
+
+      WITH OBJECT oBrw
+         :lRecordSelector  := .F.
+         :lHScroll         := .F.
+         :lFlatStyle       := .T.
+         :lFastDraw        := .T.
+         :AutoFit()
+         :bClrStd    := { || { ColorStatus( oBrw:aRow[ 4 ] )[ 2 ], ColorStatus( oBrw:aRow[ 4 ] )[ 1 ] } }
+
+         if bInit != nil
+            Eval( bInit, oBrw )
+         endif
+         :CreateFromCode()
+
+         :PostMsg( WM_SETFOCUS )
+         :bKeyDown   := { | nKey | If( nKey == VK_RETURN, ( Eval( oBrw:bChange ), oDlg:End() ), ;
+                                   If( nKey == VK_ESCAPE, oDlg:End(), ) ) }
+         :bLDblClick := { | r, c | ( oDlg:End() ) }
+         :bChange    := { || uRet := oBrw:aCols[ nColumn ]:Value }
+         :bLButtonUp := { | nRow, nCol | Eval( oBrw:bChange ) }
+         //:Seek( oGet:GetText() )
+      END
+   endif
+
+return uRet
+
+//----------------------------------------------------------------------------//
+
+Function ColorStatus( nType, dFecha )
+
+   local aGrad
+   local nClrT     := CLR_BLACK
+   DEFAULT nType   := 0
+
+   DO CASE
+      case nType = 1
+         aGrad := { { 1, RGB(0x9a,0xcd,0x32), RGB(0x9a,0xcd,0x32) } }
+         nClrT     := CLR_BLACK
+      case nType = 2
+         aGrad := { { 1, RGB(0x00,0x80,0xff) , RGB(0x00,0x80,0xff) } }
+         nClrT     := CLR_BLACK
+      case nType = 3
+         aGrad := { { 1, RGB(0xff,0xff,0x80), RGB(0xff,0xff,0x80) } }
+         nClrT     := CLR_BLACK
+      case nType = 4
+         aGrad := { { 1, RGB(0xff,0x00,0x00), RGB(0xff,0x00,0x00) } }
+         nClrT := CLR_WHITE
+      case nType = 5
+         aGrad := { { 1, RGB(0xc0,0xc0,0xc0), RGB(0xc0,0xc0,0xc0) } }
+         nClrT     := CLR_BLACK
+      case nType = 6
+         aGrad := { { 1, METRO_ORANGE, METRO_ORANGE } }
+         nClrT     := CLR_BLACK
+      case nType = 7
+         aGrad := { { 1, METRO_LIME, METRO_LIME } }
+         nClrT     := CLR_BLACK
+      case nType = 8
+         aGrad := { { 1, METRO_CRIMSON, METRO_CRIMSON } }
+         nClrT     := CLR_BLACK
+      case nType = 9
+         aGrad := { { 1, METRO_OLIVE, METRO_OLIVE } }
+         nClrT     := CLR_BLACK
+      case nType = 10
+         aGrad := { { 1, METRO_STEEL, METRO_STEEL } }
+         nClrT     := CLR_BLUE
+      Otherwise
+         aGrad := { { 1, RGB(0x9a,0xcd,0x32), RGB(0x9a,0xcd,0x32) } }
+  ENDCASE
+
+return { aGrad, nClrT }
+
+//----------------------------------------------------------------------------//
+CLASS TXData from TDatabase
+     DATA cDbfPath   init ".\DATA\"
+  ENDCLASS
+
+   CLASS TCitas from TXData
+   METHOD New()
+ENDCLASS
+
+METHOD New( lShared ) CLASS TCitas
+   Default lShared := .t.
+   ::New(,::cDbfPath + "Citas" ,"DBFCDX", lShared)
+   if ::use()
+      ::setOrder(1)
+      ::gotop()
+   endif
+RETURN Sel&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<br/><br>
+<br/><br>
+<br/><br>
+after the adding a new record I have thid error <br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;   Error occurred at: 07/11/2024, 10:23:05
+   Error description: Error BASE/2001  Alias inesistenteC:\Work\errori\Calex\DATA\Citas.dbf: TCITAS:FIELDGET
+   Args:
+     [   1] = O   TCITAS
+
+Stack Calls
+===========
+   Called from: ../../../tobject.prg =&gt; __ERRRT_SBASE( 0 )
+   Called from: ../../../tobject.prg =&gt; TCITAS:ERROR( 0 )
+   Called from: .\source\classes\database.prg =&gt; TCITAS:FIELDGET( 950 )
+   Called from: .\source\classes\database.prg =&gt; TCITAS:DSTART( 1624 )
+   Called from: sample01.prg =&gt; SAMPLECALEX:ADDDATES( 243 )
+   Called from: sample01.prg =&gt; SAMPLECALEX:BUILDDIALOG( 529 )
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+the function adddates is changed in this mode<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;METHOD AddDates( dStart, dEnd, nStart, nEnd ) CLASS SampleCalex
+
+   local dDate
+   local aGrad
+
+   DEFAULT dStart := CToD( "  /  /  " )
+   DEFAULT dEnd   := CToD( "  /  /  " )
+   DEFAULT nStart := 0
+   DEFAULT nEnd   := 0
+
+   //Clear scopes
+  * ( ::cAlias )-&gt;( OrdSetFocus( "fecha" ) )
+  * ( ::cAlias )-&gt;( OrdScope( TOPSCOPE, NIL ) )
+ *  ( ::cAlias )-&gt;( OrdScope( BOTTOMSCOPE, NIL ) )
+
+       ::setorder("fecha")
+       ::SetScope( TOPSCOPE, NIL )
+       ::SetScope( BOTTOMSCOPE, NIL )
+
+   //Set New scopes
+  * ( ::cAlias )-&gt;( DBGoTop() )
+  * ( ::cAlias )-&gt;( OrdScope( TOPSCOPE,    DToS( dStart ) + Str( nStart * 100, 4 ) ) )
+  * ( ::cAlias )-&gt;( OrdScope( BOTTOMSCOPE, DToS( dEnd )   + Str( nEnd * 100, 4 ) ) )
+  * ( ::cAlias )-&gt;( DBGoTop() )
+
+          ::gotop()
+          ::SetScope( TOPSCOPE, DToS( dStart ) + Str( nStart * 100, 4 ) )
+          ::SetScope( BOTTOMSCOPE,DToS( dEnd )   + Str( nEnd * 100, 4 ) )
+          ::gotop()
+
+   ::Reset()
+ *  DO WHILE ! ( ::cAlias )-&gt;( Eof() )
+   DO WHILE ! ::Eof()
+      //nStart, nEnd, dStart, dEnd, cText, cSubject, nIdx, lND, lAplicado, lBloqueoT, aGrad, nClrT, nStatus
+      aGrad   := ::ColorStatus( ::nStatus, ::DSTART )
+      ::LoadDates( ::START,;
+                          ::END, ;
+                          ::DSTART, ;
+                          ::DEND, ;
+                          ::TEXT, ;
+                          ::SUBJECT,;
+                          ::IDX, , , , ;
+                          aGrad[ 1 ], ;
+                          aGrad[ 2 ], ;
+                          ::nStatus )
+                   ::Skip()
+   ENDDO
+
+RETURN nil
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<br/><br>
+<br/><br>
+I use tdatabase <br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;CLASS TXData from TDatabase
+     DATA cDbfPath   init ".\DATA\"
+  ENDCLASS
+
+   CLASS TCitas from TXData
+   METHOD New()
+ENDCLASS
+
+METHOD New( lShared ) CLASS TCitas
+   Default lShared := .t.
+   ::New(,::cDbfPath + "Citas" ,"DBFCDX", lShared)
+   if ::use()
+      ::setOrder(1)
+      ::gotop()
+   endif
+RETURN Self
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+I not change the index <br/><br>
+<br/><br>
+How I can resolve ?</r></div>
+    </div>
+  </div>
+  <div class="post" id="p271528">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Calex - sample01</span><br>
+        Posted: Thu Jul 11, 2024 02:18 PM
+      </div>
+      <div class="content"><p><t>Any solution please ?</t></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

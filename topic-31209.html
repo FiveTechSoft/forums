@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Advantage Database and SQL - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-31209">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Advantage Database and SQL</div>
+  <div class="post" id="p180605">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jay Hill</div>
+      <div class="rank">Posts: 6</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 04, 2014 02:33 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Advantage Database and SQL</span><br>
+        Posted: Fri Aug 14, 2015 06:19 PM
+      </div>
+      <div class="content"><p>I am currently using Advantage Database 10 via DBF/NTX files for my application.  My very basic question is:</p>
+<p>What is the most simplistic method to allow another application (Visual C#) to query/modify/update some of the Advantage Data using SQL?  Is it to simply create a Data Dictionary in Advantage to house my DBF/NTX files?  at that point SQL can be used from an external app?  or do the DBF/NTX files also need to be converted to ADT files?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p180606">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Advantage Database and SQL</span><br>
+        Posted: Fri Aug 14, 2015 06:56 PM
+      </div>
+      <div class="content">Jay;<br>
+<br>
+When the index files are not compounded indexes, as is the case with DBF/NTX, then you should create a data dictionary.  Inside the data dictionary metadata is stored with information that relates any and all .ntx files to its .dbf files.  Have the Visual basic, PHP, or any other ADS enabled client connect to the data dictionary and that is all.  When tables are used from those other clients ADS will know the indexes associated to any DBF and will use them accordingly.<br>
+<br>
+I suggest you stop using DBFNTX RDD on your harbour app and instead use ADS RDD and set your default tables to ADS_NTX.  You will probably have to reindex the first time you deploy your app using ADSNTX RDD but no other change is needed.   The reason I suggest this is because there seems to be some subtle differences on the way these two RDDs maintain NTX indexes and mixing DBFNTX on some clients with ADS_NTX on other clients will surely cause index corruption.<br>
+<br>
+As a side note; when I first started using ADS back in 2002, I continued using DBFNTX.  My main application was a FWH + xharbour + bcc using ADS_NTX RDD.  Other clients were PHP,  Delphi and C++ Builder all using ADS ACE or TADS descendent classes.  It worked so well it took me forever to invest the time to move to purely ADT tables.<br>
+<br>
+Below is some code showing how to do a few tasks using ADS RDD that you might find helpful:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//----------------------------------------------------------------------------
+//By Reinaldo Crespo-Bazan &lt;!-- e --&gt;&lt;a href="mailto:--reinaldo.crespo@gmail.com"&gt;--reinaldo.crespo@gmail.com&lt;/a&gt;&lt;!-- e --&gt;
+//
+//This (x)harbour console mode app shows how to create a few tables of different types.
+//How to create an Advantage Data Dictionary and add the newly created 
+//tables the data dictionary file.
+//I'm using various table types using ADS RDDs for DBF/NTX, DBF/VFP, ADT/ADI
+//
+//After that it atttempts to connect to the dd, create a new table and then 
+//open the new table as a free table.
+//In short- it creates tables and dd, opens dd bound tables and free tables 
+//at the same time.
+//
+//The sample code uses pure rdds + some ACE calls.
+//No GUI dependency as only a console mode app is being built, which should 
+//build just the same under Windows as well as under Linux. 
+//
+#include "ads.ch"
+
+#xcommand DEFAULT &lt;uVar1&gt; := &lt;uVal1&gt; ;
+                [, &lt;uVarN&gt; := &lt;uValN&gt; ] =&gt; ;
+                  &lt;uVar1&gt; := iif( &lt;uVar1&gt; == nil, &lt;uVal1&gt;, &lt;uVar1&gt; ) ;;
+                [ &lt;uVarN&gt; := iif( &lt;uVarN&gt; == nil, &lt;uValN&gt;, &lt;uVarN&gt; ); ]
+
+REQUEST DBFCDX
+REQUEST ADS          //Make sure rddads gets linked to our app.
+REQUEST hb_gt_win    //needed for console mode app.
+
+//Static variable cPath will contain the path where tables and DD will be created.
+//After connecting to an existing DD, there is no need to use the file path as the 
+//DD saves the relative path of each table as part of its metadata.
+STATIC cPath 
+
+
+//----------------------------------------------------------------------------
+FUNCTION Main()
+
+   LOCAL afiles 
+
+   SetMode(25,80)      //25 lines by 80 columns console
+
+   rddRegister( "ADS", 1 )
+    
+   rddSetDefault( "ADS" )
+
+   adsSetServerType( ADS_LOCAL_SERVER )
+
+   //NON-compatible locking mode.  If other NON-ADS clients are going to 
+   //to work on the same tables, then make sure to use compatible locking mode.
+   AdsLocking( .t. )   
+    AdsRightsCheck( 0 )
+   
+   //Path for existing .dbf tables maybe sent as a parameter 
+   //on the command line.  This is just one idea.  It could be saved 
+   //on a .ini file or hardcoded.
+   cPath   := hb_ArgV( 1 ) 
+    
+   //in case no path was sent on command line, assume current path.
+   DEFAULT cpath := ""  
+    
+   //sanitize cPath contents.
+   IF !EMPTY( cPath ) .and. RIGHT( cPath, 1 ) != '\\'    ;cPath += '\\'  ;ENDIF
+   
+   //if you need to create some new tables other than existing tables look 
+   //at function CreateTables().  CreateTables shows how to create 
+   //adt tables, vfp tables, and dbf-ntx tables.
+   //
+   //CreateTables() creates an array with table names and structure for each.
+   //It then creates the tables.  After being created they will be added to a newly
+   //created data dictionary using function CreateDictionary().
+   //If your .dbf tables are alreay present, then you won't need to execute 
+   //CreateTables, instead you could simply execute a Directory() harbour 
+   //function to retreive existing table names.  By storing the names of these tables 
+   //into afiles variable, you can then execute CreateDictionary() in exactly the same 
+   //manner.
+   afiles := CreateTables()
+    
+   IF !EMPTY( afiles )     ;CreateDictionary( afiles )     ;ENDIF
+
+   //now that we have a dd created, we will attempt to connect to it and 
+   //use the tables as dd bound tables.
+
+    IF !AdsConnect60( cPath + "test_dd.add", ADS_LOCAL_SERVER, "user1", "password1" )
+    
+       Alert( "Cannot connect to test_dd" + Str( AdsGetLastError() ) )
+      QUIT 
+
+   ENDIF 
+
+
+   //Now we create a dbfcdx table to be used as a free table.
+   CreateAndUseFreeTable()
+   
+   //if table already exists then this function shows how to open and 
+   //browse an existing free table.
+   OpenExistingFreeTable()
+
+       
+RETURN NIL 
+
+//--------------------------------------------------------------------------------------
+//function CreateTables() will create three tables using stnd harbour func dbCreate
+//Each table structure is saved on an array following the std returned by dbStruct()
+//Each element on the array is an array describing the field.  Thus, the array 
+//for a table with 3 fields would look like this:
+//aStructure := { { cFieldName1, cFieldType1, nFldWidth, nDecimals },;
+//                { cFieldName2, cFieldType2, nFldWidth, nDecimals },;
+//                { cFieldName3, cFieldType3, nFldWidth, nDecimals } }
+//
+STATIC FUNCTION CreateTables()
+   LOCAL cAlias := "MyAlias"
+   LOCAL afiles := {}
+   LOCAL cFileName, e
+
+    //---------------------- customers.adt --------------------------------------------
+   LOCAL aStruc := { { "cust_id"    , "C", 10, 0 },;
+                { "Sequence"        , "AutoInc", 07, 0 },;      //ADT extended field type autoincrement 
+                { "customer_name"   , "C", 25, 0 },;
+                { "Start_date"      , "TimeStamp", 01, 0 },;    //ADT extended field type
+                { "Notes"           , "M", 10, 0 } }
+                        
+    AdsSetFileType( ADS_ADT )   
+
+    TRY     
+        dbCreate( ( cFileName := cPath + "customers.adt" ), aStruc,, .t., cAlias )
+
+        ( cAlias )-&gt;( OrdCreate( cPath + "customers", "cust_id", "cust_id" ) )
+        ( cAlias )-&gt;( OrdCreate( cPath + "customers", "Start_date", "Start_date" ) ) 
+        ( cAlias )-&gt;( dbclosearea() )
+
+        AADD( afiles, { cFileName, "customers.adi" } )
+
+    
+    //------------------------ sales.dbf -------------------------------------------------
+        aStruc := { { "cust_id" , "C", 10, 0 },;
+                { "invoice"     , "C", 15, 0 },;
+                { "s_date"      , "TimeStamp", 01, 0 },;    //VFP extended field type
+                { "item_id"     , "C", 15, 0 },;
+                { "Units"       , "N", 03, 0 },;
+                { "Price"       , "Money", 09, 2 },;        //VFP extended field type
+                { "Notes"       , "M", 10, 0 } }
+                    
+        AdsSetFileType( ADS_VFP )
+
+        dbCreate( ( cFileName := cPath + "sales.dbf" ), aStruc,, .t., cAlias )
+
+        ( cAlias )-&gt;( OrdCreate( cPath + "sales", "invoice", "invoice" ) )
+        ( cAlias )-&gt;( OrdCreate( cPath + "sales", "cust_id", "cust_id" ) ) 
+        ( cAlias )-&gt;( dbclosearea() )
+
+        aadd( afiles, { cFileName, "sales.cdx" } )
+
+
+
+    //------------------------ items.dbf -------------------------------------------------
+        aStruc := { { "item_id"     , "C", 15, 0 },;
+                { "Desc"    , "C", 25, 0 },;
+                { "Price"   , "N", 07, 2 } }
+                    
+        AdsSetFileType( ADS_NTX )
+
+        dbCreate( ( cFileName := cPath + "items.dbf" ), aStruc,, .t., cAlias )
+        ( cAlias )-&gt;( OrdCreate( cPath + "itm_id",, "item_id" ) )
+        ( cAlias )-&gt;( OrdCreate( cPath + "itm_desc",, "Desc" ) ) 
+        ( cAlias )-&gt;( dbclosearea() )
+
+        aadd( afiles, { cFileName, "itm_id.ntx;itm_desc.ntx" } )
+
+    CATCH e
+    
+        ShowError( cFileName, e )
+        afiles := {}
+        
+    END
+
+RETURN afiles
+
+
+
+/*--------------------------------------------------------------------------------------------------------
+CreateDictionary creates an Advantage Data Dictionary based on already existing tables 
+--------------------------------------------------------------------------------------------------------*/
+STATIC FUNCTION CreateDictionary( afiles )
+   LOCAL cExt AS CHARACTER := ""
+   LOCAL cDD := cPath + "test_dd.add"
+
+   IF !ADSDDCREATE( cDD,, "Sample data dictinoary" )
+
+      ALERT( "AdsCreate() of " + cDD + " failed. Error:" + Str( AdsGetLastError() ) )
+      RETURN NIL 
+
+   ENDIF 
+   
+   //Calling ACE function AdsDDSetDatabaseProperty()
+   AdsDDSetDatabaseProperty( ADS_DD_ENABLE_INTERNET, .t. )
+   AdsDDSetDatabaseProperty( ADS_DD_INTERNET_SECURITY_LEVEL, ADS_DD_LEVEL_2 )
+   AdsDDSetDatabaseProperty( ADS_DD_DEFAULT_TABLE_PATH, cPath )
+   AdsDDSetDatabaseProperty( ADS_DD_LOG_IN_REQUIRED, .t. )
+
+
+   //ACE Function ADsDDCreateUser() creates a dd user.
+   //When a new dd is created user ADSSYS is auto-created as the dd administrator
+   //it is a good idea to create other users to limit access and permissions.
+   //
+   AdsDDCreateUser( , "user1", "password1", "User named userd1 with password password1" )
+   AdsDDCreateUser( , "user2", "password2", "Description of user2" )
+   AdsDDCreateUser( , "user3", "password3", "Optional description of user3" )
+
+   //array aFiles contains the names of the tables to be added to the newly created 
+   //data dictionary.  
+   //element 1 on the array is the table name, 
+   //element 2 on the array is the index file name.
+   //Since .dbf tables could be vfp, cdx, or ntx type tables, 
+   //we are using the extension on the index file name to "guess" the .dbf 
+   //file type.  If this is already known beforehand, then the code below
+   //could be much simpler.  I'm using AEVAL only because I love it; albeit it is 
+   //more cryptic.  The same can be done on a FOR EACH (FOR/REPEAT/WHILE) loop
+    AEVAL( aFiles, ;
+        { |e| hb_FNameSplit( iif( len( e ) &gt; 1, e[ 2 ], e[ 1 ] ), , , @cExt ), ;
+            AdsSetFiletype( iif( lower( cExt ) $ ".adt,.adi", ADS_ADT, ;
+                        iif( lower( cExt ) == ".ntx", ADS_NTX, ADS_VFP ) ) ),;
+            addfiletoDD( e, cPath ), ;
+            SetTableProp( e ), ;
+            QOut( "Adding table to DD", ;    //show some progress information
+                        e[ 1 ], ;
+                        AdsSetFileType(), ;
+                        cExt, ;
+                        ADSGetLastError() ) } ) 
+
+   //assign the password "password" to the ADSSYS user of the DD.  Just as default.
+    AdsDDSetDatabaseProperty( ADS_DD_ADMIN_PASSWORD, "password" )
+
+    Wait
+
+return Nil
+
+//-------------------------------------------------------------------------------------------------------
+//This is the code that adds the table to the DD.
+STATIC FUNCTION AddFiletoDD( aFile, cPath )
+   LOCAL cIndexs := ""
+
+   IF LEN( afile ) &gt; 1 .AND. LEFT( afile[ 2 ], 1 ) &lt;&gt; "."
+    
+        AEVAL( afile, { |e| cIndexs += e +";" }, 2 )
+        cIndexs := LEFT( cIndexs, LEN( cIndexs ) -1 )
+        
+   ENDIF
+
+RETURN( AdsDDAddTable( left( afile[ 1 ], at(".", afile[1] )-1 ), ;
+                cPath + aFile[ 1 ], ;
+                cIndexs ) )
+
+//--------------------------------------------------------------------------------------------------------
+//This function assigns certain properties to all tables.  
+//The only table property I'm assigning is the auto_create property.
+//Many others could also be applied.  Look at ads.h include file for 
+//more constants.
+STATIC FUNCTION SetTableProp( aFile )
+   LOCAL cFileName
+
+   hb_FNameSplit( afile[ 1 ],, @cFileName )
+
+   AdsDDSetTableProperty( cFileName, ADS_DD_TABLE_AUTO_CREATE, .t. )
+
+//  AdsDDSetTableProperty( cFileName, ADS_DD_TABLE_ENCRYPTION, .t. )
+
+RETURN NIL 
+
+
+*-------------------------------------------------------------------------------------------------------------------------------
+STATIC FUNCTION ShowError( cMsg, oErr )
+   LOCAL cErr
+
+   cErr := STR( AdsGetLastError() )
+    
+   ALERT( "Error : " + ALLTRIM( cErr ) + " " + ;
+            cMsg + " " + oErr:Subsystem + " " + ;
+            STR( oErr:subCode ) + " " + oErr:operation + " " + oErr:description )
+
+   dbCloseAll()
+    
+RETURN NIL 
+
+//-----------------------------------------------------------------------------------------------------
+//create, open and browse a free table.  This is only to show how free tables can co-exist 
+//with dd bound tables.  It is useful for temp tables among other uses.
+STATIC FUNCTION CreateAndUseFreeTable()
+   LOCAL aStruct := { ;
+               { "CHARACTER", "C", 25, 0 }, ;
+               { "NUMERIC"  , "N",  8, 0 }, ;
+               { "DOUBLE"   , "N",  8, 2 }, ;
+               { "DATE"     , "D",  8, 0 }, ;
+               { "LOGICAL"  , "L",  1, 0 }, ;
+               { "MEMO1"    , "M", 10, 0 }, ;
+               { "MEMO2"    , "M", 10, 0 }  ;
+            }
+
+      DbCreate( "testdbf", aStruct, "DBFCDX", .T., "MYALIAS" )
+
+      Browse()
+
+RETURN NIL 
+
+
+//-----------------------------------------------------------------------------------------------------
+STATIC FUNCTION OpenExistingFreeTable()
+
+   DbUseArea( .T., "DBFCDX", "testdbf", "TestAlias", .T., .F. )
+   Browse()
+   
+RETURN NIL 
+
+
+//-----------------------------------------------------------------------------------------------------</code></pre></div><br>
+<br>
+... and yes, the other clients (C#, C++, PHP...) as well as your own fwh app may use pure SQL against your DBF/NTX tables.   Hope that helps.<br>
+Reinaldo.</div>
+    </div>
+  </div>
+  <div class="post" id="p180618">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jay Hill</div>
+      <div class="rank">Posts: 6</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 04, 2014 02:33 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Advantage Database and SQL</span><br>
+        Posted: Fri Aug 14, 2015 10:30 PM
+      </div>
+      <div class="content">Thank You Very Much Reinaldo for that information!  That helps me greatly.  Can I ask you a couple of very basic follow-up questions?<br>
+<br>
+1)  How would I set up your afiles array to pass 1 dbf and multiple ntx's to the CreateDictionary()?  because the names of my dbf's aren't related to the ntx's.  Example...<br>
+Customer.dbf<br>
+Custname.ntx<br>
+Custnbr.ntx<br>
+Custid.ntx<br>
+Payments.dbf<br>
+Pmttype.ntx<br>
+Pmtdate.ntx<br>
+<br>
+2)  How do I link in the ADS.ch?  I have never &quot;included&quot; anything in Harbour yet.  The following is my current .hbp file:<br>
+<span style="color:#BF4040">MATERIAL -Lc:\libfiles -lrddads -lace32 -oMRPADS</span><br>
+<br>
+These are the only 2 Advantage commands I currently have at the beginning of my main app:<br>
+REQUEST ADS<br>
+rddsetdefault( &quot;ADSNTX&quot; )</div>
+    </div>
+  </div>
+  <div class="post" id="p180619">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Advantage Database and SQL</span><br>
+        Posted: Fri Aug 14, 2015 10:55 PM
+      </div>
+      <div class="content">Jay;<br>
+<br>
+<blockquote>1) How would I set up your afiles array to pass 1 dbf and multiple ntx's to the CreateDictionary()? because the names of my dbf's aren't related to the ntx's. Example...<br>
+Customer.dbf<br>
+Custname.ntx<br>
+Custnbr.ntx<br>
+Custid.ntx<br>
+Payments.dbf<br>
+Pmttype.ntx<br>
+Pmtdate.ntx</blockquote><br>
+<br>
+Notice on my sample code posted here how the table and indexes get added to the data dictionary using ACE function AdsDDAddTable().  If you take a peek at the documentation -btw ads is extremely well documented- you will find how to use it.<br>
+<br>
+From my code:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">AdsDDAddTable( left( afile[ 1 ], at(".", afile[1] )-1 ), ;
+                cPath + aFile[ 1 ], ;
+                cIndexs )</code></pre></div><br>
+<br>
+In the case of items.dbf notice this translate to AdsDDAddTable( &quot;items&quot;, &quot;items.dbf&quot;, &quot;itm_id.ntx;itm_desc.ntx&quot; )  where itm_id.ntx and itm_desc.ntx are ntx index files on table items.dbf.  It is all on my sample code.  In your case that would be: AdsDDAddTable( &quot;customers&quot;, &quot;customers.dbf&quot;, &quot;custname.ntx;custnbr.ntx;custid.ntx&quot; ).  <br>
+<br>
+<blockquote>2) How do I link in the ADS.ch? I have never &quot;included&quot; anything in Harbour yet. The following is my current .hbp file:<br>
+MATERIAL -Lc:\libfiles -lrddads -lace32 -oMRPADS</blockquote><br>
+I don't use .hbp files.  Don't really understand them.  I don't link ads.ch.  You might needed it on your include path if you are using any #defined values.  <br>
+<br>
+Again, all you need to create the data dictionary using ACE functions is on my sample code and all these functions are well documented.  If you wish to see their wrapper implementation take a peek at adsfunc1.c.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">HB_FUNC( ADSDDADDTABLE )
+{
+   hb_retl( AdsDDAddTable( HB_ADS_PARCONNECTION( 4 ) /* hConnect */,
+                           ( UNSIGNED8 * ) hb_parcx( 1 ) /* pTableName */,
+                           ( UNSIGNED8 * ) hb_parcx( 2 ) /* pTableFileName */,
+                           ( UNSIGNED16 ) hb_ads_iFileType,
+                           ( UNSIGNED16 ) hb_ads_iCharType,
+                           ( UNSIGNED8 * ) hb_parcx( 3 ) /* pTableIndexFileName */,
+                           NULL ) == AE_SUCCESS );
+}</code></pre></div><br>
+<br>
+Reinaldo.</div>
+    </div>
+  </div>
+  <div class="post" id="p180628">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jay Hill</div>
+      <div class="rank">Posts: 6</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 04, 2014 02:33 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Advantage Database and SQL</span><br>
+        Posted: Sat Aug 15, 2015 11:29 PM
+      </div>
+      <div class="content">Reinaldo - Thank you very much again. I've got most of it. You've been especially helpful.<br>
+<br>
+One last question:<br>
+<br>
+When using AdsDDAddTable, Is it imperative that I specify the indexes in the correct order?  (that is when using the DD, I can now get rid of all my existing SET ORDER TO commands before issuing a SEEK)  Or is that only when using SQL that the index(tag) order is irrelevant? <br>
+<br>
+<span style="color:#BF80BF">AdsDDAddTable( &quot;items&quot;, &quot;items.dbf&quot;, &quot;itm_id.ntx;itm_desc.ntx&quot; )</span><br>
+<br>
+Jay</div>
+    </div>
+  </div>
+  <div class="post" id="p180633">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Advantage Database and SQL</span><br>
+        Posted: Sun Aug 16, 2015 12:25 PM
+      </div>
+      <div class="content"><p>Hey Jay;</p>
+<p>Although the SQL engine knows how to best use indexes to optimize speed, ISAM stays ISAM.  By this I mean, that your ISAM code stays the same and works the same.  With SQL you don't have syntax to &quot;setOrder&quot; or &quot;Seek&quot;.   The relationships between tables and existing indexes are saved on the Data Dictionary and this info is then used by the SQL engine to do its job.  Indexed-Sequential activity stays &quot;old-school&quot;.   I hope that makes sense.</p>
+<p>I think part of the confusion is that ADS is the only SQL that is ISAM as well as SQL and you can mix and match according to your needs.</p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p180638">
+    <div class="poster">
+      <div class="name" style="color:#105289">Jay Hill</div>
+      <div class="rank">Posts: 6</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 04, 2014 02:33 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Advantage Database and SQL</span><br>
+        Posted: Sun Aug 16, 2015 09:35 PM
+      </div>
+      <div class="content"><p>Thank you again, Reinaldo.</p>
+<p>Jay</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

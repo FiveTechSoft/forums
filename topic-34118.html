@@ -1,0 +1,2317 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>PostgresSQL from core-master\contrib\hbpgsql - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-34118">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> PostgresSQL from core-master\contrib\hbpgsql</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-34118-page-2.html">2</a> (29 posts)</div>  <div class="post" id="p202096">
+    <div class="poster">
+      <div class="name" style="color:#105289">fafi</div>
+      <div class="rank">Posts: 169</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 25, 2008 02:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Fri May 26, 2017 09:53 AM
+      </div>
+      <div class="content">I tested with PostgreSQL versi 9:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+#include "xbrowse.ch"
+
+
+#require "hbpgsql"
+
+#include "DbStruct.ch"
+
+REQUEST DBFNTX
+REQUEST DBFCDX
+REQUEST DBFFPT
+REQUEST DBFDBT
+
+
+static aData,oBrwData
+
+
+PROCEDURE Main( cHost, cDatabase, cUser, cPass )
+
+   LOCAL oServer, oQuery, oRow, i, x, aTables, aStruct
+
+   LOCAL cQuery, lAppend, cFileOrig, cFileDEST
+   
+   cHost     := "localhost"
+   cDatabase := "mydata"
+   cUser     := "postgres"
+   cPass     := "mypass"
+   
+   
+   oServer := TPQServer():New( cHost, cDatabase, cUser, cPass )
+
+   IF oServer:NetErr()
+      ?"Query 1 : "+oServer:ErrorMsg()
+      QUIT
+   ENDIF
+
+   oServer:SetVerbosity( 2 )
+   oServer:traceon( "simple.log" )
+   
+   
+   cFileORIG := "customer.dbf"
+   cFileDEST := "mst_customer"  
+   lAppend := .t.
+   if !oServer:TableExists( cFileDEST )
+   
+             ConvertToSQL(cFileORIG,cFileDEST,lAppend,oServer)
+             
+             CreateIndexSQL('mst_customer', 'recno_key', 'recno_key',oServer)
+             
+             CreateIndexSQL('mst_customer', 'first', 'first',oServer)
+             
+             CreateIndexSQL('mst_customer', 'city', 'city',oServer)
+             
+             CreateIndexSQL('mst_customer', 'first_city', 'first, city',oServer)
+     
+     endif
+        
+     BrowseData(oServer)
+   
+   oServer:Destroy()
+   
+return nil   
+   
+   
+
+static function ConvertToSQL(cFileORIG,cFileDEST,lAppend,oServer)
+
+   local cComm, apCode, cOut
+   local nErr, nPos
+   LOCAL vEmp := {}
+   Local nCnn, s,oSql
+   local aReturn := {}
+   local aReturnX := {}
+   cFileORIG  := lower(alltrim(cFileORIG))
+   cFileDEST  := lower(alltrim(cFileDEST)) 
+
+   define dialog oDlgStock from 1,1 to 40,400 pixel style nOR( WS_CAPTION ) title "Tunggu Sebentar"
+   activate dialog oDlgStock centered nowait
+   
+   oDlgStock:cTitle := cFileDEST
+   SysRefresh()
+
+   dbCloseAll()
+   cSql := "DROP TABLE IF EXISTS "+cFileDEST
+   oQuery := oServer:Execute( cSql )
+      
+      IF oQuery:NetErr()
+              ? "Query 2 : "+oQuery:ErrorMsg()
+              QUIT
+           ENDIF
+           
+       oQuery:Destroy()
+      
+   
+
+   dbCloseAll()
+   use (cFileORIG) new shared alias orig
+
+  
+  
+  aStruct := orig-&gt;(DbStruct())
+  
+  cField := ""
+  
+  for i := 1 to len(aStruct)
+     cFieldName := alltrim(aStruct[i][DBS_NAME])
+     if lower(cFieldName) == "index"
+         cFieldName := "XINDEX"
+     endif
+     cType      := aStruct[i][DBS_TYPE]
+     cLen       := alltrim(Str( aStruct[i][DBS_LEN ],  3 ))
+     cDec       := alltrim(Str( aStruct[i][DBS_DEC ],  3 ))
+     cOke := ""
+     
+     
+     if cType == "C" 
+        cOke := "  "+cFieldName+" CHAR ("+cLen+") , "
+     endif
+     
+     if cType == "M"
+        cOke := "  "+cFieldName+" CHAR (150) , "
+     endif
+     
+     if cType == "N"
+        if val(cDec) == 0
+           cOke := "  "+cFieldName+" NUMERIC ( "+cLen+", 0) , "
+        else
+           cOke := "  "+cFieldName+" NUMERIC ( "+cLen+", 2) , "
+        endif
+     endif
+      
+     if cType == "D"
+        cOke := "  "+cFieldName+" DATE, "
+     endif
+     
+     if cType == "L"
+        cOke := "  "+cFieldName+" BOOLEAN, "
+     endif
+     cField += cOke
+  next
+  
+  cField := upper(cField)
+
+   cSql := "CREATE TABLE "+cFileDEST+" ( recno_key    serial primary key, "
+   
+   
+   cSQL += cField
+   cSQL += " edited_date DATE, edited_time CHAR(8) "
+   
+   
+     cSQL += " );"
+   
+    
+    
+        ?cSql
+    
+    
+    
+        oQuery := oServer:Execute( cSql )
+        
+      
+      IF oQuery:NetErr()
+              ? "Query 3 : "+oQuery:ErrorMsg()
+              QUIT
+           ENDIF
+           
+       oQuery:Destroy()
+        
+   
+   
+
+if lAppend
+   dbCloseAll()
+   use (cFileORIG) new shared alias orig
+   
+           nMulai  := 0
+           nPersen := 0
+           nRecord := orig-&gt;(lastrec())
+           
+           
+           orig-&gt;(dbGotop())  
+           do while !orig-&gt;(eof())
+           
+              ++nMulai
+              nPersen := ( nMulai / nRecord ) * 100
+              oDlgStock:cTitle := cFileDEST +" "+str(nMulai,12)+"/"+str(nRecord,12)+"="+str(nPersen,12)+"%"
+              SysRefresh()
+              cFieldJalan := alltrim(orig-&gt;(FieldName(1)))
+              cDatanya := orig-&gt;&amp;cFieldJalan
+              if valtype(cDatanya) == "N"
+                 cDatanya := alltrim(str(cDatanya,14,2))
+              else
+                 cDatanya := "'"+upper(alltrim(cDatanya))+"'"
+              endif
+              
+              cSQL := "INSERT INTO "+alltrim(cFileDEST)+" ( "+cFieldJalan+" ) VALUES (  "+cDatanya+"  )"
+              
+              oQuery := oServer:Execute( cSql )
+      
+          IF oQuery:NetErr()
+                 ? "Query 4 : "+oQuery:ErrorMsg()
+                 QUIT
+              ENDIF
+           
+         oQuery:Destroy()
+         
+         for x := 2 to orig-&gt;(fcount())
+                     cFieldJalan := alltrim(orig-&gt;(FieldName(x)))
+                     cDatanya := orig-&gt;&amp;cFieldJalan
+                     
+                          if valtype(cDatanya) == "N"
+                         cDatanya := alltrim(str(cDatanya,14,2))
+                      endif
+                      
+                      if valtype(cDatanya) == "D"
+                         cTahun   := strzero(year(cDatanya),4)
+                         cBulan   := strzero(month(cDatanya),2)
+                         cTgl     := strzero(day(cDatanya),2)
+                         cDatanya := cTahun+"-"+cBulan+"-"+cTgl
+                      endif
+                      
+                      if valtype(cDatanya) == "L"
+                         if cDatanya
+                            cDatanya := "1"
+                         else
+                            cDatanya := "0"   
+                         endif
+                      endif
+                         
+                      if valtype(cDatanya) == "C"
+                         cChar := ""
+                         for xx := 1 to len(cDatanya)
+                            cOke := subs(cDatanya,xx,1)
+                            if cOke == "'"
+                               cOke := ""
+                            endif
+                            cChar += cOke
+                         next
+                         cDatanya := "'"+upper(alltrim(cChar))+"'"
+                      endif
+                      
+                      if valtype(cDatanya) == "M"
+                         cDatanya := "'"+upper(alltrim(cDatanya))+"'"
+                      endif
+                      
+                        cSql :=  "UPDATE "+alltrim(cFileDEST)+" SET "+cFieldJalan+" = "+cDatanya+" WHERE recno_key = "+alltrim(str(nMulai,12))
+                        
+                              oQuery := oServer:Execute( cSql )
+                  
+                      IF oQuery:NetErr()
+                             ? "Query 4a : "+oQuery:ErrorMsg()
+                             QUIT
+                          ENDIF
+              
+                oQuery:Destroy()
+                 
+                 next             
+            
+             orig-&gt;(dbSkip())
+             
+           enddo
+         
+       dbCloseAll()
+   
+
+endif
+**********************
+
+       
+oDlgStock:End()
+
+return nil   
+
+
+static function BrowseData(oServer)
+
+local oDlgRekening,lAmbil := .f.
+
+oQuery := oServer:Query( "SELECT * from mst_customer order by recno_key" )
+
+aData := {}
+
+DO WHILE ! oQuery:Eof()
+   aField := {}
+   for nField := 1 to oQuery:FCount()
+      cData := oQuery:FieldGet( nField )
+      if valtype(cData) == "C"
+         if len(cData) == 0
+            cData := spac(oQuery:FieldLen( nField ))
+         endif
+      endif
+      
+      aadd(aField,cData  )
+   next
+   
+   aadd(aData,aField )
+   
+   oQuery:Skip()
+   
+enddo
+
+oQuery:Destroy()
+
+
+   define dialog oDlgRekening from 1,1 to 500,900 TITLE "My Data" pixel 
+   
+   @ 4,1 XBROWSE oBrwData size 440,200 pixel of oDlgRekening ARRAY aData ON DBLCLICK ( lAmbil := .t. ,oDlgRekening:End() )
+   
+   
+   oBrwData:nMarqueeStyle       := MARQSTYLE_HIGHLCELL
+   oBrwData:nColDividerStyle    := LINESTYLE_BLACK
+   oBrwData:nRowDividerStyle    := LINESTYLE_BLACK
+   oBrwData:lColDividerComplete := .t.
+   
+   
+
+   oCol := oBrwData:AddCol()
+   oCol:cHeader       := "Record"
+   oCol:bEditValue    := { || aData[oBrwData:nArrayAt][1] }
+   oCol:cEditPicture  := "@!"
+   oCol:nWidth        := 100
+   oCol:nHeadStrAlign := 2         
+   oCol:bClrStd       := {|| { CLR_BLACK,nRGB(194,233,235) } }         
+   
+   
+   oCol := oBrwData:AddCol()
+   oCol:cHeader       := "First Name"
+   oCol:bEditValue    := { || aData[oBrwData:nArrayAt][2] }
+   oCol:cEditPicture  := "@!"
+   oCol:nWidth        := 150
+   oCol:nHeadStrAlign := 2         
+   oCol:bClrStd       := {|| { CLR_BLACK,nRGB(194,233,235) } }         
+   oCol:nEditType      := 1
+   oCol:bOnPostEdit   := { |o, varInput, nLastKey  | iif( nLastKey == 13, ;
+      ( aData[oBrwData:nArrayAt][2] := varInput                                                                  , ;
+        SimpanData( "first","'"+alltrim(varInput)+"'",oServer),oBrwData:goRight() ) ;
+        , .t. ) }
+   
+   
+   
+   
+   oCol := oBrwData:AddCol()
+   oCol:cHeader       := "Last Name"
+   oCol:bEditValue    := { || aData[oBrwData:nArrayAt][3] }
+   oCol:cEditPicture  := "@!"
+   oCol:nWidth        := 150
+   oCol:nHeadStrAlign := 2         
+   oCol:bClrStd       := {|| { CLR_BLACK,nRGB(194,233,235) } }         
+   oCol:bOnPostEdit   := {|o, v, n| iif( n != VK_ESCAPE, ( aData[oBrwData:nArrayAt][3] := v , SimpanData( aData[oBrwData:nArrayAt][1] ,"last","'"+alltrim(v)+"'",oServer)   ), ),oBrwData:Refresh() }   
+   oCol:nEditType      := 1
+   
+   
+   oCol := oBrwData:AddCol()
+   oCol:cHeader       := "Street"
+   oCol:bEditValue    := { || aData[oBrwData:nArrayAt][4] }
+   oCol:cEditPicture  := "@!"
+   oCol:nWidth        := 300
+   oCol:nHeadStrAlign := 2         
+   oCol:bClrStd       := {|| { CLR_BLACK,nRGB(194,233,235) } }         
+   oCol:bOnPostEdit   := {|o, v, n| iif( n != VK_ESCAPE, ( aData[oBrwData:nArrayAt][4] := v , SimpanData( aData[oBrwData:nArrayAt][1] ,"street","'"+alltrim(v)+"'",oServer)   ), ),oBrwData:Refresh() }   
+   oCol:nEditType      := 1
+   
+   
+   
+   oBrwData:nHeaderHeight := 45
+      
+   oBrwData:nRowHeight := 30
+   
+   oBrwData:l2007 := .t.
+   
+   oBrwData:nFreeze := 2
+   
+   oBrwData:nHeaderLines := 2
+      
+   oBrwData:CreateFromCode()
+   
+   nRow := 220
+   nCol := 10
+   
+   @nRow,nCol button "Top" size 30,14 of oDlgRekening pixel action ( oBrwData:Gotop(),oBrwData:SetFocus(),oBrwData:Refresh() )
+   nCol += 35
+   @nRow,nCol button "Bottom" size 30,14 of oDlgRekening pixel action ( oBrwData:GoBottom(),oBrwData:SetFocus(),oBrwData:Refresh() )
+   nCol += 35
+   @nRow,nCol button "Find First Name" size 60,14 of oDlgRekening pixel action ( CariNamaDepan(oServer) )
+   nCol += 65
+   @nRow,nCol button "Sort by First Name" size 60,14 of oDlgRekening pixel action ( NamaDepan(oServer) )
+   nCol += 65
+   @nRow,nCol button "Add 1 Record" size 60,14 of oDlgRekening pixel action ( LastRecord(oServer) )
+   nCol += 65
+   @nRow,nCol button "Add 500 Record" size 60,14 of oDlgRekening pixel action ( AddData("customer.dbf","mst_customer" ,oServer) )
+   nCol += 65
+   @nRow,nCol button "Delete Record" size 60,14 of oDlgRekening pixel action ( HapusData(aData[oBrwData:nArrayAt][1],oServer) )
+   nCol += 65
+   @nRow,nCol button "Exit" size 30,14 of oDlgRekening pixel action ( oDlgRekening:End() )
+
+
+   ACTIVATE DIALOG oDlgRekening ON INIT ( oBrwData:gotop(),oBrwData:SetFocus(), oBrwData:Refresh() )
+   
+
+return lAmbil
+
+
+static function CariNamaDepan(oServer)
+
+local cCari := spac(20)
+
+if MsgGet("Find First name","First Name",@cCari)
+   
+    cCari := upper(alltrim(cCari))
+   
+        oQuery := oServer:Query( "SELECT * from mst_customer where first like '%"+cCari+"%' order by recno_key" )
+        
+                
+        aData := {}
+        
+        DO WHILE ! oQuery:Eof()
+           aField := {}
+           for nField := 1 to oQuery:FCount()
+              cData := oQuery:FieldGet( nField )
+              if valtype(cData) == "C"
+                 if len(cData) == 0
+                    cData := spac(oQuery:FieldLen( nField ))
+                 endif
+              endif
+              aadd(aField,cData  )
+           next
+           
+           aadd(aData,aField )
+           
+           oQuery:Skip()
+           
+        enddo
+        
+        oBrwData:SetArray(aData)
+        
+        oQuery:Refresh()
+        oBrwData:Gotop()
+        oBrwData:Refresh()
+
+endif
+
+return nil
+
+static function SimpanData(cField,cDatanya,oServer)
+
+nRecordSimpan := aData[oBrwData:nArrayAt][1]
+
+cFileDEST := "mst_customer"
+
+cSql :=  "UPDATE "+alltrim(cFileDEST)+" SET "+cField+" = "+cDatanya+" WHERE recno_key = "+alltrim(str(nRecordSimpan,12))
+
+   
+   oQuery := oServer:Execute( cSql )
+      
+      IF oQuery:NetErr()
+              ? "Query 22a : "+oQuery:ErrorMsg()
+              QUIT
+           ENDIF
+           
+       oQuery:Destroy()
+       
+
+return nil
+
+
+static function HapusData(nRecordSimpan,oServer)
+
+if !MsgYesNo("Are you sure ?")
+   return nil
+endif
+
+cFileDEST := "mst_customer"
+
+cSql :=  "DELETE from "+alltrim(cFileDEST)+" WHERE recno_key = "+alltrim(str(nRecordSimpan,12))
+   
+       oQuery := oServer:Execute( cSql )
+      
+       IF oQuery:NetErr()
+              ? "Query 22a : "+oQuery:ErrorMsg()
+              QUIT
+           ENDIF
+           
+       oQuery:Destroy()
+        
+       oQuery := oServer:Query( "SELECT * from mst_customer order by recno_key" )
+
+       IF oQuery:NetErr()
+              ? "Query 22a : "+oQuery:ErrorMsg()
+              QUIT
+           ENDIF
+
+aData := {}
+
+DO WHILE ! oQuery:Eof()
+   aField := {}
+   for nField := 1 to oQuery:FCount()
+      cData := oQuery:FieldGet( nField )
+      if valtype(cData) == "C"
+         if len(cData) == 0
+            cData := spac(oQuery:FieldLen( nField ))
+         endif
+      endif
+      aadd(aField,cData  )
+   next
+   
+   aadd(aData,aField )
+   
+   oQuery:Skip()
+   
+enddo
+
+oQuery:Destroy()
+
+oBrwData:SetArray(aData)
+oBrwData:Gotop()
+oBrwData:Refresh()
+
+
+return nil
+
+
+static function NamaDepan(oServer)
+
+oQuery := oServer:Query( "SELECT * from mst_customer order by first" )
+
+aData := {}
+
+DO WHILE ! oQuery:Eof()
+   aField := {}
+   for nField := 1 to oQuery:FCount()
+      cData := oQuery:FieldGet( nField )
+      if valtype(cData) == "C"
+         if len(cData) == 0
+            cData := spac(oQuery:FieldLen( nField ))
+         endif
+      endif
+      aadd(aField,cData  )
+   next
+   
+   aadd(aData,aField )
+   
+   oQuery:Skip()
+   
+enddo
+
+oBrwData:SetArray(aData)
+oBrwData:Gotop()
+oBrwData:Refresh()
+
+return nil
+
+
+
+
+static function LastRecord(oServer)
+local nRecord := 0
+cSql :=  "SELECT recno_key "
+cSql +=  " FROM mst_customer "
+cSql +=  " ORDER BY recno_key DESC "
+cSql +=  " LIMIT 1 "
+
+       oQuery := oServer:Execute( cSql )
+      
+       IF oQuery:NetErr()
+              ? "Query 22a : "+oQuery:ErrorMsg()
+              QUIT
+           ENDIF
+    
+    nRecord := oQuery:FieldGet( 1 )
+
+oQuery:Destroy()
+
+oQuery:Refresh()
+   
+++nRecord
+
+cFileDEST   := "mst_customer"
+cFieldJalan := "first"
+cDatanya    := "'ZZZZ'"
+
+          cSQL := "INSERT INTO "+alltrim(cFileDEST)+" ( "+cFieldJalan+" ) VALUES (  "+cDatanya+"  )"
+              
+              oQuery := oServer:Execute( cSql )
+      
+          IF oQuery:NetErr()
+                 ? "Query 4 : "+oQuery:ErrorMsg()
+                 QUIT
+              ENDIF
+           
+         oQuery:Destroy()
+         
+         oServer:Commit()
+
+oQuery := oServer:Query( "SELECT * from mst_customer order by recno_key DESC LIMIT 1" )
+
+aData := {}
+
+DO WHILE ! oQuery:Eof()
+   aField := {}
+   for nField := 1 to oQuery:FCount()
+      cData := oQuery:FieldGet( nField )
+      if valtype(cData) == "C"
+         if len(cData) == 0
+            cData := spac(oQuery:FieldLen( nField ))
+         endif
+      endif
+      aadd(aField,cData  )
+   next
+   
+   aadd(aData,aField )
+   
+   oQuery:Skip()
+   
+enddo
+
+oQuery:Destroy()
+
+oBrwData:SetArray(aData)
+
+oBrwData:GoBottom()
+oBrwData:Refresh()
+   
+return nil
+
+
+
+/*
+
+CREATE OR REPLACE FUNCTION create_index(table_name text, index_name text, column_name text) RETURNS void AS $$ 
+declare 
+   l_count integer;
+begin
+  select count(*)
+     into l_count
+  from pg_indexes
+  where schemaname = 'public'
+    and tablename = lower(table_name)
+    and indexname = lower(index_name);
+
+  if l_count = 0 then 
+     execute 'create index ' || index_name || ' on ' || table_name || '(' || column_name || ')';
+  end if;
+end;
+$$ LANGUAGE plpgsql;
+
+usage: select create_index('my_table', 'my_index_name', 'id');
+
+*/
+
+static function CreateIndexSQL(cTabelName,cIndexName,cFieldName,oServer)
+       cQuery := "SELECT create_index('"+lower(cTabelName)+"', '"+lower(cTabelName)+"_"+lower(cIndexName)+"', '"+lower(cFieldName)+"');"
+       oQuery := oServer:Query( cQuery )
+           IF oQuery:NetErr()
+              ? "4"+oQuery:ErrorMsg()
+           ENDIF
+       oQuery:Destroy()
+return nil       
+
+
+****
+static function AddData(cFileORIG,cFileDEST,oServer)
+
+if MsgYesNo("Add 500 Record ?")
+
+                cSql := "SELECT recno_key "+;
+                "FROM mst_customer "+;
+                "ORDER BY recno_key DESC "+; 
+                "LIMIT 1"
+                
+                  oQuery := oServer:Execute( cSql )
+      
+          IF oQuery:NetErr()
+                 ? "Query 4 : "+oQuery:ErrorMsg()
+                 QUIT
+              ENDIF
+              
+              nLastRecord := oQuery:FieldGet( 1 )
+              
+              //?str(cData,12)
+              oQuery:Destroy()
+              
+              
+
+       dbCloseAll()
+       
+       define dialog oDlgStock from 1,1 to 40,400 pixel style nOR( WS_CAPTION ) title "Tunggu Sebentar"
+       activate dialog oDlgStock centered nowait
+   
+    
+       use (cFileORIG) new shared alias orig
+
+           nMulai  := 0
+           nPersen := 0
+           nRecord := orig-&gt;(lastrec())
+           
+           
+           orig-&gt;(dbGotop())  
+           do while !orig-&gt;(eof())
+           
+              ++nMulai
+              nPersen := ( nMulai / nRecord ) * 100
+              oDlgStock:cTitle := cFileDEST +" "+str(nMulai+nLastRecord,12)+"/"+str(nRecord+nLastRecord,12)+"="+str(nPersen,12)+"%"
+              SysRefresh()
+              cFieldJalan := alltrim(orig-&gt;(FieldName(1)))
+              cDatanya := orig-&gt;&amp;cFieldJalan
+              if valtype(cDatanya) == "N"
+                 cDatanya := alltrim(str(cDatanya,14,2))
+              else
+                 cDatanya := "'"+upper(alltrim(cDatanya))+"'"
+              endif
+              
+              cSQL := "INSERT INTO "+alltrim(cFileDEST)+" ( "+cFieldJalan+" ) VALUES (  "+cDatanya+"  )"
+              
+              oQuery := oServer:Execute( cSql )
+      
+          IF oQuery:NetErr()
+                 ? "Query 4 : "+oQuery:ErrorMsg()
+                 QUIT
+              ENDIF
+           
+         oQuery:Destroy()
+         
+         for x := 2 to orig-&gt;(fcount())
+                     cFieldJalan := alltrim(orig-&gt;(FieldName(x)))
+                     cDatanya := orig-&gt;&amp;cFieldJalan
+                     
+                          if valtype(cDatanya) == "N"
+                         cDatanya := alltrim(str(cDatanya,14,2))
+                      endif
+                      
+                      if valtype(cDatanya) == "D"
+                         cTahun   := strzero(year(cDatanya),4)
+                         cBulan   := strzero(month(cDatanya),2)
+                         cTgl     := strzero(day(cDatanya),2)
+                         cDatanya := cTahun+"-"+cBulan+"-"+cTgl
+                      endif
+                      
+                      if valtype(cDatanya) == "L"
+                         if cDatanya
+                            cDatanya := "1"
+                         else
+                            cDatanya := "0"   
+                         endif
+                      endif
+                         
+                      if valtype(cDatanya) == "C"
+                         cChar := ""
+                         for xx := 1 to len(cDatanya)
+                            cOke := subs(cDatanya,xx,1)
+                            if cOke == "'"
+                               cOke := ""
+                            endif
+                            cChar += cOke
+                         next
+                         cDatanya := "'"+upper(alltrim(cChar))+"'"
+                      endif
+                      
+                      if valtype(cDatanya) == "M"
+                         cDatanya := "'"+upper(alltrim(cDatanya))+"'"
+                      endif
+                      
+                        cSql :=  "UPDATE "+alltrim(cFileDEST)+" SET "+cFieldJalan+" = "+cDatanya+" WHERE recno_key = "+alltrim(str(nMulai+nLastRecord,12))
+                        
+                              oQuery := oServer:Execute( cSql )
+                  
+                      IF oQuery:NetErr()
+                             ? "Query 4a : "+oQuery:ErrorMsg()
+                             QUIT
+                          ENDIF
+              
+                oQuery:Destroy()
+                 
+                 next             
+            
+             orig-&gt;(dbSkip())
+             
+           enddo
+         
+       dbCloseAll()
+       oDlgStock:End()
+       
+   
+   
+    
+    oQuery := oServer:Query( "SELECT * from mst_customer order by recno_key" )
+       
+    aData := {}
+        
+        DO WHILE ! oQuery:Eof()
+           aField := {}
+           for nField := 1 to oQuery:FCount()
+              cData := oQuery:FieldGet( nField )
+              if valtype(cData) == "C"
+                 if len(cData) == 0
+                    cData := spac(oQuery:FieldLen( nField ))
+                 endif
+              endif
+              aadd(aField,cData  )
+           next
+           
+           aadd(aData,aField )
+           
+           oQuery:Skip()
+           
+        enddo
+        
+        oBrwData:SetArray(aData)
+        
+        oQuery:Refresh()
+        oBrwData:Gotop()
+        oBrwData:Refresh()
+        
+        
+        
+       
+endif
+   
+return nil</code></pre></div><br>
+Best Regards<br>
+Fafi</div>
+    </div>
+  </div>
+  <div class="post" id="p202150">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Sun May 28, 2017 01:21 AM
+      </div>
+      <div class="content"><p>Mr Fafi</p>
+<p>Thanks for the good example.<br>
+I never used Postgresql and interested in learning.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p202163">
+    <div class="poster">
+      <div class="name" style="color:#105289">fafi</div>
+      <div class="rank">Posts: 169</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 25, 2008 02:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Sun May 28, 2017 05:33 PM
+      </div>
+      <div class="content"><blockquote><cite>nageswaragunupudi wrote:</cite>Mr Fafi<br>
+<br>
+Thanks for the good example.<br>
+I never used Postgresql and interested in learning.</blockquote><br>
+<br>
+Please test to compare with mysql :<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+#include "xbrowse.ch"
+
+#define BLOCK_SIZE     4096
+
+#include "FileIO.ch"
+
+#include "hbclass.ch"
+#include "postgres.ch"
+
+#require "hbpgsql"
+
+#include "DbStruct.ch"
+
+#define _STRU_FIELDNAME             1
+#define _STRU_FIELDTYPE             2
+#define _STRU_FIELDLEN              3
+#define _STRU_FIELDDEC              4
+#define _STRU_TABLE                 5
+#define _STRU_TABLECOL              6
+
+REQUEST DBFNTX
+REQUEST DBFCDX
+REQUEST DBFFPT
+REQUEST DBFDBT
+
+#define DB_ALIAS                        1
+#define DB_FILE                         2
+#define DB_QUERY                        3
+#define DB_ROW                          4
+#define DB_FETCH                        5
+
+STATIC s_oServer
+STATIC s_aTableTemp := {}
+STATIC s_aTempDBF   := {}
+
+
+static aData,oBrwData
+
+
+PROCEDURE Main( cHost, cDatabase, cUser, cPass )
+
+   LOCAL oServer, oQuery, oRow, i, x, aTables, aStruct
+
+   LOCAL cQuery, lAppend, cFileOrig, cFileDEST
+   
+   cHost     := "localhost"
+   cDatabase := "mydata"
+   cUser     := "postgres"
+   cPass     := "mypassw"
+   
+   
+   oServer := TPQServer():New( cHost, cDatabase, cUser, cPass )
+   
+   IF oServer:NetErr()
+      ?"Query 1 : "+oServer:ErrorMsg()
+      QUIT
+   ENDIF
+   
+   s_oServer := oServer
+   
+   oServer:SetVerbosity( 2 )
+   oServer:traceon( "simple.log" )
+   
+   cFileORIG := "customer.dbf"
+   cFileDEST := "mst_customer"  
+   lAppend := .t.
+   if !oServer:TableExists( cFileDEST )
+   
+             ConvertToSQL(cFileORIG,cFileDEST,lAppend,oServer)
+             
+             CreateIndexSQL('mst_customer', 'recno_key', 'recno_key',oServer)
+             
+             CreateIndexSQL('mst_customer', 'first', 'first',oServer)
+             
+             CreateIndexSQL('mst_customer', 'city', 'city',oServer)
+             
+             CreateIndexSQL('mst_customer', 'first_city', 'first, city',oServer)
+     
+     endif
+   
+   SQLOpen( "customer", "SELECT * FROM mst_customer order by recno_key limit 50" )
+   
+   dbSelectArea("customer")
+   
+     DEFINE FONT oFont NAME "Arial" SIZE 0,-12 BOLD
+   
+   define dialog oDlg from 1,1 to 550,710 TITLE "Customer" pixel style nOR( WS_CAPTION ) 
+   
+   @ 5,5 XBROWSE oBrw size 350,240 pixel of oDlg alias "customer" FONT oFont 
+   
+   oBrw:nMarqueeStyle       := MARQSTYLE_HIGHLCELL
+   oBrw:nColDividerStyle    := LINESTYLE_BLACK
+   oBrw:nRowDividerStyle    := LINESTYLE_BLACK
+   oBrw:lColDividerComplete := .t.
+   
+   oCol := oBrw:AddCol()
+   oCol:cHeader       := "First Name"
+   oCol:bEditValue    := { || customer-&gt;first }
+   oCol:cEditPicture  := "@!"
+   oCol:nWidth        := 300
+   oCol:nHeadStrAlign := 2         
+   oCol:bClrStd       := {|| { CLR_BLACK,nRGB(173,224,175)       } }   
+   oCol:nEditType      := 1
+   oCol:bOnPostEdit   := { |o, varInput, nLastKey  | iif( nLastKey == 13, ;
+      ( customer-&gt;first := varInput                                          , ;
+        SaveToSQL( "first","'"+alltrim(varInput)+"'",oServer,customer-&gt;recno_key,"mst_customer"),oBrw:goRight() )   ;
+        , .t. ) }
+   
+   
+   oCol := oBrw:AddCol()
+   oCol:cHeader       := "Last Name"
+   oCol:bEditValue    := { || customer-&gt;last }
+   oCol:cEditPicture  := "@!"
+   oCol:nWidth        := 300
+   oCol:nHeadStrAlign := 2         
+   oCol:bClrStd       := {|| { CLR_BLACK,nRGB(173,224,175)       } }   
+   oCol:nEditType      := 1
+   oCol:bOnPostEdit   := { |o, varInput, nLastKey  | iif( nLastKey == 13, ;
+      ( customer-&gt;last := varInput                                          , ;
+        SaveToSQL( "last","'"+alltrim(varInput)+"'",oServer,customer-&gt;recno_key,"mst_customer"),oBrw:goRight() )    ;
+        , .t. ) }
+        
+      
+   oBrw:nHeaderHeight := 45
+   oBrw:nRowHeight := 30
+   
+   oBrw:l2007 := .t.
+   
+   
+   oBrw:nHeaderLines := 2
+      
+      
+   oBrw:CreateFromCode()
+   
+   nRow := 255
+   nCol := 10
+   
+   @nRow,nCol button "Top" size 30,12 of oDlg pixel action ( oBrw:goTop(),oBrw:Refresh(),oBrw:SetFocus() )
+   nCol += 32
+   @nRow,nCol button "Bottom" size 30,12 of oDlg pixel action ( oBrw:goBottom(),oBrw:Refresh(),oBrw:SetFocus() )
+   nCol += 32
+   @nRow,nCol button "Find First Name" size 60,12 of oDlg pixel action ( FindFirstName(), oBrw:goTop(),oBrw:Refresh(),oBrw:SetFocus() )
+   nCol += 62
+   @nRow,nCol button "Exit" size 30,12 of oDlg pixel action ( oDlg:End() )
+   
+   activate dialog oDlg centered on init ( oBrw:goTop(),oBrw:SetFocus(),oBrw:Refresh() ) 
+   
+   dbCloseAll()
+   
+   
+   oServer:Destroy()
+   
+return nil   
+
+
+static function FindFirstName()
+
+local cCari := spac(20)
+
+if MsgGet("Find First name","First Name",@cCari)
+   
+   dbCloseAll()
+   
+   cCari := upper(alltrim(cCari))
+   
+   SQLOpen( "customer", "SELECT * from mst_customer where first like '%"+cCari+"%' order by first" )
+   
+   dbSelectArea("customer")
+   
+endif
+
+return nil
+
+   
+
+static function SaveToSQL(cField,cDatanya,oServer,nRecordSimpan,cFileDEST)
+
+   cSql :=  "UPDATE "+alltrim(cFileDEST)+" SET "+cField+" = "+cDatanya+" WHERE recno_key = "+alltrim(str(nRecordSimpan,12))
+
+   oQuery := oServer:Execute( cSql )
+      
+   IF oQuery:NetErr()
+           ? "Query 22a : "+oQuery:ErrorMsg()
+           QUIT
+     ENDIF
+           
+   oQuery:Destroy()
+              
+
+return nil
+
+/*
+
+CREATE OR REPLACE FUNCTION create_index(table_name text, index_name text, column_name text) RETURNS void AS $$ 
+declare 
+   l_count integer;
+begin
+  select count(*)
+     into l_count
+  from pg_indexes
+  where schemaname = 'public'
+    and tablename = lower(table_name)
+    and indexname = lower(index_name);
+
+  if l_count = 0 then 
+     execute 'create index ' || index_name || ' on ' || table_name || '(' || column_name || ')';
+  end if;
+end;
+$$ LANGUAGE plpgsql;
+
+usage: select create_index('my_table', 'my_index_name', 'id');
+
+*/
+
+static function CreateIndexSQL(cTabelName,cIndexName,cFieldName,oServer)
+       cQuery := "SELECT create_index('"+lower(cTabelName)+"', '"+lower(cTabelName)+"_"+lower(cIndexName)+"', '"+lower(cFieldName)+"');"
+       oQuery := oServer:Query( cQuery )
+           IF oQuery:NetErr()
+              ? "4"+oQuery:ErrorMsg()
+           ENDIF
+       oQuery:Destroy()
+return nil       
+   
+
+static function ConvertToSQL(cFileORIG,cFileDEST,lAppend,oServer)
+
+   local cComm, apCode, cOut
+   local nErr, nPos
+   LOCAL vEmp := {}
+   Local nCnn, s,oSql
+   local aReturn := {}
+   local aReturnX := {}
+   cFileORIG  := lower(alltrim(cFileORIG))
+   cFileDEST  := lower(alltrim(cFileDEST)) 
+
+   define dialog oDlgStock from 1,1 to 40,400 pixel style nOR( WS_CAPTION ) title "Tunggu Sebentar"
+   activate dialog oDlgStock centered nowait
+   
+   oDlgStock:cTitle := cFileDEST
+   SysRefresh()
+
+   dbCloseAll()
+   cSql := "DROP TABLE IF EXISTS "+cFileDEST
+   oQuery := oServer:Execute( cSql )
+      
+      IF oQuery:NetErr()
+              ? "Query 2 : "+oQuery:ErrorMsg()
+              QUIT
+           ENDIF
+           
+       oQuery:Destroy()
+      
+   
+
+   dbCloseAll()
+   use (cFileORIG) new shared alias orig
+
+  
+  
+  aStruct := orig-&gt;(DbStruct())
+  
+  cField := ""
+  
+  for i := 1 to len(aStruct)
+     cFieldName := alltrim(aStruct[i][DBS_NAME])
+     if lower(cFieldName) == "index"
+         cFieldName := "XINDEX"
+     endif
+     cType      := aStruct[i][DBS_TYPE]
+     cLen       := alltrim(Str( aStruct[i][DBS_LEN ],  3 ))
+     cDec       := alltrim(Str( aStruct[i][DBS_DEC ],  3 ))
+     cOke := ""
+     
+     
+     if cType == "C" 
+        cOke := "  "+cFieldName+" CHAR ("+cLen+") , "
+     endif
+     
+     if cType == "M"
+        cOke := "  "+cFieldName+" CHAR (150) , "
+     endif
+     
+     if cType == "N"
+        if val(cDec) == 0
+           cOke := "  "+cFieldName+" NUMERIC ( "+cLen+", 0) , "
+        else
+           cOke := "  "+cFieldName+" NUMERIC ( "+cLen+", 2) , "
+        endif
+     endif
+      
+     if cType == "D"
+        cOke := "  "+cFieldName+" DATE, "
+     endif
+     
+     if cType == "L"
+        cOke := "  "+cFieldName+" BOOLEAN, "
+     endif
+     cField += cOke
+  next
+  
+  cField := upper(cField)
+
+   cSql := "CREATE TABLE "+cFileDEST+" ( recno_key    serial primary key, "
+   
+   
+   cSQL += cField
+   cSQL += " edited_date DATE, edited_time CHAR(8) "
+   
+   
+     cSQL += " );"
+   
+    
+    
+        ?cSql
+    
+    
+    
+        oQuery := oServer:Execute( cSql )
+        
+      
+      IF oQuery:NetErr()
+              ? "Query 3 : "+oQuery:ErrorMsg()
+              QUIT
+           ENDIF
+           
+       oQuery:Destroy()
+        
+   
+   
+
+if lAppend
+   dbCloseAll()
+   use (cFileORIG) new shared alias orig
+   
+           nMulai  := 0
+           nPersen := 0
+           nRecord := orig-&gt;(lastrec())
+           
+           
+           orig-&gt;(dbGotop())  
+           do while !orig-&gt;(eof())
+           
+              ++nMulai
+              nPersen := ( nMulai / nRecord ) * 100
+              oDlgStock:cTitle := cFileDEST +" "+str(nMulai,12)+"/"+str(nRecord,12)+"="+str(nPersen,12)+"%"
+              SysRefresh()
+              cFieldJalan := alltrim(orig-&gt;(FieldName(1)))
+              cDatanya := orig-&gt;&amp;cFieldJalan
+              if valtype(cDatanya) == "N"
+                 cDatanya := alltrim(str(cDatanya,14,2))
+              else
+                 cDatanya := "'"+upper(alltrim(cDatanya))+"'"
+              endif
+              
+              cSQL := "INSERT INTO "+alltrim(cFileDEST)+" ( "+cFieldJalan+" ) VALUES (  "+cDatanya+"  )"
+              
+              oQuery := oServer:Execute( cSql )
+      
+          IF oQuery:NetErr()
+                 ? "Query 4 : "+oQuery:ErrorMsg()
+                 QUIT
+              ENDIF
+           
+         oQuery:Destroy()
+         
+         for x := 2 to orig-&gt;(fcount())
+                     cFieldJalan := alltrim(orig-&gt;(FieldName(x)))
+                     cDatanya := orig-&gt;&amp;cFieldJalan
+                     
+                          if valtype(cDatanya) == "N"
+                         cDatanya := alltrim(str(cDatanya,14,2))
+                      endif
+                      
+                      if valtype(cDatanya) == "D"
+                         cTahun   := strzero(year(cDatanya),4)
+                         cBulan   := strzero(month(cDatanya),2)
+                         cTgl     := strzero(day(cDatanya),2)
+                         cDatanya := cTahun+"-"+cBulan+"-"+cTgl
+                      endif
+                      
+                      if valtype(cDatanya) == "L"
+                         if cDatanya
+                            cDatanya := "1"
+                         else
+                            cDatanya := "0"   
+                         endif
+                      endif
+                         
+                      if valtype(cDatanya) == "C"
+                         cChar := ""
+                         for xx := 1 to len(cDatanya)
+                            cOke := subs(cDatanya,xx,1)
+                            if cOke == "'"
+                               cOke := ""
+                            endif
+                            cChar += cOke
+                         next
+                         cDatanya := "'"+upper(alltrim(cChar))+"'"
+                      endif
+                      
+                      if valtype(cDatanya) == "M"
+                         cDatanya := "'"+upper(alltrim(cDatanya))+"'"
+                      endif
+                      
+                        cSql :=  "UPDATE "+alltrim(cFileDEST)+" SET "+cFieldJalan+" = "+cDatanya+" WHERE recno_key = "+alltrim(str(nMulai,12))
+                        
+                              oQuery := oServer:Execute( cSql )
+                  
+                      IF oQuery:NetErr()
+                             ? "Query 4a : "+oQuery:ErrorMsg()
+                             QUIT
+                          ENDIF
+              
+                oQuery:Destroy()
+                 
+                 next             
+            
+             orig-&gt;(dbSkip())
+             
+           enddo
+         
+       dbCloseAll()
+   
+
+endif
+**********************
+
+       
+oDlgStock:End()
+
+return nil   
+
+
+
+
+
+
+
+FUNCTION SQLOpen( cAlias, cQuery )
+
+   LOCAL cFile
+   LOCAL Result := .T.
+   LOCAL x
+   LOCAL s_oServer
+   LOCAL oQuery
+   LOCAL aStrudbf
+   LOCAL lFetch
+
+   s_oServer := SQLCurrentServer()
+   cAlias := Upper( cAlias )
+
+   
+   x := AScan( s_aTableTemp, {| aVal | aVal[ DB_ALIAS ] == cAlias } )
+
+   IF ! Empty( x )
+      oQuery := s_aTableTemp[ x ][ 3 ]
+      oQuery:Destroy()
+   ENDIF
+
+   IF cQuery == NIL
+      cQuery := "SELECT * FROM " + cAlias
+   ENDIF
+   
+   
+
+   cQuery := cQuery
+   oQuery := s_oServer:Query( cQuery )
+
+   IF oQuery:NetErr()
+      Alert( oQuery:ErrorMsg() )
+      RETURN .F.
+   ENDIF
+
+   IF Empty( Select( cAlias ) )
+      
+      aStrudbf := oQuery:Struct()
+
+      
+      cFile := TempFile()
+      dbCreate( cFile, aStrudbf )
+
+      
+      dbUseArea( .T., NIL, cFile, cAlias, .F. )
+
+   ELSE
+      Select( cAlias )
+      ZAP
+   ENDIF
+   
+   lFetch := .t.
+   
+   IF Empty( x )
+      AAdd( s_aTableTemp, { ;
+         cAlias, ;  // Table Name
+         cFile, ;   // Temporary File Name
+         oQuery, ;  // Object Query
+         0, ;       // Current Row
+         lFetch } ) // Fetch Status
+   ELSE
+
+      s_aTableTemp[ x ][ DB_QUERY ] := oQuery
+      s_aTableTemp[ x ][ DB_ROW ]   := 0
+      s_aTableTemp[ x ][ DB_FETCH ] := lFetch
+
+   ENDIF
+
+   
+   SQLFetch( lFetch )
+
+   IF lFetch
+      dbGoTop()
+   ENDIF
+
+   RETURN result
+
+
+FUNCTION TempFile( cPath, cExt )
+
+   LOCAL cString
+
+   hb_default( @cPath, hb_DirTemp() )
+   hb_default( @cExt, "tmp" )
+
+   cString := cPath + StrZero( Int( hb_Random( Val( StrTran( Time(), ":" ) ) ) ), 8 ) + "." + cExt
+
+   DO WHILE hb_FileExists( cString )
+      cString := cPath + StrZero( Int( hb_Random( Val( StrTran( Time(), ":" ) ) ) ), 8 ) + "." + cExt
+   ENDDO
+
+   RETURN cString
+
+
+FUNCTION DToQ( cData )
+   RETURN "'" + Str( Year( cData ), 4 ) + "-" + StrZero( Month( cData ), 2 ) + "-" + StrZero( Day( cData ), 2 ) + "'"
+
+FUNCTION SToQ( cData )
+   RETURN "'" + cData + "'"
+
+
+
+FUNCTION SQLFetch( fetchall )
+
+   LOCAL oQuery
+   LOCAL oRow
+   LOCAL cAlias := Upper( Alias() )
+   LOCAL i, x, y
+   LOCAL nPos
+   LOCAL lEof := .F.
+
+   hb_default( @Fetchall, .F. )
+
+   
+   i := AScan( s_aTableTemp, {| aVal | aVal[ DB_ALIAS ] == cAlias } )
+
+   IF i != 0
+
+      oQuery := s_aTableTemp[ i ][ DB_QUERY ]
+      nPos   := s_aTableTemp[ i ][ DB_ROW ] + 1
+
+      IF Fetchall
+         s_aTableTemp[ i ][ DB_FETCH ] := .T.
+      ENDIF
+
+      IF oQuery:LastRec() &gt;= nPos
+
+         y := nPos
+
+         DO WHILE nPos &lt;= iif( FetchAll, oQuery:LastRec(), y )
+            oRow := oQuery:GetRow( nPos )
+            dbAppend()
+
+            FOR x := 1 TO oRow:FCount()
+               FieldPut( FieldPos( oRow:FieldName( x ) ), oRow:FieldGet( x ) )
+            NEXT
+
+            s_aTableTemp[ i ][ DB_ROW ] := nPos
+            nPos++
+         ENDDO
+
+      ELSE
+         dbSkip()
+      ENDIF
+
+      lEof := nPos &gt; oQuery:LastRec()
+   ENDIF
+
+   RETURN lEof
+
+
+PROCEDURE SQLFetchAll()
+
+   SQLFetch( .T. )
+   dbGoTop()
+
+   RETURN
+
+
+PROCEDURE SQLDestroy()
+
+   IF s_oServer != NIL
+      s_oServer:Destroy()
+   ENDIF
+
+   RETURN
+
+
+FUNCTION SQLCurrentServer()
+   RETURN s_oServer
+
+
+FUNCTION SQLQuery( cQuery )
+
+   LOCAL oQuery := s_oServer:Query( cQuery )
+
+   IF oQuery:NetErr()
+      Alert( cQuery + ":" + oQuery:ErrorMsg() )
+   ENDIF
+
+   RETURN oQuery
+
+
+FUNCTION SQLExecQuery( cQuery )
+
+   LOCAL oQuery
+   LOCAL result := .T.
+
+   oQuery := s_oServer:Query( cQuery )
+   IF oQuery:NetErr()
+      Alert( "Cannot execute " + cQuery + ":" + oQuery:ErrorMsg() )
+
+      result := .F.
+   ELSE
+      oQuery:Destroy()
+   ENDIF
+
+   RETURN result
+
+
+FUNCTION SQLPrepare( cQuery, ... )
+
+   LOCAL i, x
+
+   IF PCount() &gt;= 2
+      /* Limpa espacos desnecessarios */
+      DO WHILE At( Space( 2 ), cQuery ) != 0
+         cQuery := StrTran( cQuery, Space( 2 ), Space( 1 ) )
+      ENDDO
+
+      /* Coloca {} nos parametros */
+      FOR i := 1 TO PCount() - 1
+         IF ! Empty( x := At( ":" + hb_ntos( i ), cQuery ) )
+            cQuery := Stuff( cQuery, x, 0, "{" )
+            cQuery := Stuff( cQuery, x + Len( hb_ntos( i ) ) + 2, 0, "}" )
+         ENDIF
+      NEXT
+
+      /* Substitui parametros por valores passados */
+      FOR i := 2 TO PCount()
+         x := hb_PValue( i )
+
+         IF x != NIL .AND. Empty( x )
+            x := "null"
+
+         ELSEIF HB_ISNUMERIC( x )
+            x := hb_ntos( x )
+
+         ELSEIF HB_ISDATE( x )
+            x := DToQ( x )
+
+         ELSEIF HB_ISLOGICAL( x )
+            x := iif( x, "'t'", "'f'" )
+
+         ELSEIF HB_ISSTRING( x )
+            x := SToQ( RTrim( x ) )
+
+         ELSE
+            x := "null"
+         ENDIF
+
+         cQuery := StrTran( cQuery, "{:" + hb_ntos( i - 1 ) + "}", x )
+      NEXT
+   ENDIF
+
+   cQuery := StrTran( cQuery, "==", "=" )
+   cQuery := StrTran( cQuery, "!=", "&lt;&gt;" )
+   cQuery := StrTran( cQuery, ".and.", "and" )
+   cQuery := StrTran( cQuery, ".or.", "or" )
+   cQuery := StrTran( cQuery, ".not.", "not" )
+
+   RETURN cQuery
+
+
+
+FUNCTION SQLSequence( Sequence_name )
+   RETURN Val( QuickQuery( "SELECT nextval(" + SToQ( sequence_name ) + ")" ) )
+
+
+PROCEDURE SQLStartTrans()
+
+   IF PQtransactionStatus( s_oServer:pDB ) != PQTRANS_INTRANS
+      s_oServer:StartTransaction()
+   ENDIF
+
+   RETURN
+
+
+FUNCTION SQLInTrans()
+   RETURN PQtransactionStatus( s_oServer:pDB ) == PQTRANS_INTRANS
+
+
+PROCEDURE SQLCommitTrans()
+
+   s_oServer:Commit()
+
+   RETURN
+
+
+PROCEDURE SQLRollbackTrans()
+
+   s_oServer:rollback()
+
+   RETURN
+
+
+FUNCTION QuickQuery( cQuery )
+
+   LOCAL pQuery
+   LOCAL result := ""
+   LOCAL temp, aTemp
+   LOCAL x, y
+
+   pQuery := PQexec( s_oServer:pDB, cQuery )
+
+   IF PQresultStatus( pQuery ) == PGRES_TUPLES_OK
+      IF PQlastrec( pQuery ) != 0
+         IF PQfcount( pQuery ) == 1 .AND. PQlastrec( pQuery ) == 1
+            temp := PQgetvalue( pQuery, 1, 1 )
+            result := iif( temp == NIL, "", temp )
+         ELSE
+            result := {}
+            FOR x := 1 TO PQlastrec( pQuery )
+               aTemp := {}
+               FOR y := 1 TO PQfcount( pQuery )
+                  temp := PQgetvalue( pQuery, x, y )
+                  AAdd( aTemp, iif( temp == NIL, "", temp ) )
+               NEXT
+               AAdd( result, aTemp )
+            NEXT
+         ENDIF
+      ENDIF
+   ENDIF
+
+   RETURN result
+
+
+PROCEDURE MakeDBF( cAlias, aStructure, aIndex )
+
+   LOCAL cFile, i, cIndex, cKey
+
+   hb_default( @aIndex, {} )
+
+   cFile := TempFile()
+   dbCreate( cFile, aStructure )
+
+   
+   dbUseArea( .T., NIL, cFile, cAlias, .F. )
+
+   FOR i := 1 TO Len( aIndex )
+      cKey := aIndex[ i ]
+      cIndex := TempFile()
+
+      INDEX ON &amp;cKey TO ( cIndex )
+
+      AAdd( s_aTempDBF, cIndex )
+   NEXT
+
+   AAdd( s_aTempDBF, cFile )
+
+   RETURN</code></pre></div><br>
+Fafi</div>
+    </div>
+  </div>
+  <div class="post" id="p202171">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Mon May 29, 2017 08:32 AM
+      </div>
+      <div class="content">This is how I implemented<br>
+<br>
+Instead of copying into array and then browsing,  i am able to browse the Query directly. We can also edit data inline and save.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+REQUEST DBFCDX
+
+static cPassword := &lt;yourpassword&gt;
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oServer, cSql, oQry
+   local aStates, n, a
+
+   oServer   := TPQServer():New( "localhost", "fwh", "postgres", cPassword )
+   if oServer:NetErr()
+      ? oServer:ErrorMsg()
+      QUIT
+   endif
+   ? "connected"
+
+   ? "import customer"
+   if oServer:TableExists( "customer" )
+      PQExec( oserver:pdb, "DROP TABLE customer" )
+   endif
+   ? PG_ImportFromDBF( oServer, "c:\fwh\samples\customer.dbf" )
+   ? oserver:tableexists( "customer" )
+
+   oQry  := oServer:Query( "select * from customer order by recno" )
+   oQry:SetKey()
+   xbrowser oQry:aKeys
+   ? oqry:nlastrec
+   ? "Browse"
+   BrowsePG( oQry )
+
+   oServer:Destroy()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function BrowsePG( oQry )
+
+   local oWnd, oBrw, oFont
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-14
+   DEFINE WINDOW oWnd
+   oWnd:SetFont( oFont )
+
+   @ 0,0 XBROWSE oBrw OF oWnd CELL LINES NOBORDER FASTEDIT
+
+   SetXbrPG( oBrw, oQry )
+
+   WITH OBJECT oBrw
+      :nEditTypes    := EDIT_GET
+      :CreateFromCode()
+   END
+
+   oWnd:oClient := oBrw
+
+   oWnd:nWidth    := 800
+   oWnd:nHeight   := 600
+
+   ACTIVATE WINDOW oWnd CENTERED
+   RELEASE FONT oFont
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function SetXbrPG( oBrw, oQry )
+
+   local oCol, n
+
+   WITH OBJECT oBrw
+      :oDbf          := oQry
+      :bGoTop        := {|| oBrw:oDbf:GoTo( 1 ) }
+      :bGoBottom     := {|| oBrw:oDbf:GoTo( oBrw:oDbf:nLastRec ) }
+      :bSkip         := {| n | If( oBrw:oDbf:Skip( @n ), n, 0 ) }
+      :bBof          := {|| oBrw:oDbf:Bof() }
+      :bEof          := {|| oBrw:oDbf:Eof() }
+      :bBookMark     := { |u| If( PCount() == 0, oBrw:oDbf:RecNo(), oBrw:oDbf:GoTo( u ) ) }
+      :bKeyNo        := { |n| If( n == nil, oBrw:oDbf:RecNo(), oBrw:oDbf:GoTo( n ) ) }
+      :bKeyCount     := { || oBrw:oDbf:nLastRec }
+      :nDataType     := DATATYPE_ODBF
+      :bOnRowLeave   := { || nil }
+   END
+
+   for n := 1 to oQry:FCount()
+      WITH OBJECT oBrw:AddCol()
+         :Cargo        := n
+
+         :cHeader       := oQry:FieldName( n )
+         :cExpr         := oQry:FieldName( n )
+         :bOnPostEdit   := { |o,x,n| If( n == VK_ESCAPE,, PGSaveData( o, x ) ) }
+         :cDataType     := oQry:FieldType( n )
+         :nDataLen      := oQry:FieldLen( n )
+         :nDataDec      := oQry:FieldDec( n )
+         if :cDataType == 'C'
+            :bEditValue    := { |x,o| PadR( oQry:FieldGet( o:Cargo ), o:nDataLen ) }
+         else
+            :bEditValue    := { |x,o| oQry:FieldGet( o:Cargo ) }
+         endif
+         :bClrEdit      := { || { CLR_BLACK, CLR_YELLOW } }
+      END
+   next
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function PGSaveData( oCol, xValue )
+
+   local oBrw     := oCol:oBrw
+   local oQry     := oBrw:oDbf
+   local cWhere, cSql, u, nRec
+
+   if ValType( xValue ) == 'C'
+      xValue   := RTrim( xValue )
+   endif
+
+   u           := oQry:FieldGet( oQry:FieldPos( oQry:aKeys[ 1 ] ) )
+   cWhere      := oQry:aKeys[ 1 ] + " = " + FW_ValToSQL( u )
+   cSql        := "UPDATE " + oQry:TableName + " SET " + oQry:FieldName( oCol:Cargo )
+   cSql        += " = " + FW_ValToSQL( xValue )
+   cSql        += " WHERE " + cWhere
+
+   u           := PQExec( oQry:pDB, cSql )
+   u           := nil
+   nRec        := oQry:RecNo()
+   oQry:Refresh()
+   oQry:GoTo( nRec )
+   oBrw:Refresh()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function PG_ImportFromDBF( oCn, cDbf, cTable )
+
+   local cSql, res
+
+   DEFAULT cTable    := cFileNoExt( cDBF )
+   cTable            := Lower( cTable )
+
+   if oCn:TableExists( cTable )
+      return .f.
+   endif
+
+   USE ( cDbf ) NEW SHARED READONLY ALIAS SRC
+   if !USED()
+      return .f.
+   endif
+
+   cSql     := PG_CreateTableSQL( cTable, SRC-&gt;( DBSTRUCT() ) )
+   res      := PQExec( oCn:pDB, cSql )
+   res      := nil
+
+   SRC-&gt;( PG_AppendFromAlias( oCn, cTable ) )
+   CLOSE SRC
+
+return .T.
+
+//----------------------------------------------------------------------------//
+
+function PG_CreateTableSQL( cTable, aStruct )
+
+   local cSql, aCol
+
+   if AScan( aStruct, { |a| a[ 2 ] == '+' } ) == 0
+      AIns( aStruct, 1, { "recno", '+', 6, 0 }, .t. )
+   endif
+
+   cSql  := "CREATE TABLE " + Lower( cTable ) + " (" + CRLF
+   for each aCol in aStruct
+      cSql  += aCol[ 1 ] + " "
+      cSql  += HB_DeCode( aCol[ 2 ], "+", "SERIAL PRIMARY KEY", "C", "VARCHAR(", "D", "DATE", "L", "BOOLEAN", "M", "TEXT", ;
+               "N", "NUMERIC(", "T", "TIMESTAMP", "=", "TIMESTAMP" )
+      if aCol[ 2 ] $ "CN"
+         cSql  += cValToChar( aCol[ 3 ] )
+         if aCol[ 2 ] == "N" .and. aCol[ 4 ] &gt; 0
+            cSql  += "," + cValToChar( aCol[ 4 ] )
+         endif
+         cSql  += ")"
+      endif
+      cSql  += "," + CRLF
+   next
+   cSql  := Left( cSql, Len( cSql ) - 3 )
+   cSql  += " )"
+
+return cSql
+
+//----------------------------------------------------------------------------//
+
+function PG_AppendFromAlias( oCn, cTable )
+
+   local nBatchSize     := 100
+   local aCols          := ArrTranspose( DBSTRUCT() )[ 1 ]
+   local n, u, bLine, cLine, cCols
+   local cSql
+
+   bLine    := ""
+   for n := 1 to Len( aCols )
+      if n &gt; 1
+         bLine    += ","
+      endif
+      if FIELDTYPE( n ) == 'C'
+         bLine    += "TRIM(" + aCols[ n ] + ")"
+      else
+         bLine    += aCols[ n ]
+      endif
+   next
+   bLine    := &amp;( "{ || { " + bLine + " } }" )
+   cCols    := FW_ArrayAsList( aCols )
+
+   n     := 0
+   do while !Eof()
+      cLine    := PG_ValToSQL( Eval( bLine ) )
+      if Empty( cSql )
+         cSql  := "INSERT INTO " + cTable + " (" + cCols + ") VALUES "
+      else
+         cSql  += ", "
+      endif
+      cSql     += cLine
+      n++
+      if n &gt;= nBatchSize
+         u  := PQExec( oCn:pDB, cSql )
+         cSql  := nil
+         n     := 0
+      endif
+      DBSKIP( 1 )
+   enddo
+   if ! Empty( cSql )
+      u  := PQExec( oCn:pDB, cSql )
+      cSql  := nil
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function PG_ValToSQL( uVal )
+
+   local cVal
+
+   if ValType( uVal ) == 'A'
+      AEval( uVal, { |u,i| uVal[ i ] := PG_ValToSql( u ) } )
+      cVal  := FW_ArrayAsList( uVal )
+      cVal  := "( " + cVal + " )"
+      return cVal
+
+   elseif ValType( uVal ) == 'L'
+      return If( uVal, "TRUE", "FALSE" )
+   endif
+
+return FW_ValToSQL( uVal )
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+Thinking to provide support in XBrowse for this.</div>
+    </div>
+  </div>
+  <div class="post" id="p202226">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Tue May 30, 2017 09:32 AM
+      </div>
+      <div class="content"><p>Now FWH 17.05 revised build provides support for hbpglib's query object.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p202309">
+    <div class="poster">
+      <div class="name" style="color:#105289">fafi</div>
+      <div class="rank">Posts: 169</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 25, 2008 02:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Wed May 31, 2017 11:09 PM
+      </div>
+      <div class="content"><blockquote><cite>nageswaragunupudi wrote:</cite>Now FWH 17.05 revised build provides support for hbpglib's query object.</blockquote> <br>
+<br>
+<br>
+   you are the master of SQL Databases :<br>
+<br>
+ Now I'm going to test  \harbour-core-master\contrib\hbsqlit3<br>
+<br>
+Regards<br>
+Fafi</div>
+    </div>
+  </div>
+  <div class="post" id="p209243">
+    <div class="poster">
+      <div class="name" style="color:#105289">giuliano</div>
+      <div class="rank">Posts: 50</div>
+      <div class="avatar"></div>
+      Joined: Mon Sep 25, 2006 08:38 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Sun Jan 21, 2018 10:19 AM
+      </div>
+      <div class="content"><p>Hi.<br>
+Where can I find a list of all the functions inside the lib ?<br>
+Thanks a lot</p></div>
+    </div>
+  </div>
+  <div class="post" id="p209251">
+    <div class="poster">
+      <div class="name" style="color:#105289">fafi</div>
+      <div class="rank">Posts: 169</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 25, 2008 02:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Sun Jan 21, 2018 08:14 PM
+      </div>
+      <div class="content"><blockquote><cite>giuliano wrote:</cite>Hi.<br>
+Where can I find a list of all the functions inside the lib ?<br>
+Thanks a lot</blockquote><br>
+Look at the<br>
+1. postgres.c<br>
+2. tpostgre.prg<br>
+in your D:\harbour\core-master\contrib\hbpgsql\<br>
+<br>
+.or.<br>
+<!-- m --><a class="postlink" href="http://postgres-xc.sourceforge.net/docs/1_0/libpq.html">http://postgres-xc.sourceforge.net/docs/1_0/libpq.html</a><!-- m --><br>
+<br>
+regards<br>
+fafi</div>
+    </div>
+  </div>
+  <div class="post" id="p225507">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Thu Sep 05, 2019 05:17 PM
+      </div>
+      <div class="content">hi,<br>
+<blockquote><cite>fafi wrote:</cite><blockquote><cite>giuliano wrote:</cite>Hi.<br>
+Where can I find a list of all the functions inside the lib ?<br>
+Thanks a lot</blockquote><br>
+Look at the<br>
+1. postgres.c<br>
+2. tpostgre.prg<br>
+in your D:\harbour\core-master\contrib\hbpgsql\<br>
+<br>
+.or.<br>
+<!-- m --><a class="postlink" href="http://postgres-xc.sourceforge.net/docs/1_0/libpq.html">http://postgres-xc.sourceforge.net/docs/1_0/libpq.html</a><!-- m --><br>
+</blockquote>i found a MakeLib.BAT but it is for BCC so it is 32 Bit.<br>
+how to make a 64 Bit hbpgsql-64  </div>
+    </div>
+  </div>
+  <div class="post" id="p225514">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Fri Sep 06, 2019 07:40 AM
+      </div>
+      <div class="content"><p>Jimmy,</p>
+<p>What 64 bits C compiler are you using ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p225516">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Fri Sep 06, 2019 08:32 AM
+      </div>
+      <div class="content"><!-- l -->
+<p><a class="postlink-local" href="http://forums.fivetechsupport.com/viewtopic.php?p=225515#p225515">viewtopic.php?p=225515#p225515</a></p>
+<!-- l --></div>
+    </div>
+  </div>
+  <div class="post" id="p225528">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Sat Sep 07, 2019 10:08 AM
+      </div>
+      <div class="content">thx for Answer<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">@echo off
+rem set Environment to 64 Bit Version
+
+SET HMGPATH=%~dp0%
+SET HMGPATH1=%HMGPATH:~0,-13%
+SET PATH=C:\hmg.3.4.4\HARBOUR-64\bin;C:\hmg.3.4.4\MinGW-64\bin;%PATH%
+
+rem by Antonio
+rem using my PG v9.5 64 Bit in D:\PG
+
+c:\hmg.3.4.4\MinGW-64\bin\gcc.exe -c postgres.c -Ic:\hmg.3.4.4\HARBOUR-64\include -Id:\PG\include\
+c:\hmg.3.4.4\MinGW-64\bin\gcc.exe -c rddcopy.c -Ic:\hmg.3.4.4\HARBOUR-64\include -Id:\PG\include\</code></pre></div>now i got<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">postgres.o 
+rddcopy.o</code></pre></div>but how to made LibLibpQ-64.a from Object   <br>
+what about CLASS TPQServer in tpostgre.prg   <br>
+<br>
+thx for help</div>
+    </div>
+  </div>
+  <div class="post" id="p225538">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Sun Sep 08, 2019 05:33 AM
+      </div>
+      <div class="content">hi,<br>
+<br>
+have try<br>
+c:\hmg.3.4.4\HARBOUR-64\contrib\hbpgsql&gt;<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">hbmk2.exe postgres.c rddcopy.c tpostgre.c -Id:\PG\include\ -Ld:\ALASKA\_hrb_dev\HB3\64BIT\LIB -llibpq</code></pre></div><br>
+<br>
+File d:\ALASKA\_hrb_dev\HB3\64BIT\LIB\libpq.LIB ist Original from 64 PG-Server v9.5 so no Error ...<br>
+<br>
+but i got postgres.EXE     and not a LIB like using TLIB<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">  %MG_BCC%\bin\tlib %MV_BUILD%\hbpgsql.lib +postgres.obj +rddcopy.obj +tpostgre.obj</code></pre></div>never less EXE does not run and say MSVCR120.DLL missing ... it is in \SysWow64 (32 Bit)<br>
+<br>
+so what to use instead of TLIB when using MING64  </div>
+    </div>
+  </div>
+  <div class="post" id="p225539">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Sun Sep 08, 2019 06:04 AM
+      </div>
+      <div class="content"><p>c:\gcc81w64\bin\ar rc .\liblibpQ-64.a module.o<br>
+etc...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p225548">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: PostgresSQL from core-master\contrib\hbpgsql</span><br>
+        Posted: Sun Sep 08, 2019 11:52 PM
+      </div>
+      <div class="content">hi Antonio,<br>
+<br>
+<blockquote><cite>Antonio Linares wrote:</cite>c:\gcc81w64\bin\ar rc .\liblibpQ-64.a module.o<br>
+etc...</blockquote><br>
+THX again for help.<br>
+<br>
+i have try this Syntax and got liblibpQ-64.a ... but still PQ* Error when try  with*.HBC<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">libpaths=c:\hmg.3.4.4\LIB-64
+libs=Libpq-64
+mt=yes</code></pre></div><br>
+<br>
+this is what i did<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">c:\hmg.3.4.4\MinGW-64\bin\ar rc .\liblibpQ-64.a postgres.o rddcopy.o tpostgre.o d:\ALASKA\_hrb_dev\HB3\64BIT\LIB\libpq.LIB
+
+or
+
+c:\hmg.3.4.4\HARBOUR-64\bin\hbmk2.exe -oLibpq-64 -hblib -Id:\PG\include\ -Ld:\ALASKA\_hrb_dev\HB3\64BIT\LIB -llibpq postgres.c rddcopy.c tpostgre.c</code></pre></div><br>
+<br>
+---<br>
+<br>
+i have made a Demo with  Main() and link it to EXE<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">harbour.exe TEST.prg -n -w -es2 -gc0 -ic:\hmg.3.4.4\include
+hbmk2.exe Test.c postgres.c rddcopy.c tpostgre.c -Id:\PG\include\ -Ld:\ALASKA\_hrb_dev\HB3\64BIT\LIB -llibpq</code></pre></div>that EXE work with 64 Bit PG DLL   <br>
+<br>
+so i do not understand why LIB give PQ* Error while i have include 64 Bit LibPQ.LIB in all sample.<br>
+need more help please.</div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-34118-page-2.html">2</a> (29 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

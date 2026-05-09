@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Twain with TScan - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-24173">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Twain with TScan</div>
+  <div class="post" id="p130349">
+    <div class="poster">
+      <div class="name" style="color:#105289">byron.hopp</div>
+      <div class="rank">Posts: 408</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 06, 2005 03:55 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Twain with TScan</span><br>
+        Posted: Tue May 29, 2012 05:23 PM
+      </div>
+      <div class="content"><p>Anybody had the need to utilize the Automatic Border Detection, or Automatic DeSkew when utilizing the Twain interface.  I believe my scanner is capable but I cannot find a way to set this up with the TScan32 class.<br>
+I also have found that the oScan:SetContrats(nMyValue), and oScan:SetBright(nMyOtherValue) seems to have no effect on the end result no matter what value passed, but in the program that comes with the scanner it greatly effects the image.</p>
+<p>Thanks, </p>
+<p>Byron ...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p130372">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Twain with TScan</span><br>
+        Posted: Tue May 29, 2012 10:55 PM
+      </div>
+      <div class="content">Byron;<br>
+<br>
+Hi.  Last I checked you had to purchase the professional Eztwain32 version in order to get the autocrop functions.  I have some home-grown code that seems to be working, but I haven't test it well enough.  Maybe you can test it, fix or enhance it and return the improvements?<br>
+<br>
+The code below uses Tscan32 from Rafa.  It scans and optionally auto-crops the image.  It works well to scan a driver's license.  Please send me back any fixes.  <br>
+<br>
+Thank you,<br>
+<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//------------------------------------------------------------------------------
+FUNCTION scanning_x( oBmp, lAutoCrop, cFileOrg )
+   LOCAL cFileDes := temp_name( "jpg" )
+   LOCAL oScan
+   LOCAL lResult := .F.
+   LOCAL aCoor
+
+    DEFAULT cFileOrg := temp_name( "jpg" )
+   DEFAULT lAutoCrop := .T.
+
+   TRY
+
+      oScan := TScan32():New( cFileOrg )
+
+      IF !oScan:lError
+
+         oScan:SetHide( lAutoCrop )
+         oScan:Acquire()
+         oScan:DibToJpeg( cFileOrg )
+
+         IF lAutoCrop .and. !EMPTY( oScan:hDib )
+            aCoor := getCropArea( cFileOrg ) //nTop, nBottom, nLeft, nRight
+
+            IF aCoor[1] = aCoor[3]
+               lResult := .F.
+            ELSE
+               cropImage( cFileOrg, aCoor[3], aCoor[1], aCoor[4], aCoor[2], cFileDes )
+               oBmp:LoadBmp( cFileDes )
+               oBmp:Refresh()
+               lResult := .T.
+            ENDIF
+         ELSEIF !EMPTY( oScan:hDib )
+            oBmp:LoadBmp( cFileOrg )
+            oBmp:Refresh()
+            lResult := .T.
+         ENDIF
+
+      ENDIF
+
+   CATCH
+
+      MsgStop( "Scanner not responding" )
+      cFileDes := ""
+      lResult := .F.
+
+   FINALLY 
+
+      oScan:End()
+
+   END
+
+RETURN iif( lResult, cFileDes, "" )
+
+//------------------------------------------------------------------------------
+FUNCTION getCropArea( cNameIn )
+   LOCAL hBmp   := FiLoadImg( cNameIn ) //oImage:hBitmap
+   LOCAL hDc    := GetDc(hBmp)
+   local hDCMem := CreateCompatibleDC( hDC )
+   local hOldBmp:= SelectObject( hDCMem, hBmp )
+   local nX     := nBmpWidth( hBmp ) //oImage:nWidth
+   local nY     := nBmpHeight( hBmp ) //oImage:nHeight
+   local x, y, p, n
+   local nTop, nLeft, nRight, nBottom
+
+   local maxX   := 10 //nX / 10 // 10%
+   local maxY   := 10 //nY / 10  // 10%
+   local nBlank
+   local nStep := 5
+
+   nBlank := getBackGround( hDcMem, nX, nY )
+
+   // TOP
+   y := 20 //0
+   DO WHILE y &lt;= nY - 1
+       n := 0
+       FOR x := 0 TO nX - 10 STEP nStep
+           p := GetPixel(hDcMem, x, y)
+           IF( p &lt; nBlank, n++, )
+       NEXT
+       IF n  &gt; maxX
+          nTop := y
+          y := nY
+       ENDIF
+       y++
+   ENDDO
+
+   IF y = nY
+      MSGALERT( 'No information' )
+      RETURN {0,0,0,0}
+   ENDIF
+
+   // BOTTOM
+   y :=  nY - 20 //nY   - 1
+   DO WHILE y &gt;= 0
+       n := 0
+       FOR x := 0 TO nX - 10  STEP nStep
+           p := GetPixel(hDcMem, x, y)
+           IF( p &lt; nBlank, n++, )
+       NEXT
+       IF n  &gt; maxX
+          nBottom := y
+          y := 0
+       ENDIF
+       y--
+   ENDDO
+
+   // LEFT
+   x := 20 //0
+   DO WHILE x &lt;= nX - 1
+       n := 0
+       FOR y := 0 TO nY - 10  STEP nStep
+           p := GetPixel(hDcMem, x, y)
+           IF( p &lt; nBlank, n++, )
+       NEXT
+       IF n  &gt; maxY
+          nLeft := x
+          x := nX
+       ENDIF
+       x++
+   ENDDO
+
+   // RIGHT
+   x := nX - 10 //nX - 1
+   DO WHILE x &gt;= 0
+       n := 0
+       FOR y := 0 TO nY - 10   STEP nStep
+           p := GetPixel(hDcMem, x, y)
+           IF( p &lt; nBlank, n++, )
+       NEXT
+       IF n  &gt; maxY
+          nRight := x
+          x := 0
+       ENDIF
+       x--
+   ENDDO
+
+   /*
+   oImage:line( nTop, nLeft, nTop, nRight )
+   oImage:line( nTop, nRight, nBottom, nRight )
+   oImage:line( nBottom, nRight, nBottom, nLeft )
+   oImage:line( nBottom, nLeft, nTop, nLeft )
+   */
+
+   SelectObject( hDCMem, hOldBmp )
+   DeleteDC( hDCMem )
+
+return  { nTop - 10 , nBottom + 10, nLeft - 10, nRight + 10 }
+
+// Finds background color to be compared with scanning area
+//------------------------------------------------------------------------------
+STATIC FUNCTION getBackGround( hDcMem, nX, nY )
+LOCAL x,y,n, al := {} , nStep := 4
+
+n := 0
+FOR y :=  20 TO nY -20  STEP nStep
+    n += GetPixel(hDcMem, 20, y)
+NEXT
+AADD( al, INT(n / ( nY / nStep ) ) )
+
+n := 0
+FOR y := 20 TO nY -20  STEP nStep
+    n += GetPixel(hDcMem, nX-20, y)
+NEXT
+AADD(al,  INT(n / ( nY / nStep ) ) )
+
+n := 0
+FOR x := 20 TO nX -20  STEP nStep
+    n += GetPixel(hDcMem, x, 20)
+NEXT
+AADD( al, INT(n / ( nX / nSTep ) ) )
+
+n := 0
+FOR x := 20 TO nX -20  STEP nStep
+    n += GetPixel(hDcMem, x, nY-20)
+NEXT
+AADD( al, INT(n / ( nX / nStep ) ) )
+
+al := ASORT( al )
+
+RETURN INT( al[4] * .95 )
+
+
+FUNCTION cropImage( cSrcFile, nLeft, nTop, nRight, nBottom ,cDstFile )
+
+   hLib = LOADLIB32( "freeimage.dll" )
+
+//nSrcFormat = FIGETFILETYPE( cSrcFile, 0 )
+//hDib = FILOAD( nSrcFormat, cSrcFile, )
+//hDib2 = FICOPY( hDib, nLeft, nTop, nRight, nBottom  )
+//FISAVE( nSrcFormat, hDib2, cDstFile, 0 )
+
+   FI_JPGCROP( cSrcFile, cDstFile, nLeft, nTop, nRight, nBottom )
+
+   FREELIBRARY( hLib )
+
+return Nil
+
+DLL32 STATIC FUNCTION FICOPY( hDib AS LONG, nLeft AS LONG, nTop AS LONG,nRight AS LONG,nBottom AS LONG ) AS LONG;
+PASCAL FROM "_FreeImage_Copy@20" LIB hLib
+
+DLL32 STATIC FUNCTION FISAVE( nFormat AS LONG, hDib AS LONG, cFileName AS LPSTR, nFlags AS LONG ) AS BOOL;
+PASCAL FROM "_FreeImage_Save@16" LIB hLib
+
+DLL32 FUNCTION FI_JpgCrop( cSource AS LPSTR, ;
+                     cDest AS LPSTR, ;
+                     nLeft AS LONG, ;
+                     nTop AS LONG, ;
+                     nRight AS LONG, ;
+                     nBottom AS LONG ) AS BOOL ;
+PASCAL FROM "_FreeImage_JPEGCrop@24" LIB hLib
+
+DLL32 STATIC FUNCTION FIGETFILETYPE( cFileName AS LPSTR, nSize AS LONG )AS LONG;
+PASCAL FROM "_FreeImage_GetFileType@8" LIB hLib
+
+DLL32 STATIC FUNCTION FILOAD( nFormat AS LONG, cFileName AS LPSTR,nFlags AS LONG ) AS LONG;
+PASCAL FROM "_FreeImage_Load@12" LIB hLib</code></pre></div><br>
+<br>
+Reinaldo.</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

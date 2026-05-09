@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Retorno de chamada DLL - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-37803">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Retorno de chamada DLL</div>
+  <div class="post" id="p225999">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ari</div>
+      <div class="rank">Posts: 253</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 03, 2006 04:21 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Retorno de chamada DLL</span><br>
+        Posted: Tue Sep 24, 2019 01:40 PM
+      </div>
+      <div class="content">Querido<br>
+<br>
+Estoy creando llamadas a funciones mysql mediante el comando:<br>
+<br>
+<em> (Tengo otras razones importantes para hacerlo, sé sobre TDolphin, pero no puedo usarlo). </em><br>
+<br>
+<strong> Estos a continuación están funcionando bien. </strong><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">* =============================================================================
+DLL FUNCTION mysql_init( mysql AS LONG ) AS LONG PASCAL   FROM "mysql_init"   LIB hLibMySQL // ok
+* =============================================================================
+
+DLL FUNCTION mysql_real_connect( mysql       AS LONG   ,;
+                                 host        AS LPSTR  ,;
+                                 user        AS LPSTR  ,;
+                                 passwd      AS LPSTR  ,;
+                                 db          AS LPSTR  ,;
+                                 port        AS _INT   ,;
+                                 unix_socket AS _INT   ,;[b][/b]
+                                 client_flag AS _INT  ) AS BOOL PASCAL        ;
+    FROM "mysql_real_connect"                                     LIB hLibMySQL // ok
+* =============================================================================
+
+DLL FUNCTION mysql_query( mysql AS LONG, cQuery AS LPSTR ) AS _INT PASCAL   FROM "mysql_query"   LIB hLibMySQL // ok
+* =============================================================================</code></pre></div><br>
+<br>
+<strong> Estas otras funciones no funcionan generan GPF porque el tipo de retorno no es correcto: </strong><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">DLL FUNCTION mysql_fetch_row( mysql AS LONG ) AS LPSTR PASCAL                 ;
+    FROM "mysql_fetch_row"                                       LIB hLibMySQL // MYSQL_ROW
+* =============================================================================
+
+DLL FUNCTION mysql_list_dbs( mysql AS LONG, const AS LPSTR ) AS PTR PASCAL  ; 
+    FROM "mysql_list_dbs"                                         LIB hLibMySQL // MYSQL_RES
+
+DLL FUNCTION mysql_fetch_field( result AS LONG ) AS LPSTR PASCAL              ;
+    FROM "mysql_fetch_field"                                    LIB hLibMySQL // MYSQL_FIELD</code></pre></div><br>
+<br>
+<strong> en el comando return Tengo algunos tipos, los probé todos sin éxito </strong><br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#ifndef _C_TYPES
+   #define _C_TYPES
+   #define VOID     0
+   #define BYTE     1
+   #define CHAR     2
+   #define WORD     3
+   #define BOOL     5
+   #define HDC      6
+   #define LONG     7
+   #define _INT     7
+   #define STRING   8
+   #define LPSTR    9
+   #define PTR     10
+   #define _DOUBLE 11         // conflicts with BORDER DOUBLE
+   #define DWORD   12
+#endif</code></pre></div><br>
+<br>
+<strong>¿Quieres la ayuda de los maestros para resolver esto?</strong><br>
+<br>
+Ari<br>
+Brasil</div>
+    </div>
+  </div>
+  <div class="post" id="p226008">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">carlos vargas</div>
+      <div class="rank">Posts: 1789</div>
+      <img class="avatar avatar-img" src="avatars/110.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 11, 2005 05:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Retorno de chamada DLL</span><br>
+        Posted: Tue Sep 24, 2019 09:43 PM
+      </div>
+      <div class="content">de los ejemplos de mysql de mod_harbour<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "hbdyn.ch"
+#include "common.ch"
+
+#define MYSQL_CLIENTLIB "libmysql.dll"
+//#define MYSQL_CLIENTLIB "/usr/lib/x86_64-linux-gnu/libmysqlclient.so.20"
+
+#define CRLF hb_OsNewLine()
+
+STATIC pLib
+
+function Main()
+ local hMySql, hMyRes
+ local nErr, cErr
+ local nResStatus
+ local cSql
+ local nRows, nFields
+
+ cSql := "SELECT num_roc, fecha, cliente FROM roc"
+
+ setmode(25,80)
+ cls
+ 
+ hMySql := mysql_real_connect( "192.168.10.10", "myusuario", "myclave123", "mybasededatos", 3306, 0 )
+
+ ?"pLib =", pLib, MyType( pLib )
+ ?"hMySql =", hb_ntos( hMySql ), MyType( hMySql )
+
+ IF mysql_errno( hMySql ) ==  0
+
+  ?"Version: " + mysql_get_server_info( hMySql )
+  ?"Sql: " + cSql
+  
+  nResStatus := mysql_real_query( hMySql, cSql )
+  
+  IF nResStatus == 0
+   hMyRes := mysql_store_result( hMySql )
+   
+   ?"hMyRes= ", hb_ntos( hMyRes ), MyType( hMyRes )
+   
+   nRows := mysql_num_rows( hMyRes )
+   nFields := mysql_num_fields( hMyRes )
+   
+   ?"Rows: ", hb_ntos( nRows ), MyType( nRows )
+   ?"Fields: ", hb_ntos( nFields ), MyType( nFields )
+   
+   ?"-----------------------"
+   ?mysql_fetch_field( hMyRes )
+   
+  ELSE
+   ?"ErrNo: ", hb_ntos( mysql_errno( hMySql ) ), "Error: ", mysql_error( hMySql )   
+  ENDIF
+ 
+ ELSE
+    ?"ErrNo: ", hb_ntos( mysql_errno( hMySql ) ), "Error: ", mysql_error( hMySql )
+ ENDIF
+ 
+ mysql_close( hMySql )
+ 
+ hb_LibFree( pLib )
+ 
+return nil
+
+/*------------------------------------------------------------*/
+
+function MyType( v )
+return "[" + valtype( v ) + "]"
+
+/*------------------------------------------------------------*/
+
+function mysql_real_connect( cHost, cUser, cPass, cDatabase, nPort, nFlag )
+ local hMySql
+ 
+ pLib := hb_LibLoad( MYSQL_CLIENTLIB )
+ 
+ hMySql := hb_DynCall( { "mysql_init", pLib, HB_DYN_CALLCONV_CDECL }, NIL )
+ 
+ if !empty( hMySql )
+  hb_DynCall( { "mysql_real_connect", pLib, HB_DYN_CALLCONV_CDECL, ;
+              HB_DYN_CTYPE_LONG_UNSIGNED, ; /*MYSQL* connection handler*/
+              HB_DYN_CTYPE_CHAR_PTR     , ; /*const char *host*/
+              HB_DYN_CTYPE_CHAR_PTR     , ; /*const char *user*/
+              HB_DYN_CTYPE_CHAR_PTR     , ; /*const char *passwd*/
+              HB_DYN_CTYPE_CHAR_PTR     , ; /*const char *db*/
+              HB_DYN_CTYPE_LONG         , ; /*unsigned int port*/
+              HB_DYN_CTYPE_CHAR_PTR     , ; /*const char *unix_socket*/
+              HB_DYN_CTYPE_LONG }       , ; /*unsigned long client_flag*/
+              hMySql, cHost, cUser, cPass, cDatabase, nPort, NIL, nFlag )
+ endif
+
+return hMySql
+
+/*------------------------------------------------------------*/
+
+function mysql_close( hMySql )
+ 
+ if !empty( pLib )
+  hb_DynCall( { "mysql_close", pLib, HB_DYN_CALLCONV_CDECL, ;
+                                     HB_DYN_CTYPE_LONG_UNSIGNED }, hMySql )
+ endif
+ 
+return nil
+
+/*------------------------------------------------------------*/
+
+function mysql_errno( hMySql )
+ local nError := 0
+ 
+ if !empty( pLib )
+  nError := hb_DynCall( { "mysql_errno", pLib, HB_DYN_CALLCONV_CDECL, ;
+                                               HB_DYN_CTYPE_LONG_UNSIGNED }, hMySql )
+ endif
+ 
+return nError
+
+/*------------------------------------------------------------*/
+
+function mysql_error( hMySql )
+ local cError := ""
+ 
+ if !empty( pLib )
+  cError := hb_DynCall( { "mysql_error", pLib, hb_bitOr( HB_DYN_CTYPE_CHAR_PTR, HB_DYN_CALLCONV_CDECL ), ;
+                                               HB_DYN_CTYPE_LONG_UNSIGNED }, hMySql )
+ endif
+ 
+return cError
+
+/*------------------------------------------------------------*/
+
+function mysql_real_query( hMySql, cQuery )
+ local nRet
+ local nLen := len(cQuery)
+
+ if !empty( pLib )
+  nRet := hb_DynCall( { "mysql_real_query", pLib, HB_DYN_CALLCONV_CDECL, ;
+                         HB_DYN_CTYPE_LONG_UNSIGNED  , ; /*MYSQL *mysql*/
+                         HB_DYN_CTYPE_CHAR_PTR       , ; /*const char *stmt_str*/
+                         HB_DYN_CTYPE_LONG_UNSIGNED }, ; /*unsigned long length*/
+                         hMySql, cQuery, nLen )
+ endif
+ 
+return nRet
+
+/*------------------------------------------------------------*/
+
+function mysql_store_result( hMySql )
+ local hMyRes
+ 
+ if !empty( pLib )
+  hMyRes := hb_DynCall( { "mysql_store_result", pLib, HB_DYN_CALLCONV_CDECL, ;
+                                                      HB_DYN_CTYPE_LONG_UNSIGNED }, hMySql )
+ endif
+
+return hMyRes
+
+/*------------------------------------------------------------*/
+
+function mysql_free_result( hMyRes )
+ 
+ if !empty( pLib )
+  hb_DynCall( { "mysql_free_result", pLib, HB_DYN_CALLCONV_CDECL, ;
+                                           HB_DYN_CTYPE_LONG_UNSIGNED }, hMyRes )
+ endif
+ 
+return nil
+
+/*------------------------------------------------------------*/
+
+function mysql_get_server_info( hMySql )
+ local cVersion := ""
+ 
+ if !empty( pLib )
+  cVersion := hb_DynCall( { "mysql_get_server_info", pLib, hb_bitOr( HB_DYN_CTYPE_CHAR_PTR, HB_DYN_CALLCONV_CDECL ), ;
+                                                           HB_DYN_CTYPE_LONG_UNSIGNED }, hMySql )
+ endif
+ 
+return cVersion
+
+/*------------------------------------------------------------*/
+
+function mysql_num_rows( hMyRes )
+ local nRows := 0
+ 
+ if !empty( pLib ) .and. !empty( hMyRes )
+  nRows := hb_DynCall( { "mysql_num_rows", pLib, hb_bitOr( HB_DYN_CALLCONV_CDECL, HB_DYN_CTYPE_LLONG_UNSIGNED ), ;
+                                                 HB_DYN_CTYPE_LLONG_UNSIGNED }, hMyRes )
+ endif
+ 
+return nRows
+
+/*------------------------------------------------------------*/
+
+function mysql_num_fields( hMyRes )
+ local nFields := 0
+ 
+ if !empty( pLib ) .and. !empty( hMyRes )
+  nFields := hb_DynCall( { "mysql_num_fields", pLib, hb_bitOr( HB_DYN_CALLCONV_CDECL, HB_DYN_CTYPE_INT_UNSIGNED ), ;
+                                               HB_DYN_CTYPE_INT_UNSIGNED }, hMyRes )
+ endif
+ 
+return nFields
+
+/*------------------------------------------------------------*/
+
+function mysql_fetch_field( hMyRes )
+ local hField
+ 
+ if !empty( pLib ) .and. !empty( hMyRes )
+  hField := hb_DynCall( { "mysql_fetch_field", pLib, hb_bitor( HB_DYN_CALLCONV_CDECL, HB_DYN_CTYPE_VOID_PTR ), ;
+                                                     HB_DYN_CTYPE_LONG_UNSIGNED }, hMyRes )
+ endif
+ 
+return hField
+
+/*------------------------------------------------------------*/
+
+
+function My_FetchRow( hMyRes )
+ local hRow
+ 
+ if !empty( pLib ) .and. !empty( hMyRes )
+  hRow := hb_DynCall( { "mysql_fetch_row", pLib, HB_DYN_CALLCONV_CDECL, ;
+                                                 HB_DYN_CTYPE_LONG_UNSIGNED }, hMyRes )
+ endif
+ 
+return hRow
+
+/*------------------------------------------------------------*/
+#pragma BEGINDUMP
+
+#include "hbapi.h"
+
+HB_FUNC( PTRTOSTR )
+{
+   const char ** pStrs = (const char **) hb_parnll(1);
+   hb_retc( * ( pStrs + hb_parnl( 2 ) ) );
+}
+
+#pragma ENDDUMP</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p226019">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ari</div>
+      <div class="rank">Posts: 253</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 03, 2006 04:21 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Retorno de chamada DLL</span><br>
+        Posted: Wed Sep 25, 2019 12:00 PM
+      </div>
+      <div class="content"><p>Gracias.  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p226075">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ari</div>
+      <div class="rank">Posts: 253</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 03, 2006 04:21 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Retorno de chamada DLL</span><br>
+        Posted: Fri Sep 27, 2019 04:56 PM
+      </div>
+      <div class="content"><p>Carlos</p>
+<p>Primero, muchas gracias por la ayuda anterior, ahora necesito la función hb_dyncall (), uso xHarbour y no tengo esta función.</p>
+<p>Sabes dónde puedo encontrar, busqué en todas partes sin éxito.</p>
+<p>Gracias<br>
+Ari</p></div>
+    </div>
+  </div>
+  <div class="post" id="p226077">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">carlos vargas</div>
+      <div class="rank">Posts: 1789</div>
+      <img class="avatar avatar-img" src="avatars/110.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 11, 2005 05:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Retorno de chamada DLL</span><br>
+        Posted: Fri Sep 27, 2019 08:54 PM
+      </div>
+      <div class="content"><span style="color:#0040BF"><span style="font-size:150%"><strong>DllCall()</strong></span></span><br>
+<strong>Executes a function located in a dynamically loaded external library. </strong><br>
+Syntax<br>
+<blockquote><br>
+DllCall( &lt;cDllFile&gt;|&lt;nDllHandle&gt;, ;<br>
+         [&lt;nCallingConvention&gt;] , ;<br>
+         &lt;cFuncName&gt;|&lt;nOrdinal&gt; , ;<br>
+        [&lt;xParams,...&gt;]           ) --&gt; nResult<br>
+</blockquote><br>
+<strong>Arguments</strong><br>
+<em>&lt;cDllFile&gt;</em> <br>
+A character string holding the name of the DLL file where the function is located. This is an external DLL, not created by xHarbour. If a character string is passed for &lt;cDllFile&gt;, it must contain complete path information, unless the file is located in the current directory, or in the list of directories held in the SET PATH environment variable of the operating system. <br>
+<em>&lt;nDllHandle&gt; </em><br>
+Alternatively, the first parameter can be a numeric DLL handle as returned by function LoadLibrary(). <br>
+<em>&lt;nCallingConvention&gt; </em><br>
+The calling convention to use for the DLL function can optionally be specified. Constants are available for this parameter. Calling conventions Constant Value Description <br>
+DC_CALL_CDECL 0x0010 C calling convention (__cdecl) <br>
+DC_CALL_STD *) 0x0020 Standard convention for WinAPI (__stdcall) <br>
+*) default <br>
+<br>
+<em>&lt;cFuncName&gt; </em><br>
+This is a character string holding the symbolic name of the function to call. Unlike regular xHarbour functions, this function name is case sensitive. <br>
+&lt;nOrdinal&gt; <br>
+Instead of the symbolic function name, the numeric ordinal position of the function inside the DLL file can be passed. This is, however, not recommended, since ordinal positions of functions may change between DLL versions. <br>
+<em>&lt;xParams,...&gt; </em><br>
+The values of all following parameters specified in a comma separated list are passed on to the DLL function. Return<br>
+The function returns the result of the called DLL function as a numeric value. <br>
+<strong>Description</strong><br>
+Function DllCall() can be used to execute functions located in DLL files which are not created by the xHarbour compiler and linker. This allows for executing functions residing in system DLLs of the operating system or Third Party producers, for example. <br>
+<br>
+The DLL that contains a function is either specified by its numeric DLL handle, or by its symbolic file name. In the latter case, DllCall() loads the library, executes the function and frees the library when the function has returned. When a numeric DLL handle is specified, the DLL is already loaded by LoadLibrary(), and it remains loaded when the DLL function is complete. The DLL must then be released explicitely with FreeLibrary(). <br>
+When more than three parameters are specified, all &lt;xParams,...&gt; are passed on to the DLL function. However, since xHarbour has its own data types and more of them are available than in the C language, only values of a restricted number of data types can be passed. The values are converted to corresponding C data types. <br>
+<br>
+Data type conversion PRG level C level <br>
+Character *char <br>
+C structure *void <br>
+Date DWORD <br>
+Logical DWORD <br>
+NIL ( DWORD ) NULL <br>
+Numeric <br>
+- Integer DWORD <br>
+- Decimal number double <br>
+Pointer *void <br>
+<br>
+If other xHarbour data types are passed to DllCall(), a runtime error is generated. <br>
+Note:  many Windows API functions are available as a Unicode and an Ansi version. If this is the case, DllCall() uses the Ansi version of the WinAPI function. <br>
+<br>
+Example<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// The example outlines how a Windows API function can be wrapped
+// within an xHarbour function without reverting to xHarbour's
+// extend API. The GetVolumeInformation() wrapper obtains only
+// the volume name and serial number. Other information available
+// from the WinAPI function is ignored. Note that the "out"
+// parameters of the API must be passed by reference to DllCall().
+
+   #define DC_CALL_STD            0x0020
+   #define MAX_PATH                  260
+
+   PROCEDURE Main
+      LOCAL cDrive := "D:\"
+      LOCAL cVolName, cVolSerial
+
+      cVolName := GetVolumeInformation( cDrive, @cVolSerial )
+
+      ? cVolName                      // result: BACKUP
+
+      ? cVolSerial                    // result: 584C:2AE1
+   RETURN
+
+
+   FUNCTION GetVolumeInformation( cVolume, cSerial )
+      LOCAL cVolumeName := Replicate( Chr(0), MAX_PATH+1 )
+      LOCAL nNameSize   := Len( cVolumeName )
+      LOCAL nResult
+
+      cSerial := U2Bin(0)
+
+      nResult :=                    ;  // * C prototype *
+         DllCall(                   ;
+           "Kernel32.dll"         , ;  // DLL to call
+            DC_CALL_STD           , ;  // calling vonvention
+           "GetVolumeInformation" , ;  // BOOL GetVolumeInformation(
+            cVolume               , ;  //   LPCTSTR lpRootPathName ,
+           @cVolumeName           , ;  //   LPTSTR lpVolumeNameBuffer ,
+            nNameSize             , ;  //   DWORD nVolumeNameSize ,
+           @cSerial               , ;  //   LPDWORD lpVolumeSerialNumber ,
+            0                     , ;  //   LPDWORD lpMaximumComponentLength ,
+            0                     , ;  //   LPDWORD lpFileSystemFlags ,
+            0                     , ;  //   LPTSTR lpFileSystemNameBuffer ,
+            0                       )  //   DWORD nFileSystemNameSize )
+
+      // format serial number as FFFF:FFFF
+      cSerial := NumToHex( Bin2U(cSerial), 8 )
+      cSerial := Stuff( cSerial, 5, 0, ":" )
+
+   RETURN Left( cVolumeName, At( Chr(0), cVolumeName ) - 1 )</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

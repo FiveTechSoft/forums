@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Best Practices for modern Web/DBF integrations: Cloudflared, Mollie, MessageBird? - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46386">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-45.html">mod_harbour</a> Best Practices for modern Web/DBF integrations: Cloudflared, Mollie, MessageBird?</div>
+  <div class="post" id="p284272">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Best Practices for modern Web/DBF integrations: Cloudflared, Mollie, MessageBird?</span><br>
+        Posted: Sat Mar 07, 2026 08:53 AM
+      </div>
+      <div class="content"><r><p>Hello friends,</p><br>
+<br>
+<p>In our team, we are currently modernizing our Harbour/DBF backend to better integrate with the modern web (Omnichannel messaging &amp; seamless payments) while strictly keeping our DBFs and business logic safe and on-premise (GDPR compliance).</p><br>
+<br>
+<p>To avoid reinventing the wheel and writing dozens of custom API integrations, we are thinking about adopting a "standardized stack" of European API providers. The goal is to build our Harbour code against these APIs once, and ideally share our experiences (and code snippets) with the community.</p><br>
+<br>
+<p>This is the architecture we are currently planning to implement:</p><br>
+<br>
+<LIST type="decimal"><LI><s>1. </s><p>Security &amp; Webhooks -&gt; Cloudflared (Argo Tunnel) Instead of opening local ports on our routers to receive Webhooks from external APIs, our local Harbour server connects outbound to a Cloudflare Tunnel. This means our local DBFs are completely shielded from the public internet, but we can securely receive JSON Webhooks (e.g., from payment providers).</p></LI><br>
+<br>
+<LI><s>2. </s><p>Payment Gateway -&gt; Mollie Instead of touching credit card data (and dealing with PCI-DSS compliance), we want to use the Mollie API. We create a payment link in Harbour -&gt; send it to the guest -&gt; Mollie handles the rest (Credit Card, Apple Pay, SEPA) -&gt; Mollie sends a secure Webhook back through Cloudflared to our server, and Harbour updates the BELEGUNG.DBF to "PAID".</p></LI><br>
+<br>
+<LI><s>3. </s><p>Communication (WhatsApp/SMS) -&gt; MessageBird We are looking to use MessageBird (a European alternative to Twilio) to send automated pre-arrival WhatsApp messages or SMS directly from our Harbour logic. Incoming replies from guests trigger a Webhook that Harbour saves directly into the guest's HISTORY memo field.</p></LI><br>
+<br>
+<LI><s>4. </s><p>Transactional E-Mails -&gt; Brevo (formerly Sendinblue) Sending booking confirmations via REST API instead of dealing with complex SMTP setups in Harbour.</p></LI></LIST><br>
+<br>
+<p>My questions to the community:</p><br>
+<br>
+<p>Is anyone here already using Cloudflared tunnels to easily receive incoming Webhook-JSONs straight into a Harbour-compiled microservice?<br/><br>
+Has anyone already written integration classes for Mollie or MessageBird/Brevo in Harbour that they could share, or would you be interested in joining forces to build a stable class for these specific providers?<br/><br>
+I believe that if some of us agree on a shared stack of standard providers like these, we can save a tremendous amount of time maintaining different API endpoints.</p><br>
+<br>
+<p>Looking forward to your thoughts and experiences!</p><br>
+<br>
+<p>Best regards, Otto</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;//-- HARBOURINO INBOUND_WEBHOOK Start --//
+
+FUNCTION handle_inbound_msg( cJson, cRequestId )
+
+&lt;i&gt;    &lt;/i&gt;LOCAL hReq        := {=&gt;}
+&lt;i&gt;    &lt;/i&gt;LOCAL nDecoded    := 0
+&lt;i&gt;    &lt;/i&gt;LOCAL cResponse   := ""
+&lt;i&gt;    &lt;/i&gt;LOCAL cSource     := ""
+&lt;i&gt;    &lt;/i&gt;LOCAL cSender     := ""
+&lt;i&gt;    &lt;/i&gt;LOCAL cMessage    := ""
+&lt;i&gt;    &lt;/i&gt;LOCAL cReference  := ""
+&lt;i&gt;    &lt;/i&gt;LOCAL cStatus     := ""
+&lt;i&gt;    &lt;/i&gt;LOCAL hAuditRow   := {=&gt;}
+&lt;i&gt;    &lt;/i&gt;
+&lt;i&gt;    &lt;/i&gt;// --- Body prüfen ---
+&lt;i&gt;    &lt;/i&gt;nDecoded := hb_jsonDecode( cJson, @hReq )
+&lt;i&gt;    &lt;/i&gt;IF ValType( nDecoded ) != "N" .OR. nDecoded &lt;= 0
+&lt;i&gt;    &lt;/i&gt;    RETURN hb_jsonEncode({ "success" =&gt; .F., "error" =&gt; "Invalid Webhook JSON" })
+&lt;i&gt;    &lt;/i&gt;ENDIF
+
+&lt;i&gt;    &lt;/i&gt;// 1. Von wem kommt der Webhook? (MessageBird, Brevo oder Mollie)
+&lt;i&gt;    &lt;/i&gt;cSource := Upper( hb_HGetDef( hReq, "provider", "UNKNOWN" ) )
+
+&lt;i&gt;    &lt;/i&gt;// --- FALL A: EINE NACHRICHT (WhatsApp / SMS / Mail) ---
+&lt;i&gt;    &lt;/i&gt;IF cSource == "MESSAGEBIRD" .OR. cSource == "BREVO"
+&lt;i&gt;    &lt;/i&gt;    
+&lt;i&gt;    &lt;/i&gt;    // Die Nummer oder E-Mail des Gastes
+&lt;i&gt;    &lt;/i&gt;    cSender  := hb_HGetDef( hReq, "sender_address", "" ) 
+&lt;i&gt;    &lt;/i&gt;    // Der Text, den der Gast geschrieben hat
+&lt;i&gt;    &lt;/i&gt;    cMessage := hb_HGetDef( hReq, "message_text", "" )
+&lt;i&gt;    &lt;/i&gt;    
+&lt;i&gt;    &lt;/i&gt;    // OPTIONAL: Wenn wir direkt den Kunden finden wollen
+&lt;i&gt;    &lt;/i&gt;    // nKundenRecNo := FindCustomerByContact( cSender )
+&lt;i&gt;    &lt;/i&gt;    
+&lt;i&gt;    &lt;/i&gt;    // Neue Nachricht in die POSTEINGANG.DBF (oder AUDIT) speichern
+&lt;i&gt;    &lt;/i&gt;    USE ( "X:\xwhdaten\AUDIT\INBOX.DBF" ) NEW ALIAS INBOX SHARED
+&lt;i&gt;    &lt;/i&gt;    INBOX-&gt;( DbAppend() ) // Neue Zeile anhängen
+&lt;i&gt;    &lt;/i&gt;    
+&lt;i&gt;    &lt;/i&gt;    REPLACE INBOX-&gt;DATETIME WITH DToC(Date()) + " " + Time()
+&lt;i&gt;    &lt;/i&gt;    REPLACE INBOX-&gt;PROVIDER WITH cSource
+&lt;i&gt;    &lt;/i&gt;    REPLACE INBOX-&gt;SENDER   WITH cSender
+&lt;i&gt;    &lt;/i&gt;    REPLACE INBOX-&gt;MESSAGE  WITH Left(cMessage, 250) // Gekürzt auf DBF-Feldlänge
+&lt;i&gt;    &lt;/i&gt;    REPLACE INBOX-&gt;READ     WITH .F. // Ungelesen für die Rezeption!
+&lt;i&gt;    &lt;/i&gt;    
+&lt;i&gt;    &lt;/i&gt;    INBOX-&gt;( DbCommit() )
+&lt;i&gt;    &lt;/i&gt;    INBOX-&gt;( dbCloseArea() )
+&lt;i&gt;    &lt;/i&gt;    
+&lt;i&gt;    &lt;/i&gt;    // Antworte dem Provider sofort "OK", sonst schickt er das selbe Paket in 5 Min. nochmal!
+&lt;i&gt;    &lt;/i&gt;    RETURN hb_jsonEncode({ "success" =&gt; .T., "message" =&gt; "Inbox logged" })
+
+
+&lt;i&gt;    &lt;/i&gt;// --- FALL B: EINE ZAHLUNG (Mollie) ---
+&lt;i&gt;    &lt;/i&gt;ELSEIF cSource == "MOLLIE"
+&lt;i&gt;    &lt;/i&gt;    
+&lt;i&gt;    &lt;/i&gt;    // Mollie übergibt uns meistens eine eigene Referenz (z.B. deine Buchungsnummer)
+&lt;i&gt;    &lt;/i&gt;    cReference := hb_HGetDef( hReq, "booking_id", "" ) 
+&lt;i&gt;    &lt;/i&gt;    cStatus    := Upper( hb_HGetDef( hReq, "payment_status", "OPEN" ) )
+&lt;i&gt;    &lt;/i&gt;    
+&lt;i&gt;    &lt;/i&gt;    IF !Empty( cReference ) .AND. cStatus == "PAID"
+&lt;i&gt;    &lt;/i&gt;        // Buchung heraussuchen und als BEZAHLT markieren!
+&lt;i&gt;    &lt;/i&gt;        USE ( "X:\xwhdaten\DATAWIN\BELEGUNG.DBF" ) NEW ALIAS ZPLAN SHARED
+&lt;i&gt;    &lt;/i&gt;        SET ORDER TO TAG "BUCHUNGSNR"
+&lt;i&gt;    &lt;/i&gt;        
+&lt;i&gt;    &lt;/i&gt;        IF ZPLAN-&gt;( DbSeek( cReference ) )
+&lt;i&gt;    &lt;/i&gt;            IF ZPLAN-&gt;( RLock() )
+&lt;i&gt;    &lt;/i&gt;                REPLACE ZPLAN-&gt;FIXBUCHUNG WITH "BEZAHLT"
+&lt;i&gt;    &lt;/i&gt;                ZPLAN-&gt;( DbCommit() )
+&lt;i&gt;    &lt;/i&gt;                ZPLAN-&gt;( DbUnlock() )
+&lt;i&gt;    &lt;/i&gt;            ENDIF
+&lt;i&gt;    &lt;/i&gt;        ENDIF
+&lt;i&gt;    &lt;/i&gt;        ZPLAN-&gt;( dbCloseArea() )
+&lt;i&gt;    &lt;/i&gt;    ENDIF
+
+&lt;i&gt;    &lt;/i&gt;    RETURN hb_jsonEncode({ "success" =&gt; .T., "message" =&gt; "Payment processed" })
+
+&lt;i&gt;    &lt;/i&gt;ENDIF
+
+&lt;i&gt;    &lt;/i&gt;// Unbekannter Provider
+&lt;i&gt;    &lt;/i&gt;RETURN hb_jsonEncode({ "success" =&gt; .F., "error" =&gt; "Unknown Provider" })
+
+//-- HARBOURINO INBOUND_WEBHOOK End --//
+
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;?php
+// Dies ist die Datei, die MessageBird oder Mollie aufruft!
+$payload = file_get_contents('php://input');
+$data = json_decode($payload, true);
+
+// 1. Sicherheit: Prüfen ob das Passwort/Secret von MessageBird stimmt
+if ($_SERVER['HTTP_X_MESSAGEBIRD_SIGNATURE'] !== 'DEIN_GEHEIMES_PASSWORT') {
+    http_response_code(403);
+    exit('Go away!');
+}
+
+// 2. Wir formen das Paket leicht um, damit Harbour es leichter hat
+$harbourRequest = [
+    "provider" =&gt; "MESSAGEBIRD",
+    "sender_address" =&gt; $data['contact']['msisdn'], // Die Handynummer
+    "message_text" =&gt; $data['message']['text']
+];
+
+// 3. Wir schicken es intern weiter an Harbour (Port 9090)
+$msUrl = 'http://127.0.0.1:9090/inbound_msg';
+$ctx = stream_context_create(['http' =&gt; ['method' =&gt; 'POST', 'content' =&gt; json_encode($harbourRequest)]]);
+$res = file_get_contents($msUrl, false, $ctx);
+
+echo "OK"; // Provider ist glücklich und beendet die Verbindung
+?&gt;&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<br>
+<p><IMG src="https://clipper2web.com/docs/graftonstreet_api.jpg"><s><img src="</s><URL url="https://clipper2web.com/docs/graftonstreet_api.jpg">https://clipper2web.com/docs/graftonstreet_api.jpg</URL><e>" alt="" loading="lazy"></e></IMG></p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p284273">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Best Practices for modern Web/DBF integrations: Cloudflared, Mollie, MessageBird?</span><br>
+        Posted: Sat Mar 07, 2026 09:28 AM
+      </div>
+      <div class="content"><p><r><p>Dear Otto,</p></p>
+<p><QUOTE><i>&gt; </i><p>Has anyone already written integration classes for Mollie or MessageBird/Brevo in Harbour that they could share, or would you be interested in joining forces to build a stable class for these specific providers?</p></QUOTE></p>
+<p>I am sure that Antigravity may build it in just a while  <E>:wink:</E></p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>SMS - Problema con puertos seriales - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-27875">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> SMS - Problema con puertos seriales</div>
+  <div class="post" id="p155658">
+    <div class="poster">
+      <div class="name" style="color:#105289">gsabattino</div>
+      <div class="rank">Posts: 102</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 14, 2005 12:03 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">SMS - Problema con puertos seriales</span><br>
+        Posted: Sun Dec 29, 2013 08:29 PM
+      </div>
+      <div class="content"><p>Hola a todos...</p>
+<p>Muchos tlf celulares disponibles en el mercado tienen una funcion de modem para envío y manipulacion de mensajes SMS...<br>
+en mi caso he estado haciendo algunas pruebas con el Motorola V3 y el HiperTerminal que forma parte de la distribucion de Windows XP, y realmente es muy facil dominar la comunicacion humano&lt;--&gt;modem a ese nivel...<br>
+Pero el caso no es ponerse con un programa terminal a enviar mensajes... lo interesante es automatizar eso e integrarlo a una aplicación hecha con FiveWin...</p>
+<p>El problema que se me ha presentado es que los celulares que he probado, que tienen la funcion de modem para envio de SMS, asignan un puerto serial virtual... es decir, le dicen a Windows que estan disponibles por COM6 (por ejemplo) pero en la lista de dispositivos físicos no existe COM6... pero al abrir el HiperTerminal, y alli esta el dispositivo COM6!!!</p>
+<p>Ya con FW, cuando mando a abrir COM6 por medio de las funcion OpenComm( 'COM6' ), esta devuelve valores similares a cuando utilizo OpenComm( 'COM1' ) que si lo tengo fisicamente en la PC, pero cuando le toca a la funcion BuildCommDCB( 'COM6:2400,N,8,1', @cDCB ), esta devuelve .f. y, como es de lógica, no se puede enviar ya nada al modem.</p>
+<p>Ahora, la gran pregunta es la siguiente...<br>
+hay alguna manera de poder manipular puertos COMxx virtuales con FiveWin??, o existe alguna librería que se pueda utilizar con FiveWin que permita manipular esos puertos virtuales??</p>
+<p>Gracias de antemano por sus comentarios...</p>
+<p>Giancarlo J. Sabattino<br>
+Valencia - Venezuela</p>
+<p>FW12.03 - xH 1.2001</p></div>
+    </div>
+  </div>
+  <div class="post" id="p155663">
+    <div class="poster">
+      <div class="name" style="color:#105289">gsabattino</div>
+      <div class="rank">Posts: 102</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 14, 2005 12:03 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SMS - Problema con puertos seriales</span><br>
+        Posted: Mon Dec 30, 2013 02:42 AM
+      </div>
+      <div class="content">Bien mis queridos FiveWineros... he encontrado una solucion medio chapuza con una libreria HBComm que consegui... tiene una limitacion que no me gusta y se trata de que solo puedo tener un puerto serial asociado a la aplicación... pero es mejor que nada porque realmente hasta este momento no he logrado hacer que me funcionen las funciones que forman parte de FiveWin...<br>
+Probe las funciones de HBComm con varios puertos virtuales (COM9, COM12, COM18) asociados a telefonos celulares y hasta el momento de escribir esta nota han funcionado bien...<br>
+<br>
+voy a pulir un poco mas las libs, pero aca les adelanto el programita de prueba...<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// ===================================================================
+static Procedure TestxHComm()
+local     cPort     :='\\.\COM18',;    // "\\.\" requerido por los puertos COM &gt; 9
+          nComm     ,;
+          cBuffer
+
+nComm     :=Init_Port( cPort, 2400, 8, 0, 1, 1024 )
+OutBufClr()
+CommWrite( 'AT+CMGF=1'+chr( 13 ) )
+cBuffer   :=CommRead()
+SysWait( 0.1 )
+CommWrite( 'AT+CMGS="04126838528"'+chr( 13 ) )
+CommWrite( 'Mensaje enviado por medio de una aplicación xHarbour+FiveWin configurado como COM18'+chr( 26 ) )
+SysWait( 5 )          // espere a que se envie el mensaje
+cBuffer   :=CommRead()   // respuesta del modem: + CMGS: nn, o ERROR
+
+UnInt_Port()
+? ProcName(), ProcLine(), cBuffer
+
+return
+
+
+static function CommWrite( cText )
+
+return    OutChr( cText )
+
+
+static function CommRead()
+local     cBuffer   ,;
+          cText     :='',;
+          nReceived :=1024,;
+          nTimeOut  :=0.5
+
+do while ( nReceived&gt;0 ) .and. ( nTimeout&gt;0 )
+  cBuffer   :=''
+  nReceived :=InbufSize()
+  if nReceived&gt;0
+    cBuffer   :=Substr( InChr( nReceived ), 1 )
+    cText     :=cText+cBuffer
+    nTimeOut  :=0.5
+  endif
+  nTimeOut  :=nTimeOut-0.1
+enddo
+
+return    cText</code></pre></div><br>
+<br>
+Saludos desde Valencia - Venezuela<br>
+Giancarlo J. Sabattino</div>
+    </div>
+  </div>
+  <div class="post" id="p179781">
+    <div class="poster">
+      <div class="name" style="color:#105289">JmGarcia</div>
+      <div class="rank">Posts: 654</div>
+      <div class="avatar"></div>
+      Joined: Mon May 29, 2006 03:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SMS - Problema con puertos seriales</span><br>
+        Posted: Wed Jul 22, 2015 07:35 AM
+      </div>
+      <div class="content">Al compilar el ejemplo anterior me da estos errores:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Error: Unresolved external '_HB_FUN_HB_DEFAULT' referenced from D:\BASES\FWH1406\HARBOUR\LIB\HBCOMM.LIB|comm
+Error: Unresolved external '_HB_FUN_HB_HDEL' referenced from D:\BASES\FWH1406\HARBOUR\LIB\HBCOMM.LIB|comm</code></pre></div><br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Error: Unresolved external '_crc32' referenced from D:\BASES\FWH1409\XHARBOUR\LIB\PNG.LIB|png
+Error: Unresolved external '_inflateReset' referenced from D:\BASES\FWH1409\XHARBOUR\LIB\PNG.LIB|png
+Error: Unresolved external '_inflateInit_' referenced from D:\BASES\FWH1409\XHARBOUR\LIB\PNG.LIB|pngread
+Error: Unresolved external '_inflate' referenced from D:\BASES\FWH1409\XHARBOUR\LIB\PNG.LIB|pngrutil
+Error: Unresolved external '_inflateEnd' referenced from D:\BASES\FWH1409\XHARBOUR\LIB\PNG.LIB|pngread
+Error: Unresolved external '_deflateEnd' referenced from D:\BASES\FWH1409\XHARBOUR\LIB\PNG.LIB|pngwutil
+Error: Unresolved external '_deflateInit2_' referenced from D:\BASES\FWH1409\XHARBOUR\LIB\PNG.LIB|pngwutil
+Error: Unresolved external '_deflateReset' referenced from D:\BASES\FWH1409\XHARBOUR\LIB\PNG.LIB|pngwutil
+Error: Unresolved external '_deflate' referenced from D:\BASES\FWH1409\XHARBOUR\LIB\PNG.LIB|pngwutil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p179812">
+    <div class="poster">
+      <div class="name" style="color:#105289">JmGarcia</div>
+      <div class="rank">Posts: 654</div>
+      <div class="avatar"></div>
+      Joined: Mon May 29, 2006 03:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: SMS - Problema con puertos seriales</span><br>
+        Posted: Wed Jul 22, 2015 08:31 PM
+      </div>
+      <div class="content">Al ejecutar me da este error:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Stack Calls
+===========
+   Called from:  =&gt; HB_BLEN( 0 )
+   Called from: contrib\hbcomm\comm.prg =&gt; OUTCHR( 0 )
+   Called from: D:\Programa\EnviaSMS\EnviaSMS.prg =&gt; COMMWRITE( 79 )
+   Called from: D:\Programa\EnviaSMS\EnviaSMS.prg =&gt; MAIN( 58 )</code></pre></div><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function main()
+.../...
+CommWrite( "AT+CMGF=1"+chr( 13 ) )
+.../...
+return nil
+function CommWrite( cText )
+return    OutChr( cText )</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

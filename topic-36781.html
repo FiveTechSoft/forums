@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>FWH 19.01: Recycling Deleted Records - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-36781">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> FWH 19.01: Recycling Deleted Records</div>
+  <div class="post" id="p219377">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">FWH 19.01: Recycling Deleted Records</span><br>
+        Posted: Tue Feb 19, 2019 01:51 PM
+      </div>
+      <div class="content">We are aware that huge accumulation of deleted records in a dbf greatly reduces performance. FWH 19.01 introduces the feature of recycling of deleted records in DBF opened via &quot;DBFCDX&quot;.<br>
+<br>
+This feature may not be required in these cases:<br>
+<ul>(a) Some standard applications do not permit deletion of records.<br>
+(b) The house-keeping routine executed when a user executes the application for the first time in a day includes packing the dbfs.<br>
+[/list:u]<br>
+<br>
+There could be other cases, where there is a continuous acccumulation of deleted records during execution before the next opportunity to pack or the design does not allow packing. (Whether this is a good programming practice or not is not the point for debate in this post). This feature is useful in such cases.<br>
+<br>
+This feature is available for dbfs opened via &quot;DBFCDX&quot; only and can be availed by using these two functions from FWH:<br>
+<br>
+<strong>1. FW_SetRecyleDeleted( nil / .t. / .f. )</strong> --&gt; previous setting // New in 1901<br>
+<strong>2. DBFAPPEND() </strong>--&gt; nAppendedOrRecyledRec // enhanced in 1901 uses this feature depending on the setting<br>
+<br>
+<span style="text-decoration:underline"><strong>Global setting FW_SetRecyleDeleted( param ) // default NIL</strong><br>
+</span><br>
+param:<br>
+<ul>1. Omitted. Does not change the setting. Returns the current setting.<br>
+2. .T.. If set to .t., DBFAPPEND() will always try to recycle deleted records.<br>
+3. .F.. If set to .t., DBFAPPEND() does not recycle. Same as DBAPPEND()<br>
+4. NIL. If set to NIL, DBFAPPEND() adopts default behavior explained later.<br>
+[/list:u]<br>
+<br>
+Use DBFAPPEND() instead of DBAPPEND() to use this feature. This function's behavour is set by the FW_SetRecycledDeleted() function. (Default NIL)<br>
+<br>
+Present usage of DBAPPEND()<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">DBAPPEND()
+If .not. NetErr()
+   // assign values to fields
+   DBUNLOCK()
+endif</code></pre></div><br>
+<br>
+Instead, using DBFAPPEND() this way enables using the recycling feature:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">if DBFAPPEND() &gt; 0
+   // assign values to fields
+   DBUNLOCK()
+endif</code></pre></div><br>
+<br>
+<span style="text-decoration:underline"><strong>Working of DBFAPPEND()</strong><br>
+</span><br>
+Step-1: Depending on the setting of FW_SetRecycleDeleted(), a deleted record that can be locked is located. If found, the record is locked, data is erased, the record is RECALLed and the record number is returned.<br>
+<br>
+Step-2: If not, attempts to append a new record by trying 4 times at an interval of 0.25 seconds and returns the newly appended record number if successful.<br>
+<br>
+Result of this function is the same as normal DBAPPEND() if the setting is .f.<br>
+<br>
+For the purpose of identifying the deleted records, this feature uses either of two indexes:<br>
+a) Any index with for condition &quot;FOR DELETED()&quot;<br>
+   eg: INDEX ON RECNO() TAG RECYCLE FOR DELETED()<br>
+b) Any index with index expression DELETED()<br>
+   eg: INDEX ON DELETED() TAG DELETED.<br>
+<br>
+<strong>Default behaviour (FW_SetRecycleDeleted() is set to NIL):</strong><br>
+<br>
+If the dbf already has index with for condition &quot;FOR DELETED()&quot;, this index is used to recycle deleted records. Because an index with this kind of condition is never created in normal course, existance of this index is considered as an indication that recycling is required for this dbf.<br>
+<br>
+<strong>Behavior if FW_SetRecycleDeleted() is set to .F.:</strong><br>
+<br>
+The function does not attempt to recycle at all.<br>
+<br>
+<strong>Behavior if FW_SetRecycleDeleted() is set to .T.:</strong><br>
+Checks if any one of the above indexes exist and then uses that index for recycling. <br>
+If no such index exists and if the dbf is opened exclusively, creates an index with &quot;for deleted()&quot; clause and uses it<br>
+If the dbf is opened in a shared mode, such an index is created in memory temporarily.<br>
+<br>
+TDataRow() and TDatabase() are compatible with this feature. Depending on the setting, both recycle records in the sameway.<br>
+<br>
+<em>Note: Value of the autoinc field is not changed when recycling the records.<br>
+</em><br>
+Here are two samples using recycling feature, using DBF directly and with TDatabase. In both cases, the program code is very similar and results are identical.<br>
+<br>
+Sample using DBF directly:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+REQUEST DBFCDX
+
+static cUser
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   RDDSETDEFAULT( "DBFCDX" )
+   SET DELETED ON
+   SET TIME FORMAT TO "HH:MM:SS"
+
+   cUser    := wNetGetUser()
+
+   FW_SetRecycleDeleted( .T. )
+
+   CreateTestDbf()
+
+   USE RECYCLE NEW SHARED VIA "DBFCDX"
+   SET FILTER TO !DELETED()
+   GO TOP
+
+   XBROWSER "RECYCLE" FASTEDIT SHOW RECID SETUP ;
+      ( oBrw:bTrigger := { || FIELD-&gt;USER := cUser } ) ;
+      TITLE "FWH 1901: DBF: Recycling of deleted records"
+
+   CLOSE RECYCLE
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function CreateTestDbf()
+
+   local n
+   local lCreated := .f.
+
+   local aCols := {  {  "ID",       "+",   4, 0 }, ;
+                     {  "NAME1",    "C",  20, 0 }, ;
+                     {  "NAME2",    "C",  30, 0 }, ;
+                     {  "USER",     "C",  10, 0 }, ;
+                     {  "UPDT",     "=",   8, 0 }  }
+
+   TRY
+      DBCREATE( "RECYCLE", aCols, "DBFCDX", .T., "RCL" )
+      lCreated := .t.
+   CATCH
+   END
+
+   if lCreated
+
+      FW_CdxCreate() // Create Indexes
+
+      FW_NUMTOWORDS( 0, "", "" )
+      for n := 1 to 20
+         DBAPPEND()
+         FIELD-&gt;NAME1   := LTRIM( FW_NUMTOWORDS( n ) )
+         FIELD-&gt;NAME2   := LTRIM( FW_NUMTOWORDS( n * 10 ) )
+         FIELD-&gt;USER    := cUser
+      next
+
+      CLOSE RCL
+
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+Sample using TDatabase class:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+REQUEST DBFCDX
+
+static cUser
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oDbf
+
+   RDDSETDEFAULT( "DBFCDX" )
+   SET DELETED ON
+   SET TIME FORMAT TO "HH:MM:SS"
+
+   cUser    := wNetGetUser()
+
+   FW_SetRecycleDeleted( .T. )
+
+   CreateTestDbf()
+
+   oDbf  := TDatabase():Open( , "RECYCLE", "DBFCDX", .T. )
+   oDbf:SetFilter( "!DELETED()" )
+   oDbf:GoTop()
+
+   oDbf:bTrigger  := { || FIELD-&gt;USER := wNetGetUser() }
+
+   XBROWSER oDbf FASTEDIT SHOW RECID ;
+      TITLE "FWH 1901: TDatabase: Recycling Deleted Records"
+
+   oDbf:Close()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function CreateTestDbf()
+
+   local n
+   local lCreated := .f.
+   local oDbf
+   local aCols := {  {  "ID",       "+",   4, 0 }, ;
+                     {  "NAME1",    "C",  20, 0 }, ;
+                     {  "NAME2",    "C",  30, 0 }, ;
+                     {  "USER",     "C",  10, 0 }, ;
+                     {  "UPDT",     "=",   8, 0 }  }
+
+
+   oDbf  := TDatabase():Create( "RECYCLE.DBF", aCols, "DBFCDX", "*" )
+            // 4th parameter "*" indicates to create indexes on all fields
+
+   oDbf:bTrigger  := { || FIELD-&gt;USER := wNetGetUser() }
+
+   if oDbf:Used()
+
+      FW_NUMTOWORDS( 0, "", "" )
+      for n := 1 to 20
+         oDbf:Append( "NAME1,NAME2", { LTRIM( FW_NUMTOWORDS( n ) ), LTRIM( FW_NUMTOWORDS( n * 10 ) ) } )
+      next
+
+   endif
+
+   oDbf  := nil // this closes the dbf
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+You may build these samples and test by keeping on editing, deleting and adding new records. You may also try two instances of the application to check multi-user behavior.<br>
+<br>
+<a href="https://imageshack.com/i/pl91cs8Cg" rel="noopener"><img src="https://imagizer.imageshack.com/img921/6594/91cs8C.gif" alt="" loading="lazy"></a></div>
+    </div>
+  </div>
+  <div class="post" id="p219394">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 19.01: Recycling Deleted Records</span><br>
+        Posted: Wed Feb 20, 2019 01:40 AM
+      </div>
+      <div class="content">Using FWH functions and classes to append records using recycling feature.<br>
+<br>
+To use the feature for specific dbfs only without setting FW_SetRecycleDeleted() globally, first create one index tag with &quot;FOR DELETED()&quot; on the required dbfs. Easy way to create:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">USE CUSTOMER NEW EXCLUSIVE VIA "DBFCDX"
+if Used()
+   FW_CdxCreate( "RECYCLE" )
+   CLOSE CUSTOMER
+endif</code></pre></div><br>
+<br>
+Using when opening dbf directly. (without TDatabase)<br>
+<br>
+During XBrowse use oBrw:EditSource( .t. ). When the dialog is edited and saved the recycling feature is automatically used. You can use your custom dialog by setting<br>
+oBrw:bEdit := { |oRec| MyEditDlg( oRec ) }<br>
+When you save the edit with oRec:Save(), the feature is automatically saved.<br>
+<br>
+For appending known values, without editing;<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">caFields := "CODE,NAME"
+aValues  := { "TN", "Tennese" }
+lAppend  := .t.
+FW_FieldsPut( caFields, aValues, lAppend )</code></pre></div><br>
+<br>
+Editing and appending without using XBrowse:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">USE STATES NEW SHARED/EXCLUSIVE
+oRec := TDataRow():New( "STATES", , .T. )
+// Edit values of oRec and then
+oRec:Save()</code></pre></div><br>
+<br>
+Using the recycling feature with TDatabase:<br>
+1. Using Blank() and Save() methods<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oDbf:Blank()
+// Edit or assign values
+oDbf:Save()</code></pre></div><br>
+<br>
+2. Using record object. Recommended.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oDbf := TDatabase():Open( , "SATES", "DBFCDX", lShared )
+oDbf:bEdit := { |oRec| MyEditDialog( oRec ) } // optional
+// for direct editing and appending
+oDbf:Edit( cFieldList, .t. )
+// for appending values without editing
+oDbf:Append( caFields, aValues )
+// if aValues is a 2 dim array multipe records are appended
+
+// if using XBrowse, then use
+oBrw:EditSource( .t. )</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p219404">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 19.01: Recycling Deleted Records</span><br>
+        Posted: Wed Feb 20, 2019 09:11 AM
+      </div>
+      <div class="content"><p>This is a beautiful and usefull  invention!!!!!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p219669">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 19.01: Recycling Deleted Records</span><br>
+        Posted: Thu Feb 28, 2019 03:28 PM
+      </div>
+      <div class="content">I not understood..I tried to make it on my test but I not understood how make <br>
+<br>
+I have all record delete <br>
+<br>
+<img src="https://i.postimg.cc/fyg3pyhX/mmm.png" alt="" loading="lazy"><br>
+<br>
+and  now I wish recycling  delete record and save a new record <br>
+<br>
+Wich are the step for make it ?<br>
+my source<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//delete all records
+oSpiaggia:Gotop()
+Do While .not. oSpiaggia:eof()
+oSpiaggia:delete()
+oSpiaggia:skip()
+EndDo
+
+
+oSpiaggia:Gotop()
+
+// save on temp array 
+
+For nY := 1 to TOTY
+For nX := 1 To TOTX
+nRow:=nX
+nCol:=nY
+cElemento:=aData[nY,nX]
+cLibero:=strzero(recno(),5)
+
+
+//----------------------------------------------------------------------------------//
+Now I save all data into a temporaney array aTempDbf I have info data in different other arrays
+//-------------------------------------------------------------------------------------//
+
+For n= 1 to Len(aElementi)
+IF aData[nY,nX] == aElementi[n][3]
+IF aElementi[n][6] == TRUE //attivo
+nCamera:= Iif(!empty(aNumeri[nY,nX]),aNumeri[nY,nX],0)
+cSettore:=Iif(!empty( aSettori[nY,nX]),aSettori[nY,nX],"")
+cDesc:=aElementi[n][4]
+lactive:= TRUE
+else
+cDesc:=aElementi[n][4]
+ENDIF
+elseif aData[nY,nX] =="X"
+cDesc:="spazio vuoto"
+Endif
+next n
+
+AaDD( aTempDbf,{nCamera,nRow,nCol,cElemento,cDesc,,strzero(recno(),5),cSettore,lActive})
+
+next nX
+next nY</code></pre></div><br>
+<br>
+<br>
+Now if I save from array I make <br>
+<br>
+oSpiaggia:SetOrder( 0 )<br>
+oSpiaggia:GoTop()<br>
+oSpiaggia:ArrayToDBF( atempDbf, cFieldList, nil, .t., .t. )<br>
+<br>
+If I wish recall delete record How I must make ?</div>
+    </div>
+  </div>
+  <div class="post" id="p219744">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 19.01: Recycling Deleted Records</span><br>
+        Posted: Sun Mar 03, 2019 02:05 AM
+      </div>
+      <div class="content"><blockquote>oSpiaggia:SetOrder( 0 )<br>
+oSpiaggia:GoTop()<br>
+oSpiaggia:ArrayToDBF( atempDbf, cFieldList, nil, .t., .t. )<br>
+<br>
+If I wish recall delete record How I must make ?<br>
+</blockquote><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oSpiaggia:SetOrder( 0 )
+oSpiaggia:GoTo( 1 )
+oSpiaggia:ArrayToDBF( atempDbf, cFieldList, nil, .t., .t. )</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p219786">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 19.01: Recycling Deleted Records</span><br>
+        Posted: Mon Mar 04, 2019 05:14 PM
+      </div>
+      <div class="content"><p>thanks</p></div>
+    </div>
+  </div>
+  <div class="post" id="p219790">
+    <div class="poster">
+      <div class="name" style="color:#105289">driessen</div>
+      <div class="rank">Posts: 1467</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 11:26 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 19.01: Recycling Deleted Records</span><br>
+        Posted: Mon Mar 04, 2019 11:28 PM
+      </div>
+      <div class="content"><p>Mr. Rao,</p>
+<p>Thanks a lot for all your help.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

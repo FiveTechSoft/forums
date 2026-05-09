@@ -1,0 +1,1900 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>How to use Free TWAIN_32.dll - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-3792">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> How to use Free TWAIN_32.dll</div>
+  <div class="post" id="p16699">
+    <div class="poster">
+      <div class="name" style="color:#105289">areang</div>
+      <div class="rank">Posts: 128</div>
+      <div class="avatar"></div>
+      Joined: Mon Jul 31, 2006 03:23 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">How to use Free TWAIN_32.dll</span><br>
+        Posted: Thu Aug 03, 2006 09:21 AM
+      </div>
+      <div class="content">Hello !<br>
+<br>
+I found for twain driver at :<br>
+<br>
+<!-- m --><a class="postlink" href="http://nt.twain.org/database/search.asp">http://nt.twain.org/database/search.asp</a><!-- m --><br>
+<br>
+many files there for use with application <br>
+<br>
+But all code written with C :<br>
+<br>
+/*<br>
+* File: scanner.c<br>
+* Company: TWAIN Working Group, JFL Peripheral Solutions Inc.<br>
+* Author: Jon Harju<br>
+* Description:<br>
+*		Simulates basic scanner operations<br>
+*<br>
+*	Copyright © 1998 TWAIN Working Group: Adobe Systems Incorporated, <br>
+*	Canon Information Systems, Eastman Kodak Company, <br>
+*	Fujitsu Computer Products of America, Genoa Technology, <br>
+*	Hewlett-Packard Company, Intel Corporation, Kofax Image Products, <br>
+*	JFL Peripheral Solutions Inc., Ricoh Corporation, and Xerox Corporation.  <br>
+*	All rights reserved.<br>
+*/<br>
+<br>
+#include &lt;windows.h&gt;<br>
+#include &lt;windowsx.h&gt;<br>
+<br>
+#include "..\\twcommon\\twain.h"<br>
+#include "..\\twcommon\\twndebug.h"<br>
+<br>
+#include "twd_type.h"<br>
+#include "scanner.h"<br>
+#include "dscaps.h"<br>
+<br>
+extern HANDLE hDSInst;<br>
+<br>
+/*<br>
+*	Static globals<br>
+*/<br>
+static int _giMaxPagesToScan = 1;<br>
+static int _giPagesRemaining = 1;<br>
+<br>
+static int _giRowsCopied = 0;<br>
+static BITMAPINFOHEADER *_gpHeader = NULL;<br>
+static BYTE *_gpImageData = NULL;<br>
+static BYTE *_gpCurrentLine = NULL;<br>
+static DWORD _gdwLineSize = 0l;<br>
+<br>
+<br>
+/*<br>
+*	Globals that we use to simulate scanning transfer from a DIB<br>
+*/<br>
+static HGLOBAL _ghDIB = NULL;<br>
+<br>
+BOOL IsDocumentInFeeder()<br>
+{<br>
+	return _giPagesRemaining?TRUE:FALSE;<br>
+}<br>
+<br>
+BOOL StartScan(DWORD *pdwLineSize)<br>
+{<br>
+	/*<br>
+	*	Preload our image into memory<br>
+	*/<br>
+	char szModulePath[_MAX_PATH];<br>
+	char szCompletePath[_MAX_PATH];<br>
+	char szFileLocation[_MAX_PATH];<br>
+	char szDriveName[_MAX_DRIVE];<br>
+<br>
+	VERIFY(GetModuleFileName(hDSInst, szModulePath, _MAX_PATH));<br>
+	_splitpath(szModulePath, szDriveName, szFileLocation, NULL, NULL);<br>
+	wsprintf(szCompletePath, "%s%s", szDriveName, szFileLocation);<br>
+<br>
+	_giRowsCopied = 0;<br>
+	_gpHeader = NULL;<br>
+	_gpImageData = NULL;<br>
+	_gpCurrentLine = NULL;<br>
+	_gdwLineSize = 0l;<br>
+<br>
+	if(_ghDIB)<br>
+	{<br>
+		GlobalFree(_ghDIB);<br>
+		_ghDIB = NULL;<br>
+	}<br>
+<br>
+	if(GetCurrentXResolution()==100.0F)<br>
+	{<br>
+		/*<br>
+		*	Easy, this is the format of our originals<br>
+		*/<br>
+		if(GetCurrentPixelType()==TWPT_GRAY)<br>
+		{<br>
+			strcat(szCompletePath, "twaingray.bmp");<br>
+			_ghDIB = OpenDIB(szCompletePath);<br>
+		}<br>
+		else if(GetCurrentPixelType()==TWPT_RGB)<br>
+		{<br>
+			strcat(szCompletePath, "twainrgb.bmp");<br>
+			_ghDIB = OpenDIB(szCompletePath);<br>
+		}<br>
+		else<br>
+		{<br>
+			strcat(szCompletePath, "twainbw.bmp");<br>
+			_ghDIB = OpenDIB(szCompletePath);<br>
+		}<br>
+<br>
+		_gpHeader = (BITMAPINFOHEADER*)GlobalLock(_ghDIB);<br>
+		if(_gpHeader)<br>
+		{<br>
+			_gpImageData = ((BYTE*)_gpHeader) + sizeof(BITMAPINFOHEADER) + sizeof(RGBQUAD) * DibNumColors(_gpHeader);<br>
+			_gdwLineSize = ((_gpHeader-&gt;biWidth * _gpHeader-&gt;biBitCount+31)/32)*4;<br>
+			_gpCurrentLine = _gpImageData + (_gdwLineSize * (_gpHeader-&gt;biHeight-1));<br>
+			*pdwLineSize = _gdwLineSize;<br>
+		}<br>
+	}<br>
+	return _ghDIB?TRUE:FALSE;<br>
+}<br>
+<br>
+BOOL ReadDataBlock(BYTE *pBuffer, DWORD dwMaxSize, DWORD *pdwBytesWritten, BOOL *pbLastBuffer)<br>
+{<br>
+	ASSERT(pBuffer);<br>
+	ASSERT(dwMaxSize);<br>
+	ASSERT(pdwBytesWritten);<br>
+	ASSERT(pbLastBuffer);<br>
+<br>
+	*pdwBytesWritten = 0l;<br>
+	*pbLastBuffer = FALSE;<br>
+<br>
+	if(_ghDIB &amp;&amp; _gpHeader)<br>
+	{<br>
+		int iIndex = 0;<br>
+		int iMaxLines = dwMaxSize / _gdwLineSize;<br>
+		for(iIndex = 0; iIndex &lt; iMaxLines; iIndex++)<br>
+		{<br>
+			/*<br>
+			*	Copy the line into the buffer<br>
+			*/<br>
+			if(GetCurrentPixelType()==TWPT_RGB)<br>
+			{<br>
+				DWORD dwPixelIndex = 0;<br>
+				BYTE bTempByte = 0;<br>
+				for(dwPixelIndex = 0; (dwPixelIndex+2) &lt; _gdwLineSize; dwPixelIndex+= 3)<br>
+				{<br>
+					pBuffer[dwPixelIndex] = _gpCurrentLine[dwPixelIndex+2];<br>
+					pBuffer[dwPixelIndex+1] = _gpCurrentLine[dwPixelIndex+1];<br>
+					pBuffer[dwPixelIndex+2] = _gpCurrentLine[dwPixelIndex];<br>
+				}<br>
+			}<br>
+			else<br>
+			{<br>
+				memcpy(pBuffer, _gpCurrentLine, _gdwLineSize);<br>
+			}<br>
+<br>
+			_giRowsCopied++;<br>
+<br>
+			/*<br>
+			*	Move back a full line<br>
+			*/<br>
+			_gpCurrentLine -= _gdwLineSize;<br>
+			<br>
+			/*<br>
+			*	Increment our byte count<br>
+			*/<br>
+			*pdwBytesWritten += _gdwLineSize;<br>
+			pBuffer += _gdwLineSize;<br>
+<br>
+			/*<br>
+			*	Check to see if we are at the end<br>
+			*/<br>
+			if(_gpCurrentLine==_gpImageData)<br>
+			{<br>
+				*pbLastBuffer = TRUE;<br>
+				break;<br>
+			}<br>
+		}<br>
+		return TRUE;<br>
+	}<br>
+	return FALSE;<br>
+}<br>
+<br>
+void StopScan()<br>
+{<br>
+	/*<br>
+	* Decrement the page count<br>
+	*/<br>
+	_giPagesRemaining--;<br>
+	if(_giPagesRemaining &lt; 0)<br>
+	{<br>
+		_giPagesRemaining = 0;<br>
+	}<br>
+<br>
+	/*<br>
+	*	Clean up the DIB<br>
+	*/<br>
+	if(_gpHeader)<br>
+	{<br>
+		GlobalUnlock(_ghDIB);<br>
+		_gpHeader = NULL;<br>
+	}<br>
+<br>
+	if(_ghDIB)<br>
+	{<br>
+		GlobalFree(_ghDIB);<br>
+		_ghDIB = NULL;<br>
+	}<br>
+<br>
+	_giRowsCopied = 0;<br>
+	_gpImageData = NULL;<br>
+	_gpCurrentLine = NULL;<br>
+	_gdwLineSize = 0l;<br>
+<br>
+	return;<br>
+}<br>
+<br>
+/*<br>
+*	Additional functions for our simulation<br>
+*/<br>
+int GetNumPages()<br>
+{<br>
+	return _giMaxPagesToScan;<br>
+}<br>
+<br>
+void SetNumPages(int iNumPages)<br>
+{<br>
+	_giMaxPagesToScan = iNumPages;<br>
+	return;<br>
+}<br>
+<br>
+void LoadFeeder()<br>
+{<br>
+	_giPagesRemaining = _giMaxPagesToScan;<br>
+	return;<br>
+}<br>
+<br>
+void ClearFeeder()<br>
+{<br>
+	_giPagesRemaining = 0;<br>
+}<br>
+<br>
+HGLOBAL ScanToDIB()<br>
+{<br>
+	HGLOBAL hDIBHandle = NULL;<br>
+<br>
+	if(GetCurrentXResolution()==100.0F)<br>
+	{<br>
+		hDIBHandle = _ghDIB;<br>
+<br>
+		/*<br>
+		*	Clean up the DIB<br>
+		*/<br>
+		if(_gpHeader)<br>
+		{<br>
+			GlobalUnlock(_ghDIB);<br>
+			_gpHeader = NULL;<br>
+		}<br>
+<br>
+		_ghDIB = NULL;<br>
+	}<br>
+<br>
+	return hDIBHandle;<br>
+}<br>
+<br>
+----------------------------------------------------- end of file<br>
+<br>
+<br>
+/* ======================================================================== *\<br>
+<br>
+  Copyright (C) 1991, 1992 TWAIN Working Group: Aldus, Caere, Eastman-Kodak,<br>
+  Hewlett-Packard and Logitech Corporations.  All rights reserved.<br>
+<br>
+  Copyright (C) 1997 TWAIN Working Group: Bell+Howell, Canon, DocuMagix, <br>
+  Fujitsu, Genoa Technology, Hewlett-Packard, Kofax Imaging Products, and<br>
+  Ricoh Corporation.  All rights reserved.<br>
+ <br>
+  Copyright © 1998 TWAIN Working Group: Adobe Systems Incorporated, <br>
+  Canon Information Systems, Eastman Kodak Company, <br>
+  Fujitsu Computer Products of America, Genoa Technology, <br>
+  Hewlett-Packard Company, Intel Corporation, Kofax Image Products, <br>
+  JFL Peripheral Solutions Inc., Ricoh Corporation, and Xerox Corporation.  <br>
+  All rights reserved.<br>
+<br>
+  TWAIN.h -  This is the definitive include file for applications and<br>
+          data sources written to the TWAIN specification.<br>
+          It defines constants, data structures, messages etc.<br>
+          for the public interface to TWAIN.<br>
+ <br>
+  Revision History:<br>
+    version 1.0, March 6, 1992.  TWAIN 1.0.<br>
+    version 1.1, January 1993.   Tech Notes 1.1<br>
+    version 1.5, June 1993.      Specification Update 1.5<br>
+                                 Change DC to TW <br>
+                                 Change filename from DC.H to TWAIN.H<br>
+    version 1.5, July 1993.      Remove spaces from country identifiers<br>
+ <br>
+    version 1.7, July 1997       Added Capabilities and data structure for <br>
+                                 document imaging and digital cameras.<br>
+                                 KHL.<br>
+    version 1.7, July 1997       Inserted Borland compatibile structure packing<br>
+                                 directives provided by Mentor.  JMH<br>
+    version 1.7, Aug 1997        Expanded file tabs to spaces.  <br>
+                                 NOTE: future authors should be sure to have <br>
+                                 their editors set to automatically expand tabs <br>
+                                 to spaces (original tab setting was 4 spaces).<br>
+    version 1.7, Sept 1997       Added job control values<br>
+                                 Added return codes<br>
+    version 1.7, Sept 1997       changed definition of pRGBRESPONSE to <br>
+                                 pTW_RGBRESPONSE<br>
+    version 1.7  Aug 1998        Added missing TWEI_BARCODEROTATION values<br>
+                                 TWBCOR_ types JMH<br>
+    version 1.8  August 1998     Added new types and definitions required<br>
+                                 for 1.8 Specification JMH<br>
+    version 1.8  January 1999    Changed search mode from SRCH_ to TWBD_ as<br>
+                                 in 1.8 Specification, added TWBT_MAXICODE	JMH<br>
+    version 1.8  January 1999    Removed undocumented duplicate AUTO&lt;cap&gt; JMH<br>
+\* ======================================================================== */<br>
+<br>
+#ifndef TWAIN<br>
+#define TWAIN<br>
+<br>
+/*  SDH - 02/08/95 - TWUNK */<br>
+/*  Force 32-bit twain to use same packing of twain structures as existing */<br>
+/*  16-bit twain.  This allows 16/32-bit thunking.                         */<br>
+#ifdef  WIN32<br>
+    #ifdef __BORLANDC__ //(Mentor June 13, 1996) if using a Borland compiler<br>
+        #pragma option -a2  //(Mentor June 13, 1996) switch to word alignment<br>
+    #else   //(Mentor June 13, 1996) if we're using some other compiler<br>
+        #pragma pack (push, before_twain)<br>
+        #pragma pack (2)<br>
+    #endif  //(Mentor June 13, 1996)<br>
+#else   /* WIN32 */<br>
+#endif  /* WIN32 */<br>
+<br>
+/****************************************************************************<br>
+ * TWAIN Version                                                            *<br>
+ ****************************************************************************/<br>
+#define TWON_PROTOCOLMINOR   8        /* Changed for Version 1.8            */<br>
+#define TWON_PROTOCOLMAJOR   1<br>
+<br>
+/****************************************************************************<br>
+ * Platform Dependent Definitions and Typedefs                              *<br>
+ ****************************************************************************/<br>
+<br>
+/* Define one of the following, depending on the platform */<br>
+/* #define _MAC_   */<br>
+/* #define _UNIX_  */<br>
+#define _MSWIN_<br>
+<br>
+#ifdef  _MSWIN_<br>
+    typedef HANDLE         TW_HANDLE;<br>
+    typedef LPVOID         TW_MEMREF;<br>
+<br>
+    /*  SDH - 05/05/95 - TWUNK */<br>
+    /*  For common code between 16 and 32 bits.  */<br>
+    #ifdef  WIN32<br>
+        #define TW_HUGE<br>
+    #else   /* WIN32 */<br>
+        #define TW_HUGE    huge<br>
+    #endif  /* WIN32 */<br>
+    typedef BYTE TW_HUGE * HPBYTE;<br>
+    typedef void TW_HUGE * HPVOID;<br>
+#endif  /* _MSWIN_ */<br>
+<br>
+#ifdef  _MAC_<br>
+    #define PASCAL         pascal<br>
+    #define FAR<br>
+    typedef Handle         TW_HANDLE;<br>
+    typedef char          *TW_MEMREF;<br>
+#endif  /* _MAC_ */<br>
+<br>
+#ifdef  _UNIX_<br>
+    #define PASCAL         pascal<br>
+    typedef unsigned char *TW_HANDLE;<br>
+    typedef unsigned char *TW_MEMREF;<br>
+#endif  /* _UNIX_ */<br>
+<br>
+/****************************************************************************<br>
+ * Type Definitions                                                         *<br>
+ ****************************************************************************/<br>
+<br>
+/* String types. These include room for the strings and a NULL char,     *<br>
+ * or, on the Mac, a length byte followed by the string.                 *<br>
+ * TW_STR255 must hold less than 256 chars so length fits in first byte. */<br>
+typedef char    TW_STR32[34],     FAR *pTW_STR32;<br>
+typedef char    TW_STR64[66],     FAR *pTW_STR64;<br>
+typedef char    TW_STR128[130],   FAR *pTW_STR128;<br>
+typedef char    TW_STR255[256],   FAR *pTW_STR255;<br>
+<br>
+/* Numeric types. */<br>
+typedef char           TW_INT8,   FAR *pTW_INT8;<br>
+typedef short          TW_INT16,  FAR *pTW_INT16; <br>
+typedef long           TW_INT32,  FAR *pTW_INT32;<br>
+typedef unsigned char  TW_UINT8,  FAR *pTW_UINT8;<br>
+typedef unsigned short TW_UINT16, FAR *pTW_UINT16;<br>
+typedef unsigned long  TW_UINT32, FAR *pTW_UINT32;<br>
+typedef unsigned short TW_BOOL,   FAR *pTW_BOOL; <br>
+<br>
+/* Fixed point structure type. */<br>
+typedef struct {<br>
+    TW_INT16     Whole;        /* maintains the sign */<br>
+    TW_UINT16    Frac;<br>
+} TW_FIX32,  FAR *pTW_FIX32;<br>
+<br>
+/****************************************************************************<br>
+ * Structure Definitions                                                    *<br>
+ ****************************************************************************/<br>
+<br>
+/* No DAT needed. */<br>
+typedef struct {<br>
+   TW_FIX32   X;<br>
+   TW_FIX32   Y;<br>
+   TW_FIX32   Z;<br>
+} TW_CIEPOINT, FAR * pTW_CIEPOINT;<br>
+<br>
+/* No DAT needed. */<br>
+typedef struct {<br>
+   TW_FIX32   StartIn;<br>
+   TW_FIX32   BreakIn;<br>
+   TW_FIX32   EndIn;<br>
+   TW_FIX32   StartOut;<br>
+   TW_FIX32   BreakOut;<br>
+   TW_FIX32   EndOut;<br>
+   TW_FIX32   Gamma;<br>
+   TW_FIX32   SampleCount;  /* if =0 use the gamma */<br>
+} TW_DECODEFUNCTION, FAR * pTW_DECODEFUNCTION;<br>
+<br>
+/* No DAT needed. */<br>
+typedef struct {<br>
+   TW_UINT8    Index;    /* Value used to index into the color table. */<br>
+   TW_UINT8    Channel1; /* First  tri-stimulus value (e.g Red)       */<br>
+   TW_UINT8    Channel2; /* Second tri-stimulus value (e.g Green)     */<br>
+   TW_UINT8    Channel3; /* Third  tri-stimulus value (e.g Blue)      */<br>
+} TW_ELEMENT8, FAR * pTW_ELEMENT8;<br>
+<br>
+/* No DAT.  Defines a frame rectangle in ICAP_UNITS coordinates. */<br>
+typedef struct {<br>
+   TW_FIX32   Left;<br>
+   TW_FIX32   Top;<br>
+   TW_FIX32   Right;<br>
+   TW_FIX32   Bottom;<br>
+} TW_FRAME, FAR * pTW_FRAME;<br>
+<br>
+/* No DAT needed.  Used to manage memory buffers. */<br>
+typedef struct {<br>
+   TW_UINT32  Flags;  /* Any combination of the TWMF_ constants.           */<br>
+   TW_UINT32  Length; /* Number of bytes stored in buffer TheMem.          */<br>
+   TW_MEMREF  TheMem; /* Pointer or handle to the allocated memory buffer. */<br>
+} TW_MEMORY, FAR * pTW_MEMORY;<br>
+<br>
+/* No DAT needed. */<br>
+typedef struct {<br>
+   TW_DECODEFUNCTION   Decode[3];<br>
+   TW_FIX32            Mix[3][3];<br>
+} TW_TRANSFORMSTAGE, FAR * pTW_TRANSFORMSTAGE;<br>
+<br>
+/* No DAT needed.  Describes version of software currently running. */<br>
+typedef struct {<br>
+   TW_UINT16  MajorNum;  /* Major revision number of the software. */<br>
+   TW_UINT16  MinorNum;  /* Incremental revision number of the software. */<br>
+   TW_UINT16  Language;  /* e.g. TWLG_SWISSFRENCH */<br>
+   TW_UINT16  Country;   /* e.g. TWCY_SWITZERLAND */<br>
+   TW_STR32   Info;      /* e.g. "1.0b3 Beta release" */<br>
+} TW_VERSION, FAR * pTW_VERSION;<br>
+<br>
+/* TWON_ARRAY. Container for array of values (a simplified TW_ENUMERATION) */<br>
+typedef struct {<br>
+   TW_UINT16  ItemType;<br>
+   TW_UINT32  NumItems;    /* How many items in ItemList           */<br>
+   TW_UINT8   ItemList[1]; /* Array of ItemType values starts here */<br>
+} TW_ARRAY, FAR * pTW_ARRAY;<br>
+<br>
+/* TWON_ENUMERATION. Container for a collection of values. */<br>
+typedef struct {<br>
+   TW_UINT16  ItemType;<br>
+   TW_UINT32  NumItems;     /* How many items in ItemList                 */<br>
+   TW_UINT32  CurrentIndex; /* Current value is in ItemList[CurrentIndex] */<br>
+   TW_UINT32  DefaultIndex; /* Powerup value is in ItemList[DefaultIndex] */<br>
+   TW_UINT8   ItemList[1];  /* Array of ItemType values starts here       */<br>
+} TW_ENUMERATION, FAR * pTW_ENUMERATION;<br>
+<br>
+/* TWON_ONEVALUE. Container for one value. */<br>
+typedef struct {<br>
+   TW_UINT16  ItemType;<br>
+   TW_UINT32  Item;<br>
+} TW_ONEVALUE, FAR * pTW_ONEVALUE;<br>
+<br>
+/* TWON_RANGE. Container for a range of values. */<br>
+typedef struct {<br>
+   TW_UINT16  ItemType;<br>
+   TW_UINT32  MinValue;     /* Starting value in the range.           */<br>
+   TW_UINT32  MaxValue;     /* Final value in the range.              */<br>
+   TW_UINT32  StepSize;     /* Increment from MinValue to MaxValue.   */<br>
+   TW_UINT32  DefaultValue; /* Power-up value.                        */<br>
+   TW_UINT32  CurrentValue; /* The value that is currently in effect. */<br>
+} TW_RANGE, FAR * pTW_RANGE;<br>
+<br>
+/* DAT_CAPABILITY. Used by application to get/set capability from/in a data source. */<br>
+typedef struct {<br>
+   TW_UINT16  Cap; /* id of capability to set or get, e.g. CAP_BRIGHTNESS */<br>
+   TW_UINT16  ConType; /* TWON_ONEVALUE, _RANGE, _ENUMERATION or _ARRAY   */<br>
+   TW_HANDLE  hContainer; /* Handle to container of type Dat              */<br>
+} TW_CAPABILITY, FAR * pTW_CAPABILITY;<br>
+<br>
+/* DAT_CIECOLOR. */<br>
+typedef struct {<br>
+   TW_UINT16           ColorSpace;<br>
+   TW_INT16            LowEndian;<br>
+   TW_INT16            DeviceDependent;<br>
+   TW_INT32            VersionNumber;<br>
+   TW_TRANSFORMSTAGE   StageABC;<br>
+   TW_TRANSFORMSTAGE   StageLMN;<br>
+   TW_CIEPOINT         WhitePoint;<br>
+   TW_CIEPOINT         BlackPoint;<br>
+   TW_CIEPOINT         WhitePaper;<br>
+   TW_CIEPOINT         BlackInk;<br>
+   TW_FIX32            Samples[1];<br>
+} TW_CIECOLOR, FAR * pTW_CIECOLOR;<br>
+<br>
+/* DAT_EVENT. For passing events down from the application to the DS. */<br>
+typedef struct {<br>
+   TW_MEMREF  pEvent;    /* Windows pMSG or Mac pEvent.                 */<br>
+   TW_UINT16  TWMessage; /* TW msg from data source, e.g. MSG_XFERREADY */<br>
+} TW_EVENT, FAR * pTW_EVENT;<br>
+<br>
+/* DAT_GRAYRESPONSE */<br>
+typedef struct {<br>
+   TW_ELEMENT8         Response[1];<br>
+} TW_GRAYRESPONSE, FAR * pTW_GRAYRESPONSE;<br>
+<br>
+/* DAT_IDENTITY. Identifies the program/library/code resource. */<br>
+typedef struct {<br>
+   TW_UINT32  Id;              /* Unique number.  In Windows, application hWnd      */<br>
+   TW_VERSION Version;         /* Identifies the piece of code              */<br>
+   TW_UINT16  ProtocolMajor;   /* Application and DS must set to TWON_PROTOCOLMAJOR */<br>
+   TW_UINT16  ProtocolMinor;   /* Application and DS must set to TWON_PROTOCOLMINOR */<br>
+   TW_UINT32  SupportedGroups; /* Bit field OR combination of DG_ constants */<br>
+   TW_STR32   Manufacturer;    /* Manufacturer name, e.g. "Hewlett-Packard" */<br>
+   TW_STR32   ProductFamily;   /* Product family name, e.g. "ScanJet"       */<br>
+   TW_STR32   ProductName;     /* Product name, e.g. "ScanJet Plus"         */<br>
+} TW_IDENTITY, FAR * pTW_IDENTITY;<br>
+<br>
+/* DAT_IMAGEINFO. Application gets detailed image info from DS with this. */<br>
+typedef struct {<br>
+   TW_FIX32   XResolution;      /* Resolution in the horizontal             */<br>
+   TW_FIX32   YResolution;      /* Resolution in the vertical               */<br>
+   TW_INT32   ImageWidth;       /* Columns in the image, -1 if unknown by DS*/<br>
+   TW_INT32   ImageLength;      /* Rows in the image, -1 if unknown by DS   */<br>
+   TW_INT16   SamplesPerPixel;  /* Number of samples per pixel, 3 for RGB   */<br>
+   TW_INT16   BitsPerSample[8]; /* Number of bits for each sample           */<br>
+   TW_INT16   BitsPerPixel;     /* Number of bits for each padded pixel     */<br>
+   TW_BOOL    Planar;           /* True if Planar, False if chunky          */<br>
+   TW_INT16   PixelType;        /* How to interp data; photo interp (TWPT_) */<br>
+   TW_UINT16  Compression;      /* How the data is compressed (TWCP_xxxx)   */<br>
+} TW_IMAGEINFO, FAR * pTW_IMAGEINFO;<br>
+<br>
+/* DAT_IMAGELAYOUT. Provides image layout information in current units. */<br>
+typedef struct {<br>
+   TW_FRAME   Frame;          /* Frame coords within larger document */<br>
+   TW_UINT32  DocumentNumber;<br>
+   TW_UINT32  PageNumber;     /* Reset when you go to next document  */<br>
+   TW_UINT32  FrameNumber;    /* Reset when you go to next page      */<br>
+} TW_IMAGELAYOUT, FAR * pTW_IMAGELAYOUT;<br>
+<br>
+/* DAT_IMAGEMEMXFER. Used to pass image data (e.g. in strips) from DS to application.*/<br>
+typedef struct {<br>
+   TW_UINT16  Compression;  /* How the data is compressed                */<br>
+   TW_UINT32  BytesPerRow;  /* Number of bytes in a row of data          */<br>
+   TW_UINT32  Columns;      /* How many columns                          */<br>
+   TW_UINT32  Rows;         /* How many rows                             */<br>
+   TW_UINT32  XOffset;      /* How far from the side of the image        */<br>
+   TW_UINT32  YOffset;      /* How far from the top of the image         */<br>
+   TW_UINT32  BytesWritten; /* How many bytes written in Memory          */<br>
+   TW_MEMORY  Memory;       /* Mem struct used to pass actual image data */<br>
+} TW_IMAGEMEMXFER, FAR * pTW_IMAGEMEMXFER;<br>
+<br>
+/* Changed in 1.1: QuantTable, HuffmanDC, HuffmanAC TW_MEMREF -&gt; TW_MEMORY  */<br>
+/* DAT_JPEGCOMPRESSION. Based on JPEG Draft International Std, ver 10918-1. */<br>
+typedef struct {<br>
+   TW_UINT16   ColorSpace;       /* One of the TWPT_xxxx values                */<br>
+   TW_UINT32   SubSampling;      /* Two word "array" for subsampling values    */<br>
+   TW_UINT16   NumComponents;    /* Number of color components in image        */<br>
+   TW_UINT16   RestartFrequency; /* Frequency of restart marker codes in MDU's */<br>
+   TW_UINT16   QuantMap[4];      /* Mapping of components to QuantTables       */<br>
+   TW_MEMORY   QuantTable[4];    /* Quantization tables                        */<br>
+   TW_UINT16   HuffmanMap[4];    /* Mapping of components to Huffman tables    */<br>
+   TW_MEMORY   HuffmanDC[2];     /* DC Huffman tables                          */<br>
+   TW_MEMORY   HuffmanAC[2];     /* AC Huffman tables                          */<br>
+} TW_JPEGCOMPRESSION, FAR * pTW_JPEGCOMPRESSION;<br>
+<br>
+/* DAT_PALETTE8. Color palette when TWPT_PALETTE pixels xfer'd in mem buf. */<br>
+typedef struct {<br>
+   TW_UINT16    NumColors;   /* Number of colors in the color table.  */<br>
+   TW_UINT16    PaletteType; /* TWPA_xxxx, specifies type of palette. */<br>
+   TW_ELEMENT8  Colors[256]; /* Array of palette values starts here.  */<br>
+} TW_PALETTE8, FAR * pTW_PALETTE8;<br>
+<br>
+/* DAT_PENDINGXFERS. Used with MSG_ENDXFER to indicate additional data. */<br>
+typedef struct {<br>
+   TW_UINT16 Count;<br>
+   union {<br>
+      TW_UINT32 EOJ;<br>
+      TW_UINT32 Reserved;<br>
+   };<br>
+} TW_PENDINGXFERS, FAR *pTW_PENDINGXFERS;<br>
+<br>
+/* DAT_RGBRESPONSE */<br>
+typedef struct {<br>
+   TW_ELEMENT8         Response[1];<br>
+} TW_RGBRESPONSE, FAR * pTW_RGBRESPONSE;<br>
+<br>
+/* DAT_SETUPFILEXFER. Sets up DS to application data transfer via a file. */<br>
+typedef struct {<br>
+   TW_STR255 FileName;<br>
+   TW_UINT16 Format;   /* Any TWFF_ constant */<br>
+   TW_INT16  VRefNum;  /* Used for Mac only  */<br>
+} TW_SETUPFILEXFER, FAR * pTW_SETUPFILEXFER;<br>
+<br>
+/* DAT_SETUPMEMXFER. Sets up DS to application data transfer via a memory buffer. */<br>
+typedef struct {<br>
+   TW_UINT32 MinBufSize;<br>
+   TW_UINT32 MaxBufSize;<br>
+   TW_UINT32 Preferred;<br>
+} TW_SETUPMEMXFER, FAR * pTW_SETUPMEMXFER;<br>
+<br>
+/* DAT_STATUS. Application gets detailed status info from a data source with this. */<br>
+typedef struct {<br>
+   TW_UINT16  ConditionCode; /* Any TWCC_ constant     */<br>
+   TW_UINT16  Reserved;      /* Future expansion space */<br>
+} TW_STATUS, FAR * pTW_STATUS;<br>
+<br>
+/* DAT_USERINTERFACE. Coordinates UI between application and data source. */<br>
+typedef struct {<br>
+   TW_BOOL    ShowUI;  /* TRUE if DS should bring up its UI           */<br>
+   TW_BOOL    ModalUI; /* For Mac only - true if the DS's UI is modal */<br>
+   TW_HANDLE  hParent; /* For windows only - Application window handle        */<br>
+} TW_USERINTERFACE, FAR * pTW_USERINTERFACE;<br>
+<br>
+/* SDH - 03/21/95 - TWUNK */<br>
+/* DAT_TWUNKIDENTITY. Provides DS identity and 'other' information necessary */<br>
+/*                    across thunk link. */<br>
+typedef struct {<br>
+   TW_IDENTITY identity;        /* Identity of data source.                 */<br>
+   TW_STR255   dsPath;          /* Full path and file name of data source.  */<br>
+} TW_TWUNKIDENTITY, FAR * pTW_TWUNKIDENTITY;<br>
+<br>
+/* SDH - 03/21/95 - TWUNK */<br>
+/* Provides DS_Entry parameters over thunk link. */<br>
+typedef struct<br>
+{<br>
+    TW_INT8     destFlag;       /* TRUE if dest is not NULL                 */<br>
+    TW_IDENTITY dest;           /* Identity of data source (if used)        */<br>
+    TW_INT32    dataGroup;      /* DSM_Entry dataGroup parameter            */<br>
+    TW_INT16    dataArgType;    /* DSM_Entry dataArgType parameter          */<br>
+    TW_INT16    message;        /* DSM_Entry message parameter              */<br>
+    TW_INT32    pDataSize;      /* Size of pData (0 if NULL)                */<br>
+    //  TW_MEMREF   pData;      /* Based on implementation specifics, a     */<br>
+                                /* pData parameter makes no sense in this   */<br>
+                                /* structure, but data (if provided) will be*/<br>
+                                /* appended in the data block.              */<br>
+   } TW_TWUNKDSENTRYPARAMS, FAR * pTW_TWUNKDSENTRYPARAMS;<br>
+<br>
+/* SDH - 03/21/95 - TWUNK */<br>
+/* Provides DS_Entry results over thunk link. */<br>
+typedef struct<br>
+{<br>
+    TW_UINT16   returnCode;     /* Thunker DsEntry return code.             */<br>
+    TW_UINT16   conditionCode;  /* Thunker DsEntry condition code.          */<br>
+    TW_INT32    pDataSize;      /* Size of pData (0 if NULL)                */<br>
+    //  TW_MEMREF   pData;      /* Based on implementation specifics, a     */<br>
+                                /* pData parameter makes no sense in this   */<br>
+                                /* structure, but data (if provided) will be*/<br>
+                                /* appended in the data block.              */<br>
+} TW_TWUNKDSENTRYRETURN, FAR * pTW_TWUNKDSENTRYRETURN;<br>
+<br>
+/* WJD - 950818 */<br>
+/* Added for 1.6 Specification */<br>
+/* TWAIN 1.6 CAP_SUPPORTEDCAPSEXT structure */<br>
+typedef struct<br>
+{<br>
+    TW_UINT16 Cap;   /* Which CAP/ICAP info is relevant to */<br>
+    TW_UINT16 Properties;  /* Messages this CAP/ICAP supports */<br>
+} TW_CAPEXT, FAR * pTW_CAPEXT;<br>
+<br>
+/* ----------------------------------------------------------------------- *\<br>
+<br>
+  Version 1.7:      Added Following data structure for Document Imaging <br>
+  July 1997         Enhancement.<br>
+  KHL               TW_CUSTOMDSDATA --  For Saving and Restoring Source's <br>
+                                        state.<br>
+                    TW_INFO         --  Each attribute for extended image<br>
+                                        information.<br>
+                    TW_EXTIMAGEINFO --  Extended image information structure.<br>
+<br>
+\* ----------------------------------------------------------------------- */<br>
+<br>
+typedef struct {<br>
+    TW_UINT32  InfoLength;     /* Length of Information in bytes.  */<br>
+    TW_HANDLE  hData;          /* Place holder for data, DS Allocates */<br>
+}TW_CUSTOMDSDATA, FAR *pTW_CUSTOMDSDATA;<br>
+<br>
+typedef struct {<br>
+    TW_UINT16   InfoID;<br>
+    TW_UINT16   ItemType;<br>
+    TW_UINT16   NumItems;<br>
+    TW_UINT16   CondCode;<br>
+    TW_UINT32   Item;<br>
+}TW_INFO, FAR* pTW_INFO;<br>
+<br>
+typedef struct {<br>
+    TW_UINT32   NumInfos;<br>
+    TW_INFO     Info[1];<br>
+}TW_EXTIMAGEINFO, FAR* pTW_EXTIMAGEINFO;<br>
+<br>
+/* Added 1.8 */<br>
+<br>
+/* DAT_AUDIOINFO, information about audio data */<br>
+typedef struct {<br>
+   TW_STR255  Name;       /* name of audio data */<br>
+   TW_UINT32  Reserved;   /* reserved space */<br>
+} TW_AUDIOINFO, FAR * pTW_AUDIOINFO;<br>
+<br>
+/* DAT_DEVICEEVENT, information about events */<br>
+typedef struct {<br>
+   TW_UINT32  Event;                  /* One of the TWDE_xxxx values. */<br>
+   TW_STR255  DeviceName;             /* The name of the device that generated the event */<br>
+   TW_UINT32  BatteryMinutes;         /* Battery Minutes Remaining    */<br>
+   TW_INT16   BatteryPercentage;      /* Battery Percentage Remaining */<br>
+   TW_INT32   PowerSupply;            /* Power Supply                 */<br>
+   TW_FIX32   XResolution;            /* Resolution                   */<br>
+   TW_FIX32   YResolution;            /* Resolution                   */<br>
+   TW_UINT32  FlashUsed2;             /* Flash Used2                  */<br>
+   TW_UINT32  AutomaticCapture;       /* Automatic Capture            */<br>
+   TW_UINT32  TimeBeforeFirstCapture; /* Automatic Capture            */<br>
+   TW_UINT32  TimeBetweenCaptures;    /* Automatic Capture            */<br>
+} TW_DEVICEEVENT, FAR * pTW_DEVICEEVENT;<br>
+<br>
+/* DAT_FILESYSTEM, information about TWAIN file system */<br>
+typedef struct {<br>
+   /* DG_CONTROL / DAT_FILESYSTEM / MSG_xxxx fields     */<br>
+   TW_STR255  InputName; /* The name of the input or source file */<br>
+   TW_STR255  OutputName; /* The result of an operation or the name of a destination file */<br>
+   TW_MEMREF  Context; /* Source specific data used to remember state information */<br>
+   /* DG_CONTROL / DAT_FILESYSTEM / MSG_DELETE field    */<br>
+   int        Recursive; /* recursively delete all sub-directories */<br>
+   /* DG_CONTROL / DAT_FILESYSTEM / MSG_GETINFO fields  */<br>
+   TW_INT32   FileType; /* One of the TWFT_xxxx values */<br>
+   TW_UINT32  Size; /* Size of current FileType */<br>
+   TW_STR32   CreateTimeDate; /* creation date of the file */<br>
+   TW_STR32   ModifiedTimeDate; /* last date the file was modified */<br>
+   TW_UINT32  FreeSpace; /* bytes of free space on the current device */<br>
+   TW_INT32   NewImageSize; /* estimate of the amount of space a new image would take up */<br>
+   TW_UINT32  NumberOfFiles; /* number of files, depends on FileType */<br>
+   TW_UINT32  NumberOfSnippets; /**/<br>
+   char       Reserved[512]; /**/<br>
+} TW_FILESYSTEM, FAR * pTW_FILESYSTEM;<br>
+<br>
+/* DAT_PASSTHRU, device dependant data to pass through Data Source */<br>
+typedef struct {<br>
+   TW_MEMREF  pCommand;        /* Pointer to Command buffer */<br>
+   TW_UINT32  CommandBytes;    /* Number of bytes in Command buffer */<br>
+   TW_INT32   Direction;       /* One of the TWDR_xxxx values.  Defines the direction of data flow */<br>
+   TW_MEMREF  pData;           /* Pointer to Data buffer */<br>
+   TW_UINT32  DataBytes;       /* Number of bytes in Data buffer */<br>
+   TW_UINT32  DataBytesXfered; /* Number of bytes successfully transferred */<br>
+} TW_PASSTHRU, FAR * pTW_PASSTHRU;<br>
+<br>
+/* DAT_SETUPAUDIOFILEXFER, information required to setup an audio file transfer */<br>
+typedef struct {<br>
+   TW_STR255  FileName; /* full path target file */<br>
+   TW_UINT16  Format;   /* one of TWAF_xxxx */<br>
+   TW_INT16 VRefNum;<br>
+} TW_SETUPAUDIOFILEXFER, FAR * pTW_SETUPAUDIOFILEXFER;<br>
+<br>
+/****************************************************************************<br>
+ * Generic Constants                                                        *<br>
+ ****************************************************************************/<br>
+<br>
+#define TWON_ARRAY           3 /* indicates TW_ARRAY container       */<br>
+#define TWON_ENUMERATION     4 /* indicates TW_ENUMERATION container */<br>
+#define TWON_ONEVALUE        5 /* indicates TW_ONEVALUE container    */<br>
+#define TWON_RANGE           6 /* indicates TW_RANGE container       */<br>
+<br>
+#define TWON_ICONID          962 /* res Id of icon used in USERSELECT lbox */<br>
+#define TWON_DSMID           461 /* res Id of the DSM version num resource */<br>
+#define TWON_DSMCODEID       63  /* res Id of the Mac SM Code resource     */<br>
+<br>
+#define TWON_DONTCARE8       0xff<br>
+#define TWON_DONTCARE16      0xffff<br>
+#define TWON_DONTCARE32      0xffffffff<br>
+<br>
+/* Flags used in TW_MEMORY structure. */<br>
+#define TWMF_APPOWNS     0x1<br>
+#define TWMF_DSMOWNS     0x2<br>
+#define TWMF_DSOWNS      0x4<br>
+#define TWMF_POINTER     0x8<br>
+#define TWMF_HANDLE      0x10<br>
+<br>
+/* Palette types for TW_PALETTE8 */<br>
+#define TWPA_RGB         0<br>
+#define TWPA_GRAY        1<br>
+#define TWPA_CMY         2<br>
+<br>
+/* There are four containers used for capabilities negotiation:<br>
+ *    TWON_ONEVALUE, TWON_RANGE, TWON_ENUMERATION, TWON_ARRAY<br>
+ * In each container structure ItemType can be TWTY_INT8, TWTY_INT16, etc.<br>
+ * The kind of data stored in the container can be determined by doing<br>
+ * DCItemSize[ItemType] where the following is defined in TWAIN glue code:<br>
+ *          DCItemSize[]= { sizeof(TW_INT8),<br>
+ *                          sizeof(TW_INT16),<br>
+ *                          etc.<br>
+ *                          sizeof(TW_UINT32) };<br>
+ *<br>
+ */<br>
+<br>
+#define TWTY_INT8        0x0000    /* Means Item is a TW_INT8   */<br>
+#define TWTY_INT16       0x0001    /* Means Item is a TW_INT16  */<br>
+#define TWTY_INT32       0x0002    /* Means Item is a TW_INT32  */<br>
+<br>
+#define TWTY_UINT8       0x0003    /* Means Item is a TW_UINT8  */<br>
+#define TWTY_UINT16      0x0004    /* Means Item is a TW_UINT16 */<br>
+#define TWTY_UINT32      0x0005    /* Means Item is a TW_UINT32 */<br>
+<br>
+#define TWTY_BOOL        0x0006    /* Means Item is a TW_BOOL   */<br>
+<br>
+#define TWTY_FIX32       0x0007    /* Means Item is a TW_FIX32  */<br>
+<br>
+#define TWTY_FRAME       0x0008    /* Means Item is a TW_FRAME  */<br>
+<br>
+#define TWTY_STR32       0x0009    /* Means Item is a TW_STR32  */<br>
+#define TWTY_STR64       0x000a    /* Means Item is a TW_STR64  */<br>
+#define TWTY_STR128      0x000b    /* Means Item is a TW_STR128 */<br>
+#define TWTY_STR255      0x000c    /* Means Item is a TW_STR255 */<br>
+<br>
+/****************************************************************************<br>
+ * Capability Constants                                                     *<br>
+ ****************************************************************************/<br>
+<br>
+/* ICAP_BITORDER values (BO_ means Bit Order) */<br>
+#define TWBO_LSBFIRST    0<br>
+#define TWBO_MSBFIRST    1<br>
+<br>
+/* ICAP_COMPRESSION values (CP_ means ComPression ) */<br>
+#define TWCP_NONE        0<br>
+#define TWCP_PACKBITS    1<br>
+#define TWCP_GROUP31D    2 /* Follows CCITT spec (no End Of Line)          */<br>
+#define TWCP_GROUP31DEOL 3 /* Follows CCITT spec (has End Of Line)         */<br>
+#define TWCP_GROUP32D    4 /* Follows CCITT spec (use cap for K Factor)    */<br>
+#define TWCP_GROUP4      5 /* Follows CCITT spec                           */<br>
+#define TWCP_JPEG        6 /* Use capability for more info                 */<br>
+#define TWCP_LZW         7 /* Must license from Unisys and IBM to use      */<br>
+#define TWCP_JBIG        8 /* For Bitonal images  -- Added 1.7 KHL         */<br>
+/* Added 1.8 */<br>
+#define TWCP_PNG         9<br>
+#define TWCP_RLE4        10<br>
+#define TWCP_RLE8        11<br>
+#define TWCP_BITFIELDS   12<br>
+<br>
+<br>
+/* ICAP_IMAGEFILEFORMAT values (FF_means File Format)   */<br>
+#define TWFF_TIFF        0    /* Tagged Image File Format     */<br>
+#define TWFF_PICT        1    /* Macintosh PICT               */<br>
+#define TWFF_BMP         2    /* Windows Bitmap               */<br>
+#define TWFF_XBM         3    /* X-Windows Bitmap             */<br>
+#define TWFF_JFIF        4    /* JPEG File Interchange Format */<br>
+#define TWFF_FPX         5    /* Flash Pix                    */<br>
+#define TWFF_TIFFMULTI   6    /* Multi-page tiff file         */<br>
+#define TWFF_PNG         7<br>
+#define TWFF_SPIFF       8<br>
+#define TWFF_EXIF        9<br>
+<br>
+<br>
+/* ICAP_FILTER values (FT_ means Filter Type) */<br>
+#define TWFT_RED         0<br>
+#define TWFT_GREEN       1<br>
+#define TWFT_BLUE        2<br>
+#define TWFT_NONE        3<br>
+#define TWFT_WHITE       4<br>
+#define TWFT_CYAN        5<br>
+#define TWFT_MAGENTA     6<br>
+#define TWFT_YELLOW      7<br>
+#define TWFT_BLACK       8<br>
+<br>
+/* ICAP_LIGHTPATH values (LP_ means Light Path) */<br>
+#define TWLP_REFLECTIVE   0<br>
+#define TWLP_TRANSMISSIVE 1<br>
+<br>
+/* ICAP_LIGHTSOURCE values (LS_ means Light Source) */<br>
+#define TWLS_RED         0<br>
+#define TWLS_GREEN       1<br>
+#define TWLS_BLUE        2<br>
+#define TWLS_NONE        3<br>
+#define TWLS_WHITE       4<br>
+#define TWLS_UV          5<br>
+#define TWLS_IR          6<br>
+<br>
+/* ICAP_ORIENTATION values (OR_ means ORientation) */<br>
+#define TWOR_ROT0        0<br>
+#define TWOR_ROT90       1<br>
+#define TWOR_ROT180      2<br>
+#define TWOR_ROT270      3<br>
+#define TWOR_PORTRAIT    TWOR_ROT0<br>
+#define TWOR_LANDSCAPE   TWOR_ROT270<br>
+<br>
+/* ICAP_PLANARCHUNKY values (PC_ means Planar/Chunky ) */<br>
+#define TWPC_CHUNKY      0<br>
+#define TWPC_PLANAR      1<br>
+<br>
+/* ICAP_PIXELFLAVOR values (PF_ means Pixel Flavor) */<br>
+#define TWPF_CHOCOLATE   0  /* zero pixel represents darkest shade  */<br>
+#define TWPF_VANILLA     1  /* zero pixel represents lightest shade */<br>
+<br>
+/* ICAP_PIXELTYPE values (PT_ means Pixel Type) */<br>
+#define TWPT_BW          0 /* Black and White */<br>
+#define TWPT_GRAY        1<br>
+#define TWPT_RGB         2<br>
+#define TWPT_PALETTE     3<br>
+#define TWPT_CMY         4<br>
+#define TWPT_CMYK        5<br>
+#define TWPT_YUV         6<br>
+#define TWPT_YUVK        7<br>
+#define TWPT_CIEXYZ      8<br>
+<br>
+/* ICAP_SUPPORTEDSIZES values (SS_ means Supported Sizes) */<br>
+#define TWSS_NONE        0<br>
+#define TWSS_A4LETTER    1<br>
+#define TWSS_B5LETTER    2<br>
+#define TWSS_USLETTER    3<br>
+#define TWSS_USLEGAL     4<br>
+/* Added 1.5 */<br>
+#define TWSS_A5          5<br>
+#define TWSS_B4          6<br>
+#define TWSS_B6          7<br>
+//#define TWSS_B          8<br>
+/* Added 1.7 */<br>
+#define TWSS_USLEDGER    9<br>
+#define TWSS_USEXECUTIVE 10<br>
+#define TWSS_A3          11<br>
+#define TWSS_B3          12<br>
+#define TWSS_A6          13<br>
+#define TWSS_C4          14<br>
+#define TWSS_C5          15<br>
+#define TWSS_C6          16<br>
+/* Added 1.8 */<br>
+#define TWSS_4A0          17<br>
+#define TWSS_2A0          18<br>
+#define TWSS_A0           19<br>
+#define TWSS_A1           20<br>
+#define TWSS_A2           21<br>
+#define TWSS_A4           TWSS_A4LETTER<br>
+#define TWSS_A7           22<br>
+#define TWSS_A8           23<br>
+#define TWSS_A9           24<br>
+#define TWSS_A10          25<br>
+#define TWSS_ISOB0        26<br>
+#define TWSS_ISOB1        27<br>
+#define TWSS_ISOB2        28<br>
+#define TWSS_ISOB3        TWSS_B3<br>
+#define TWSS_ISOB4        TWSS_B4<br>
+#define TWSS_ISOB5        29<br>
+#define TWSS_ISOB6        TWSS_B6<br>
+#define TWSS_ISOB7        30<br>
+#define TWSS_ISOB8        31<br>
+#define TWSS_ISOB9        32<br>
+#define TWSS_ISOB10       33<br>
+#define TWSS_JISB0        34<br>
+#define TWSS_JISB1        35<br>
+#define TWSS_JISB2        36<br>
+#define TWSS_JISB3        37<br>
+#define TWSS_JISB4        38<br>
+#define TWSS_JISB5        TWSS_B5LETTER<br>
+#define TWSS_JISB6        39<br>
+#define TWSS_JISB7        40<br>
+#define TWSS_JISB8        41<br>
+#define TWSS_JISB9        42<br>
+#define TWSS_JISB10       43<br>
+#define TWSS_C0           44<br>
+#define TWSS_C1           45<br>
+#define TWSS_C2           46<br>
+#define TWSS_C3           47<br>
+#define TWSS_C7           48<br>
+#define TWSS_C8           49<br>
+#define TWSS_C9           50<br>
+#define TWSS_C10          51<br>
+#define TWSS_USSTATEMENT  52<br>
+#define TWSS_BUSINESSCARD 53<br>
+<br>
+/* ICAP_XFERMECH values (SX_ means Setup XFer) */<br>
+#define TWSX_NATIVE      0<br>
+#define TWSX_FILE        1<br>
+#define TWSX_MEMORY      2<br>
+<br>
+/* ICAP_UNITS values (UN_ means UNits) */<br>
+#define TWUN_INCHES      0<br>
+#define TWUN_CENTIMETERS 1<br>
+#define TWUN_PICAS       2<br>
+#define TWUN_POINTS      3<br>
+#define TWUN_TWIPS       4<br>
+#define TWUN_PIXELS      5<br>
+<br>
+/* Added 1.5 */<br>
+/* ICAP_BITDEPTHREDUCTION values (BR_ means Bitdepth Reduction) */<br>
+#define TWBR_THRESHOLD     0<br>
+#define TWBR_HALFTONE      1<br>
+#define TWBR_CUSTHALFTONE  2<br>
+#define TWBR_DIFFUSION     3<br>
+<br>
+/* Added 1.7 */<br>
+/* ICAP_DUPLEX values */<br>
+#define TWDX_NONE         0<br>
+#define TWDX_1PASSDUPLEX  1<br>
+#define TWDX_2PASSDUPLEX  2<br>
+<br>
+/* Added 1.7 */<br>
+/* TWEI_BARCODETYPE values */<br>
+#define TWBT_3OF9                 0<br>
+#define TWBT_2OF5INTERLEAVED      1<br>
+#define TWBT_2OF5NONINTERLEAVED   2<br>
+#define TWBT_CODE93               3<br>
+#define TWBT_CODE128              4<br>
+#define TWBT_UCC128               5<br>
+#define TWBT_CODABAR              6<br>
+#define TWBT_UPCA                 7<br>
+#define TWBT_UPCE                 8<br>
+#define TWBT_EAN8                 9<br>
+#define TWBT_EAN13                10<br>
+#define TWBT_POSTNET              11<br>
+#define TWBT_PDF417               12<br>
+/* Added 1.8 */<br>
+#define TWBT_2OF5INDUSTRIAL       13<br>
+#define TWBT_2OF5MATRIX           14<br>
+#define TWBT_2OF5DATALOGIC        15<br>
+#define TWBT_2OF5IATA             16<br>
+#define TWBT_3OF9FULLASCII        17<br>
+#define TWBT_CODABARWITHSTARTSTOP 18<br>
+#define TWBT_MAXICODE             19<br>
+<br>
+/* Added 1.7 */<br>
+/* TWEI_DESKEWSTATUS values */<br>
+#define TWDSK_SUCCESS     0<br>
+#define TWDSK_REPORTONLY  1<br>
+#define TWDSK_FAIL        2<br>
+#define TWDSK_DISABLED    3<br>
+<br>
+/* Added 1.7 */<br>
+/* TWEI_PATCHCODE values */<br>
+#define TWPCH_PATCH1      0<br>
+#define TWPCH_PATCH2      1<br>
+#define TWPCH_PATCH3      2<br>
+#define TWPCH_PATCH4      3<br>
+#define TWPCH_PATCH6      4<br>
+#define TWPCH_PATCHT      5<br>
+<br>
+/* Added 1.7 */<br>
+/* CAP_JOBCONTROL values */<br>
+#define TWJC_NONE   0<br>
+#define TWJC_JSIC   1<br>
+#define TWJC_JSIS   2<br>
+#define TWJC_JSXC   3<br>
+#define TWJC_JSXS   4<br>
+                  <br>
+/* Added 1.7 */<br>
+/* TWEI_BARCODEROTATION values (BCOR_ means barcode rotation) */<br>
+#define TWBCOR_ROT0   0<br>
+#define TWBCOR_ROT90  1<br>
+#define TWBCOR_ROT180 2<br>
+#define TWBCOR_ROT270 3<br>
+#define TWBCOR_ROTX   4<br>
+<br>
+/* Added 1.8 */<br>
+/* ACAP_AUDIOFILEFORMAT values (AF_ means audio format) */<br>
+#define TWAF_WAV      0<br>
+#define TWAF_AIFF     1<br>
+#define TWAF_AU       3<br>
+#define TWAF_SND      4<br>
+<br>
+/* CAP_ALARMS values (AL_ means alarms) */<br>
+#define TWAL_ALARM          0<br>
+#define TWAL_FEEDERERROR    1<br>
+#define TWAL_FEEDERWARNING  2<br>
+#define TWAL_BARCODE        3<br>
+#define TWAL_DOUBLEFEED     4<br>
+#define TWAL_JAM            5<br>
+#define TWAL_PATCHCODE      6<br>
+#define TWAL_POWER          7<br>
+#define TWAL_SKEW           8<br>
+<br>
+/* CAP_CLEARBUFFERS values (CB_ means clear buffers) */<br>
+#define TWCB_AUTO           0<br>
+#define TWCB_CLEAR          1<br>
+#define TWCB_NOCLEAR        2<br>
+<br>
+/* CAP_DEVICEEVENT values (DE_ means device event) */<br>
+#define TWDE_CUSTOMEVENTS           0x8000      <br>
+#define TWDE_CHECKAUTOMATICCAPTURE  0<br>
+#define TWDE_CHECKBATTERY           1<br>
+#define TWDE_CHECKDEVICEONLINE      2<br>
+#define TWDE_CHECKFLASH             3<br>
+#define TWDE_CHECKPOWERSUPPLY       4<br>
+#define TWDE_CHECKRESOLUTION        5<br>
+#define TWDE_DEVICEADDED            6<br>
+#define TWDE_DEVICEOFFLINE          7<br>
+#define TWDE_DEVICEREADY            8<br>
+#define TWDE_DEVICEREMOVED          9<br>
+#define TWDE_IMAGECAPTURED          10<br>
+#define TWDE_IMAGEDELETED           11<br>
+#define TWDE_PAPERDOUBLEFEED        12<br>
+#define TWDE_PAPERJAM               13<br>
+#define TWDE_LAMPFAILURE            14<br>
+#define TWDE_POWERSAVE              15<br>
+#define TWDE_POWERSAVENOTIFY        16<br>
+<br>
+/* CAP_FEEDERALIGNMENT values (FA_ means feeder alignment) */<br>
+#define TWFA_NONE   0<br>
+#define TWFA_LEFT   1<br>
+#define TWFA_CENTER 2<br>
+#define TWFA_RIGHT  3<br>
+<br>
+/* CAP_FEEDERORDER values (FO_ means feeder order) */<br>
+#define TWFO_FIRSTPAGEFIRST 0<br>
+#define TWFO_LASTPAGEFIRST  1<br>
+<br>
+/* CAP_FILESYSTEM values (FS_ means file system) */<br>
+#define TWFS_FILESYSTEM       0<br>
+#define TWFS_RECURSIVEDELETE  1<br>
+<br>
+/* CAP_POWERSUPPLY values (PS_ means power supply) */<br>
+#define TWPS_EXTERNAL 0<br>
+#define TWPS_BATTERY  1<br>
+<br>
+/* CAP_PRINTER values (PR_ means printer) */<br>
+#define TWPR_IMPRINTERTOPBEFORE     0<br>
+#define TWPR_IMPRINTERTOPAFTER      1<br>
+#define TWPR_IMPRINTERBOTTOMBEFORE  2<br>
+#define TWPR_IMPRINTERBOTTOMAFTER   3<br>
+#define TWPR_ENDORSERTOPBEFORE      4<br>
+#define TWPR_ENDORSERTOPAFTER       5<br>
+#define TWPR_ENDORSERBOTTOMBEFORE   6<br>
+#define TWPR_ENDORSERBOTTOMAFTER    7<br>
+<br>
+/* CAP_PRINTERMODE values (PM_ means printer mode) */<br>
+#define TWPM_SINGLESTRING     0<br>
+#define TWPM_MULTISTRING      1<br>
+#define TWPM_COMPOUNDSTRING   2<br>
+<br>
+/* ICAP_BARCODESEARCHMODE values (TWBD_ means search) */<br>
+#define TWBD_HORZ     0<br>
+#define TWBD_VERT     1<br>
+#define TWBD_HORZVERT 2<br>
+#define TWBD_VERTHORZ 3<br>
+<br>
+/* ICAP_FLASHUSED2 values (FL_ means flash) */<br>
+#define TWFL_NONE     0<br>
+#define TWFL_OFF      1<br>
+#define TWFL_ON       2<br>
+#define TWFL_AUTO     3<br>
+#define TWFL_REDEYE   4<br>
+<br>
+/* ICAP_FLIPROTATION values (FR_ means flip rotation) */<br>
+#define TWFR_BOOK     0<br>
+#define TWFR_FANFOLD  1<br>
+<br>
+/* ICAP_IMAGEFILTER values (IF_ means image filter) */<br>
+#define TWIF_NONE     0<br>
+#define TWIF_AUTO     1<br>
+#define TWIF_LOWPASS  2<br>
+#define TWIF_BANDPASS 3<br>
+#define TWIF_HIGHPASS 4<br>
+#define TWIF_TEXT     TWIF_BANDPASS<br>
+#define TWIF_FINELINE TWIF_HIGHPASS<br>
+<br>
+/* ICAP_NOISEFILTER values (NF_ means noise filter) */<br>
+#define TWNF_NONE         0<br>
+#define TWNF_AUTO         1<br>
+#define TWNF_LONEPIXEL    2<br>
+#define TWNF_MAJORITYRULE 3<br>
+<br>
+/* ICAP_OVERSCAN values (OV_ means overscan) */<br>
+#define TWOV_NONE       0<br>
+#define TWOV_AUTO       1<br>
+#define TWOV_TOPBOTTOM  2<br>
+#define TWOV_LEFTRIGHT  3<br>
+#define TWOV_ALL        4<br>
+<br>
+/* TW_FILESYSTEM.FileType values (FT_ means file type) */<br>
+#define TWFY_CAMERA         0<br>
+#define TWFY_CAMERATOP      1<br>
+#define TWFY_CAMERABOTTOM   2<br>
+#define TWFY_CAMERAPREVIEW  3<br>
+#define TWFY_DOMAIN         4<br>
+#define TWFY_HOST           5<br>
+#define TWFY_DIRECTORY      6<br>
+#define TWFY_IMAGE          7<br>
+#define TWFY_UNKNOWN        8<br>
+<br>
+/****************************************************************************<br>
+ * Country Constants                                                        *<br>
+ ****************************************************************************/<br>
+<br>
+#define TWCY_AFGHANISTAN   1001<br>
+#define TWCY_ALGERIA        213<br>
+#define TWCY_AMERICANSAMOA  684<br>
+#define TWCY_ANDORRA        033<br>
+#define TWCY_ANGOLA        1002<br>
+#define TWCY_ANGUILLA      8090<br>
+#define TWCY_ANTIGUA       8091<br>
+#define TWCY_ARGENTINA       54<br>
+#define TWCY_ARUBA          297<br>
+#define TWCY_ASCENSIONI     247<br>
+#define TWCY_AUSTRALIA       61<br>
+#define TWCY_AUSTRIA         43<br>
+#define TWCY_BAHAMAS       8092<br>
+#define TWCY_BAHRAIN        973<br>
+#define TWCY_BANGLADESH     880<br>
+#define TWCY_BARBADOS      8093<br>
+#define TWCY_BELGIUM         32<br>
+#define TWCY_BELIZE         501<br>
+#define TWCY_BENIN          229<br>
+#define TWCY_BERMUDA       8094<br>
+#define TWCY_BHUTAN        1003<br>
+#define TWCY_BOLIVIA        591<br>
+#define TWCY_BOTSWANA       267<br>
+#define TWCY_BRITAIN          6<br>
+#define TWCY_BRITVIRGINIS  8095<br>
+#define TWCY_BRAZIL          55<br>
+#define TWCY_BRUNEI         673<br>
+#define TWCY_BULGARIA       359<br>
+#define TWCY_BURKINAFASO   1004<br>
+#define TWCY_BURMA         1005<br>
+#define TWCY_BURUNDI       1006<br>
+#define TWCY_CAMAROON       237<br>
+#define TWCY_CANADA           2<br>
+#define TWCY_CAPEVERDEIS    238<br>
+#define TWCY_CAYMANIS      8096<br>
+#define TWCY_CENTRALAFREP  1007<br>
+#define TWCY_CHAD          1008<br>
+#define TWCY_CHILE           56<br>
+#define TWCY_CHINA           86<br>
+#define TWCY_CHRISTMASIS   1009<br>
+#define TWCY_COCOSIS       1009<br>
+#define TWCY_COLOMBIA        57<br>
+#define TWCY_COMOROS       1010<br>
+#define TWCY_CONGO         1011<br>
+#define TWCY_COOKIS        1012<br>
+#define TWCY_COSTARICA     506<br>
+#define TWCY_CUBA           005<br>
+#define TWCY_CYPRUS         357<br>
+#define TWCY_CZECHOSLOVAKIA  42<br>
+#define TWCY_DENMARK         45<br>
+#define TWCY_DJIBOUTI      1013<br>
+#define TWCY_DOMINICA      8097<br>
+#define TWCY_DOMINCANREP   8098<br>
+#define TWCY_EASTERIS      1014<br>
+#define TWCY_ECUADOR        593<br>
+#define TWCY_EGYPT           20<br>
+#define TWCY_ELSALVADOR     503<br>
+#define TWCY_EQGUINEA      1015<br>
+#define TWCY_ETHIOPIA       251<br>
+#define TWCY_FALKLANDIS    1016<br>
+#define TWCY_FAEROEIS       298<br>
+#define TWCY_FIJIISLANDS    679<br>
+#define TWCY_FINLAND        358<br>
+#define TWCY_FRANCE          33<br>
+#define TWCY_FRANTILLES     596<br>
+#define TWCY_FRGUIANA       594<br>
+#define TWCY_FRPOLYNEISA    689<br>
+#define TWCY_FUTANAIS      1043<br>
+#define TWCY_GABON          241<br>
+#define TWCY_GAMBIA         220<br>
+#define TWCY_GERMANY         49<br>
+#define TWCY_GHANA          233<br>
+#define TWCY_GIBRALTER      350<br>
+#define TWCY_GREECE          30<br>
+#define TWCY_GREENLAND      299<br>
+#define TWCY_GRENADA       8099<br>
+#define TWCY_GRENEDINES    8015<br>
+#define TWCY_GUADELOUPE     590<br>
+#define TWCY_GUAM           671<br>
+#define TWCY_GUANTANAMOBAY 5399<br>
+#define TWCY_GUATEMALA      502<br>
+#define TWCY_GUINEA         224<br>
+#define TWCY_GUINEABISSAU  1017<br>
+#define TWCY_GUYANA         592<br>
+#define TWCY_HAITI          509<br>
+#define TWCY_HONDURAS       504<br>
+#define TWCY_HONGKONG      852<br>
+#define TWCY_HUNGARY         36<br>
+#define TWCY_ICELAND        354<br>
+#define TWCY_INDIA           91<br>
+#define TWCY_INDONESIA       62<br>
+#define TWCY_IRAN            98<br>
+#define TWCY_IRAQ           964<br>
+#define TWCY_IRELAND        353<br>
+#define TWCY_ISRAEL         972<br>
+#define TWCY_ITALY           39<br>
+#define TWCY_IVORYCOAST    225<br>
+#define TWCY_JAMAICA       8010<br>
+#define TWCY_JAPAN           81<br>
+#define TWCY_JORDAN         962<br>
+#define TWCY_KENYA          254<br>
+#define TWCY_KIRIBATI      1018<br>
+#define TWCY_KOREA           82<br>
+#define TWCY_KUWAIT         965<br>
+#define TWCY_LAOS          1019<br>
+#define TWCY_LEBANON       1020<br>
+#define TWCY_LIBERIA        231<br>
+#define TWCY_LIBYA          218<br>
+#define TWCY_LIECHTENSTEIN   41<br>
+#define TWCY_LUXENBOURG     352<br>
+#define TWCY_MACAO          853<br>
+#define TWCY_MADAGASCAR    1021<br>
+#define TWCY_MALAWI         265<br>
+#define TWCY_MALAYSIA        60<br>
+#define TWCY_MALDIVES       960<br>
+#define TWCY_MALI          1022<br>
+#define TWCY_MALTA          356<br>
+#define TWCY_MARSHALLIS     692<br>
+#define TWCY_MAURITANIA    1023<br>
+#define TWCY_MAURITIUS      230<br>
+#define TWCY_MEXICO           3<br>
+#define TWCY_MICRONESIA     691<br>
+#define TWCY_MIQUELON       508<br>
+#define TWCY_MONACO          33<br>
+#define TWCY_MONGOLIA      1024<br>
+#define TWCY_MONTSERRAT    8011<br>
+#define TWCY_MOROCCO        212<br>
+#define TWCY_MOZAMBIQUE    1025<br>
+#define TWCY_NAMIBIA        264<br>
+#define TWCY_NAURU         1026<br>
+#define TWCY_NEPAL          977<br>
+#define TWCY_NETHERLANDS     31<br>
+#define TWCY_NETHANTILLES   599<br>
+#define TWCY_NEVIS         8012<br>
+#define TWCY_NEWCALEDONIA   687<br>
+#define TWCY_NEWZEALAND      64<br>
+#define TWCY_NICARAGUA      505<br>
+#define TWCY_NIGER          227<br>
+#define TWCY_NIGERIA        234<br>
+#define TWCY_NIUE          1027<br>
+#define TWCY_NORFOLKI      1028<br>
+#define TWCY_NORWAY          47<br>
+#define TWCY_OMAN           968<br>
+#define TWCY_PAKISTAN        92<br>
+#define TWCY_PALAU         1029<br>
+#define TWCY_PANAMA         507<br>
+#define TWCY_PARAGUAY       595<br>
+#define TWCY_PERU            51<br>
+#define TWCY_PHILLIPPINES    63<br>
+#define TWCY_PITCAIRNIS    1030<br>
+#define TWCY_PNEWGUINEA     675<br>
+#define TWCY_POLAND          48<br>
+#define TWCY_PORTUGAL       351<br>
+#define TWCY_QATAR          974<br>
+#define TWCY_REUNIONI      1031<br>
+#define TWCY_ROMANIA         40<br>
+#define TWCY_RWANDA         250<br>
+#define TWCY_SAIPAN         670<br>
+#define TWCY_SANMARINO       39<br>
+#define TWCY_SAOTOME       1033<br>
+#define TWCY_SAUDIARABIA    966<br>
+#define TWCY_SENEGAL        221<br>
+#define TWCY_SEYCHELLESIS  1034<br>
+#define TWCY_SIERRALEONE   1035<br>
+#define TWCY_SINGAPORE       65<br>
+#define TWCY_SOLOMONIS     1036<br>
+#define TWCY_SOMALI        1037<br>
+#define TWCY_SOUTHAFRICA    27<br>
+#define TWCY_SPAIN           34<br>
+#define TWCY_SRILANKA        94<br>
+#define TWCY_STHELENA      1032<br>
+#define TWCY_STKITTS       8013<br>
+#define TWCY_STLUCIA       8014<br>
+#define TWCY_STPIERRE       508<br>
+#define TWCY_STVINCENT     8015<br>
+#define TWCY_SUDAN         1038<br>
+#define TWCY_SURINAME       597<br>
+#define TWCY_SWAZILAND      268<br>
+#define TWCY_SWEDEN          46<br>
+#define TWCY_SWITZERLAND     41<br>
+#define TWCY_SYRIA         1039<br>
+#define TWCY_TAIWAN         886<br>
+#define TWCY_TANZANIA       255<br>
+#define TWCY_THAILAND        66<br>
+#define TWCY_TOBAGO        8016<br>
+#define TWCY_TOGO           228<br>
+#define TWCY_TONGAIS        676<br>
+#define TWCY_TRINIDAD      8016<br>
+#define TWCY_TUNISIA        216<br>
+#define TWCY_TURKEY          90<br>
+#define TWCY_TURKSCAICOS   8017<br>
+#define TWCY_TUVALU        1040<br>
+#define TWCY_UGANDA         256<br>
+#define TWCY_USSR             7<br>
+#define TWCY_UAEMIRATES     971<br>
+#define TWCY_UNITEDKINGDOM   44<br>
+#define TWCY_USA              1<br>
+#define TWCY_URUGUAY        598<br>
+#define TWCY_VANUATU       1041<br>
+#define TWCY_VATICANCITY     39<br>
+#define TWCY_VENEZUELA       58<br>
+#define TWCY_WAKE          1042<br>
+#define TWCY_WALLISIS      1043<br>
+#define TWCY_WESTERNSAHARA 1044<br>
+#define TWCY_WESTERNSAMOA  1045<br>
+#define TWCY_YEMEN         1046<br>
+#define TWCY_YUGOSLAVIA      38<br>
+#define TWCY_ZAIRE          243<br>
+#define TWCY_ZAMBIA         260<br>
+#define TWCY_ZIMBABWE       263<br>
+/* Added for 1.8 */<br>
+#define TWCY_ALBANIA        355<br>
+#define TWCY_ARMENIA        374<br>
+#define TWCY_AZERBAIJAN     994<br>
+#define TWCY_BELARUS        375<br>
+#define TWCY_BOSNIAHERZGO   387<br>
+#define TWCY_CAMBODIA       855<br>
+#define TWCY_CROATIA        385<br>
+#define TWCY_CZECHREPUBLIC  420<br>
+#define TWCY_DIEGOGARCIA    246<br>
+#define TWCY_ERITREA        291<br>
+#define TWCY_ESTONIA        372<br>
+#define TWCY_GEORGIA        995<br>
+#define TWCY_LATVIA         371<br>
+#define TWCY_LESOTHO        266<br>
+#define TWCY_LITHUANIA      370<br>
+#define TWCY_MACEDONIA      389<br>
+#define TWCY_MAYOTTEIS      269<br>
+#define TWCY_MOLDOVA        373<br>
+#define TWCY_MYANMAR        95<br>
+#define TWCY_NORTHKOREA     850<br>
+#define TWCY_PUERTORICO     787<br>
+#define TWCY_RUSSIA         7<br>
+#define TWCY_SERBIA         381<br>
+#define TWCY_SLOVAKIA       421<br>
+#define TWCY_SLOVENIA       386<br>
+#define TWCY_SOUTHKOREA     82<br>
+#define TWCY_UKRAINE        380<br>
+#define TWCY_USVIRGINIS     340<br>
+#define TWCY_VIETNAM        84<br>
+<br>
+/****************************************************************************<br>
+ * Language Constants                                                       *<br>
+ ****************************************************************************/<br>
+<br>
+#define TWLG_DAN              0 /* Danish                 */<br>
+#define TWLG_DUT              1 /* Dutch                  */<br>
+#define TWLG_ENG              2 /* International English  */<br>
+#define TWLG_FCF              3 /* French Canadian        */<br>
+#define TWLG_FIN              4 /* Finnish                */<br>
+#define TWLG_FRN              5 /* French                 */<br>
+#define TWLG_GER              6 /* German                 */<br>
+#define TWLG_ICE              7 /* Icelandic              */<br>
+#define TWLG_ITN              8 /* Italian                */<br>
+#define TWLG_NOR              9 /* Norwegian              */<br>
+#define TWLG_POR             10 /* Portuguese             */<br>
+#define TWLG_SPA             11 /* Spanish                */<br>
+#define TWLG_SWE             12 /* Swedish                */<br>
+#define TWLG_USA             13 /* U.S. English           */<br>
+/* Added for 1.8 */<br>
+#define TWLG_USERLOCALE           -1<br>
+#define TWLG_AFRIKAANS            14  <br>
+#define TWLG_ALBANIA              15<br>
+#define TWLG_ARABIC               16<br>
+#define TWLG_ARABIC_ALGERIA       17<br>
+#define TWLG_ARABIC_BAHRAIN       18<br>
+#define TWLG_ARABIC_EGYPT         19<br>
+#define TWLG_ARABIC_IRAQ          20<br>
+#define TWLG_ARABIC_JORDAN        21<br>
+#define TWLG_ARABIC_KUWAIT        22<br>
+#define TWLG_ARABIC_LEBANON       23<br>
+#define TWLG_ARABIC_LIBYA         24<br>
+#define TWLG_ARABIC_MOROCCO       25<br>
+#define TWLG_ARABIC_OMAN          26<br>
+#define TWLG_ARABIC_QATAR         27<br>
+#define TWLG_ARABIC_SAUDIARABIA   28<br>
+#define TWLG_ARABIC_SYRIA         29<br>
+#define TWLG_ARABIC_TUNISIA       30<br>
+#define TWLG_ARABIC_UAE           31 /* United Arabic Emirates */<br>
+#define TWLG_ARABIC_YEMEN         32<br>
+#define TWLG_BASQUE               33<br>
+#define TWLG_BYELORUSSIAN         34<br>
+#define TWLG_BULGARIAN            35<br>
+#define TWLG_CATALAN              36<br>
+#define TWLG_CHINESE              37<br>
+#define TWLG_CHINESE_HONGKONG     38<br>
+#define TWLG_CHINESE_PRC          39 /* People's Republic of China */<br>
+#define TWLG_CHINESE_SINGAPORE    40<br>
+#define TWLG_CHINESE_SIMPLIFIED   41<br>
+#define TWLG_CHINESE_TAIWAN       42<br>
+#define TWLG_CHINESE_TRADITIONAL  43<br>
+#define TWLG_CROATIA              44<br>
+#define TWLG_CZECH                45<br>
+#define TWLG_DANISH               TWLG_DAN<br>
+#define TWLG_DUTCH                TWLG_DUT<br>
+#define TWLG_DUTCH_BELGIAN        46<br>
+#define TWLG_ENGLISH              TWLG_ENG<br>
+#define TWLG_ENGLISH_AUSTRALIAN   47<br>
+#define TWLG_ENGLISH_CANADIAN     48<br>
+#define TWLG_ENGLISH_IRELAND      49<br>
+#define TWLG_ENGLISH_NEWZEALAND   50<br>
+#define TWLG_ENGLISH_SOUTHAFRICA  51<br>
+#define TWLG_ENGLISH_UK           52<br>
+#define TWLG_ENGLISH_USA          TWLG_USA<br>
+#define TWLG_ESTONIAN             53<br>
+#define TWLG_FAEROESE             54<br>
+#define TWLG_FARSI                55<br>
+#define TWLG_FINNISH              TWLG_FIN<br>
+#define TWLG_FRENCH               TWLG_FRN<br>
+#define TWLG_FRENCH_BELGIAN       56<br>
+#define TWLG_FRENCH_CANADIAN      TWLG_FCF<br>
+#define TWLG_FRENCH_LUXEMBOURG    57<br>
+#define TWLG_FRENCH_SWISS         58<br>
+#define TWLG_GERMAN               TWLG_GER<br>
+#define TWLG_GERMAN_AUSTRIAN      59<br>
+#define TWLG_GERMAN_LUXEMBOURG    60<br>
+#define TWLG_GERMAN_LIECHTENSTEIN 61<br>
+#define TWLG_GERMAN_SWISS         62<br>
+#define TWLG_GREEK                63<br>
+#define TWLG_HEBREW               64<br>
+#define TWLG_HUNGARIAN            65<br>
+#define TWLG_ICELANDIC            TWLG_ICE<br>
+#define TWLG_INDONESIAN           66<br>
+#define TWLG_ITALIAN              TWLG_ITN<br>
+#define TWLG_ITALIAN_SWISS        67<br>
+#define TWLG_JAPANESE             68<br>
+#define TWLG_KOREAN               69<br>
+#define TWLG_KOREAN_JOHAB         70<br>
+#define TWLG_LATVIAN              71<br>
+#define TWLG_LITHUANIAN           72<br>
+#define TWLG_NORWEGIAN            TWLG_NOR<br>
+#define TWLG_NORWEGIAN_BOKMAL     73<br>
+#define TWLG_NORWEGIAN_NYNORSK    74<br>
+#define TWLG_POLISH               75<br>
+#define TWLG_PORTUGUESE           TWLG_POR<br>
+#define TWLG_PORTUGUESE_BRAZIL    76<br>
+#define TWLG_ROMANIAN             77<br>
+#define TWLG_RUSSIAN              78<br>
+#define TWLG_SERBIAN_LATIN        79<br>
+#define TWLG_SLOVAK               80<br>
+#define TWLG_SLOVENIAN            81<br>
+#define TWLG_SPANISH              TWLG_SPA<br>
+#define TWLG_SPANISH_MEXICAN      82<br>
+#define TWLG_SPANISH_MODERN       83<br>
+#define TWLG_SWEDISH              TWLG_SWE<br>
+#define TWLG_THAI                 84<br>
+#define TWLG_TURKISH              85<br>
+#define TWLG_UKRANIAN             86<br>
+/* More stuff added for 1.8 */<br>
+#define TWLG_ASSAMESE             87<br>
+#define TWLG_BENGALI              88<br>
+#define TWLG_BIHARI               89<br>
+#define TWLG_BODO                 90<br>
+#define TWLG_DOGRI                91<br>
+#define TWLG_GUJARATI             92<br>
+#define TWLG_HARYANVI             93<br>
+#define TWLG_HINDI                94<br>
+#define TWLG_KANNADA              95<br>
+#define TWLG_KASHMIRI             96<br>
+#define TWLG_MALAYALAM            97<br>
+#define TWLG_MARATHI              98<br>
+#define TWLG_MARWARI              99<br>
+#define TWLG_MEGHALAYAN          100<br>
+#define TWLG_MIZO                101<br>
+#define TWLG_NAGA                102<br>
+#define TWLG_ORISSI              103<br>
+#define TWLG_PUNJABI             104<br>
+#define TWLG_PUSHTU              105<br>
+#define TWLG_SERBIAN_CYRILLIC    106<br>
+#define TWLG_SIKKIMI             107<br>
+#define TWLG_SWEDISH_FINLAND     108<br>
+#define TWLG_TAMIL               109<br>
+#define TWLG_TELUGU              110<br>
+#define TWLG_TRIPURI             111<br>
+#define TWLG_URDU                112<br>
+#define TWLG_VIETNAMESE          113<br>
+<br>
+/****************************************************************************<br>
+ * Data Groups                                                              *<br>
+ ****************************************************************************/<br>
+<br>
+/* More Data Groups may be added in the future.<br>
+ * Possible candidates include text, vector graphics, sound, etc.<br>
+ * NOTE: Data Group constants must be powers of 2 as they are used<br>
+ *       as bitflags when Application asks DSM to present a list of DSs.<br>
+ */<br>
+<br>
+#define DG_CONTROL          0x0001L /* data pertaining to control       */<br>
+#define DG_IMAGE            0x0002L /* data pertaining to raster images */<br>
+/* Added 1.8 */<br>
+#define DG_AUDIO            0x0004L /* data pertaining to audio */<br>
+<br>
+/****************************************************************************<br>
+ * Data Argument Types                                                      *<br>
+ ****************************************************************************/<br>
+<br>
+/*  SDH - 03/23/95 - WATCH                                                  */<br>
+/*  The thunker requires knowledge about size of data being passed in the   */<br>
+/*  lpData parameter to DS_Entry (which is not readily available due to     */<br>
+/*  type LPVOID.  Thus, we key off the DAT_ argument to determine the size. */<br>
+/*  This has a couple implications:                                         */<br>
+/*  1) Any additional DAT_ features require modifications to the thunk code */<br>
+/*     for thunker support.                                                 */<br>
+/*  2) Any applications which use the custom capabailites are not supported */<br>
+/*     under thunking since we have no way of knowing what size data (if    */<br>
+/*     any) is being passed.                                                */<br>
+<br>
+#define DAT_NULL            0x0000 /* No data or structure. */<br>
+#define DAT_CUSTOMBASE      0x8000 /* Base of custom DATs.  */<br>
+<br>
+/* Data Argument Types for the DG_CONTROL Data Group. */<br>
+#define DAT_CAPABILITY      0x0001 /* TW_CAPABILITY                        */<br>
+#define DAT_EVENT           0x0002 /* TW_EVENT                             */<br>
+#define DAT_IDENTITY        0x0003 /* TW_IDENTITY                          */<br>
+#define DAT_PARENT          0x0004 /* TW_HANDLE, application win handle in Windows */<br>
+#define DAT_PENDINGXFERS    0x0005 /* TW_PENDINGXFERS                      */<br>
+#define DAT_SETUPMEMXFER    0x0006 /* TW_SETUPMEMXFER                      */<br>
+#define DAT_SETUPFILEXFER   0x0007 /* TW_SETUPFILEXFER                     */<br>
+#define DAT_STATUS          0x0008 /* TW_STATUS                            */<br>
+#define DAT_USERINTERFACE   0x0009 /* TW_USERINTERFACE                     */<br>
+#define DAT_XFERGROUP       0x000a /* TW_UINT32                            */<br>
+/*  SDH - 03/21/95 - TWUNK                                         */<br>
+/*  Additional message required for thunker to request the special */<br>
+/*  identity information.                                          */<br>
+#define DAT_TWUNKIDENTITY   0x000b /* TW_TWUNKIDENTITY                     */<br>
+#define DAT_CUSTOMDSDATA    0x000c /* TW_CUSTOMDSDATA.                     */<br>
+/* Added 1.8 */<br>
+#define DAT_DEVICEEVENT     0x000d /* TW_DEVICEEVENT                       */<br>
+#define DAT_FILESYSTEM      0x000e /* TW_FILESYSTEM                        */<br>
+#define DAT_PASSTHRU        0x000f /* TW_PASSTHRU                          */<br>
+<br>
+/* Data Argument Types for the DG_IMAGE Data Group. */<br>
+#define DAT_IMAGEINFO       0x0101 /* TW_IMAGEINFO                         */<br>
+#define DAT_IMAGELAYOUT     0x0102 /* TW_IMAGELAYOUT                       */<br>
+#define DAT_IMAGEMEMXFER    0x0103 /* TW_IMAGEMEMXFER                      */<br>
+#define DAT_IMAGENATIVEXFER 0x0104 /* TW_UINT32 loword is hDIB, PICHandle  */<br>
+#define DAT_IMAGEFILEXFER   0x0105 /* Null data                            */<br>
+#define DAT_CIECOLOR        0x0106 /* TW_CIECOLOR                          */<br>
+#define DAT_GRAYRESPONSE    0x0107 /* TW_GRAYRESPONSE                      */<br>
+#define DAT_RGBRESPONSE     0x0108 /* TW_RGBRESPONSE                       */<br>
+#define DAT_JPEGCOMPRESSION 0x0109 /* TW_JPEGCOMPRESSION                   */<br>
+#define DAT_PALETTE8        0x010a /* TW_PALETTE8                          */<br>
+#define DAT_EXTIMAGEINFO    0x010b /* TW_EXTIMAGEINFO -- for 1.7 Spec.     */<br>
+<br>
+/* Added 1.8 */<br>
+/* Data Argument Types for the DG_AUDIO Data Group. */<br>
+#define DAT_AUDIOFILEXFER   0x0201 /* Null data                            */<br>
+#define DAT_AUDIOINFO       0x0202 /* TW_AUDIOINFO                         */<br>
+#define DAT_AUDIONATIVEXFER 0x0203 /* TW_UINT32 handle to WAV, (AIFF Mac)  */<br>
+<br>
+/****************************************************************************<br>
+ * Messages                                                                 *<br>
+ ****************************************************************************/<br>
+<br>
+/* All message constants are unique.<br>
+ * Messages are grouped according to which DATs they are used with.*/<br>
+<br>
+#define MSG_NULL         0x0000 /* Used in TW_EVENT structure               */<br>
+#define MSG_CUSTOMBASE   0x8000 /* Base of custom messages                  */<br>
+<br>
+/* Generic messages may be used with any of several DATs.                   */<br>
+#define MSG_GET          0x0001 /* Get one or more values                   */<br>
+#define MSG_GETCURRENT   0x0002 /* Get current value                        */<br>
+#define MSG_GETDEFAULT   0x0003 /* Get default (e.g. power up) value        */<br>
+#define MSG_GETFIRST     0x0004 /* Get first of a series of items, e.g. DSs */<br>
+#define MSG_GETNEXT      0x0005 /* Iterate through a series of items.       */<br>
+#define MSG_SET          0x0006 /* Set one or more values                   */<br>
+#define MSG_RESET        0x0007 /* Set current value to default value       */<br>
+#define MSG_QUERYSUPPORT 0x0008 /* Get supported operations on the cap.     */<br>
+<br>
+/* Messages used with DAT_NULL                                              */<br>
+#define MSG_XFERREADY    0x0101 /* The data source has data ready           */<br>
+#define MSG_CLOSEDSREQ   0x0102 /* Request for Application. to close DS             */<br>
+#define MSG_CLOSEDSOK    0x0103 /* Tell the Application. to save the state.         */<br>
+/* Added 1.8 */<br>
+#define MSG_DEVICEEVENT  0X0104 /* Some event has taken place               */<br>
+<br>
+/* Messages used with a pointer to a DAT_STATUS structure                   */<br>
+#define MSG_CHECKSTATUS  0x0201 /* Get status information                   */<br>
+<br>
+/* Messages used with a pointer to DAT_PARENT data                          */<br>
+#define MSG_OPENDSM      0x0301 /* Open the DSM                             */<br>
+#define MSG_CLOSEDSM     0x0302 /* Close the DSM                            */<br>
+<br>
+/* Messages used with a pointer to a DAT_IDENTITY structure                 */<br>
+#define MSG_OPENDS       0x0401 /* Open a data source                       */<br>
+#define MSG_CLOSEDS      0x0402 /* Close a data source                      */<br>
+#define MSG_USERSELECT   0x0403 /* Put up a dialog of all DS                */<br>
+<br>
+/* Messages used with a pointer to a DAT_USERINTERFACE structure            */<br>
+#define MSG_DISABLEDS    0x0501 /* Disable data transfer in the DS          */<br>
+#define MSG_ENABLEDS     0x0502 /* Enable data transfer in the DS           */<br>
+#define MSG_ENABLEDSUIONLY  0x0503  /* Enable for saving DS state only.     */<br>
+<br>
+/* Messages used with a pointer to a DAT_EVENT structure                    */<br>
+#define MSG_PROCESSEVENT 0x0601<br>
+<br>
+/* Messages used with a pointer to a DAT_PENDINGXFERS structure             */<br>
+#define MSG_ENDXFER      0x0701<br>
+<br>
+/* Added 1.8 */<br>
+/* Messages used with a pointer to a DAT_FILESYSTEM structure               */<br>
+#define MSG_CHANGEDIRECTORY   0x0801<br>
+#define MSG_CREATEDIRECTORY   0x0802<br>
+#define MSG_DELETE            0x0803<br>
+#define MSG_FORMATMEDIA       0x0804 <br>
+#define MSG_GETCLOSE          0x0805<br>
+#define MSG_GETFIRSTFILE      0x0806<br>
+#define MSG_GETINFO           0x0807<br>
+#define MSG_GETNEXTFILE       0x0808<br>
+#define MSG_RENAME            0x0809<br>
+<br>
+/* Messages used with a pointer to a DAT_PASSTHRU structure                 */<br>
+#define MSG_PASSTHRU          0x0901<br>
+<br>
+/****************************************************************************<br>
+ * Capabilities                                                             *<br>
+ ****************************************************************************/<br>
+<br>
+#define CAP_CUSTOMBASE          0x8000 /* Base of custom capabilities */<br>
+<br>
+/* all data sources are REQUIRED to support these caps */<br>
+#define CAP_XFERCOUNT           0x0001<br>
+<br>
+/* image data sources are REQUIRED to support these caps */<br>
+#define ICAP_COMPRESSION        0x0100<br>
+#define ICAP_PIXELTYPE          0x0101<br>
+#define ICAP_UNITS              0x0102 /* default is TWUN_INCHES */<br>
+#define ICAP_XFERMECH           0x0103<br>
+<br>
+/* all data sources MAY support these caps */<br>
+#define CAP_AUTHOR                  0x1000<br>
+#define CAP_CAPTION                 0x1001<br>
+#define CAP_FEEDERENABLED           0x1002<br>
+#define CAP_FEEDERLOADED            0x1003<br>
+#define CAP_</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

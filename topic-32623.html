@@ -1,0 +1,1739 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>How to use RichText font attributes - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-32623">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> How to use RichText font attributes</div>
+  <div class="post" id="p191746">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">How to use RichText font attributes</span><br>
+        Posted: Thu Jun 23, 2016 07:08 PM
+      </div>
+      <div class="content">Hello FiveWinners!<br>
+<br>
+I've been asked by Silvio via email how to do superscript using richtext.  I've been using this class for so long now I don't really remember what I changed if any from the original class.  So here are my sources where you can clearly see how to perform many font attributes including superscript.  I'm posting here in the off-chance that someone else is interested or eventually wants to expand my work:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//Reinaldo Crespo
+//reinaldo.crespo@gmail.com
+
+#INCLUDE "fivewin.ch" 
+#include "Inkey.ch"
+#include "RichEdit.ch"
+
+#define SSCE_OPTION 64
+#define CFM_LINK                 32
+#define CFM_ALLCAPS              128
+#define CFM_HIDDEN               256
+#define CFM_SUBSCRIPT            196608
+#define CFM_SUPERSCRIPT          196608
+
+#define CFE_LINK                 32
+#define CFE_ALLCAPS              128
+#define CFE_HIDDEN               256
+#define CFE_SUBSCRIPT            65536
+#define CFE_SUPERSCRIPT          131072
+
+
+//#define CFE_SUBSCRIPT     0x00010000      // Superscript and subscript are 
+//#define CFE_SUPERSCRIPT       0x00020000      //  mutually exclusive           
+#define CFM_SMALLCAPS       0x0040          // (*)  
+#define CFE_SMALLCAPS       CFM_SMALLCAPS
+
+#define DC_CALL_STD     0X0020
+#define RTF_VER         "PathLabs10"
+
+STATIC hDLL 
+
+*-------------------------------------------------------------------------------------------------------------------------------
+CLASS MyRchEdt FROM TRichEdit
+
+    DATA lBold      AS LOGICAL INIT .F. 
+    DATA lItalic    AS LOGICAL INIT .F. 
+    DATA lUnderline AS LOGICAL INIT .F. 
+    DATA lNum       AS LOGICAL INIT .F.
+    DATA lBul       AS LOGICAL INIT .F. 
+    DATA lRE30      AS LOGICAL INIT REDllVersion() &gt;= 30
+    DATA lSuper     AS LOGICAL INIT .F. 
+    DATA lSub       AS LOGICAL INIT .F. 
+    DATA lSmallCaps AS LOGICAL INIT .F.
+    DATA lUpper     AS LOGICAL INIT .F.
+    
+    DATA lChanged   AS LOGICAL INIT .F.
+
+    Data odbf
+    Data nPrintedPages AS NUMERIC INIT 0
+
+    METHOD Init() CONSTRUCTOR
+    METHOD KeyDown( nKey, nFlags )
+    METHOD KeyChar( nKey, nFlags )
+
+    METHOD HandleEvent( nMsg, nWParam, nLParam )
+
+    METHOD LButtonDown( nRow, nCol, nFlags )
+    METHOD PopMenu( nRow, nCol, nFlags )
+    METHOD CanRedo() INLINE ::SendMsg( EM_CANREDO, 0, 0 ) != 0 .and. ! ::lReadOnly
+    
+   METHOD SetSuper( lOnOff )     INLINE ::SetAttribute2( ,.T.,,,,, lOnOff )
+   METHOD SetSub( lOnOff )       INLINE ::SetAttribute2( ,,.T.,,,, lOnOff )
+   METHOD SetUpperCaps( lOnOff ) INLINE ::SetAttribute2( .T.,,,,,,  lOnOff )
+   METHOD SetSmallCaps( lOnOff ) INLINE ::SetAttribute2( ,,,,,.T., lOnOff )
+   METHOD SetHangingIndent()
+   //METHOD SelectAll()  INLINE ::SetSelection( 0, -1 )
+   METHOD SelectNone() INLINE ::SetSel( -1, 0 )
+
+   METHOD SetAttribute2( lSuper, lSub, lSmallCaps, lOnOff )
+
+   METHOD IsRTF( cFile )
+   METHOD InsertFile() 
+   METHOD InsertPic()
+
+END CLASS
+
+*-------------------------------------------------------------------------------------------------------------------------------
+METHOD Init CLASS MyRchEdt
+
+   ::lhighlight := .F.
+   ::nDlgCode = DLGC_WANTALLKEYS
+    ::bRClicked := { |nRow, nCol, nFlags| ::PopMenu( nRow, nCol, nFlags ) }
+   hDLL := oApp():hSSCEDLL
+    
+RETURN SELF
+
+*-------------------------------------------------------------------------------------------------------------------------------
+METHOD PopMenu( nRow, nCol, nFlags ) CLASS MyRchEdt
+local oClp, oMenu
+
+    DEFINE CLIPBOARD oClp OF Self FORMAT TEXT
+
+    MENU oMenu POPUP
+        MENUITEM "&amp;Undo" ACTION ::UnDo() RESOURCE "UnDo16" WHEN ::CanUndo()
+        MENUITEM "&amp;Redo" ACTION ::ReDo() RESOURCE "ReDo16" WHEN ::CanRedo()
+
+        SEPARATOR
+
+        MENUITEM "Select &amp;All" ACTION ::SelectAll() RESOURCE "SelAll"
+        MENUITEM "Cu&amp;t" ACTION ::Cut() RESOURCE "Cut16" WHEN ::CanCut()
+        MENUITEM "&amp;Copy" ACTION ::Copy() RESOURCE "Copy16" WHEN ::CanCopy()
+        MENUITEM "&amp;Paste" ACTION ::Paste() RESOURCE "Paste16" WHEN ::CanPaste()
+        MENUITEM "&amp;Delete" ACTION ::Del() RESOURCE "Delete16" WHEN ::CanDel()
+
+        SEPARATOR
+
+        MENUITEM "&amp;Font..." ACTION ::SetCharFormat() RESOURCE "Font" WHEN !::lReadOnly
+        MENUITEM "A&amp;ling" WHEN !::lReadOnly
+        
+        MENU
+            MENUITEM "&amp;Left"   ACTION ::SetAlign( PFA_LEFT )   RESOURCE "Justify_Left16" WHEN !::lReadOnly
+            MENUITEM "&amp;Center" ACTION ::SetAlign( PFA_CENTER ) RESOURCE "Justify_Center16" WHEN !::lReadOnly
+            MENUITEM "&amp;Right"  ACTION ::SetAlign( PFA_RIGHT )  RESOURCE "Justify_Right16" WHEN !::lReadOnly
+        ENDMENU
+
+        SEPARATOR
+
+        MENUITEM "P&amp;rint" ACTION ::Print() RESOURCE "Printer16"
+
+        SEPARATOR
+
+   ENDMENU
+
+   ACTIVATE POPUP oMenu AT nRow, nCol OF Self
+
+return 0
+
+*-------------------------------------------------------------------------------------------------------------------------------
+METHOD KeyDown( nKey, nFlags ) CLASS MyRchEdt
+
+//  logfile( "trace.log", { "Keydown", nKey } )
+    ::PostMsg( FM_CHANGE ) //FM_HIGHLIGHT )
+    
+Return Super:KeyDown( nKey, nFlags )
+    
+*-------------------------------------------------------------------------------------------------------------------------------
+METHOD KeyChar( nKey, nFlags ) CLASS MyRchEdt
+local bCode
+
+    if ::bkeyChar &lt;&gt; Nil .and. !::lreadOnly
+        Eval( ::bkeyChar, nKey, nFlags )
+    endif   
+
+    if nKey == VK_TAB .or. ::lreadOnly
+        return Nil
+    endif
+
+    if ( bCode := hb_SetKeyGet( K_CTRL_P ) ) != Nil     ;eval( bCode )  ;endif
+    if ( bCode := hb_SetKeyGet( K_CTRL_F ) ) != Nil     ;eval( bCode )  ;endif
+    if ( bCode := hb_SetKeyGet( K_CTRL_B ) ) != Nil     ;eval( bCode )  ;endif
+    
+    ::PostMsg( FM_CHANGE )
+   ::lChanged := .T. 
+    
+    if ::lHighlight
+        ::PostMsg( FM_HIGHLIGHT )
+    endif
+
+return super:KeyChar( nKey, nflags )
+
+*-------------------------------------------------------------------------------------------------------------------------------
+METHOD HandleEvent( nMsg, nWParam, nLParam ) CLASS MyRchEdt
+local oapp := oApp()
+
+    if nMsg == WM_KEYDOWN .and. nWParam == VK_TAB
+        Return 0        //avoid processing the tab key by windows
+    endif
+    
+    if nMsg == FM_CHANGE .and. oApp:hSSCEDLL != Nil
+        SSCE_CheckCtrlBackgroundNotify( ::hWnd, SSCE_OPTION, RGB(254, 1, 1) )
+    endif
+
+    if nMsg == WM_KEYDOWN .and. ;
+        (   nWParam == 38 .or. ;//K_UP arrow
+            nWParam == 40 .or. ;//DOWN arrow
+            nWParam == 37 .or. ;//LEFT arrow
+            nWParam == 39 .or. ;//RIGHT arrow
+            nWParam == 35 .or. ;//END
+            nWParam == 36 ) //HOME
+            
+        ::PostMsg( FM_CHANGE )
+        IF oApp:hSSCEDLL != Nil
+            SSCE_CheckCtrlBackgroundNotify( ::hWnd, SSCE_OPTION, RGB(254, 1, 1) )
+        ENDIF
+    Endif
+
+/*  if nMsg == 187 .and. nWParam == 7
+        ::PostMsg( FM_CHANGE )
+        SSCE_CheckCtrlBackgroundNotify( ::hWnd, SSCE_OPTION, RGB(254, 1, 1) )
+    endif */
+//      logfile( "trace.log", { "HandleEvent", nMsg, nWParam, nLParam } )
+
+Return Super:HandleEvent( nMsg, nWParam, nLParam )
+
+*-------------------------------------------------------------------------------------------------------------------------------
+METHOD LButtonDown( nRow, nCol, nFlags ) CLASS MyRchEdt
+
+    ::PostMsg( FM_CHANGE )
+    Super:LButtonDown( nRow, nCol, nFlags )
+
+RETURN NIL 
+
+//----------------------------------------------------------------------------//
+METHOD SetAttribute2( lUpper, lSuper, lSub, lHidden, lLink, lSmallCaps, lOnOff ) CLASS MyRchEdt
+
+   local nMask, nEffects
+
+   DEFAULT lSuper     := .f.,;
+           lSub       := .f.,;
+           lSmallCaps := .f.,;
+           lUpper     := .f.,;
+           lHidden    := .f.,;
+           lLink      := .f.,;
+           lOnOff     := .t.
+
+   if ( lUpper .or. lHidden ) .and. ! ::lRE30
+      RETURN NIL
+   endif
+
+   nMask := nOR( If( lUpper,  CFM_ALLCAPS,    0 ),;
+                 If( lSuper, CFM_SUPERSCRIPT, 0 ),;
+                 If( lSub, CFM_SUBSCRIPT,     0 ),;
+                 If( lHidden, CFM_HIDDEN,     0 ),;
+                 If( lLink, CFM_LINK,         0 ),;
+                 If( lSmallCaps, CFM_SMALLCAPS, 0 ) )
+
+   nEffects := nOR( If( lUpper,  CFE_ALLCAPS,    0 ),;
+                    If( lSuper, CFE_SUPERSCRIPT, 0 ),;
+                    If( lSub, CFE_SUBSCRIPT,     0 ),;
+                    If( lHidden, CFE_HIDDEN,     0 ),;
+                    If( lLink, CFE_LINK,         0 ),;
+                    If( lSmallCaps, CFE_SMALLCAPS, 0 ) )
+
+   RESetAttribute2( ::hWnd, nMask, nEffects, lOnOff )
+
+   ::Change()
+
+return nil
+
+*-------------------------------------------------------------------------------------------------------------------------------
+METHOD SetHangingIndent() CLASS MyRchEdt
+local nLen := REGEtIndent( ::hWnd )
+
+   if nLen[ 1 ] &gt; 0
+      RESetIndent( ::hWnd, 0, 0, 0 )
+   else
+      RESetHangingIndent( ::hWnd  )
+   endif
+//   pf.dwMask = PFM_OFFSET;
+
+Return nil
+
+*-------------------------------------------------------------------------------------------------------------------------------
+METHOD InsertPic() CLASS MyRchEdt
+   LOCAL cFile := cGetFile( "Windows bitmap (*.bmp) |*.bmp|" + ;
+                            "Windows bitmap (*.dib) |*.dib|" + ;
+                            "ICON format (*.ico) |*.ico", ;
+                            RTF_VER, nGetFileFilter() )
+
+   if !Empty( cFile )
+//      ::InsertPicture( cFile )
+   endif
+
+RETURN NIL
+
+*-------------------------------------------------------------------------------------------------------------------------------
+METHOD InsertFile() CLASS MyRchEdt
+   LOCAL cFile := cGetFile( "Rich Text Format (*.rtf) |*.rtf|" + ;
+                            "Only Text Format (*.txt) |*.txt|" + ;
+                            "All files (*.*) |*.*", RTF_VER, nGetFileFilter() )
+
+   LOCAL nFormat
+
+   IF !EMPTY( cFile )   
+      nFormat := nOr( If( ::IsRTF( cFile ), SF_RTF, SF_TEXT ), SFF_SELECTION )
+
+      RELoadFile( ::hWnd, cFile, nFormat )
+
+      ::SendMsg( EM_SCROLLCARET, 0, 0 )
+   ENDIF 
+   
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD IsRTF( cFile ) CLASS MyRchEdt
+
+   LOCAL nHandle := FOpen( cFile )
+   LOCAL cBuffer := Space( 5 )
+   LOCAL lOk     := .F.
+   LOCAL nBytes
+
+   if !( nHandle == -1 )
+      if ( nBytes := FRead( nHandle, @cBuffer, 5 ) ) == 5
+         lOk := ( cBuffer == "{\rtf" )
+      endif
+
+      FClose( nHandle )
+   endif
+
+RETURN lOk
+
+
+*-------------------------------------------------------------------------------------------------------------------------------
+//this func is also declared on tPathTrns but this .prg is included on 
+//PlAdmin project while tPathTrns is not.  Don't know any other way to 
+//solve this problem right now.
+STATIC FUNCTION SSCE_CheckCtrlBackgroundNotify( hWnd, nOptions, nRGB )
+RETURN DllCall( hDLL, DC_CALL_STD, "SSCE_CheckCtrlBackgroundNotify", hWnd, nOptions, nRGB )</code></pre></div><br>
+<br>
+And here is some c source you might need:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">*-------------------------------------------------------------------------------------------------------------------------------
+#pragma BEGINDUMP
+
+#include &lt;windows.h&gt;
+#include &lt;richedit.h&gt;
+#include &lt;richole.h&gt;
+#include &lt;oledlg.h&gt;
+#include &lt;hbapi.h&gt;
+#include &lt;hbvm.h&gt;
+
+//----------------------------------------------------------------------------//
+
+static int nDLLVer = -1;
+
+HB_FUNC( REDLLVERSION )
+{
+   char    szPath[ MAX_PATH ];
+   HMODULE hMod;
+   DWORD   Dummy;
+   DWORD   dwSize;
+   HGLOBAL hMem;
+   LPVOID  pMem;
+   VS_FIXEDFILEINFO * vsInfo;
+   UINT    vsInfoSize;
+
+   if( nDLLVer == -1 )
+   {
+      hMod = LoadLibrary( "RICHED20.DLL" );
+
+      GetModuleFileName( hMod, szPath, sizeof( szPath ) );
+
+      FreeLibrary( hMod );
+
+      dwSize = GetFileVersionInfoSize( szPath, &amp;Dummy );
+
+      hMem = GlobalAlloc( GMEM_MOVEABLE, dwSize );
+
+      if( hMem )
+      {
+         pMem = GlobalLock( hMem );
+
+         GetFileVersionInfo( szPath, 0, dwSize, pMem );
+         VerQueryValue( pMem, "\\", ( LPVOID * ) &amp;vsInfo, &amp;vsInfoSize );
+
+         GlobalUnlock( hMem );
+         GlobalFree( hMem );
+
+         nDLLVer = LOWORD( vsInfo-&gt;dwFileVersionMS );
+      }
+   }
+   hb_retni( nDLLVer );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REFINDTEXT )
+{
+   FINDTEXTEX ft;
+
+   HWND  hWnd    = ( HWND ) hb_parnl( 1 );
+   DWORD dwFlags = ( hb_parl( 3 ) ? FR_DOWN : 0 ) | ( hb_parl( 4 ) ? FR_MATCHCASE : 0 ) |
+                   ( hb_parl( 5 ) ? FR_WHOLEWORD : 0 );
+
+   SendMessage( hWnd, EM_EXGETSEL, 0, ( LPARAM ) &amp;ft.chrg );
+
+   ft.chrg.cpMin = hb_parl( 3 ) ? ft.chrg.cpMax : ft.chrg.cpMin;
+   ft.chrg.cpMax = -1;
+   ft.lpstrText  = ( LPSTR ) hb_parc( 2 );
+
+   hb_retnl( SendMessage( hWnd, EM_FINDTEXTEX, dwFlags, ( LPARAM ) &amp;ft ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETALIGNMENT )
+{
+   PARAFORMAT pf;
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETPARAFORMAT, 0, ( LPARAM ) &amp;pf );
+
+   hb_retni( pf.wAlignment );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETALIGNMENT )
+{
+   PARAFORMAT pf;
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+   pf.dwMask = PFM_ALIGNMENT;
+   pf.wAlignment = hb_parnl( 2 );
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETPARAFORMAT, 0,
+                         ( LPARAM ) &amp;pf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETBULLET )
+{
+   PARAFORMAT pf;
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETPARAFORMAT, 0, ( LPARAM ) &amp;pf );
+
+   hb_retl( ( pf.dwMask &amp; PFM_NUMBERING ) ? ( ( pf.wNumbering &amp; PFN_BULLET ) ? 1 : 0 ) : 0 );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETBULLET )
+{
+   PARAFORMAT pf;
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+   pf.dwMask = PFM_NUMBERING | PFM_OFFSET;
+   pf.wNumbering = hb_parl( 2 ) ? PFN_BULLET : 0;
+   pf.dxOffset   = hb_parl( 2 ) ? 360 : 0;
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETPARAFORMAT, 0,
+                         ( LPARAM ) &amp;pf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETHANGINGINDENT )
+{
+   PARAFORMAT pf;
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+   pf.dwMask = PFM_OFFSET;
+   pf.dxOffset   = 360;   //hb_parl( 2 ) ? 360 : 0;
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETPARAFORMAT, 0,
+                         ( LPARAM ) &amp;pf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETCHARFORMAT )
+{
+   CHARFORMAT cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETCHARFORMAT, TRUE, ( LPARAM ) &amp;cf );
+
+   hb_reta( 14 );
+   hb_storni( cf.yHeight / 20, -1, 1 );
+   hb_storni( 0, -1, 2 );
+   hb_storni( 0, -1, 3 );
+   hb_storni( 0, -1, 4 );
+   hb_storni( cf.dwEffects &amp; CFE_BOLD      ? FW_BOLD : FW_NORMAL, -1, 5 );
+   hb_storl(  cf.dwEffects &amp; CFE_ITALIC    ? TRUE    : FALSE,     -1, 6 );
+   hb_storl(  cf.dwEffects &amp; CFE_UNDERLINE ? TRUE    : FALSE,     -1, 7 );
+   hb_storl(  cf.dwEffects &amp; CFE_STRIKEOUT ? TRUE    : FALSE,     -1, 8 );
+   hb_storni( cf.bCharSet, -1, 9 );
+   hb_storni( 0, -1, 10 );
+   hb_storni( 0, -1, 11 );
+   hb_storni( 0, -1, 12 );
+   hb_storni( cf.bPitchAndFamily, -1, 13 );
+   hb_storc(  cf.szFaceName,      -1, 14 );
+
+   if( hb_pcount() == 2 )
+      hb_stornl( cf.crTextColor, 2 );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETCHARFORMAT2 )
+{
+   CHARFORMAT2 cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   
+   cf.dwMask = CFM_SUBSCRIPT | CFM_SUPERSCRIPT | CFM_SMALLCAPS | CFM_BOLD | 
+               CFM_ITALIC | CFM_UNDERLINE | CFM_SIZE |CFM_FACE | CFM_CHARSET ;
+               
+   cf.dwEffects = CFE_SUBSCRIPT | CFE_SUPERSCRIPT |CFE_SMALLCAPS |CFE_BOLD |
+                  CFE_ITALIC | CFE_UNDERLINE ;
+                                 
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETCHARFORMAT, SCF_SELECTION, ( LPARAM ) &amp;cf );
+
+   hb_reta(6);
+
+   hb_storl( cf.dwEffects &amp; CFE_SUBSCRIPT ? TRUE : FALSE, -1, 1);
+   hb_storl( cf.dwEffects &amp; CFE_SUPERSCRIPT ? TRUE : FALSE, -1, 2);
+   hb_storl( cf.dwEffects &amp; CFE_SMALLCAPS ? TRUE : FALSE, -1, 3);
+   hb_storl( cf.dwEffects &amp; CFE_BOLD ? TRUE : FALSE, -1, 4);
+   hb_storl( cf.dwEffects &amp; CFE_ITALIC ? TRUE : FALSE, -1, 5);
+   hb_storl( cf.dwEffects &amp; CFE_UNDERLINE ? TRUE : FALSE, -1, 6);
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETCHARFORMAT )
+{
+   CHARFORMAT cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE | CFM_BOLD | CFM_ITALIC |
+               CFM_UNDERLINE | CFM_STRIKEOUT;
+
+   strcpy( cf.szFaceName, hb_parc( 2 ) );
+   cf.yHeight = ( LONG ) hb_parnl( 3 );
+   cf.crTextColor = hb_parnl( 4 );
+   cf.bCharSet    = hb_parnl( 5 );
+   cf.bPitchAndFamily = hb_parnl( 6 );
+
+   if( hb_parl( 7 ) )
+      cf.dwEffects |= CFE_BOLD;
+
+   if( hb_parl( 8 ) )
+      cf.dwEffects |= CFE_ITALIC;
+
+   if( hb_parl( 9 ) )
+      cf.dwEffects |= CFE_UNDERLINE;
+
+   if( hb_parl( 10 ) )
+      cf.dwEffects |= CFE_STRIKEOUT;
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETCHARFORMAT,
+                         SCF_WORD | SCF_SELECTION, ( LPARAM ) &amp;cf ) );
+}
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETCHARFORMAT2 )
+{
+   CHARFORMAT cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = CFM_SUBSCRIPT | CFM_SUPERSCRIPT | CFM_SMALLCAPS ;
+
+   if( hb_parl( 1 ) )
+      cf.dwEffects |= CFE_SUBSCRIPT ;
+      
+   if( hb_parl( 2 ) )
+      cf.dwEffects |= CFM_SUPERSCRIPT ;
+      
+   if( hb_parl( 3 ) )
+      cf.dwEffects |= CFM_SMALLCAPS ;
+      
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETCHARFORMAT,
+                         SCF_WORD | SCF_SELECTION, ( LPARAM ) &amp;cf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETSUPERSCRIPT )
+{
+   CHARFORMAT2 cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = CFM_SUPERSCRIPT;
+
+   if( hb_parl( 2 ) )
+      cf.dwEffects |= CFM_SUPERSCRIPT ;
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETCHARFORMAT, 
+                          SCF_WORD | SCF_SELECTION, ( LPARAM ) &amp;cf ) );
+}
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETSUPERSCRIPT )
+{
+   CHARFORMAT2 cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = CFM_SUPERSCRIPT ;
+   cf.dwEffects = CFE_SUPERSCRIPT;
+                                 
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETCHARFORMAT, SCF_SELECTION, ( LPARAM ) &amp;cf );
+
+   hb_retl( cf.dwEffects &amp; CFE_SUPERSCRIPT );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETHIGHLIGHT )
+{
+   CHARFORMAT2 cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETCHARFORMAT, TRUE, ( LPARAM ) &amp;cf );
+
+   hb_retnl( cf.crBackColor );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETHIGHLIGHT )
+{
+   CHARFORMAT2 cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = CFM_BACKCOLOR;
+   cf.crBackColor = hb_parnl( 2 );
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETCHARFORMAT,
+                         SCF_WORD | SCF_SELECTION, ( LPARAM ) &amp;cf ) );
+}
+
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETINDENT )
+{
+   PARAFORMAT pf;
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETPARAFORMAT, 0, ( LPARAM ) &amp;pf );
+
+   hb_reta( 3 );
+   hb_stornl( pf.dxStartIndent + pf.dxOffset, -1, 1 );
+   hb_stornl( pf.dxRightIndent, -1, 2 );
+   hb_stornl( -pf.dxOffset, -1, 3 );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETINDENT )
+{
+   PARAFORMAT pf;
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+   pf.dwMask = PFM_STARTINDENT | PFM_RIGHTINDENT | PFM_OFFSET;
+   pf.dxStartIndent = hb_parnl( 2 );
+   pf.dxRightIndent = hb_parnl( 3 );
+   pf.dxOffset      = hb_parnl( 4 );
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETPARAFORMAT, 0,
+                         ( LPARAM ) &amp;pf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETLINE )
+{
+   TCHAR szBuf[ 256 ];
+
+   * ( ( WORD * ) szBuf ) = 256;
+
+   hb_retclen( szBuf, SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETLINE, hb_parnl( 2 ),
+                                   ( LONG ) szBuf ) - 1 );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETNMHDRLINK )
+{
+   ENLINK enLink = * ( ( ENLINK * ) hb_parnl( 1 ) );
+
+   hb_reta( 4 );
+   hb_storni( enLink.msg, -1, 1 );
+   hb_storni( enLink.lParam, -1, 2 );
+   hb_storni( enLink.chrg.cpMin, -1, 3 );
+   hb_storni( enLink.chrg.cpMax, -1, 4 );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETNUMBERING )
+{
+   PARAFORMAT2 pf;
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETPARAFORMAT, 0, ( LPARAM ) &amp;pf );
+
+   hb_retl( ( pf.dwMask &amp; PFM_NUMBERING ) ? ( ( pf.wNumbering &amp; 2 ) ? 1 :0 ) : 0 );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETNUMBERING )
+{
+   PARAFORMAT2 pf;
+   BOOL bOnOff = hb_parl( 2 );
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+   pf.dwMask = PFM_NUMBERING | PFM_OFFSET |
+               ( bOnOff ? ( PFM_NUMBERINGSTART | PFM_NUMBERINGSTYLE | PFM_NUMBERINGTAB ) : 0 );
+   pf.wNumbering      = bOnOff ? 2 : 0;
+   pf.wNumberingStart = bOnOff ? 1 : 0;
+   pf.wNumberingStyle = bOnOff ? 1 : 0;
+   pf.wNumberingTab   = bOnOff ? 360 : 0;
+   pf.dxOffset        = bOnOff ? 360 : 0;
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETPARAFORMAT, 0,
+                         ( LPARAM ) &amp;pf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+#pragma argsused
+
+static void * pBuffer = 0;
+static ULONG ulSize = 0;
+static ULONG ulMax = 0;
+
+//----------------------------------------------------------------------------//
+
+static DWORD CALLBACK REStreamIn( DWORD dwCookie, LPBYTE pbBuff, LONG cb,
+                                  LONG FAR * pcb )
+{
+   if( ulSize + cb &gt;= ulMax )
+      cb = ulMax - ulSize - 1;
+
+   memcpy( ( char * ) pbBuff, ( char * ) pBuffer + ulSize, cb );
+   * pcb = cb;
+   ulSize += cb;
+
+   return 0;
+}
+
+//----------------------------------------------------------------------------//
+
+#pragma argsused
+
+static DWORD CALLBACK REStreamOut( DWORD dwCookie, LPBYTE pbBuff, LONG cb,
+                                   LONG FAR * pcb )
+{
+   if( pBuffer == 0 )
+      pBuffer = hb_xgrab( cb );
+   else
+      pBuffer = hb_xrealloc( pBuffer, ulSize + cb );
+
+   memcpy( ( char * ) pBuffer + ulSize, ( char * ) pbBuff, cb );
+   * pcb = cb;
+   ulSize += cb;
+
+   return 0;
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETRTF )
+{
+   EDITSTREAM es;
+
+   es.dwCookie    = 0;
+   es.dwError     = 0;
+   es.pfnCallback = REStreamOut;
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_STREAMOUT,
+                ( hb_parl( 2 ) ? SFF_SELECTION : 0 ) | SF_RTF, ( LPARAM ) &amp;es );
+
+   hb_retclen( ( char * ) pBuffer, ulSize );
+   hb_xfree( pBuffer );
+
+   pBuffer = 0;
+   ulSize  = 0;
+   ulMax   = 0;
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RELOADRTF )
+{
+   EDITSTREAM es;
+
+   es.dwCookie    = 0;
+   es.dwError     = 0;
+   es.pfnCallback = REStreamIn;
+
+   pBuffer = ( void * ) hb_parc( 2 );
+   ulSize  = 0;
+   ulMax   = hb_parclen( 2 );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_STREAMIN, hb_parni( 3 ), ( LPARAM ) &amp;es );
+
+   pBuffer = 0;
+   ulSize  = 0;
+   ulMax   = 0;
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETSELECTION )
+{
+   CHARRANGE cr;
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_EXGETSEL, 0, ( LPARAM ) &amp;cr );
+
+   if( hb_pcount() &gt; 1 )
+      hb_stornl( cr.cpMin, 2 );
+
+   if( hb_pcount() == 3 )
+      hb_stornl( cr.cpMax, 3 );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETSELECTION )
+{
+   CHARRANGE cr;
+
+   cr.cpMin = hb_parnl( 2 );
+   cr.cpMax = hb_parnl( 3 );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_EXSETSEL, 0, ( LPARAM ) &amp;cr );
+
+   hb_retni( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SCROLLCARET, 0, 0L ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETTABSTOP )
+{
+   PARAFORMAT pf ;
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETPARAFORMAT, 0, ( LPARAM ) &amp;pf );
+
+   hb_retnl( pf.rgxTabs[ 0 ] );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETTABSTOP )
+{
+   PARAFORMAT pf;
+   int i;
+
+   memset( &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+   pf.dwMask = PFM_TABSTOPS;
+   pf.cTabCount = MAX_TAB_STOPS;
+
+   for( i = 0; i &lt; MAX_TAB_STOPS; i++ )
+       pf.rgxTabs[ i ] = ( i + 1 ) * hb_parnl( 2 );
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETPARAFORMAT, 0, ( LPARAM ) &amp;pf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETTEXTCOLOR )
+{
+   CHARFORMAT cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETCHARFORMAT, TRUE, ( LPARAM ) &amp;cf );
+
+   hb_retnl( cf.crTextColor );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETTEXTCOLOR )
+{
+   CHARFORMAT cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = CFM_COLOR;
+   cf.crTextColor = hb_parnl( 2 );
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETCHARFORMAT,
+                         SCF_WORD | SCF_SELECTION, ( LPARAM ) &amp;cf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETTEXTRANGE )
+{
+   TEXTRANGE tr;
+
+   tr.chrg.cpMin = hb_parnl( 2 );
+   tr.chrg.cpMax = hb_parnl( 3 );
+   tr.lpstrText  = ( LPSTR ) hb_parc( 4 );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETTEXTRANGE, 0, ( LPARAM ) &amp;tr );
+
+   hb_storc( tr.lpstrText, 4 );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RELEN )
+{
+   GETTEXTLENGTHEX gt;
+
+   gt.flags = GTL_PRECISE;
+   gt.codepage = CP_ACP;
+
+   hb_retnl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETTEXTLENGTHEX, ( WPARAM ) &amp;gt, 0 ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REREPLACE )
+{
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_REPLACESEL, TRUE,
+                ( LPARAM ) ( LPSTR ) hb_parc( 2 ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETATTRIBUTE )
+{
+   CHARFORMAT cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = hb_parnl( 2 );
+
+   if( hb_parl( 4 ) )
+      cf.dwEffects |= hb_parnl( 3 );
+   else
+      cf.dwEffects &amp;= ~hb_parnl( 3 );
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETCHARFORMAT,
+                         SCF_WORD | SCF_SELECTION, ( LPARAM ) &amp;cf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETATTRIBUTE2 )
+{
+   CHARFORMAT2 cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = hb_parnl( 2 );
+
+   if( hb_parl( 4 ) )
+      cf.dwEffects |= hb_parnl( 3 );
+   else
+      cf.dwEffects &amp;= ~hb_parnl( 3 );
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETCHARFORMAT,
+                         SCF_WORD | SCF_SELECTION, ( LPARAM ) &amp;cf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETAUTOURLDETECT )
+{
+   HWND hWnd = ( HWND ) hb_parnl( 1 );
+   BOOL bUrl = hb_parl( 2 );
+   UINT uMask;
+
+   SendMessage( hWnd, EM_AUTOURLDETECT, bUrl, 0 );
+
+   uMask = SendMessage( hWnd, EM_GETEVENTMASK, 0, 0 );
+
+   if( bUrl )
+      uMask |= ENM_LINK;
+   else
+      uMask &amp;= ~ENM_LINK;
+
+   SendMessage( hWnd, EM_SETEVENTMASK, 0, uMask );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETFONTNAME )
+{
+   CHARFORMAT cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = CFM_FACE;
+   strcpy( cf.szFaceName, hb_parc( 2 ) );
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETCHARFORMAT,
+                         SCF_WORD | SCF_SELECTION, ( LPARAM ) &amp;cf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETFONTSIZE )
+{
+   CHARFORMAT cf;
+
+   memset( &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize  = sizeof( cf );
+   cf.dwMask  = CFM_SIZE;
+   cf.yHeight = hb_parnl( 2 );
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETCHARFORMAT,
+                         SCF_WORD | SCF_SELECTION, ( LPARAM ) &amp;cf ) );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESETPOS )
+{
+   CHARRANGE cr;
+
+   cr.cpMin = hb_parnl( 2 );
+   cr.cpMax = hb_parnl( 2 );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_EXSETSEL, 0, ( LPARAM ) &amp;cr );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REPRINT )
+{
+   GETTEXTLENGTHEX gt;
+   FORMATRANGE fr;
+   DOCINFO info;
+
+   HWND hWnd = ( HWND ) hb_parnl( 1 );
+   HDC  hDC  = ( HDC ) hb_parnl( 3 );
+   BOOL bPageNums  = hb_parl( 4 );
+   BOOL bSelection = hb_parl( 5 );
+   BOOL bCollate   = hb_parl( 6 );
+   WORD nFromPage  = hb_parni( 7, 1 );
+   WORD nToPage    = hb_parni( 7, 2 );
+   WORD nCopies    = hb_parni( 8 );
+   WORD nTop       = hb_parni( 9, 1 );
+   WORD nLeft      = hb_parni( 9, 2 );
+   WORD nRight     = hb_parni( 9, 3 );
+   WORD nBottom    = hb_parni( 9, 4 );
+   WORD nPag, nCollate, i;
+   LONG lSize, lPrint;
+   RECT rcTemp;
+
+   SetMapMode( hDC, MM_TEXT );
+
+   ZeroMemory( &amp;fr, sizeof( fr ) );
+   fr.hdc = hDC;
+   fr.hdcTarget = hDC;
+
+   fr.rcPage.top    = 0;
+   fr.rcPage.left   = 0;
+   fr.rcPage.right  = MulDiv( GetDeviceCaps( hDC, HORZRES ), 1440,
+                              GetDeviceCaps( hDC, LOGPIXELSX ) );
+   fr.rcPage.bottom = MulDiv( GetDeviceCaps( hDC, VERTRES ), 1440,
+                              GetDeviceCaps( hDC, LOGPIXELSY ) );
+
+   fr.rc.top    = fr.rcPage.top + nTop;
+   fr.rc.left   = fr.rcPage.left + nLeft;
+   fr.rc.right  = fr.rcPage.right - nRight;
+   fr.rc.bottom = fr.rcPage.bottom - nBottom;
+
+   ZeroMemory( &amp;info, sizeof( info ) );
+   info.cbSize      = sizeof( DOCINFO );
+   info.lpszDocName = hb_parc( 2 );
+   info.lpszOutput  = NULL;
+
+   gt.flags = GTL_PRECISE;
+   gt.codepage = CP_ACP;
+
+   lSize = SendMessage( hWnd, EM_GETTEXTLENGTHEX, ( WPARAM ) &amp;gt, 0 );
+
+   rcTemp = fr.rc;
+
+   if( bCollate )
+      nCollate = nCopies;
+   else
+      nCollate = 1;
+
+   for( i = 0; i &lt; nCollate; i++ )
+   {
+      nPag = 1;
+
+      fr.chrg.cpMin = 0;
+      fr.chrg.cpMax = -1;
+
+      if( bSelection )
+      {
+         SendMessage( hWnd, EM_EXGETSEL, 0, ( LPARAM ) &amp;fr.chrg );
+         lSize = fr.chrg.cpMax;
+      }
+
+      StartDoc( hDC, &amp;info );
+
+      do
+      {
+         lPrint = SendMessage( hWnd, EM_FORMATRANGE, FALSE, ( LPARAM ) &amp;fr );
+
+         if( !( bPageNums &amp;&amp; nPag &lt; nFromPage ) )
+         {
+            StartPage( hDC );
+
+            SendMessage( hWnd, EM_DISPLAYBAND, 0, ( LPARAM ) &amp;fr.rc );
+
+            EndPage( hDC );
+         }
+
+         if( lPrint &lt; lSize )
+         {
+            fr.chrg.cpMin = lPrint;
+            fr.chrg.cpMax = lSize;
+         }
+
+         fr.rc = rcTemp;
+
+         nPag++;
+
+         if( bPageNums &amp;&amp; nPag &gt; nToPage )
+            break;
+      }
+      while( lPrint &lt; lSize );
+   }
+   SendMessage( hWnd, EM_FORMATRANGE, FALSE, ( LPARAM ) NULL );
+
+   EndDoc( hDC );
+}
+
+//----------------------------------------------------------------------------//
+
+static DWORD CALLBACK StreamIn( DWORD dwCookie, LPBYTE pbBuff, LONG cb,
+                                LONG FAR * pcb )
+{
+   DWORD dwRead;
+
+   if( ReadFile( ( HANDLE ) dwCookie, pbBuff, cb, &amp;dwRead, NULL ) )
+      * pcb = dwRead;
+
+   return 0;
+}
+
+//----------------------------------------------------------------------------//
+
+static DWORD CALLBACK StreamOut( DWORD dwCookie, LPBYTE pbBuff, LONG cb,
+                                 LONG FAR * pcb )
+{
+   DWORD dwWrite;
+
+   if( WriteFile( ( HANDLE ) dwCookie, pbBuff, cb, &amp;dwWrite, NULL ) )
+      * pcb = dwWrite;
+
+   return 0;
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RELOADFILE )
+{
+   EDITSTREAM es;
+
+   es.dwCookie    = ( DWORD ) CreateFile( ( LPCTSTR ) hb_parc( 2 ),
+                                          GENERIC_READ | GENERIC_WRITE,
+                                          FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                          NULL,
+                                          OPEN_EXISTING,
+                                          FILE_ATTRIBUTE_NORMAL,
+                                          NULL );
+   es.dwError     = 0;
+   es.pfnCallback = StreamIn;
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_STREAMIN, hb_parni( 3 ), ( LPARAM ) &amp;es );
+
+   CloseHandle( ( HANDLE ) es.dwCookie );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( RESAVEFILE )
+{
+   EDITSTREAM es;
+
+   es.dwCookie    = ( DWORD ) CreateFile( ( LPCTSTR ) hb_parc( 2 ),
+                                          GENERIC_READ | GENERIC_WRITE,
+                                          0,
+                                          NULL,
+                                          CREATE_ALWAYS,
+                                          FILE_ATTRIBUTE_ARCHIVE,
+                                          NULL );
+   es.dwError     = 0;
+   es.pfnCallback = StreamOut;
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_STREAMOUT, hb_parni( 3 ), ( LPARAM ) &amp;es );
+
+   CloseHandle( ( HANDLE ) es.dwCookie );
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REFILEPROPERTY )
+{
+   SHELLEXECUTEINFO sei;
+
+   ZeroMemory( &amp;sei, sizeof( sei ) );
+   sei.cbSize = sizeof( sei );
+   sei.hwnd   = ( HWND ) hb_parnl( 1 );
+   sei.lpFile = ( LPSTR ) hb_parc( 2 );
+   sei.lpVerb = "properties";
+   sei.fMask  = SEE_MASK_INVOKEIDLIST;
+
+   ShellExecuteEx( &amp;sei );
+}
+
+
+//--------------------------------------------------------------------------
+//adding method InsertPicture() to class TRichEdit
+/*HB_FUNC( TRICHEDIT_INSERTPICTURE )
+{
+   PHB_ITEM     Self     = hb_stackSelfItem();
+   REDOC *      predoc   = ( REDOC * ) XA_ObjGetNL( Self, "pREDOC" );
+   LPDATAOBJECT pdataobj = NULL;
+   LPOLEOBJECT  poleobj  = NULL;
+   LPSTORAGE    pstg     = NULL;
+   LPOLECLIENTSITE polesite = NULL;
+   STGMEDIUM    stgm;
+   LPFORMATETC  pft;
+   FORMATETC    ft;
+   LPWSTR       szFile;
+   REOBJECT     reo;
+   CLSID        clsid;
+   SIZEL        sizel;
+   BOOL         bBitmap = ISNUM( 1 );
+
+   XA_ObjSend( Self, "GetOleInterface" );
+
+   if( predoc-&gt;preole-&gt;lpVtbl-&gt;GetClientSite( predoc-&gt;preole, ( LPOLECLIENTSITE FAR * ) &amp;polesite ) == S_OK )
+   {
+      if( REOC_GetNewStorage( predoc-&gt;preoc, &amp;pstg ) == S_OK )
+      {
+         if( bBitmap )
+         {
+            if( REDATA_QueryInterface( predoc-&gt;predata, &amp;IID_IDataObject, ( LPVOID FAR * ) &amp;pdataobj ) == S_OK )
+            {
+               stgm.tymed = TYMED_GDI;
+               stgm.u.hBitmap = ( HBITMAP ) hb_parnl( 1 );
+               stgm.pUnkForRelease = NULL;
+
+               ft.cfFormat = CF_BITMAP;
+               ft.ptd      = NULL;
+               ft.dwAspect = DVASPECT_CONTENT;
+               ft.lindex   = -1;
+               ft.tymed    = TYMED_GDI;
+
+               if( REDATA_SetData( predoc-&gt;predata, &amp;ft, &amp;stgm, TRUE ) == S_OK )
+                  OleCreateStaticFromData( pdataobj, &amp;IID_IOleObject, OLERENDER_FORMAT,
+                                           &amp;ft, polesite, pstg,
+                                           ( LPVOID FAR * ) &amp;poleobj );
+            }
+         }
+         else
+         {
+            pft = &amp;ft;
+            pft-&gt;cfFormat = 0;
+            pft-&gt;ptd      = NULL;
+            pft-&gt;dwAspect = DVASPECT_CONTENT;
+            pft-&gt;lindex   = -1;
+            pft-&gt;tymed    = TYMED_NULL;
+
+            szFile = AnsiToWide( hb_parc( 1 ) );
+
+            OleCreateFromFile( &amp;CLSID_NULL, szFile, &amp;IID_IOleObject, OLERENDER_DRAW,
+                               pft, polesite, pstg, ( LPVOID FAR * ) &amp;poleobj );
+
+            hb_xfree( szFile );
+         }
+
+         if( OleSetContainedObject( ( LPUNKNOWN ) poleobj, TRUE ) == S_OK )
+         {
+            if( poleobj-&gt;lpVtbl-&gt;GetUserClassID( poleobj, &amp;clsid ) == S_OK )
+            {
+               sizel.cx = ISNUM( 2 ) ? hb_parnl( 2 ) : 0;
+               sizel.cy = ISNUM( 3 ) ? hb_parnl( 3 ) : 0;
+
+               ZeroMemory( &amp;reo, sizeof( REOBJECT ) );
+               reo.cbStruct = sizeof( REOBJECT );
+               reo.clsid    = clsid;
+               reo.cp       = REO_CP_SELECTION;
+               reo.dvaspect = DVASPECT_CONTENT;
+               reo.dwFlags  = REO_RESIZABLE | REO_BELOWBASELINE;
+               reo.dwUser   = 0;
+               reo.poleobj  = poleobj;
+               reo.polesite = polesite;
+               reo.pstg     = pstg;
+               reo.sizel    = sizel;
+
+               predoc-&gt;preole-&gt;lpVtbl-&gt;InsertObject( predoc-&gt;preole, &amp;reo );
+            }
+         }
+      }
+   }
+
+   if( poleobj )
+      poleobj-&gt;lpVtbl-&gt;Release( poleobj );
+
+   if( pstg )
+      pstg-&gt;lpVtbl-&gt;Release( pstg );
+
+   if( polesite )
+      polesite-&gt;lpVtbl-&gt;Release( polesite );
+
+   poleobj  = NULL;
+   pstg     = NULL;
+   polesite = NULL;
+
+   if( bBitmap )
+   {
+      if( pdataobj )
+         pdataobj-&gt;lpVtbl-&gt;Release( pdataobj );
+
+      pdataobj = NULL;
+   }
+
+   hb_ret();
+}
+
+/**/
+//----------------------------------------------------------------------------//
+/*
+static SYSTEMTIME st;
+static LCID id;
+static PHB_ITEM pFormats;
+
+static BOOL CALLBACK DateFormatEnumProc( LPTSTR lpszFormatString )
+{
+   PHB_ITEM pDate = hb_itemNew( NULL );
+   char szDate[ 256 ];
+
+   GetDateFormat( id, 0, &amp;st, lpszFormatString, szDate, 256 );
+
+   #if defined( __XHARBOUR__ )
+      if( hb_arrayScan( pFormats, hb_itemPutC( pDate, szDate ), NULL, NULL, TRUE ) == 0 )
+   #else
+      if( hb_arrayScan( pFormats, hb_itemPutC( pDate, szDate ), NULL, NULL ) == 0 )
+   #endif
+      hb_arrayAdd( pFormats, pDate );
+
+   hb_itemRelease( pDate );
+
+   return TRUE;
+}
+
+//----------------------------------------------------------------------------//
+
+static BOOL CALLBACK TimeFormatEnumProc( LPTSTR lpszFormatString )
+{
+   PHB_ITEM pTime = hb_itemNew( NULL );
+   char szTime[ 256 ];
+
+   GetTimeFormat( id, 0, &amp;st, lpszFormatString, szTime, 256 );
+
+   #if defined( __XHARBOUR__ )
+      if( hb_arrayScan( pFormats, hb_itemPutC( pTime, szTime ), NULL, NULL, TRUE ) == 0 )
+   #else
+      if( hb_arrayScan( pFormats, hb_itemPutC( pTime, szTime ), NULL, NULL ) == 0 )
+   #endif
+      hb_arrayAdd( pFormats, pTime );
+
+   hb_itemRelease( pTime );
+
+   return TRUE;
+}
+
+//----------------------------------------------------------------------------//
+
+HB_FUNC( REGETDATETIME )
+{
+   GetLocalTime( &amp;st );
+   id = GetUserDefaultLCID();
+
+   pFormats = hb_itemArrayNew( 0 );
+
+   EnumDateFormats( ( DATEFMT_ENUMPROC ) DateFormatEnumProc, id, DATE_SHORTDATE );
+   EnumDateFormats( ( DATEFMT_ENUMPROC ) DateFormatEnumProc, id, DATE_LONGDATE );
+   EnumTimeFormats( ( DATEFMT_ENUMPROC ) TimeFormatEnumProc, id, 0 );
+
+   hb_itemReturn( pFormats );
+   hb_itemRelease( pFormats );
+}
+*/
+//----------------------------------------------------------------------------//
+#pragma ENDDUMP
+
+/*
+#pragma BEGINDUMP
+
+
+
+#include &lt;windows.h&gt;
+#include &lt;richedit.h&gt;
+#include &lt;hbapi.h&gt;
+
+//------------------------------------------------------------------------------------------------------------------------------
+
+HB_FUNC( REGETHIGHLIGHT )
+{
+   CHARFORMAT2 cf;
+
+   memset( ( char * ) &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETCHARFORMAT, TRUE, ( LPARAM ) &amp;cf );
+
+   hb_retnl( cf.crBackColor );
+}
+
+//------------------------------------------------------------------------------------------------------------------------------
+
+HB_FUNC( RESETHIGHLIGHT )
+{
+   CHARFORMAT2 cf;
+
+   memset( ( char * ) &amp;cf, 0, sizeof( cf ) );
+
+   cf.cbSize = sizeof( cf );
+   cf.dwMask = CFM_BACKCOLOR;
+   cf.crBackColor = hb_parnl( 2 );
+
+   hb_retl( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SETCHARFORMAT,
+                         SCF_WORD | SCF_SELECTION, ( LPARAM ) &amp;cf ) );
+}
+//------------------------------------------------------------------------------------------------------------------------------
+HB_FUNC( REGETINDENT )
+{
+   PARAFORMAT pf;
+
+   memset( ( char * ) &amp;pf, 0, sizeof( pf ) );
+
+   pf.cbSize = sizeof( pf );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETPARAFORMAT, 0, ( LPARAM ) &amp;pf );
+
+   hb_reta( 3 );
+   hb_stornl( pf.dxStartIndent + pf.dxOffset, -1, 1 );
+   hb_stornl( pf.dxRightIndent, -1, 2 );
+   hb_stornl( -pf.dxOffset, -1, 3 );
+}
+
+//------------------------------------------------------------------------------------------------------------------------------
+
+HB_FUNC( REGETLINE )
+{
+   TCHAR szBuf[ 256 ];
+
+   * ( ( WORD * ) szBuf ) = 256;
+
+   hb_retclen( szBuf, SendMessage( ( HWND ) hb_parnl( 1 ), EM_GETLINE, hb_parnl( 2 ),
+                                   ( LONG ) szBuf ) - 1 );
+}
+
+
+//------------------------------------------------------------------------------------------------------------------------------
+HB_FUNC( REGETSELECTION )
+{
+   CHARRANGE cr;
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_EXGETSEL, 0, ( LPARAM ) &amp;cr );
+
+   if( hb_pcount() &gt; 1 )
+      hb_stornl( cr.cpMin, 2 );
+
+   if( hb_pcount() == 3 )
+      hb_stornl( cr.cpMax, 3 );
+}
+
+//------------------------------------------------------------------------------------------------------------------------------
+HB_FUNC( RESETSELECTION )
+{
+   CHARRANGE cr;
+
+   cr.cpMin = hb_parnl( 2 );
+   cr.cpMax = hb_parnl( 3 );
+
+   SendMessage( ( HWND ) hb_parnl( 1 ), EM_EXSETSEL, 0, ( LPARAM ) &amp;cr );
+
+   hb_retni( SendMessage( ( HWND ) hb_parnl( 1 ), EM_SCROLLCARET, 0, 0L ) );
+}
+
+//------------------------------------------------------------------------------------------------------------------------------
+
+HB_FUNC( REFINDTEXT )
+{
+   FINDTEXTEX ft;
+
+   HWND  hWnd    = ( HWND ) hb_parnl( 1 );
+   DWORD dwFlags = ( hb_parl( 3 ) ? FR_DOWN : 0 ) | ( hb_parl( 4 ) ? FR_MATCHCASE : 0 ) |
+                   ( hb_parl( 5 ) ? FR_WHOLEWORD : 0 );
+
+   SendMessage( hWnd, EM_EXGETSEL, 0, ( LPARAM ) &amp;ft.chrg );
+
+   ft.chrg.cpMin = hb_parl( 3 ) ? ft.chrg.cpMax : ft.chrg.cpMin;
+   ft.chrg.cpMax = -1;
+   ft.lpstrText  = ( LPSTR ) hb_parc( 2 );
+
+   hb_retnl( SendMessage( hWnd, EM_FINDTEXTEX, dwFlags, ( LPARAM ) &amp;ft ) );
+}
+
+
+//------------------------------------------------------------------------------------------------------------------------------
+
+#pragma ENDDUMP
+ */</code></pre></div><br>
+<br>
+Reinaldo.</div>
+    </div>
+  </div>
+  <div class="post" id="p191755">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to use RichText font attributes</span><br>
+        Posted: Fri Jun 24, 2016 08:50 AM
+      </div>
+      <div class="content"><p>thanks<br>
+these sources I reviewed many functions that I had lost and they were in the old class of 2002 when I was the old pad</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

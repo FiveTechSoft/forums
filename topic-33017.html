@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>FWH : Unicode Gets and RowSet - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-33017">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> FWH : Unicode Gets and RowSet</div>
+  <div class="post" id="p194437">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">FWH : Unicode Gets and RowSet</span><br>
+        Posted: Sat Oct 01, 2016 08:17 PM
+      </div>
+      <div class="content">When an application is built with Unicode enabled, TGet object accepts Unicode characters as input. To create a Unicode application, we should call the function <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FW_SetUnicode( .T. )</code></pre></div><br>
+at the very beginning, particulary before any Window or Dialog is created for the first time. After the first window/dialog is created, this setting can not be changed.<br>
+<br>
+Rest of the discussion in this post apply to Unicode applications only and for ANSI (non-Unicode) applications, the behavior continues to be as has always been. <br>
+<br>
+Non-Character Gets are always ANSI:<br>
+<br>
+Even in a Unicode application, Unicode character input is enabled only for character variables.  Gets of all other variables (types like DLNT) behave identical to pure ANSI Gets.<br>
+<br>
+By default, any Get of a character variable in a Unicode application accepts Unicode characters. Unicode character Gets (hereafter referred to as Unicode Gets) do not respect any picture clause except &quot;@!&quot;. <br>
+<br>
+ANSI Gets in Unicode Application:<br>
+<br>
+However, it is possible to create a pure ANSI Get even in a Unicode application by including the clause &quot;CHRGROUP CHR_ANSI&quot;. Such Gets do not accept Unicode characters and behave identical to Gets in a pure ANSI application. These Gets can have picture clauses like any ANSI Get.<br>
+<br>
+Maximum possible length of input in Unicode Get:<br>
+<br>
+By default Get restricts the length of the input to the same number of bytes as the length of the variable in bytes. If cVar is Space(15), GET ... cVar restricts the input to 15 bytes. Because on average each Unicode character occupies 3 bytes, we can not input a Unicode text exceeding 5 Unicode characters or 15 bytes. In case the trimmed length of input text is less than 15 bytes, the value is right padded to 15 bytes. <br>
+<br>
+Note:<br>
+Len( cVar ) --&gt; Length in Bytes<br>
+HB_UTF8LEN( cVar ) --&gt; Length in Characters.<br>
+In the case of English, Len( cVar ) is always the same as HB_UTF8LEN( cVar )<br>
+<br>
+This default behavior suits XBase applications. Character field with length 15 can strore maximum of 15 byte of text whether ANSI or Unicode. So in effect maximum Unicode text that can be stored is approximately 5 characters.<br>
+<br>
+The case of SQL servers is different. For example, VarChar(15) in MySql with utf8 charset or NVARCHAR(15) in MsSql/Oracle,etc accommodate 15 characters even if the length in bytes exceeds 15 bytes. To meet the requirements of these databases we need a different behavior of Get object.<br>
+<br>
+cVar := Space(15)<br>
+@ r,c GET cVar ........ CHRGROUP CHR_WIDE<br>
+meets this requirement.<br>
+<br>
+In this case, the user input is restricted to 15 characters not bytes. The returned value is padded to 15 characters, i.e., HB_UTF8LEN( cVar ) will be 15 though Len( cVar ) may be &gt;= 15 depending on the type of characters input.<br>
+<br>
+The following sample may be tried to test this functionality.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+function TestUnicodeGets()
+
+   local aText[ 3 ]
+   local aGets[ 3 ]
+   local oDlg, oSegoe, oSmall
+
+   FW_SetUnicode( .T. )
+
+   AFill( aText, Space( 15 ) )
+
+   DEFINE FONT oSmall NAME "TAHOMA"   SIZE 0,-12
+   DEFINE FONT oSegoe NAME "Segoe UI" SIZE 0,-20
+   DEFINE DIALOG oDlg SIZE 650,340 PIXEL TRUEPIXEL FONT oSegoe ;
+      TITLE "FWH : UNICODE GETS"
+
+   @  20, 360 SAY "BYTES" SIZE 110,34 PIXEL OF oDlg FONT oSmall RIGHT
+   @  20, 480 SAY "CHARACTERS" SIZE 110,34 PIXEL OF oDlg FONT oSmall RIGHT
+
+   @  60,  40 SAY "ANSI Text upto 15 Bytes" SIZE 300,20 PIXEL OF oDlg FONT oSmall
+   @  60, 360 SAY "Full" SIZE 50,20 PIXEL OF oDlg FONT oSmall RIGHT
+   @  60, 420 SAY "Trim" SIZE 50,20 PIXEL OF oDlg FONT oSmall RIGHT
+   @  60, 480 SAY "Full" SIZE 50,20 PIXEL OF oDlg FONT oSmall RIGHT
+   @  60, 540 SAY "Trim" SIZE 50,20 PIXEL OF oDlg FONT oSmall RIGHT
+
+   @  80,  40 GET aGets[ 1 ] VAR aText[ 1 ] SIZE 300,34 PIXEL OF oDlg CHRGROUP CHR_ANSI VALID ( oDlg:Update(), .t. )
+
+   @  80, 360 SAY Len( aText[ 1 ] ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+   @  80, 420 SAY Len( Trim( aText[ 1 ] ) ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+   @  80, 480 SAY HB_UTF8LEN( aText[ 1 ] ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+   @  80, 540 SAY HB_UTF8LEN( Trim( aText[ 1 ] ) ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+
+   @ 120,  40 SAY "Unicode Text upto 15 Bytes" SIZE 300,20 PIXEL OF oDlg FONT oSmall
+   @ 140,  40 GET aGets[ 2 ] VAR aText[ 2 ] SIZE 300,34 PIXEL OF oDlg CHRGROUP CHR_ANY VALID ( oDlg:Update(), .t. )
+
+   @ 140, 360 SAY Len( aText[ 2 ] ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+   @ 140, 420 SAY Len( Trim( aText[ 2 ] ) ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+   @ 140, 480 SAY HB_UTF8LEN( aText[ 2 ] ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+   @ 140, 540 SAY HB_UTF8LEN( Trim( aText[ 2 ] ) ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+
+   @ 180,  40 SAY "Unicode Text upto 15 Characters" SIZE 300,20 PIXEL OF oDlg FONT oSmall
+   @ 200,  40 GET aGets[ 3 ] VAR aText[ 3 ] SIZE 300,34 PIXEL OF oDlg CHRGROUP CHR_WIDE VALID ( oDlg:Update(), .t. )
+
+   @ 200, 360 SAY Len( aText[ 3 ] ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+   @ 200, 420 SAY Len( Trim( aText[ 3 ] ) ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+   @ 200, 480 SAY HB_UTF8LEN( aText[ 3 ] ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+   @ 200, 540 SAY HB_UTF8LEN( Trim( aText[ 3 ] ) ) PICTURE "99" SIZE 50,34 PIXEL OF oDlg RIGHT UPDATE
+
+   @ 260, 040 BUTTON "REFRESH" SIZE 150,40 PIXEL OF oDlg ACTION oDlg:Update()
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oSegoe, oSmall
+
+
+return nil</code></pre></div><br>
+<br>
+When text is entered to maximum allowed length:<br>
+<br>
+<a href="https://imageshack.com/i/po4Wqurjp" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/924/4Wqurj.png" alt="" loading="lazy"></a><br>
+<br>
+<span style="font-size:150%"><strong>FW MARIADB RowSet:<br>
+</strong></span><br>
+Now let us see how does FWH implementation of MySql/MariaDB simplifies handling of ANSI and Unicode fields of tables.<br>
+<br>
+First we need to establish Unicode connection to Server. In a Unicode application ( i.e., when FW_SetUnicode( .T. ) is called first), connection to MySql server is established as a Unicode connection.<br>
+<br>
+When a table is opened, the RowSet object recognises the character set of each field of the table (or sql). XBrowse and DataRow objects are tightly integrated with FW MySql objects. Both XBrowse and DataRow objects learn from the RowSet object, which fields are to be edited as ANSI and which fields are to edited as Unicode with CHR_WIDE type.<br>
+<br>
+A table's character set defaults to database's character set and fields' character set defaults to table's character set. Because defaults may be deceptive at times, it is highly recommended to specify the character set of table and fields at the time of creation of the table.<br>
+<br>
+Example:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+function TestUnicodeRowSet
+
+   local cHost       := "localhost"
+   local cUser       := "root"
+   local cPassword   := &lt;secret&gt;
+   local cDB         := "fwh"
+   local oCn, oRs
+
+   FW_SetUnicode( .t. )
+
+   FWCONNECT oCn HOST cHost USER cUser PASSWORD cPassword DATABASE cDb
+   if oCn == nil
+      ? "Connect Fail"
+      return nil
+   endif
+
+   if .not. oCn:TableExists( "ansiutf" )
+
+      oCn:CreateTable( "ansiutf", { { "ansitext", 'C',  5, 0, "latin1" }, ;
+                                    { "utf8text", 'C', 15, 0, "utf8"   }  }, ;
+                       .t., "utf8" )
+
+   endif
+
+   oRs   := oCn:RowSet( "ansiutf" )
+   XBROWSER oRs FASTEDIT
+
+   oRs:Close()
+   oCn:Close()
+
+return nil</code></pre></div><br>
+<br>
+The above CreateTable() method internally generates the following SQL to create  the table:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CREATE TABLE `ansiutf` (
+   `ID` INT AUTO_INCREMENT PRIMARY KEY,
+   `ansitext` VARCHAR( 5 ) CHARACTER SET latin1 COLLATE latin1_general_ci,
+   `utf8text` VARCHAR( 15 ) CHARACTER SET utf8 COLLATE utf8_unicode_ci
+) CHARACTER SET utf8 COLLATE utf8_unicode_ci</code></pre></div><br>
+<br>
+<a href="https://imageshack.com/i/pmEuOd9Xp" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/922/EuOd9X.png" alt="" loading="lazy"></a><br>
+<br>
+As long as we use FW MariaDB, XBrowse and default DataRow dialogs everything is automated without any special effort of the programmer.<br>
+<br>
+But we do not always like to use DataRow's default dialogs and want to design our own dialogs. In such cases we need to specify for each Get whether to use CHR_ANSI or CHR_WIDE. Even this is simple<br>
+<br>
+example:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function MyDialog( oRec )
+
+@ r,c GET oRec:fieldname SIZE ........ CHRGROUP oRec:FieldnChrGrp( "fieldname" )
+
+...</code></pre></div><br>
+There is no need for the programmer to keep note of the character sets of different fields.<br>
+<br>
+Note: If TDataRow is used for editing, default is CHR_WIDE.<br>
+<br>
+When using 3rd party libs, the programmer should carefully declare the clauses CHR_ANSI / CHR_WIDE.</div>
+    </div>
+  </div>
+  <div class="post" id="p194441">
+    <div class="poster">
+      <div class="name" style="color:#105289">richard-service</div>
+      <div class="rank">Posts: 866</div>
+      <img class="avatar avatar-img" src="avatars/1193.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 16, 2007 08:57 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH : Unicode Gets and RowSet</span><br>
+        Posted: Sun Oct 02, 2016 02:23 AM
+      </div>
+      <div class="content"><p>Mr.Rao<br>
+Could you provide a EXE working example to test it here ?<br>
+This support ADS/DBF database?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p194442">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH : Unicode Gets and RowSet</span><br>
+        Posted: Sun Oct 02, 2016 02:49 AM
+      </div>
+      <div class="content"><p>Mr Richard</p>
+<p>May I know what is the latest FWH version you are using?</p>
+<p>For DBF/ADS, if the field width is 'n', we can store string of length n bytes only, i.e, approximately n/3 unicode characters.</p>
+<p>I shall send you exes by mail.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p194443">
+    <div class="poster">
+      <div class="name" style="color:#105289">richard-service</div>
+      <div class="rank">Posts: 866</div>
+      <img class="avatar avatar-img" src="avatars/1193.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 16, 2007 08:57 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH : Unicode Gets and RowSet</span><br>
+        Posted: Sun Oct 02, 2016 02:52 AM
+      </div>
+      <div class="content"><blockquote><cite>nageswaragunupudi wrote:</cite>Mr Richard<br>
+<br>
+May I know what is the latest FWH version you are using?<br>
+<br>
+For DBF/ADS, if the field width is 'n', we can store string of length n bytes only, i.e, approximately n/3 unicode characters.<br>
+<br>
+I shall send you exes by mail.</blockquote><br>
+<br>
+I use FWH1606build2, send to my mail.<br>
+Thanks a lot.</div>
+    </div>
+  </div>
+  <div class="post" id="p194467">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH : Unicode Gets and RowSet</span><br>
+        Posted: Mon Oct 03, 2016 02:26 PM
+      </div>
+      <div class="content"><p>We expect Unicode programmers may already be aware not to use ANSI functions like CHR(), LEFT(), RIGHT(), SUBSTR(), STUFF(), LEN() etc with Unicode srings. Instead we should use their UTF8 counter parts viz., HB_UTF8CHR(), HB_UTF8LEFT(), HB_UTF8RIGHT(), HB_UTF8SUBSTR(), HB_UTF8STUFF(), HF_UTF8LEN(). It is once again desirable to review the application programs and any 3rd party libraries they are using and make appropriate rectifications.</p>
+<p>Same way PAD() or PADR() should not be used with Unicode strings. For example, using PADR(cStr,10) where cStr is a unicode string having a length of more than 10 bytes is very likely to result in an invalid Utf string and we just see many ??? marks instead of valid characters.</p>
+<p>FWH provides two substitue functions for handling truncation and padding of Unicode strings.</p>
+<p>FW_UTF8PADCHAR( cStr, nCharacters ) --&gt; cPartStr whose HB_UTF8LEN() is nCharacters<br>
+FW_UTF8PADBYTE( cStr, nBytes ) --&gt; cPartStr whose Len() is nBytes without invalidating the part string.</p>
+<p>It may be noted that our own legacy applications and many 3rd party libs were originally written to handle ANSI strings and all of them need careful review and appropriate modifications. </p>
+<p>Despite the best efforts made by FWH to provide the best UI for Unicode programmng, all this effort will go waste if the programmer does not fully and properly take care of these issues in his programs and the 3rd party libs he is using.</p>
+<p>Programmers using TDolphin and TMySql need also to keep in mind some issues. Both these libraries were not written keeping in mind the requirement to handle Unicode strings. The programmer needs to make knowledgeable modifications in the sources to hande the requirements of Unicode strings.</p>
+<p>Character fields defined as Char( n ) and VarChar( n ) are treated as fields with length of ( 3 * n ) bytes and when returning values to the user, the values are padded to 3*n Bytes. These values are not suitable for any kind of Get.</p>
+<p>We need to use FW_UTF8PADCHAR( string, n ) and then create a Get with the resultant string.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p194493">
+    <div class="poster">
+      <div class="name" style="color:#105289">richard-service</div>
+      <div class="rank">Posts: 866</div>
+      <img class="avatar avatar-img" src="avatars/1193.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 16, 2007 08:57 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH : Unicode Gets and RowSet</span><br>
+        Posted: Tue Oct 04, 2016 02:47 AM
+      </div>
+      <div class="content"><blockquote><cite>nageswaragunupudi wrote:</cite>We expect Unicode programmers may already be aware not to use ANSI functions like CHR(), LEFT(), RIGHT(), SUBSTR(), STUFF(), LEN() etc with Unicode srings. Instead we should use their UTF8 counter parts viz., HB_UTF8CHR(), HB_UTF8LEFT(), HB_UTF8RIGHT(), HB_UTF8SUBSTR(), HB_UTF8STUFF(), HF_UTF8LEN(). It is once again desirable to review the application programs and any 3rd party libraries they are using and make appropriate rectifications.<br>
+<br>
+Same way PAD() or PADR() should not be used with Unicode strings. For example, using PADR(cStr,10) where cStr is a unicode string having a length of more than 10 bytes is very likely to result in an invalid Utf string and we just see many ??? marks instead of valid characters.<br>
+<br>
+FWH provides two substitue functions for handling truncation and padding of Unicode strings.<br>
+<br>
+FW_UTF8PADCHAR( cStr, nCharacters ) --&gt; cPartStr whose HB_UTF8LEN() is nCharacters<br>
+FW_UTF8PADBYTE( cStr, nBytes ) --&gt; cPartStr whose Len() is nBytes without invalidating the part string.<br>
+<br>
+It may be noted that our own legacy applications and many 3rd party libs were originally written to handle ANSI strings and all of them need careful review and appropriate modifications. <br>
+<br>
+Despite the best efforts made by FWH to provide the best UI for Unicode programmng, all this effort will go waste if the programmer does not fully and properly take care of these issues in his programs and the 3rd party libs he is using.<br>
+<br>
+Programmers using TDolphin and TMySql need also to keep in mind some issues. Both these libraries were not written keeping in mind the requirement to handle Unicode strings. The programmer needs to make knowledgeable modifications in the sources to hande the requirements of Unicode strings.<br>
+<br>
+Character fields defined as Char( n ) and VarChar( n ) are treated as fields with length of ( 3 * n ) bytes and when returning values to the user, the values are padded to 3*n Bytes. These values are not suitable for any kind of Get.<br>
+<br>
+We need to use FW_UTF8PADCHAR( string, n ) and then create a Get with the resultant string.</blockquote><br>
+<br>
+Mr.Rao<br>
+Yes,you're right. <br>
+we know old functions need to be fixed for Unicode functions.<br>
+Thanks for your share these Unicode functions. In face, I don't know these functions name.<br>
+Anyway, I use FW_UTF8PADCHAR() function when I call modify data characters. Now, It's working fine.</div>
+    </div>
+  </div>
+  <div class="post" id="p194494">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH : Unicode Gets and RowSet</span><br>
+        Posted: Tue Oct 04, 2016 02:54 AM
+      </div>
+      <div class="content"><p>Glad the posting helped you.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p194496">
+    <div class="poster">
+      <div class="name" style="color:#105289">richard-service</div>
+      <div class="rank">Posts: 866</div>
+      <img class="avatar avatar-img" src="avatars/1193.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 16, 2007 08:57 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH : Unicode Gets and RowSet</span><br>
+        Posted: Tue Oct 04, 2016 04:04 AM
+      </div>
+      <div class="content"><blockquote><cite>nageswaragunupudi wrote:</cite>Glad the posting helped you.</blockquote><br>
+I don't know New HB_xx/FW_xx functions support database object.<br>
+Maybe next time, I will test it.</div>
+    </div>
+  </div>
+  <div class="post" id="p194700">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH : Unicode Gets and RowSet</span><br>
+        Posted: Sat Oct 15, 2016 12:34 AM
+      </div>
+      <div class="content">These notes may help some beginners of Unicode programming with FWH.<br>
+<br>
+<strong><span style="font-size:150%">FW_SetUnicode( .T. ):</span></strong><br>
+ It is necessary to call this function at the beginning of the Main() function. In any case before any Window/Dialog is created and any screen I/O starts.<br>
+<br>
+<strong><span style="font-size:150%">KeyBoard:</span></strong><br>
+ It is possible to use (a) Windows on-screen keyboards, (b) utilties like Google Input Tools or (c) Hardware KeyBoards. First ensure the keyboard works with Windows Notepad, Word, Excel, etc. If the keyboard works with Windows software, then it works with FWH application also.<br>
+<br>
+<strong><span style="font-size:150%">Unicode GETs and Length of Variables to use.</span></strong><br>
+It is very important to know that we need to use character variables with larger sizes to handle Unicode input.<br>
+<br>
+Each single Unicode character requires about 3 bytes. That means we need to modify the DBF field widths and variable lengths in our Gets to almost 3 times or even more.<br>
+<br>
+For example, our present ANSI application may be having a character field with width of 2 bytes. We can comfortably enter values like &quot;NY&quot;, &quot;OH&quot;, etc. But if we try to enter Unicode characters, we can not input even a single character. We need a space of atleast 6 bytes or even more.<br>
+<br>
+<strong><span style="font-size:150%">What do we mean by a single Unicode character?</span></strong><br>
+This is another important thing to understand. Some languages make one alphabet using more than one character. For example, this is a composite alphabet in my mother tongue. To see, it looks like one alphabet.<br>
+<br>
+<span style="font-size:200%">క్ష్మ<br>
+</span><br>
+But this is made up of 4 Unicode characters, viz.<br>
+<br>
+<strong>K + SH + M + A (phonetically)</strong><br>
+<br>
+What appers like a single alphabet requires 4 Unicode characters and requires 4 x 3 = 12 bytes of storage. It is now clear that we can not input this alphabet in a variable or field of width less than 12 bytes. From this we can underestand how much field-sizes we need to provide to store Unicode data and what size of variables we should use in GETs.<br>
+<br>
+This is some essential information to keep in mind, before we start working with a Unicode application.</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

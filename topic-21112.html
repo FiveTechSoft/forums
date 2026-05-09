@@ -1,0 +1,2189 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>A Client-Server Data Base Server in Harbour - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-21112">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> A Client-Server Data Base Server in Harbour</div>
+  <div class="post" id="p112185">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Mon Mar 14, 2011 11:15 PM
+      </div>
+      <div class="content">Hi all<br>
+<br>
+A while ago, in response to a post about data bases, I mentioned my Harbour based client-server architecture data base.  I promised to post in response to a request and this thread will fulfill that promise, albeit a bit later than I originally promised.<br>
+<br>
+Herewith is the main .prg file.  It really only implements two things:<br>
+<br>
+command line processing<br>
+<br>
+the main server loop<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// rapids.prg
+
+#include "hbclass.ch"
+#include "rapids.ch"
+#include "DBEmphasis.ch"
+
+#define wa_KEY_ALLOCATOR         201   // work area for primary key allocation functionality
+
+PROCEDURE Main( ... )
+
+  LOCAL ptr_Server          // pointer returned by INetServer()
+  LOCAL ptr_Client          // pointer returned by INetAccept()
+  LOCAL arr_Parameters      // array holding command line parameters
+  LOCAL int_ParamCount      // command line parameter count
+  LOCAL log_Continue        // controls main server loop
+  LOCAL int_LoopCounter
+
+
+  PUBLIC log_Verbose        // If .T. then "diagnostic" information is sent to the terminal [defaults to .T.]
+  PUBLIC str_Port           // Port number to use (as a string) [defaults to "1800"]
+  PUBLIC int_Port           // Port number to use as an integer
+  PUBLIC int_TimeOut        // Timeout to use (in thousandths of a second)
+  PUBLIC arr_Info           // array to hold information about command line processing (so its output can be supressed via the command line)
+  PUBLIC str_DataDir        // Path to data files
+  PUBLIC arr_DBQueries  := Array( query_LAST )   // array holding the "compiled" query objects
+  PUBLIC int_MaxDBQuery := query_LAST            // length of above array
+  PUBLIC arr_Select     := Array( select_LAST )  // array holding field selection objects
+  PUBLIC str_User           // ID of user (this functionality not yet fully implemented)
+  PUBLIC obj_DateTime       // Date-Time object
+  PUBLIC arr_Xfer           // array used for transfer of sub-query data
+
+  arr_Parameters := HB_AParams()
+  int_ParamCount := LEN( arr_Parameters )
+
+  ?
+  ? "RAPIDS - xBase Client Server Data Base Server - Version 1.00.03"
+  ? "---------------------------------------------------------------"
+  ?
+  ? "(c) Finalysis Pty. Ltd. 2008 - 2011"
+  ?
+  ? "Max Query ID is:", int_MaxDBQuery
+
+  // set default values for items that can also be set via the command line
+  log_Verbose := .T.
+  int_Port := 1800
+  int_TimeOut := 100
+  str_DataDir := "/" + CurDir() + "/"
+
+  // process any command line options
+  arr_Info := { "Checking command line" }
+  AAdd( arr_Info, ALLTRIM( STR( int_ParamCount ) ) + " command line parameter(s) found" )
+  IF int_ParamCount &gt; 0
+    FOR int_LoopCounter = 1 TO int_ParamCount
+      CheckParameter( arr_Parameters[int_LoopCounter] )
+    NEXT
+  ENDIF
+
+  OpenDataFiles()
+  OpenKeyAllocation()
+  SetUpQueryFormats()
+  SetUpQueries()
+  IF log_Verbose
+    ?
+    ? "Setting Up Server Query Object"
+  ENDIF
+  obj_Query := TServerQuery():New()
+  obj_DateTime := TDateTime():New()
+  IF log_Verbose
+    ?
+    ? "Setting up sockets"
+  ENDIF
+  HB_INetInit()
+  ptr_Server := HB_INetServer( Val( str_Port ) )
+  HB_INetTimeout( ptr_Server, 100 )
+  ? "Server listening on port", str_Port, "for requests Press [Esc] to quit"
+  log_Continue := .T.
+  DO WHILE InKey( 0.1 ) != 27
+    // wait for incoming connection requests
+    ptr_Client := HB_INetAccept( ptr_Server )
+    IF HB_INetErrorCode( ptr_Server ) == 0
+      // process client request 
+      // possibly in a future version in a separate thread
+      // ServeClient( pClient )
+      obj_Query:Request( ptr_Client )
+    ENDIF
+  ENDDO
+  // WaitForThreads() would go here in a threaded version
+  // close socket and cleanup memory
+  HB_INetClose( ptr_Server )
+  HB_INetCleanup()
+
+RETURN
+
+FUNCTION CheckParameter( str_Parameter )
+
+LOCAL str_UParameter
+LOCAL str_TimeOut
+
+str_UParameter := Left( Upper( str_Parameter ), 2 )
+
+// check for -D&lt;data-directory&gt; option
+IF str_UParameter = "-D"
+   str_DataDir := SUBSTR( str_Parameter, 3 )
+   IF EMPTY( str_DataDir )
+      ? "ERROR: -D option specified but no data directory given"
+      QUIT
+   ENDIF
+   AAdd( arr_Info, "-D: data directory set to " + str_DataDir )
+   RETURN nil
+ENDIF
+
+// check for -Q (quiet) option
+IF str_UParameter = "-Q"
+   log_Verbose := .F.
+   AAdd( arr_Info, "-Q: set to Quiet mode" )
+   // ? "quiet"
+   RETURN nil
+ENDIF
+
+// check for -P&lt;port-number&gt; option
+IF str_UParameter = "-P"
+   ? "Port option specified"
+   str_Port := SUBSTR( str_Parameter, 3 )
+   ? "str_Port is:", str_Port
+   IF EMPTY( str_Port )
+      ? "ERROR: -P option specified but no port number given"
+      QUIT
+   ENDIF
+   int_Port := VAL( str_Port )
+   AAdd( arr_Info, "-P: port set to " + str_Port )
+   RETURN nil
+ENDIF
+
+// check for -T&lt;time-out&gt; option
+IF str_UParameter = "-T"
+   str_TimeOut := SUBSTR( str_Parameter, 3 )
+   IF EMPTY( str_TimeOut )
+      ? "ERROR: -T option specified but no port timeout value given"
+      QUIT
+   ENDIF
+   int_Port := VAL( str_TimeOut )
+   AAdd( arr_Info, "-T: timeout set to " + str_TimeOut )
+   RETURN nil
+ENDIF  
+
+RETURN nil
+
+FUNCTION OpenKeyAllocation()
+
+  LOCAL int_Info
+  LOCAL int_LoopCounter
+
+  // first display information about command line processing if in "verbose" mode
+  IF log_Verbose
+    ?
+    int_Info := Len( arr_Info )
+    FOR int_LoopCounter = 1 TO int_Info
+      ? arr_Info[int_LoopCounter]
+    NEXT
+    ? 
+    ? "Opening Data Files"
+  ENDIF
+  SELECT wa_KEY_ALLOCATOR
+  USE ( str_DataDir + "KY_KEY" ) SHARED 
+
+  RETURN nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112187">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Mon Mar 14, 2011 11:20 PM
+      </div>
+      <div class="content">The include file rapids.ch provides defines that are independant of the data base being used including defines usede to transfer error and error class back from the server to the client.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// rapids.ch
+
+#define CRLF   Chr(10)           // change this for use with Windows etc 
+
+//
+#define QUERY_GET_LIST_TYPE      1
+#define QUERY_READ_RECORD_TYPE   2
+#define QUERY_WRITE_RECORD_TYPE  3
+
+//
+#define READ_LIST_BY_INDEX       1
+#define READ_ALL_RECORDS         2
+#define READ_RECORD_BY_KEY       3
+#define WRITE_RECORD_AND_REREAD  4
+#define READ_LIST_AS_MASTER      5
+#define READ_LIST_AS_SUB         6
+
+//
+#define LIST_TYPE_FIELD_LIST     1
+#define SINGLE_TYPE_FIELD_LIST   2
+
+
+//
+#define RETURN_FIELD         1
+#define RETURN_RECORD_NUMBER 2
+#define RESUME_WORK_AREA     3
+#define SWITCH_WORK_AREA     4
+#define JOIN_TO_QUERY        5
+
+//
+#define STANDARD_QUERY       1
+#define MASTER_QUERY         2
+#define SUB_QUERY            3
+
+//
+#define READ_STANDARD        1
+#define READ_AS_MASTER       2
+#define READ_AS_SUB          3
+
+#define indexed_BY_KEY       1
+#define INDEXED_BY_KEY       1
+
+// error class defines
+#define dberrorclass_NO_ERROR              0
+#define dberrorclass_RETRY_OK              1
+#define dberrorclass_NO_RETRY              2
+#define dberrorclass_GAVE_UP               3
+
+// error defines
+#define dberror_NO_ERROR                   0
+#define dberror_CANNOT_LOCK_RECORD         1
+#define dberror_CANNOT_APPEND_RECORD       2
+#define dberror_CANNOT_LOCK_FILE           3
+#define dberror_INVALID_KEY_ALLOCATOR      4
+#define dberror_CANNOT_LOCK_LASTKEY_FILE   5
+#define dberror_NO_SUCH_KEY_VALUE          6
+#define dberror_KEY_NOT_A_STRING           7
+#define dberror_NO_SUCH_QUERY_DEFINED      8
+#define dberror_QUERY_IS_NOT_AN_ARRAY      9
+#define dberror_RECORD_HAS_CHANGED        10
+#define dberror_NO_ASSIGNED_KEY_ALLOCATOR 11</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112188">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Mon Mar 14, 2011 11:27 PM
+      </div>
+      <div class="content">I also use defines with respect to the particular data base being served.  This is a real example, and the one referenced in the code in the first post in this thread: DBEmphasis.ch<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// DBEmphasis.ch
+
+#include "rapids.ch"
+
+// work area defines
+#define wa_PT_PATIENT          1
+#define wa_FL_FILELOCATION     2
+#define wa_PF_PATIENTFILE      3
+#define wa_DO_DOCTOR           4
+#define wa_PV_PROVIDER         5
+#define wa_MP_MEDICALPRACTICE  6
+#define wa_RF_REFERRAL         7
+
+// index defines
+#define INDEX_NONE                       nil
+#define INDEX_PRIMARY_KEY                  1
+
+#define INDEX_PATIENT_BY_SURNAME           2
+#define INDEX_PATIENT_BY_DOB               3
+
+#define INDEX_PATIENTFILE_BY_PATIENT       2
+
+#define INDEX_PROVIDER_BY_DOCTOR           2
+#define INDEX_PROVIDER_BY_MEDICALPRACTICE  3
+#define INDEX_PROVIDER_BY_PROVIDERNUMBER   4
+
+#define INDEX_DOCTOR_BY_SURNAME            2
+
+#define INDEX_MEDICALPRACTICE_BY_POSTCODE  2
+
+#define INDEX_REFERRAL_BY_PATIENT          2
+
+//miscellaneous defines
+#define CRLF                   CHR(10)
+
+// query defines
+#define QUERY_PATIENT_LIST_BY_SURNAME       1
+#define QUERY_READ_PATIENT_RECORD           2
+#define QUERY_WRITE_PATIENT_RECORD          3
+#define QUERY_PATIENTFILE_LIST_BY_PATIENT   4
+#define QUERY_READ_PATIENTFILE_RECORD       5
+#define QUERY_FILELOCATION_LIST             6
+#define QUERY_WRITE_PATIENTFILE_RECORD      7
+#define QUERY_DOCTOR_LIST_BY_SURNAME        8
+#define QUERY_READ_DOCTOR_RECORD            9
+#define QUERY_WRITE_DOCTOR_RECORD          10
+#define QUERY_PROVIDER_LIST_BY_DOCTOR      11
+#define QUERY_READ_PROVIDER_RECORD         12
+#define QUERY_WRITE_PROVIDER_RECORD        13
+#define QUERY_MEDICALPRACTICE_LIST_BY_POSTCODE 14
+#define QUERY_READ_MEDICALPRACTICE_RECORD  15
+#define QUERY_WRITE_MEDICALPRACTICE_RECORD 16
+#define QUERY_PROVIDER_LIST_BY_DOCTOR      17
+#define QUERY_READ_PROVIDER_RECORD         18
+#define QUERY_WRITE_PROVIDER_RECORD        19
+#define QUERY_PATIENT_LIST_BY_DOB          20
+#define QUERY_REFERRAL_LIST_BY_PATIENT     21
+#define QUERY_READ_REFERRAL_RECORD         22
+#define QUERY_WRITE_REFERRAL_RECORD        23
+#define QUERY_PROVIDER_LIST_BY_PROVIDERNUMBER 24
+#define QUERY_PROVIDER_LIST_BY_SURNAME_SUB 25
+#define QUERY_PROVIDER_LIST_BY_SURNAME     26
+#define query_LAST                         26
+
+// select defines
+#define FIELD_LIST_PATIENT_LIST          1
+#define FIELD_LIST_PATIENT               2
+#define FIELD_LIST_PATIENTFILE_LIST      3
+#define FIELD_LIST_PATIENTFILE           4
+#define FIELD_LIST_FILELOCATION_LIST     5
+#define FIELD_LIST_DOCTOR_LIST           6
+#define FIELD_LIST_DOCTOR                7
+#define FIELD_LIST_PROVIDER_LIST         8
+#define FIELD_LIST_PROVIDER              9
+#define FIELD_LIST_MEDICALPRACTICE_LIST 10
+#define FIELD_LIST_MEDICALPRACTICE      11
+#define FIELD_LIST_PROVIDER_LIST        12
+#define FIELD_LIST_PROVIDER             13
+#define FIELD_LIST_REFERRAL_LIST        14
+#define FIELD_LIST_REFERRAL             15
+#define FIELD_LIST_PROVIDER_SUB         16
+#define FIELD_LIST_DOCTOR_MAIN          17
+#define select_LAST                     17</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112189">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Tue Mar 15, 2011 12:01 AM
+      </div>
+      <div class="content">Herewith an example of the code related to a particular data base.  Note that <br>
+<br>
+the queries and the list of fields to be returned are created as objects<br>
+<br>
+the code to do this is generated by a series of #xcommands contained in DBQuery.ch<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// DBEmphasis.prg
+
+#include "rapids.ch"
+#include "DBEmphasis.ch"
+#include "DBQuery.ch"
+
+#define wa_KEY_ALLOCATOR         201
+
+FUNCTION SetUpQueries()
+
+  XQUERY LIST ;
+   ID        QUERY_PATIENT_LIST_BY_SURNAME ;
+   SELECT    FIELD_LIST_PATIENT_LIST ;
+   INDEX     INDEX_PATIENT_BY_SURNAME ;
+   COMPARE   { | | UPPER( PT_NMFAMLY + PT_NMGIVEN ) }
+
+  XQUERY READ ;
+    ID       QUERY_READ_PATIENT_RECORD ;
+    SELECT   FIELD_LIST_PATIENT
+
+  XQUERY WRITE ;
+    ID       QUERY_WRITE_PATIENT_RECORD ;
+    SELECT   FIELD_LIST_PATIENT
+
+  XQUERY LIST ;
+    ID       QUERY_PATIENTFILE_LIST_BY_PATIENT ;
+    SELECT   FIELD_LIST_PATIENTFILE_LIST ;
+    INDEX    INDEX_PATIENTFILE_BY_PATIENT ;
+    COMPARE  { | | PF_PTKEY }
+
+  XQUERY READ ;
+    ID       QUERY_READ_PATIENTFILE_RECORD ;
+    SELECT   FIELD_LIST_PATIENTFILE
+
+  XQUERY WRITE ;
+    ID       QUERY_WRITE_PATIENTFILE_RECORD ;
+    SELECT   FIELD_LIST_PATIENTFILE
+
+  XQUERY READ ;
+    ID       QUERY_READ_MEDICALPRACTICE_RECORD ;
+    SELECT   FIELD_LIST_MEDICALPRACTICE
+
+  XQUERY LIST ;
+    ID       QUERY_DOCTOR_LIST_BY_SURNAME ;
+    SELECT   FIELD_LIST_DOCTOR_LIST ;
+    INDEX    INDEX_DOCTOR_BY_SURNAME ;
+    COMPARE  { | | UPPER( DO_SURNAME ) }
+
+  XQUERY LIST ;
+    ID       QUERY_MEDICALPRACTICE_LIST_BY_POSTCODE ;
+    SELECT   FIELD_LIST_MEDICALPRACTICE_LIST ;
+    INDEX    INDEX_MEDICALPRACTICE_BY_POSTCODE ;
+    COMPARE  { | | MP_PCODE }
+
+  XQUERY WRITE ;
+    ID       QUERY_WRITE_MEDICALPRACTICE_RECORD ;
+    SELECT   FIELD_LIST_MEDICALPRACTICE
+
+  XQUERY READ ;
+    ID       QUERY_READ_DOCTOR_RECORD ;
+    SELECT   FIELD_LIST_DOCTOR
+
+  XQUERY WRITE ;
+    ID       QUERY_WRITE_DOCTOR_RECORD ;
+    SELECT   FIELD_LIST_DOCTOR
+
+  XQUERY LIST ;
+    ID       QUERY_PROVIDER_LIST_BY_DOCTOR ;
+    SELECT   FIELD_LIST_PROVIDER_LIST ;
+    INDEX    INDEX_PROVIDER_BY_DOCTOR ;
+    COMPARE  { | | PV_DOKEY }
+
+  XQUERY READ ;
+    ID       QUERY_READ_PROVIDER_RECORD ;
+    SELECT   FIELD_LIST_PROVIDER
+
+  XQUERY WRITE ;
+    ID       QUERY_WRITE_PROVIDER_RECORD ;
+    SELECT   FIELD_LIST_PROVIDER  
+
+  XQUERY LIST ;
+    ID       QUERY_PATIENT_LIST_BY_DOB ;
+    SELECT   FIELD_LIST_PATIENT_LIST ;
+    INDEX    INDEX_PATIENT_BY_DOB ;
+    COMPARE  { | | PT_DOB }
+
+  XQUERY LIST ;
+    ID       QUERY_REFERRAL_LIST_BY_PATIENT ;
+    SELECT   FIELD_LIST_REFERRAL_LIST ;
+    INDEX    INDEX_REFERRAL_BY_PATIENT ;
+    COMPARE  { | | RF_PTKEY }
+
+  XQUERY READ ;
+    ID       QUERY_READ_REFERRAL_RECORD ;
+    SELECT   FIELD_LIST_REFERRAL
+
+  XQUERY WRITE ;
+    ID       QUERY_WRITE_REFERRAL_RECORD ;
+    SELECT   FIELD_LIST_REFERRAL
+
+  XQUERY LIST ;
+    ID       QUERY_PROVIDER_LIST_BY_PROVIDERNUMBER ;
+    SELECT   FIELD_LIST_PROVIDER_LIST ;
+    INDEX    INDEX_PROVIDER_BY_PROVIDERNUMBER ;
+    COMPARE  { | | PV_PROVNUM }
+
+  XQUERY MASTER ;
+    ID       QUERY_PROVIDER_LIST_BY_SURNAME ;
+    SELECT   FIELD_LIST_DOCTOR_MAIN ;
+    INDEX    INDEX_DOCTOR_BY_SURNAME ;
+    COMPARE  { | | Upper( DO_SURNAME ) } ;
+    JOIN TO  FIELD_LIST_PROVIDER_SUB ;
+    INDEX    INDEX_PROVIDER_BY_DOCTOR ;
+    COMPARE  { | | PV_DOKEY }   
+    
+  ? "Queries have been set up"
+
+  RETURN nil
+
+FUNCTION OpenDataFiles()
+
+
+  SELECT wa_PT_PATIENT
+  USE ( str_DataDir + "PT_PATIENT" ) SHARED
+  SET INDEX TO ( str_DataDir + "PT_KEY" ), ( str_DataDir + "PT_NAME" ), ;
+    ( str_DataDir + "PT_DOB" )
+  SELECT wa_FL_FILELOCATION 
+  USE ( str_DataDir + "FL_FILELOCATION" ) SHARED
+  SET INDEX TO ( str_DataDir + "FL_KEY" )
+  SELECT wa_PF_PATIENTFILE 
+  USE ( str_DataDir + "PF_PATIENTFILE" ) SHARED
+  SET INDEX TO (str_DataDir + "PF_KEY" ), ( str_DataDir + "PF_PT" )
+  SELECT wa_DO_DOCTOR
+  USE ( str_DataDir + "DO_DOCTOR" ) SHARED
+  SET INDEX TO ( str_DataDir + "DO_KEY" ), ( str_DataDir + "DO_NAME" )
+  SELECT wa_MP_MEDICALPRACTICE 
+  USE ( str_DataDir + "MP_MEDICALPRACTICE" ) SHARED
+  SET INDEX TO (str_DataDir + "MP_KEY" ), ( str_DataDir + "MP_PCODE" )
+  SELECT wa_PV_PROVIDER
+  USE ( str_DataDir + "PV_PROVIDER" ) SHARED
+  SET INDEX TO ( str_DataDir + "PV_KEY" ), ( str_DataDir + "PV_DO" ), ( str_DataDir + "PV_MP" ), ( str_DataDir + "PV_PROVNUM" )
+  SELECT wa_RF_REFERRAL
+  USE ( str_DataDir + "RF_REFERRAL" ) SHARED
+  SET INDEX TO ( str_DataDir + "RF_KEY" ), ( str_DataDir + "RF_PT" )
+
+  RETURN nil
+
+FUNCTION SetUpQueryFormats()
+
+  IF log_Verbose
+    ?
+    ? "Compiling Queries"
+  ENDIF
+
+  XLISTQUERYFORMAT "Patient List" ;
+    AREA wa_PT_PATIENT ;
+    ID FIELD_LIST_PATIENT_LIST
+    XCOLUMN PT_KEY     AS str_Key
+    XCOLUMN PT_NMFAMLY AS str_Surname
+    XCOLUMN PT_NMGIVEN AS str_GivenNames
+    XCOLUMN PT_DOB     AS str_DOB
+    XCOLUMN PT_GENDER  AS chr_Gender
+  ENDXQUERYFORMAT 
+    
+  XQUERYFORMAT "Patient by Key" ;
+    AREA wa_PT_PATIENT ;
+    KEY BUCKET 1 ;
+    ID FIELD_LIST_PATIENT
+    XFIELD PT_KEY     AS str_Key           
+    XFIELD PT_NMFAMLY AS str_Surname       
+    XFIELD PT_NMGIVEN AS str_GivenNames    
+    XFIELD PT_NMTITLE AS str_Title         
+    XFIELD PT_DOB     AS str_DOB           
+    XFIELD PT_GENDER  AS chr_Gender        
+    XFIELD PT_NMPREV  AS str_PriorName     
+    XFIELD PT_NMPREF  AS str_Greeting      
+    XFIELD PT_ADLINE1 AS str_AddressLine1  
+    XFIELD PT_ADLINE2 AS str_AddressLine2  
+    XFIELD PT_ADSUBRB AS str_Suburb        
+    XFIELD PT_ADSTATE AS str_State         
+    XFIELD PT_ADPCODE AS str_Postcode      
+    XFIELD PT_PHMOB   AS str_MobilePhone   
+    XFIELD PT_PHHOME  AS str_HomePhone     
+    XFIELD PT_PHWORK  AS str_WorkPhone     
+    XFIELD PT_VETAFF  AS str_VetAffairs    
+    XFIELD PT_MEDIC   AS str_Medicare      
+    XFIELD PT_MEDPOS  AS str_CardPosition  
+    XFIELD PT_ACTIVE  AS chr_Active        
+    XFIELD PT_LUBY    AS str_LUBy          
+    XFIELD PT_LUWHEN  AS str_LUWhen        
+    XFIELD PT_LUACTN  AS chr_LUActn        
+  ENDXQUERYFORMAT
+
+  XLISTQUERYFORMAT "Patient File List by Patient Key" ;
+    AREA wa_PF_PATIENTFILE ;
+    ID FIELD_LIST_PATIENTFILE_LIST
+    XCOLUMN PF_KEY     AS arr_Key
+    RELATE PF_FLKEY ;
+      TO wa_FL_FILELOCATION ;
+      ORDER indexed_BY_KEY
+    XCOLUMN FL_NAME    AS arr_FLName
+    RESUME
+    XCOLUMN PF_DTFIRST AS arr_DtFirst
+    XCOLUMN PF_DTLAST  AS arr_DtLast
+    XCOLUMN PF_CLOSED  AS arr_Closed
+  ENDXQUERYFORMAT
+
+  XQUERYFORMAT "Patient File by Key" ;
+    AREA wa_PF_PATIENTFILE ;
+    KEY BUCKET 3 ;
+    ID FIELD_LIST_PATIENTFILE
+    XFIELD PF_KEY     AS str_Key          
+    XFIELD PF_PTKEY   AS str_PtKey        
+    XFIELD PF_FLKEY   AS str_FLKey        
+    XFIELD PF_DTFIRST AS str_DateFirst    
+    XFIELD PF_DTLAST  AS str_DateLast     
+    XFIELD PF_CLOSED  AS chr_Closed       
+    XFIELD PF_ACTIVE  AS chr_Active       
+    XFIELD PF_LUBY    AS str_LUBy         
+    XFIELD PF_LUWHEN  AS str_LUWhen       
+    XFIELD PF_LUACTN  AS chr_LUActn       
+    RELATE PF_PTKEY ;
+      TO wa_PT_PATIENT ;
+      ORDER indexed_BY_KEY 
+    XFIELD PT_NMTITLE AS str_PtTitle      
+    XFIELD PT_NMGIVEN AS str_PtGivenNames 
+    XFIELD PT_NMFAMLY AS str_PtSurname    
+    XFIELD PT_DOB     AS str_PtDOB        
+    XFIELD PT_GENDER  AS chr_PtGender     
+  ENDXQUERYFORMAT
+
+  XLISTQUERYFORMAT "Doctor List by Name" ;
+    AREA wa_DO_DOCTOR ;
+    ID FIELD_LIST_DOCTOR_LIST
+    XCOLUMN DO_KEY     AS arr_Key
+    XCOLUMN DO_SURNAME AS arr_Surname
+    XCOLUMN DO_GVNNAME AS arr_GivenName
+  ENDXQUERYFORMAT
+
+  XLISTQUERYFORMAT "Medical Practice List By PostCode" ;
+    AREA wa_MP_MEDICALPRACTICE ;
+    ID FIELD_LIST_MEDICALPRACTICE_LIST 
+    XCOLUMN MP_KEY     AS arr_Key
+    XCOLUMN MP_NAME    AS arr_Name
+    XCOLUMN MP_PCODE   AS arr_PostCode
+    XCOLUMN MP_ADDR1   AS arr_Address1
+    XCOLUMN MP_SUBURB  AS arr_Suburb
+  ENDXQUERYFORMAT
+
+  XQUERYFORMAT "Medical Practice By Key" ;
+    AREA wa_MP_MEDICALPRACTICE ;
+    KEY BUCKET 6 ;
+    ID FIELD_LIST_MEDICALPRACTICE   
+    XFIELD MP_KEY     AS str_Key
+    XFIELD MP_NAME    AS str_Name
+    XFIELD MP_ADDR1   AS str_AddressLine1
+    XFIELD MP_ADDR2   AS str_AddressLine2
+    XFIELD MP_SUBURB  AS str_Suburb
+    XFIELD MP_STATE   AS str_State
+    XFIELD MP_PCODE   AS str_PostCode
+    XFIELD MP_PHONE   AS str_Telephone
+    XFIELD MP_PHONE2  AS str_Telephone2
+    XFIELD MP_FAX     AS str_Facsimile
+    XFIELD MP_PADDR1  AS str_PostalAddress1
+    XFIELD MP_PADDR2  AS str_PostalAddress2
+    XFIELD MP_PSUBURB AS str_PostalSuburb
+    XFIELD MP_PPCODE  AS str_PostalPostCode
+    XFIELD MP_PSTATE  AS str_PostalState
+    XFIELD MP_ACTIVE  AS chr_Active
+    XFIELD MP_LUBY    AS str_LUBy
+    XFIELD MP_LUWHEN  AS str_LUWhen
+    XFIELD MP_LUACTN  AS chr_LUActn
+  ENDXQUERYFORMAT
+
+  XQUERYFORMAT "Doctor By Key" ;
+    AREA wa_DO_DOCTOR ;
+    KEY BUCKET 4 ;
+    ID FIELD_LIST_DOCTOR
+    XFIELD DO_KEY     AS str_Key
+    XFIELD DO_SURNAME AS str_Surname
+    XFIELD DO_GVNNAME AS str_GivenName
+    XFIELD DO_TITLE   AS str_Title
+    XFIELD DO_TYPE    AS chr_Type
+    XFIELD DO_SPECLTY AS str_Specialty
+    XFIELD DO_MOBILE  AS str_Mobile
+    XFIELD DO_INITIAL AS str_Initials
+    XFIELD DO_GREET   AS str_Greeting
+    XFIELD DO_ACTIVE  AS chr_Active
+    XFIELD DO_LUBY    AS str_LUBy
+    XFIELD DO_LUWHEN  AS str_LUWhen
+    XFIELD DO_LUACTN  AS chr_LUActn
+  ENDXQUERYFORMAT
+
+  XLISTQUERYFORMAT "Provider List" ;
+    AREA wa_PV_PROVIDER ;
+    ID FIELD_LIST_PROVIDER_LIST
+    RELATE PV_DOKEY ;
+      TO wa_DO_DOCTOR ;
+      ORDER indexed_BY_KEY
+    XCOLUMN DO_KEY     AS arr_DrKey
+    XCOLUMN DO_SURNAME AS arr_DrGivenName
+    XCOLUMN DO_GVNNAME AS arr_DrSurname
+    RESUME
+    XCOLUMN PV_KEY     AS arr_Key
+    RELATE PV_MPKEY ;
+      TO wa_MP_MEDICALPRACTICE ;
+      ORDER indexed_BY_KEY 
+    XCOLUMN MP_NAME    AS arr_MPName
+    XCOLUMN MP_ADDR1   AS arr_MPAddr1
+    XCOLUMN MP_SUBURB  AS arr_MPSuburb
+    RESUME
+    XCOLUMN PV_PROVNUM AS arr_ProvNum
+    XCOLUMN PV_MPKEY   AS arr_MPKey
+
+  ENDXQUERYFORMAT
+
+  XQUERYFORMAT "Provider Record" ;
+    AREA wa_PV_PROVIDER ;
+    KEY BUCKET 5 ;
+    ID FIELD_LIST_PROVIDER
+    XFIELD PV_KEY     AS str_Key
+    XFIELD PV_DOKEY   AS str_DoctorKey
+    XFIELD PV_MPKEY   AS str_PracticeKey
+    XFIELD PV_PROVNUM AS str_ProviderNo
+    RELATE PV_MPKEY ;
+      TO wa_MP_MEDICALPRACTICE ;
+      ORDER indexed_BY_KEY
+    XFIELD MP_NAME    AS str_MPName
+    XFIELD MP_ADDR1   AS str_MPAddress1
+    XFIELD MP_ADDR2   AS str_MPAddress2
+    XFIELD MP_SUBURB  AS str_MPSuburb
+    XFIELD MP_PCODE   AS str_MPPCode
+    RESUME
+    RELATE PV_DOKEY ;
+      TO wa_DO_DOCTOR ;
+      ORDER indexed_BY_KEY
+    XFIELD DO_TITLE   AS str_DrTitle
+    XFIELD DO_GVNNAME AS str_DrGivenNames
+    XFIELD DO_SURNAME AS str_DrSurname
+    RESUME
+    XFIELD PV_CURRENT AS chr_Current
+    XFIELD PV_ACTIVE  AS chr_Active
+    XFIELD PV_LUBY    AS str_LUBY
+    XFIELD PV_LUWHEN  AS str_LUWhen
+    XFIELD PV_LUACTN  AS chr_LUActn
+  ENDXQUERYFORMAT
+
+  XLISTQUERYFORMAT "Referral List" ;
+    AREA wa_RF_REFERRAL ;
+    ID FIELD_LIST_REFERRAL_LIST
+    XCOLUMN RF_KEY     AS str_Key
+    XCOLUMN RF_DATE    AS str_Date
+    XCOLUMN RF_FOR     AS str_For
+    RELATE RF_PVKEY ;
+      TO wa_PV_PROVIDER ;
+      ORDER indexed_BY_KEY 
+    RELATE PV_DOKEY ;
+      TO wa_DO_DOCTOR ;
+      ORDER indexed_BY_KEY 
+    XCOLUMN DO_SURNAME AS str_DrSurname
+    XCOLUMN DO_GVNNAME AS str_DrGivenName
+    RESUME
+  ENDXQUERYFORMAT 
+
+  XQUERYFORMAT "Referral by Key" ;
+    AREA wa_RF_REFERRAL ;
+    KEY BUCKET 7 ;
+    ID FIELD_LIST_REFERRAL
+    XFIELD RF_KEY     AS str_Key          
+    XFIELD RF_PTKEY   AS str_PtKey        
+    XFIELD RF_PVKEY   AS str_PvKey        
+    XFIELD RF_DATE    AS str_Date  
+    XFIELD RF_SEXDATE AS str_SpecEndDate     
+    XFIELD RF_CEXDATE AS str_CalcEndDate   
+    XFIELD RF_FUDATE  AS str_FirstUsed
+    XFIELD RF_LENGTH  AS chr_Length
+    XFIELD RF_TYPE    AS chr_Type
+    XFIELD RF_FOR     AS str_For
+    XFIELD RF_REASON  AS str_Reason           
+    XFIELD RF_ACTIVE  AS chr_Active       
+    XFIELD RF_LUBY    AS str_LUBy         
+    XFIELD RF_LUWHEN  AS str_LUWhen       
+    XFIELD RF_LUACTN  AS chr_LUActn  
+    XFIELD RF_PVKEY   AS str_PVKey     
+    RELATE RF_PVKEY ;
+      TO wa_PV_PROVIDER ;
+      ORDER indexed_BY_KEY 
+    XFIELD PV_PROVNUM AS str_ProviderNo
+    RELATE PV_DOKEY ;
+      TO wa_DO_DOCTOR ;
+      ORDER indexed_BY_KEY 
+    XFIELD DO_TITLE   AS str_DrTitle
+    XFIELD DO_SURNAME AS str_DrSurname     
+    XFIELD DO_GVNNAME AS str_DrGivenName
+    RESUME
+    RELATE RF_PVKEY ;
+      TO wa_PV_PROVIDER ;
+      ORDER indexed_BY_KEY  
+    RELATE PV_MPKEY ;
+      TO wa_MP_MEDICALPRACTICE ;
+      ORDER indexed_BY_KEY 
+    XFIELD MP_NAME    AS str_MPName
+    XFIELD MP_ADDR1   AS str_MPAddress1
+    XFIELD MP_ADDR2   AS str_MPAddress2
+    XFIELD MP_SUBURB  AS str_MPSuburb
+    XFIELD MP_PCODE   AS str_MPPostCode
+    RESUME
+    RELATE RF_PTKEY ;
+      TO wa_PT_PATIENT ;
+      ORDER INDEXED_BY_KEY 
+    XFIELD PT_NMFAMLY AS str_PtSurname
+    XFIELD PT_NMGIVEN AS str_PtGivenName
+    XFIELD PT_NMTITLE AS str_PtTitle
+    XFIELD PT_DOB     AS str_PtDOB
+  ENDXQUERYFORMAT
+
+  XSUBQUERYFORMAT "Provider Sub List" ;
+    AREA wa_PV_PROVIDER ;
+    ID FIELD_LIST_PROVIDER_SUB
+    XCOLUMN PV_KEY     AS arr_Key
+    RELATE PV_MPKEY ;
+      TO wa_MP_MEDICALPRACTICE ;
+      ORDER indexed_BY_KEY 
+    XCOLUMN MP_NAME    AS arr_MPName
+    XCOLUMN MP_ADDR1   AS arr_MPAddr1
+    XCOLUMN MP_SUBURB  AS arr_MPSuburb
+    RESUME
+    XCOLUMN PV_PROVNUM AS arr_ProvNum
+  ENDXQUERYFORMAT
+
+  XLISTQUERYFORMAT "Provider List by Name" ;
+    AREA wa_DO_DOCTOR ;
+    ID FIELD_LIST_DOCTOR_MAIN 
+    XCOLUMN DO_KEY     AS arr_Key
+    XCOLUMN DO_SURNAME AS arr_Surname
+    XCOLUMN DO_GVNNAME AS arr_GivenName
+    XJOIN   DO_KEY     TO QUERY_PROVIDER_LIST_BY_SURNAME_SUB
+  ENDXQUERYFORMAT
+
+  RETURN nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112190">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Tue Mar 15, 2011 12:06 AM
+      </div>
+      <div class="content">To understand how DBEmphasis.prg works you need to know DBQuery.ch which is as follows:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// DBQuery.ch
+
+#xcommand ENDXQUERYFORMAT =&gt; ;
+  :SetUp() ;;
+  END
+#xcommand XQUERYFORMAT &lt;name&gt; AREA &lt;area&gt; KEY BUCKET &lt;bucket&gt; ID &lt;id&gt; =&gt; ;
+  arr_Select\[&lt;id&gt;] := TSingleData():New( &lt;area&gt;, &lt;bucket&gt;, &lt;"name"&gt;, &lt;id&gt; ) ;;
+  WITH OBJECT arr_Select\[&lt;id&gt;]
+#xcommand XLISTQUERYFORMAT &lt;name&gt; AREA &lt;area&gt; ID &lt;id&gt; =&gt; ;
+  arr_Select\[&lt;id&gt;] := TListData():New( &lt;area&gt;, &lt;name&gt;, &lt;id&gt;, STANDARD_QUERY ) ;;
+  WITH OBJECT arr_Select\[&lt;id&gt;] 
+#xcommand XSUBQUERYFORMAT &lt;name&gt; AREA &lt;area&gt; ID &lt;id&gt; =&gt; ;
+  arr_Select\[&lt;id&gt;] := TListData():New( &lt;area&gt;, &lt;name&gt;, &lt;id&gt;, SUB_QUERY ) ;;
+  WITH OBJECT arr_Select\[&lt;id&gt;] 
+#xcommand XMASTERQUERYFORMAT &lt;name&gt; AREA &lt;area&gt; ID &lt;id&gt; SUB &lt;sub&gt; =&gt; ;
+  arr_Select\[&lt;id&gt;] := TListData():New( &lt;area&gt;, &lt;name&gt;, &lt;id&gt;, MASTER_QUERY, &lt;sub&gt; ) ;;
+  WITH OBJECT arr_Select\[&lt;id&gt;]
+#xcommand XFIELD &lt;fieldname&gt; AS &lt;variablename&gt; =&gt; :ReturnFieldAs( &lt;"fieldname"&gt;, &lt;"variablename"&gt; )
+#xcommand XCOLUMN &lt;fieldname&gt; AS &lt;variablename&gt; =&gt; :ReturnColumnAs( &lt;"fieldname"&gt;, &lt;"variablename"&gt; )
+#xcommand RESUME =&gt; :ResumeWorkArea()
+#xcommand RELATE &lt;fieldname&gt; TO &lt;workarea&gt; ORDER &lt;indexorder&gt; =&gt; ;
+  :SwitchWorkAreaOnField( &lt;"fieldname"&gt;, &lt;workarea&gt;, &lt;indexorder&gt; )  
+#xcommand XJOIN &lt;fieldname&gt; TO &lt;querynumber&gt; =&gt; ;
+  :JoinToSubQueryOnField( &lt;"fieldname"&gt;, &lt;querynumber&gt; )
+
+#xcommand XQUERY LIST ID &lt;qid&gt; SELECT &lt;flist&gt; INDEX &lt;index&gt; COMPARE &lt;compare&gt; =&gt; ;
+  arr_DBQueries\[&lt;qid&gt;] := TDBQuery():New( &lt;flist&gt;, READ_LIST_BY_INDEX, &lt;index&gt;, &lt;compare&gt; )
+#xcommand XQUERY READ ID &lt;qid&gt; SELECT &lt;flist&gt; =&gt; ;
+  arr_DBQueries\[&lt;qid&gt;] := TDBQuery():New( &lt;flist&gt;, READ_RECORD_BY_KEY, INDEX_PRIMARY_KEY )
+#xcommand XQUERY WRITE ID &lt;qid&gt; SELECT &lt;flist&gt; =&gt; ;
+  arr_DBQueries\[&lt;qid&gt;] := TDBQuery():New( &lt;flist&gt;, WRITE_RECORD_AND_REREAD, INDEX_PRIMARY_KEY )
+#xcommand XQUERY ALL ID &lt;qid&gt; SELECT &lt;flist&gt; INDEX &lt;index&gt; =&gt; ;
+  arr_DBQueries\[&lt;qid&gt;] := TDBQuery():New( &lt;flist&gt;, READ_ALL_RECORDS, &lt;index&gt; )
+#xcommand XQUERY MASTER ID &lt;qid&gt; SELECT &lt;flist&gt; INDEX &lt;index&gt; COMPARE &lt;compare&gt; JOIN TO &lt;flist2&gt; INDEX &lt;index2&gt; COMPARE &lt;compare2&gt; =&gt; ;
+  arr_DBQueries\[&lt;qid&gt;] := TDBQuery():New( &lt;flist&gt;, READ_LIST_AS_MASTER, &lt;index&gt;, &lt;compare&gt;, &lt;flist2&gt;, &lt;index2&gt;, &lt;compare2&gt; )</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112266">
+    <div class="poster">
+      <div class="name" style="color:#105289">hua</div>
+      <div class="rank">Posts: 1096</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 28, 2005 02:27 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Wed Mar 16, 2011 03:15 AM
+      </div>
+      <div class="content"><p>This looks interesting. Thank you for sharing Doug</p></div>
+    </div>
+  </div>
+  <div class="post" id="p112406">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Fri Mar 18, 2011 02:46 AM
+      </div>
+      <div class="content">Hi all<br>
+<br>
+Now I can start with the code that sets up the individual components of the &quot;compiled&quot; queries.  Class TData is the base class for class TSingleData (for a read or a write of a single record) and class TListData (for a read of a list of zero, 1 or more records).<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// TData.prg
+
+#include "hbclass.ch"
+#include "rapids.ch"
+
+CLASS TData
+
+  DATA int_Type
+  DATA int_WorkArea
+  DATA int_LastWorkArea
+  DATA int_ID
+  DATA arr_Properties
+  DATA int_Properties
+  DATA arr_Output
+  DATA arr_List
+  DATA log_Found
+  DATA int_Record
+  DATA str_Name
+  DATA int_KeyAllocator
+  DATA int_Locktries
+  DATA num_LockRetryTime
+  DATA obj_RequestItems
+  DATA int_LastOffset
+  DATA int_LastColumn
+
+  METHOD New() CONSTRUCTOR
+  METHOD ReturnFieldAs( str_FieldName, str_ReturnName )
+  METHOD ReturnColumnAs( str_FieldName, str_ReturnName )
+  METHOD ReturnRecordNumber( str_ReturnName )
+  METHOD ResumeWorkArea()
+  METHOD SwitchWorkAreaOnField( str_FieldName, int_WorkArea )
+  METHOD JoinToSubQueryOnField( str_FieldName, int_QueryNumber )
+
+ENDCLASS
+
+METHOD New() CLASS TData
+
+  RETURN self
+
+METHOD ReturnFieldAs( str_FieldName, str_ReturnName ) CLASS TData
+
+  LOCAL obj_ThisItem
+
+  ::int_LastOffset += 1
+  obj_ThisItem := TRequestItem():New( self, RETURN_FIELD )
+  WITH OBJECT obj_ThisItem
+    :str_FieldName  := str_FieldName
+    :str_ReturnName := str_ReturnName
+    :int_Offset     := ::int_LastOffset
+    :int_WorkArea   := ::int_LastWorkArea
+  END
+  ::obj_RequestItems:Append( obj_ThisItem )
+
+  RETURN nil
+
+METHOD ReturnColumnAs( str_FieldName, str_ReturnName ) CLASS TData
+
+  LOCAL obj_ThisColumn
+
+  ::int_LastColumn += 1
+  obj_ThisColumn := TRequestItem():New( self, RETURN_FIELD )
+  WITH OBJECT obj_ThisColumn
+    :str_FieldName  := str_FieldName
+    :str_ReturnName := str_ReturnName
+    :int_Offset     := ::int_LastColumn
+    :int_WorkArea   := ::int_LastWorkArea
+  END
+  ::obj_RequestItems:Append( obj_ThisColumn )
+
+  RETURN nil
+
+METHOD ReturnRecordNumber( str_ReturnName ) CLASS TData
+
+  LOCAL obj_ThisItem
+
+  obj_ThisItem := TRequestItem():New( self, RETURN_RECORD_NUMBER )
+  WITH OBJECT obj_ThisItem
+    :str_ReturnName := str_ReturnName
+    :int_Offset     := ::int_LastOffset
+    :int_WorkArea   := ::int_LastWorkArea
+  END
+  ::obj_RequestItems:Append( obj_ThisItem )
+
+  RETURN nil
+
+METHOD ResumeWorkArea() CLASS TData
+
+  LOCAL obj_ThisItem 
+
+  obj_ThisItem := TRequestItem():New( self, RESUME_WORK_AREA )
+  obj_ThisItem:int_WorkArea := ::int_WorkArea
+  ::obj_RequestItems:Append( obj_ThisItem )
+  ::int_LastWorkArea := ::int_WorkArea
+
+  RETURN nil
+
+METHOD SwitchWorkAreaOnField( str_FieldName, int_NextWorkArea, int_IndexOrder ) CLASS TData
+
+  LOCAL obj_ThisItem
+
+  obj_ThisItem := TRequestItem():New( self, SWITCH_WORK_AREA )
+  WITH OBJECT obj_ThisItem
+    :str_FieldName    := str_FieldName 
+    :int_WorkArea     := ::int_LastWorkArea
+    :int_NextWorkArea := int_NextWorkArea
+    :int_IndexOrder   := int_IndexOrder    
+  END
+  ::obj_RequestItems:Append( obj_ThisItem )
+  ::int_LastWorkArea := int_NextWorkArea
+
+  RETURN nil
+
+METHOD JoinToSubQueryOnField( str_FieldName, int_JoinToQuery ) CLASS TData
+
+  LOCAL obj_ThisItem
+
+  obj_ThisItem := TRequestItem():New( self, JOIN_TO_QUERY )
+  WITH OBJECT obj_ThisItem
+    :str_FieldName   := str_FieldName
+    :int_WorkArea     := ::int_LastWorkArea
+    :int_JoinToQuery := int_JoinToQuery
+  END
+  ::obj_RequestItems:Append( obj_ThisItem )
+
+  RETURN nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112407">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Fri Mar 18, 2011 02:48 AM
+      </div>
+      <div class="content">Hi all<br>
+<br>
+Herewith the class TListData<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// TListData.prg
+
+#include "hbclass.ch"
+#include "rapids.ch"
+
+CLASS TListData FROM TData
+
+  DATA int_JoinType
+  DATA int_SubQuery
+  DATA int_JoinWhere
+  DATA obj_MasterQuery
+  DATA arr_Master
+  DATA arr_Sub
+  DATA int_JoinToQuery
+  DATA var_JoinSeekValue
+
+  METHOD New() CONSTRUCTOR
+  METHOD SetUp()
+  METHOD ClearData()
+  METHOD ReadRecord()
+  METHOD IndexRead()
+  METHOD ReadAll()
+  METHOD MasterIndexRead( int_Order, str_Search, cblock_Compare )
+  METHOD SubIndexRead( int_Order, str_Search, cblock_Compare )
+
+ENDCLASS
+
+METHOD New( int_WorkArea, str_Name, int_ID, int_JoinType, int_SubQuery ) CLASS TListData
+
+  ::int_Type          := LIST_TYPE_FIELD_LIST
+  ::int_WorkArea      := int_WorkArea
+  ::int_LastWorkArea  := ::int_WorkArea
+  ::int_LastColumn    := 0
+  ::int_ID            := int_ID
+  ::int_JoinType      := int_JoinType
+  IF PCount() &gt; 1
+    ::str_Name := str_Name
+   ELSE
+    ::str_Name := ""
+  ENDIF
+  IF PCount() &lt; 5
+    ::int_SubQuery := 0
+   ELSE
+    ::int_SubQuery := int_SubQuery
+  ENDIF
+  ::obj_RequestItems  := TList():New()
+  ::arr_List := Array( 1 )
+  ::arr_List[1] := Array( 0 )
+
+  RETURN self
+
+METHOD SetUp() CLASS TListData
+
+  LOCAL int_PropertyCount
+  LOCAL str_JoinType
+  
+  DO CASE
+    CASE ::int_JoinType == STANDARD_QUERY
+      str_JoinType := "Standard Query"
+    CASE ::int_JoinType == MASTER_QUERY
+      str_JoinType := "Master Query - calls Sub Query: " + STR( ::int_SubQuery, 3, 0 )
+    CASE ::int_JoinType == SUB_QUERY
+      str_JoinType := "Sub Query"
+  ENDCASE
+  ?
+  ? "Setting Up Data Format:", Str( ::int_ID, 3, 0 ), ;
+    " Work Area:", Str( ::int_WorkArea, 3, 0), "Name:", ::str_Name
+  ? "Type:", str_JoinType
+  ::int_Properties := 0
+  ::obj_RequestItems:Iterate( { | xx | xx:ListSetUp( self ) } )
+  ? "Property Count:", ::int_Properties
+
+  RETURN nil
+
+METHOD ReadAll( int_Order ) CLASS TListData
+
+  SELECT ( ::int_WorkArea )
+  ::ClearData()
+  IF int_Order != nil
+    SET ORDER TO ( int_Order )
+  ENDIF
+  GOTO TOP
+  DO WHILE !EOF()
+    ::ReadRecord()
+    SKIP
+  ENDDO
+
+  RETURN ::arr_List
+
+METHOD IndexRead( int_Order, str_Search, cblock_Compare ) CLASS TListData
+
+  LOCAL var_Test
+
+  ? "Index Read"
+  ? "int_Order", int_Order
+  ? "str_Search", str_Search
+  ? "cblock_Compare", cblock_Compare
+  ?
+
+  SELECT ( ::int_WorkArea )
+  ::ClearData()
+  SET ORDER TO ( int_Order )
+  SEEK str_Search
+  ::log_Found := FOUND()
+  IF ::log_Found 
+    log_Loop := .T.
+    DO WHILE log_Loop
+      IF log_Verbose
+        ? "Found ", str_Search, " at record ", RecNo(), " in ", ::str_Name
+      ENDIF
+      ::ReadRecord( READ_STANDARD )
+      SKIP
+      IF EOF()
+        log_Loop := .F.
+        IF log_Verbose
+          ? "End of file reached in ", ::str_Name
+        ENDIF
+       ELSE
+        var_Test := Eval( cblock_Compare )
+        IF var_Test &lt;&gt; str_Search
+          log_Loop := .F.
+          IF log_Verbose
+            ? "No match at record ", RecNo(), " in ", ::str_Name
+          ENDIF
+        ENDIF
+      ENDIF
+    ENDDO
+   ELSE
+    IF log_Verbose
+      ? "Failed to find ", str_Search, " in ", ::str_Name
+    ENDIF
+  ENDIF
+
+  RETURN ::arr_List
+
+
+
+METHOD ClearData() CLASS TListData
+
+  LOCAL int_LoopCounter 
+  FOR int_LoopCounter = 2 TO ::int_Properties + 1
+    ASize( ::arr_List[int_LoopCounter], 0 )
+  NEXT
+
+  RETURN nil
+
+METHOD ReadRecord( int_ReadMode ) CLASS TListData
+
+  DO CASE
+    CASE int_ReadMode == READ_AS_MASTER
+      ::arr_Master := Array( 0 )
+    CASE int_ReadMode == READ_AS_SUB
+      ::arr_Sub   := Array( 0 )
+  ENDCASE
+  ::obj_RequestItems:Iterate( { | xx | xx:ColumnRead( int_ReadMode ) } )
+  DO CASE
+    CASE int_ReadMode == READ_AS_MASTER
+      // ShowArrayContent( ::arr_Master )
+      //::arr_Sub := 
+  ENDCASE
+
+  RETURN nil
+
+METHOD MasterIndexRead( int_Order, str_Search, cblock_Compare, obj_MasterQuery ) CLASS TListData
+
+  LOCAL var_Test
+  LOCAL int_SavedWorkArea
+  /*
+  LOCAL int_SubCount
+  LOCAL int_SubLength
+  LOCAL int_MasterLength
+  */
+
+  ? "Master Index Read"
+  ? "int_Order", int_Order
+  ? "str_Search", str_Search
+  ? "cblock_Compare", cblock_Compare
+  ?
+  ::obj_MasterQuery := obj_MasterQuery
+  SELECT ( ::int_WorkArea )
+  // ::ClearData()
+  SET ORDER TO ( int_Order )
+  SEEK str_Search
+  ::log_Found := FOUND()
+  IF ::log_Found 
+    log_Loop := .T.
+    DO WHILE log_Loop
+      IF log_Verbose
+        ? "Found ", str_Search, " at record ", RecNo(), " in ", ::str_Name
+      ENDIF
+      
+      ::ReadRecord( READ_AS_MASTER )
+      // ? "Read Record as Master"
+      ShowArrayContent( ::arr_Master )
+      obj_MasterQuery:arr_Master := ::arr_Master
+      ? "Query to be joined to this record is:", ::int_JoinToQuery
+      ? "Seek value to be used for this join is:", ::var_JoinSeekValue
+      ?
+      // arr_DBQueries[::int_JoinToQuery]:var_JoinSeekValue := ::var_JoinSeekValue
+      int_SavedWorkArea := Select()
+      obj_MasterQuery:var_JoinSeekValue := ::var_JoinSeekValue
+      obj_MasterQuery:ExecuteSubQuery()
+      // ::arr_Sub := arr_DBQueries[::int_JoinToQuery]:Execute()
+      ::arr_Sub := obj_MasterQuery:arr_Sub
+      ShowArrayContent(::arr_Sub)
+      obj_MasterQuery:JoinSubQuery()
+      DBSelectArea( int_SavedWorkArea )
+      SKIP
+      IF EOF()
+        log_Loop := .F.
+        IF log_Verbose
+          ? "End of file reached in ", ::str_Name
+        ENDIF
+       ELSE
+        ? "Not EOF()"
+        var_Test := Eval( cblock_Compare )
+        IF var_Test &lt;&gt; str_Search
+          log_Loop := .F.
+          IF log_Verbose
+            ? "No match at record ", RecNo(), " in ", ::str_Name
+          ENDIF
+        ENDIF
+      ENDIF
+    ENDDO
+   ELSE
+    IF log_Verbose
+      ? "Failed to find ", str_Search, " in ", ::str_Name
+    ENDIF
+  ENDIF
+
+  RETURN 
+
+METHOD SubIndexRead( int_Order, str_Search, cblock_Compare, arr_Target ) CLASS TListData
+
+  LOCAL var_Test
+
+  ? "Sub Index Read"
+  ? "int_Order", int_Order
+  ? "str_Search", str_Search
+  ?
+
+  //::arr_Sub := arr_Target
+  SELECT ( ::int_WorkArea )
+  // ::ClearData()
+  SET ORDER TO ( int_Order )
+  SEEK str_Search
+  ::log_Found := FOUND()
+  IF ::log_Found 
+    log_Loop := .T.
+    DO WHILE log_Loop
+      IF log_Verbose
+        ? "Found ", str_Search, " at record ", RecNo(), " in ", ::str_Name
+      ENDIF
+      ::arr_Sub := Array( 0 )
+      ::ReadRecord( READ_AS_SUB )
+      AAdd( arr_Target, ::arr_Sub )
+      SKIP
+      IF EOF()
+        log_Loop := .F.
+        IF log_Verbose
+          ? "End of file reached in ", ::str_Name
+        ENDIF
+       ELSE
+        var_Test := Eval( cblock_Compare )
+        IF var_Test &lt;&gt; str_Search
+          log_Loop := .F.
+          IF log_Verbose
+            ? "No match at record ", RecNo(), " in ", ::str_Name
+          ENDIF
+        ENDIF
+      ENDIF
+    ENDDO
+   ELSE
+    IF log_Verbose
+      ? "Failed to find ", str_Search, " in ", ::str_Name
+    ENDIF
+  ENDIF
+
+  RETURN ::arr_List</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112408">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Fri Mar 18, 2011 02:50 AM
+      </div>
+      <div class="content">Hi all<br>
+<br>
+And now TSingleData<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// TSingleData.prg
+
+#include "hbclass.ch"
+#include "DBErrors.ch"
+#include "rapids.ch"
+
+#define default_LOCK_TRIES       6
+#define default_LOCK_RETRY_TIME  0.5
+
+#define wa_KEY_ALLOCATOR         201
+
+CLASS TSingleData FROM TData
+
+METHOD New() CONSTRUCTOR
+METHOD SetUp()
+METHOD ReadRecord()
+METHOD KeyRead()
+METHOD Write()
+METHOD WriteRecord()
+METHOD GetPKey()
+METHOD IndexRead()
+
+ENDCLASS
+
+METHOD New( int_WorkArea, int_KeyAllocator, str_Name, int_ID ) CLASS TSingleData
+
+  ::int_Type          := SINGLE_TYPE_FIELD_LIST
+  ::int_WorkArea      := int_WorkArea
+  ::int_LastWorkArea  := ::int_WorkArea
+  ::int_LastOffset    := 0
+  ::obj_RequestItems  := TList():New()
+  ::int_KeyAllocator  := int_KeyAllocator
+  ::int_ID            := int_ID
+  ::int_LockTries     := default_LOCK_TRIES
+  ::num_LockRetryTime := default_LOCK_RETRY_TIME
+  ::arr_Output        := Array( 0 )
+  IF PCount() &gt; 2
+    ::str_Name := str_Name
+   ELSE
+    ::str_Name := ""
+  ENDIF
+
+  RETURN self
+
+METHOD IndexRead()
+
+? "Work Area:", ::int_WorkArea
+
+RETURN nil
+
+
+METHOD Setup() CLASS TSingleData
+
+  ?
+  ? "Setting Up Data Format:", Str( ::int_ID, 3, 0 ), ;
+    " Work Area:", Str( ::int_WorkArea, 3, 0), "Name:", ::str_Name
+  ::int_Properties := 0
+  ::obj_RequestItems:Iterate( { | xx | xx:SetUp() } )
+  ? "Property Count:", ::int_Properties
+
+  RETURN nil
+
+METHOD ReadRecord() CLASS TSingleData
+
+  ::obj_RequestItems:Iterate( { | xx | xx:ProcessRead() } )
+
+  RETURN ::arr_Output
+
+
+
+METHOD KeyRead( int_Order, str_Key ) CLASS TSingleData
+
+SELECT ( ::int_WorkArea )
+SET ORDER TO ( int_Order )
+? "str_Key is ", str_Key
+? "int_Order is", int_Order
+SEEK str_Key
+::log_Found := Found()
+? "::log_Found is", ::log_Found
+IF ::log_Found
+   IF log_Verbose
+      ? "Found ", str_Key, " at ", RecNo(), " in ", ::str_Name
+   ENDIF
+   ::int_Record := RecNo()
+   ? "::int_Record is", ::int_Record
+   ::ReadRecord()
+  ELSE
+   IF log_Verbose
+      ? "ERROR: Failed to find ", str_Key, " in ", ::str_Name
+      obj_Query:FlagError( dberrorclass_NO_RETRY, dberror_NO_SUCH_KEY_VALUE )
+   ENDIF
+ENDIF
+
+RETURN ::arr_Output
+
+METHOD Write( int_Order, arr_Response, str_Key ) CLASS TSingleData
+
+  SELECT ( ::int_WorkArea )
+  SET ORDER TO ( int_Order )
+  ? "Key value received is:", arr_Response[1][2]
+  IF arr_Response[1][2] = "["
+    ? "Insert Required"
+    ::WriteRecord( arr_Response, .T., .T. )
+   ELSE
+    ? "Update Requested"
+    SEEK str_Key
+    ::log_Found := FOUND()
+    IF ::log_Found
+      ? "Record Found at", RecNo()
+      ::WriteRecord( arr_RESPONSE, .F. )
+     ELSE
+      ? "ERROR: Unable to locate record with key", str_Key
+      obj_Query:FlagError( dberrorclass_NO_RETRY, dberror_NO_SUCH_KEY_VALUE )
+    ENDIF
+  ENDIF
+
+  RETURN nil
+
+METHOD WriteRecord( arr_Output, log_Append, log_NeedsKey ) CLASS TSingleData
+
+  LOCAL int_LoopCounter
+  LOCAL int_Position
+  LOCAL int_Tries
+  LOCAL log_Locked
+  LOCAL chr_Action
+  LOCAL str_Key
+  LOCAL str_FName
+  LOCAL str_Test
+
+  ? "TSingleData:WriteRecord()"
+  SELECT ( ::int_WorkArea )
+  FOR int_Tries = 1 TO ::int_LockTries
+    IF log_Append
+      IF log_NeedsKey
+        str_Key := ::GetPKey()
+        IF EMPTY( str_Key )
+          log_Locked := .F.
+          ELSE
+          log_Locked := DBAppend()
+        ENDIF
+       ELSE
+        log_Locked := DBAppend()
+      ENDIF
+      chr_Action := "I"
+     ELSE
+      log_Locked := DBRLock()
+      chr_Action := "U"
+    ENDIF
+    IF log_Locked
+      FOR int_LoopCounter = 1 TO LEN( arr_OUTPUT )
+        str_FName := arr_OUTPUT[int_LoopCounter][1]
+        str_Test := SUBSTR( RTRIM( str_FName ), 3 )
+        int_Position := FieldPos( str_FName )  
+        IF int_Position &gt; 0
+          DO CASE
+            CASE str_Test = "_KEY"
+              FieldPut( int_Position, str_Key )
+            CASE str_Test = "_LUACTN"
+              FieldPut( int_Position, chr_Action )
+            CASE str_Test = "_LUWHEN"
+              FieldPut( int_Position, obj_DateTime:Now() )
+            CASE str_Test = "_LUBY"
+              FieldPut( int_Position, str_User )
+            OTHERWISE
+              FieldPut( int_Position, arr_OUTPUT[int_LoopCounter][2] )
+          ENDCASE
+        ENDIF     
+      NEXT
+      DBCommit()
+      DBRUnlock()
+      RETURN .T.
+     ELSE
+      INKEY( ::num_LockTime )
+    ENDIF
+  NEXT 
+  IF log_Append
+    obj_Query:FlagError( dberrorclass_RETRY_OK, dberror_CANNOT_APPEND_RECORD )
+   ELSE
+    obj_Query:FlagError( dberrorclass_RETRY_OK, dberror_CANNOT_LOCK_RECORD )
+  ENDIF
+
+  RETURN .F.
+
+METHOD GetPKey() CLASS TSingleData
+
+  LOCAL int_Area      // Current work area - so it can be reset
+  LOCAL int_Key
+  LOCAL str_AllocatedKey
+  LOCAL int_Tries
+
+  int_Area := SELECT()
+  SELECT wa_KEY_ALLOCATOR
+  IF ::int_KeyAllocator &lt; 1
+    obj_Query:FlagError( dberrorclass_NO_RETRY, dberror_INVALID_KEY_ALLOCATOR )
+    SELECT ( int_Area )
+    IF log_Verbose
+      ? "ERROR: Key bucket cannot be negative"
+    ENDIF
+    RETURN ""
+  ENDIF
+  IF ::int_KeyAllocator &gt; RecCount()
+    obj_Query:FlagError( dberrorclass_NO_RETRY, dberror_INVALID_KEY_ALLOCATOR )
+    SELECT ( int_Area )
+    IF log_Verbose
+      ? "ERROR: Key bucket specified not yet created"
+    ENDIF
+    RETURN ""
+  ENDIF
+  GOTO ::int_KeyAllocator
+  int_Key := KY_LASTKEY
+  int_Key += 1
+  FOR int_Tries = 1 TO ::int_LockTries
+    IF DBRLock()
+      REPLACE KY_LASTKEY WITH int_Key
+      DBCommit()
+      DBRUnlock()
+      SELECT ( int_Area )
+      str_AllocatedKey := PadL( AllTrim( Str( int_Key ) ), 16, "0" )
+      IF log_Verbose
+        ? "Allocated key is:", str_AllocatedKey
+      ENDIF
+      RETURN str_AllocatedKey
+    ENDIF
+  NEXT
+  obj_Query:FlagError( dberrorclass_RETRY_OK, dberror_CANNOT_LOCK_LASTKEY_FILE )
+  SELECT ( int_Area )
+  IF log_Verbose
+    ? "ERROR: Unable to lock key allocation file"
+  ENDIF
+  RETURN nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112409">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Fri Mar 18, 2011 02:54 AM
+      </div>
+      <div class="content">Hi all<br>
+<br>
+Herewith class TServerQuery which handles the receipt of the query request on the server<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// TServerQuery.prg
+
+#include "hbclass.ch"
+
+CLASS TServerQuery
+
+DATA arr_Status
+DATA arr_Response
+DATA arr_Request
+DATA int_QueryID
+
+METHOD New()
+METHOD Request( pClient )
+// METHOD LocalRequest( aIncoming )
+METHOD FlagError( iErrorLevel, iErrorNumber )
+METHOD SetProperty( PropertyName, PropertyValue )
+
+ENDCLASS
+
+METHOD New()
+
+::arr_Response  := Array( 2 )
+::arr_Status    := Array( 2 )
+::arr_Status[1] := 0
+::arr_Status[2] := Array( 0 )
+
+RETURN self
+
+METHOD Request( ptr_Client ) CLASS TServerQuery
+
+LOCAL chr_Buffer
+LOCAL int_Bytes
+LOCAL str_Data 
+LOCAL arr_Output := Array( 0 )
+LOCAL time_Start
+LOCAL time_End
+LOCAL time_Final
+
+time_Start := Seconds()
+::arr_Status[1] := 0
+ASize( ::arr_Status[2], 0 )
+::arr_Response := Array( 3 )
+? "Serving:", HB_INetAddress( ptr_Client )
+str_Data := ""
+log_Receiving := .T.
+HB_INetTimeout( ptr_Client, int_TimeOut ) 
+DO WHILE  log_Receiving
+   str_Buffer := Space( 4096 )
+   int_Bytes := HB_INetRecv( ptr_Client, @str_Buffer )
+   ? "Bytes received:", int_Bytes
+   IF int_Bytes &lt; 1
+      log_Receiving := .F.
+     ELSE
+      str_Data += Left( str_Buffer, int_Bytes )
+   ENDIF
+ENDDO
+::arr_Request := HB_Deserialize( str_Data )
+IF !HB_IsArray( ::arr_Request )
+   // Need to handle this error
+   IF log_Verbose
+      ? "ERROR: Request received is not in an array"
+   ENDIF
+  ELSE
+   ::int_QueryID := ::arr_Request[1][1]
+   str_User := ::arr_Request[1][2]
+  // IF log_Verbose
+      ? "Received request number: ", ::int_QueryID 
+   // ENDIF
+   IF ::int_QueryID = 2001
+      ? "Shutting down as requested"
+      HB_INetClose( ptr_Client )
+      HB_INetCleanup()
+      QUIT
+   ENDIF
+   // IF ::int_QueryID &lt; 3
+     arr_DBQueries[::int_QueryID]:Execute()
+   // ELSE
+   //  HB_Exec( arr_Compiled[::int_QueryID], nil )
+   // ENDIF
+   IF log_Verbose
+      ? "Server listening on port", str_Port, "for requests - Press [Ctl-C] to quit"
+   ENDIF
+ENDIF
+
+::arr_Response[1] := ::arr_Status
+str_Data := HB_Serialize( ::arr_Response )
+time_End := Seconds()
+HB_INetSend( ptr_Client, str_Data )
+time_Final := Seconds()
+? "request received at", time_Start, "finished at", time_End, "sent by", time_Final
+
+RETURN nil
+
+/*
+METHOD LocalRequest( arr_Incoming ) CLASS TServerQuery
+
+// LOCAL aOUTPUT := ARRAY( 0 )
+::arr_Status[1] := 0
+ASize( ::arr_Status[2], 0 )
+::arr_Response := Array( 3 )
+::arr_Request := arr_Incoming
+::int_QueryID := ::arr_Request[1]
+HB_Exec( arr_Compiled[::int_QueryID], nil )
+::arr_Response[1] := ::arr_Status
+
+RETURN ::arr_Response
+*/
+
+METHOD FlagError( int_ErrorLevel, int_ErrorNumber ) CLASS TServerQuery
+
+::arr_Status[1] := MAX( ::arr_Status[1], int_ErrorLevel )
+IF PCount() &gt; 1
+   AAdd( ::arr_Status[2], int_ErrorNumber )
+ENDIF
+
+RETURN nil
+
+METHOD SetProperty( str_PropertyName, var_PropertyValue ) CLASS TServerQuery
+
+LOCAL arr_PropertyValuePair
+
+arr_PropertyValuePair := Array( 2 )
+arr_PropertyValuePair[1] := str_PropertyName
+arr_PropertyValuePair[2] := var_PropertyValue
+AAdd( ::arr_Response[2], arr_Data )
+
+RETURN nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112410">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Fri Mar 18, 2011 02:59 AM
+      </div>
+      <div class="content">Hi again<br>
+<br>
+Herewith class TDBQuery which holds together the details of the actual database query<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// DBQuery.prg
+
+#include "hbclass.ch"
+#include "rapids.ch"
+
+CLASS TDBQuery
+
+  // the following properties are normally set at the time of object (query) creation
+  // and are not subsequently altered
+  DATA int_FieldSelection1
+  DATA int_SelectionMethod1
+  DATA int_IndexOrder1
+  DATA cblock_CompareValue1
+
+  // sub query (if needed)
+  DATA int_FieldSelection2
+  DATA int_SelectionMethod2
+  DATA int_IndexOrder2
+  DATA cblock_CompareValue2  
+
+  // the following properties have default values that normally don't need to be overridden
+  DATA int_MajorInputOffset
+  DATA int_MinorInputOffset
+  DATA int_LastInputOffset
+  DATA int_PositionInResponse
+
+  // the following are data buffers for the join operation
+  DATA arr_Out               // output array address
+  DATA arr_Master            // buffer for a row of data from master query
+  DATA arr_Sub               // buffer for data from sub query for that master query row to be joined
+  DATA var_JoinSeekValue     // buffer for value to seek for sub query
+  DATA int_Properties        // total number of properties (master query plus sub query)
+
+  // methods for creating a query
+  METHOD New( int_FieldSelection, int_SelectType, int_IndexOrder, cblock_CompareValue )
+
+  // methods related to the execution of a query
+  METHOD Execute()
+  METHOD ExecuteSubQuery()
+  METHOD JoinSubQuery()
+  METHOD InitialiseOutput()
+
+  // methods for displaying data about a query
+  METHOD SelectionMethodName()
+  METHOD ShowConfig()
+
+ENDCLASS
+
+METHOD New( int_FieldSelection, int_SelectionMethod, int_IndexOrder, cblock_CompareValue, ;
+  int_FieldSelection2, int_IndexOrder2, cblock_CompareValue2 ) CLASS TDBQuery
+
+  ::int_FieldSelection1     := int_FieldSelection
+  ::int_SelectionMethod1    := int_SelectionMethod
+  ::int_IndexOrder1         := int_IndexOrder
+  ::cblock_CompareValue1    := cblock_CompareValue
+  ::int_PositionInResponse  := 2                   // default value
+  ::int_MajorInputOffset    := 2                   // default value
+  ::int_MinorInputOffset    := 1                   // default value
+  ::int_LastInputOffset     := 2                   // default value
+  IF ::int_SelectionMethod1 == READ_LIST_AS_MASTER
+    ::int_FieldSelection2    := int_FieldSelection2
+    ::int_IndexOrder2        := int_IndexOrder2
+    ::cblock_CompareValue2   := cblock_CompareValue2
+  ENDIF
+  // ? "Setting up Query"
+  // ? "Type:", ::QueryType()
+  ::ShowConfig()
+  IF ( ::int_SelectionMethod1 == READ_LIST_BY_INDEX .OR. ::int_SelectionMethod1 == READ_ALL_RECORDS .OR. ::int_SelectionMethod1 == READ_LIST_AS_MASTER )
+    IF arr_Select[::int_FieldSelection1]:int_Type != LIST_TYPE_FIELD_LIST
+      ? "WARNING: Incompatible field list specified"
+    ENDIF
+  ENDIF
+
+
+  RETURN self
+
+METHOD Execute() CLASS TDBQuery
+
+  LOCAL arr_Parameters
+
+  ? "TDBQuery:Execute()"
+
+  DO CASE
+    CASE ::int_SelectionMethod1 == READ_LIST_BY_INDEX
+      arr_Parameters := { ::int_IndexOrder1, obj_Query:arr_Request[::int_MajorInputOffset][::int_MinorInputOffset], ::cblock_CompareValue1 }
+      ? "::int_FieldSelection1", ::int_FieldSelection1
+      ?
+      obj_Query:arr_Response[::int_PositionInResponse] := ;
+        HB_ExecFromArray( arr_Select[::int_FieldSelection1], "IndexRead", arr_Parameters ) 
+        RETURN nil
+    CASE ::int_SelectionMethod1 == READ_RECORD_BY_KEY
+      arr_Parameters := { ::int_IndexOrder1, obj_Query:arr_Request[::int_MajorInputOffset][::int_MinorInputOffset] }
+      obj_Query:arr_Response[::int_PositionInResponse] := ;
+        HB_ExecFromArray( arr_Select[::int_FieldSelection1], "KeyRead", arr_Parameters ) 
+        RETURN nil
+    CASE ::int_SelectionMethod1 == WRITE_RECORD_AND_REREAD
+      arr_Parameters := { ::int_IndexOrder1, obj_Query:arr_Request[::int_MajorInputOffset], ;
+        obj_Query:arr_Request[::int_MajorInputOffset][::int_MinorInputOffset][::int_LastInputOffset] }
+      HB_ExecFromArray( arr_Select[::int_FieldSelection1], "Write", arr_Parameters ) 
+      obj_Query:arr_Response[::int_PositionInResponse] := ;
+        HB_ExecFromArray( arr_Select[::int_FieldSelection1], "ReadRecord" )
+      RETURN nil
+    CASE ::int_SelectionMethod1 == READ_ALL_RECORDS
+      arr_Parameters := { ::int_IndexOrder }
+      obj_Query:arr_Response[::int_PositionInResponse] := ;
+        HB_ExecFromArray( arr_Select[::int_FieldSelection1], "ReadAll", arr_Parameters )  
+      RETURN nil   
+    CASE ::int_SelectionMethod1 == READ_LIST_AS_MASTER
+      ::InitialiseOutput()
+      arr_Parameters := { ::int_IndexOrder1, obj_Query:arr_Request[::int_MajorInputOffset][::int_MinorInputOffset], ::cblock_CompareValue1, self }
+      HB_ExecFromArray( arr_Select[::int_FieldSelection1], "MasterIndexRead", arr_Parameters )
+      RETURN nil
+  ENDCASE
+
+  // shouldn't reach here
+  RETURN nil
+
+METHOD ExecuteSubQuery() CLASS TDBQuery
+
+  LOCAL arr_Parameters
+
+  ? "TDBQuery:ExecuteSubQuery()"
+
+  ::arr_Sub := Array( 0 )
+  arr_Parameters := { ::int_IndexOrder2, ::var_JoinSeekValue, ::cblock_CompareValue2, ::arr_Sub }
+  HB_ExecFromArray( arr_Select[::int_FieldSelection2], "SubIndexRead", arr_Parameters ) 
+
+  RETURN nil
+
+METHOD JoinSubQuery()
+
+  LOCAL int_SubCount
+  LOCAL int_SubLength
+  LOCAL int_MasterLength
+  LOCAL int_ColumnNumber
+  LOCAL int_SubRowLoop 
+
+  int_SubCount := Len( ::arr_Sub )
+  ? "Three are", int_SubCount, "records to be joined"
+  // if there are no records from the sub query then ignore this row of the master query
+  IF int_SubCount &lt; 1
+    RETURN nil
+  ENDIF
+  int_SubLength := Len( ::arr_Sub[1] )
+  ? "There are", int_SubLength, "columns in the sub array"
+  int_MasterLength := Len( ::arr_Master )
+  ? "There are", int_MasterLength, "columns in the master array" 
+  int_outputLength := Len( ::arr_Out )
+  ? "There are", int_OutputLength, "columns in the Output array"
+  // join the sub query and the current row of the master query
+  FOR int_SubRowLoop = 1 TO int_SubCount
+    int_ColumnNumber := 1
+    FOR int_MasterColumnLoop = 1 TO int_MasterLength
+      int_ColumnNumber += 1
+      AAdd( ::arr_Out[int_ColumnNumber], ::arr_Master[int_MasterColumnLoop] )
+    NEXT
+    FOR int_SubColumnLoop = 1 TO int_SubLength
+      int_ColumnNumber += 1
+      AAdd( ::arr_Out[int_ColumnNumber], ::arr_Sub[int_SubRowLoop][int_SubColumnLoop] )
+    NEXT
+  NEXT
+
+  RETURN nil
+
+METHOD InitialiseOutput() CLASS TDBQuery 
+
+  LOCAL int_OutLength
+  LOCAL int_OutLoopCount
+
+  ? "Initialising Output Array"
+  ::int_Properties := arr_Select[::int_FieldSelection1]:int_Properties + arr_Select[::int_FieldSelection2]:int_Properties
+  ? "Proprty Count for Join is:", ::int_Properties 
+  obj_Query:arr_Response[::int_PositionInResponse] := Array( ::int_Properties + 1 )
+  ::arr_Out := obj_Query:arr_Response[::int_PositionInResponse]
+  int_OutLength := Len( ::arr_Out )
+  ? "Output Length is:", int_OutLength
+  FOR int_OutLoopCount = 2 TO int_OutLength
+    ::arr_out[int_OutLoopCount] := Array( 0 )
+  NEXT
+
+  RETURN nil
+ 
+METHOD SelectionMethodName() CLASS TDBQuery 
+
+  DO CASE
+    CASE ::int_SelectionMethod1 == READ_LIST_BY_INDEX
+      RETURN "Read List Using Index"
+    CASE ::int_SelectionMethod1 == READ_RECORD_BY_KEY
+      RETURN "Read Record by Key"
+    CASE ::int_SelectionMethod1 == WRITE_RECORD_AND_REREAD
+      RETURN "Write Record and Reread"
+    CASE ::int_SelectionMethod1 == READ_ALL_RECORDS
+      RETURN "Read All Records"
+    CASE ::int_SelectionMethod1 == READ_LIST_AS_MASTER
+      RETURN "Read List Using Index"
+  ENDCASE
+
+  RETURN "Unknown"
+
+METHOD ShowConfig() CLASS TDBQuery
+
+  ? "(Primary) Field Selection:", ::int_FieldSelection1, "=", arr_Select[::int_FieldSelection1]:str_Name
+  ? "Selection Method:", ::int_SelectionMethod1, ::SelectionMethodName()
+  IF ( ::int_SelectionMethod1 == READ_LIST_BY_INDEX .OR. ::int_SelectionMethod1 == READ_LIST_AS_MASTER )
+    ? "(Primary) Index Order", ::int_IndexOrder1
+  ENDIF
+  IF ::int_SelectionMethod1 == READ_LIST_AS_MASTER
+    ? "Secondary Field Selection", ::int_FieldSelection2, "=", arr_Select[::int_FieldSelection2]:str_Name
+  // DATA int_SelectionMethod2
+    ? "Secondary Index Order:",  ::int_IndexOrder2
+  ENDIF
+  ?
+
+  RETURN nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112411">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A Client-Server Data Base Server in Harbour</span><br>
+        Posted: Fri Mar 18, 2011 03:07 AM
+      </div>
+      <div class="content">Hi again<br>
+<br>
+And finally (for today) my TDateTime class<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// TDateTime.prg
+#include "hbclass.ch"
+CLASS TDateTime
+
+DATA cDateTime
+DATA dDate
+DATA nTime
+DATA nHours
+DATA nMins
+DATA nSecs
+DATA nHuns
+DATA cDate
+DATA cHours
+DATA cMins
+DATA cSecs
+DATA cHuns
+
+
+
+METHOD New() CONSTRUCTOR
+METHOD Now()
+METHOD Format2( NVal )
+
+ENDCLASS
+
+METHOD New() CLASS TDatetime
+
+RETURN self
+
+METHOD Now() CLASS TDatetime
+
+   LOCAL ldDate
+   LOCAL lnSecs
+
+   ldDate := DATE()
+   ::nTime := SECONDS()
+   ::dDate := DATE()
+   //
+   // reget time if date has ticked over between calls
+   //
+   IF ::dDate &gt; ldDate
+      ::nTime := SECONDS()
+   ENDIF
+   //
+   // split out ::nTime which is expressed in seconds
+   //
+   ::nHours := INT( ::nTime /  3600 )
+   ::cHours := ::Format2( ::nHours )
+   ::nMins  := INT( ( ::nTime % 3600 ) / 60 )
+   ::cMins  := ::Format2( ::nMins )
+   ::nSecs  := INT( ::nTime % 60 )
+   ::cSecs  := ::Format2( ::nSecs )
+   ::nHuns  := INT( ( ::nTime * 100 ) % 100 )
+   ::cHuns  := ::Format2( ::nHuns )
+   ::cDate  := DTOS( ::dDate )
+   ::cDateTime := ::cDate + ::cHours + ::cMins + ::cSecs + ::cHuns
+
+RETURN ::cDateTime
+
+METHOD Format2( nVal ) CLASS TDatetime
+
+RETURN PADL( ALLTRIM( STR( nVal ) ), 2, "0" )</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

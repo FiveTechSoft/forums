@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Felices reyes! - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-33439">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Felices reyes!</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-33439-page-2.html">2</a> <a href="topic-33439-page-3.html">3</a> <a href="topic-33439-page-4.html">4</a> <a href="topic-33439-page-5.html">5</a> (61 posts)</div>  <div class="post" id="p197146">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Felices reyes!</span><br>
+        Posted: Fri Jan 06, 2017 12:02 PM
+      </div>
+      <div class="content"><p>Hola gente,</p>
+<p>¿Habeis sido buenos este año? Seguro que sí. Yo no tengo quejas, siempre he recibido mucha ayuda de los compañeros y creo que os mereceis muchos regalos.</p>
+<p>Con el permiso del &quot;jefe&quot;, les comparto a modo de regalo de reyes una clase que suplanta en un porcentaje alto a la TPrinter para la generación de PDFs, usando como motor la HaruPdf que tan buenos resultados da.</p>
+<p>No requiere conocer la Haru, esta clase &quot;habla&quot; en términos de TPrinter con algunas excepciones, como son los FONTs, que necesitan cierta gestión, y la cuestión de seguridad del documento PDF que no tiene equivalente en la TPrinter. Tampoco maneja, al menos de momento, BMPs, solo gestiona PNGs y JPGs. A pesar de este inconveniente, la gestión de imágenes es muy eficiente. Por ejemplo, si usamos una imágen como &quot;marca de agua&quot; en todas las hojas del pdf, la clase almacena la imagen de forma indexada y hace referencia a esa indexada en cada página, con lo que se evita que la imagen se repita dentro del documento.<br>
+Tambien puede usarse en programas en modo consola.</p>
+<p>La clase está disponible en <!-- m --><a class="postlink" href="https://bitbucket.org/carlos_mora/pdfprinter">https://bitbucket.org/carlos_mora/pdfprinter</a><!-- m -->, incluye el 100% incluído el proyecto de XEdit para generar la lib.</p>
+<p>En un rato subiré un ejemplo completo de uso tal como lo vengo explotando.</p>
+<p>Todas las correciones o sugerencias son bienvenidas. Espero que resulte útil y que le saqueis provecho.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p197148">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Fri Jan 06, 2017 12:42 PM
+      </div>
+      <div class="content">Ejemplo de código. Inluye el uso de código de barras e imágenes.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+ * Proyecto: FacturaE
+ * Fichero: TRecibos.prg
+ * Descripción: Modelo de Recibos
+ * Autor: Carlos Mora
+ * Fecha: 27/03/2016
+ */
+#include 'harupdf.ch'
+#include 'hbclass.ch'
+#include 'common.ch'
+
+#xcommand TEXT INTO &lt;v&gt; =&gt; #pragma __cstream|&lt;v&gt;:=%s
+#xcommand TEXT INTO &lt;v&gt; ADDITIVE =&gt; #pragma __cstream|&lt;v&gt;+=%s
+
+CLASS TRecibo
+   DATA cCUIT     INIT '30666666666'
+   DATA NOrigen   INIT 0
+   DATA PtoVenta  INIT '0004'
+   DATA CbteTipo  INIT '009'
+   DATA Concepto  INIT '1'
+   DATA DocTipo   INIT '96'
+   DATA DocNro
+   DATA Numero
+   DATA CbteFch   INIT Date()
+   DATA ImpTotal  INIT 0
+   DATA ImpTotConc INIT 0
+   DATA ImpNeto    INIT 0
+   DATA ImpOpEx    INIT 0
+   DATA ImpTrib    INIT 0
+   DATA ImpIVA     INIT 0
+   DATA FchServDesde INIT '0'
+   DATA FchServHasta INIT '0'
+   DATA FchVtoPago   INIT '0'
+   DATA MonId        INIT 'PES'
+   DATA MonCotiz     INIT '1'
+   DATA Nombre       INIT '1'
+   DATA aTributos
+   DATA aIva
+   DATA CAE
+   DATA CAEVto
+   DATA Resultado
+   DATA Reproceso
+   DATA Code
+   DATA Msg
+
+   CONSTRUCTOR New()
+   METHOD Imprime()
+
+ENDCLASS
+
+METHOD New()
+   ::aTributos:= Array()
+   ::aIva:= Array()
+RETURN Self
+
+
+METHOD Imprime()
+   LOCAL oPrint, i, nOffset
+   LOCAL oFontBold, oFontRed, oFontBig, oFont, oFontMin, oFontPrint, oFontPrintR, oFont2of5
+   LOCAL aConceptos, aObservaciones
+   LOCAL cLetras:= 'Pesos ' + EnLetras(::ImpTotal)
+   LOCAL cNombrePdf
+
+   oPrint := THaruPdf():New()
+   SetMode( 30, 80 )
+
+   oPrint:SetCompression( HPDF_COMP_ALL )
+   // oPrint:SetPage(HPDF_PAGE_SIZE_LEGAL)
+   GetHaruFontList()
+   HaruAddFont( 'Arial Black', 'ariblk.ttf' )
+   HaruAddFont( 'i2of5txt', 'i2of5txt.ttf', .T. )
+   oFontBold := oPrint:DefineFont( 'Arial Black', 10 )
+   oFontBig := oPrint:DefineFont( 'Arial Black', 16 )
+   oFont := oPrint:DefineFont( 'Helvetica', 10 )
+   oFontRed := oPrint:DefineFont( 'Helvetica', 8 )
+   oFontMin := oPrint:DefineFont( 'Helvetica', 6 )
+   oFontPrint := oPrint:DefineFont( 'Courier', 10 )
+   oFontPrintR := oPrint:DefineFont( 'Courier', 8 )
+   oFont2of5 := oPrint:DefineFont( 'i2of5txt', 14, .T. )
+
+   oPrint:StartPage()
+
+
+   // Bloque del Numero
+   FOR nOffset := 0 TO 14.85 STEP 14.85
+      WITH OBJECT oPrint
+         // Datos Empresa
+         :CmSayBitmap( nOffset + 0.5, 1, 'Logo3.png', 3, 3 )
+         :CmSay( nOffset + 1.65, 7.0, 'Av. Colón 251', oFont, 5.0,,, HPDF_TALIGN_CENTER )
+         :CmSay( nOffset + 2.0, 7.0, 'Tel.: (0351) 4251793 / 4236023', oFont, 5.0,,, HPDF_TALIGN_CENTER )
+         :CmSay( nOffset + 2.35, 7.0, '4254733 / 4222367', oFont, 5.0,,, HPDF_TALIGN_CENTER )
+         :CmSay( nOffset + 2.7, 7.0, 'C.P.: 5000 - CORDOBA', oFont, 5.0,,, HPDF_TALIGN_CENTER )
+         :CmSay( nOffset + 3.7, 3.0, 'I.V.A. RESPONSABLE INSCRIPTO', oFont )
+
+         // Tipo de Comprobante
+         :CmRect( nOffset + 0.5, 10, nOffset + 1.5, 11, 0.1 )
+         :CmSay( nOffset + 0.6, 10.3, 'B', oFontBig, , , , 0 )
+         :CmSay( nOffset + 1.6, 10, 'Código 09', oFontMin, , , , 0 )
+
+         // Numero de comprobante, fecha, inscripciones
+         :CmRect( nOffset + 0.5, 13.5, nOffset + 4.0, 20.5, 0.1 )
+         :CmLine( nOffset + 2.6, 13.5, nOffset + 2.6, 20.5 )
+         :CmRect( nOffset + 1.6, 16.5, nOffset + 2.5, 20.4 )
+         :CmSay( nOffset + 1.8, 17.4, DToC( Date() ), oFontPrint )
+         :CmSay( nOffset + 0.6, 16.0, 'R E C I B O', oFontBold )
+         :CmSay( nOffset + 1.0, 15.2, 'Nº '+::PtoVenta+'-'+StrZero(Val(::Numero),8), oFontBold )
+         :CmSay( nOffset + 1.8, 14.0, 'CORDOBA', oFont )
+
+         :CmSay( nOffset + 2.7, 13.8, 'C.U.I.T.: 30-66666666-6', oFontRed )
+         :CmSay( nOffset + 3.0, 13.8, 'ING.BRUTOS: 250777777', oFontRed )
+         :CmSay( nOffset + 3.3, 13.8, 'C. e I. MUNICIPAL CBA: 30-66666666-6', oFontRed )
+         :CmSay( nOffset + 3.6, 13.8, 'Inicio Actividades: 07/03/1994', oFontRed )
+         :CmSay( nOffset + 2.7, 20.1, If( nOffset == 0,'ORIGINAL', 'DUPLICADO' ), oFontBold,,,, HPDF_TALIGN_RIGHT )
+
+         // Datos del Cliente
+         :CmRect( nOffset + 4.2, 0.5, nOffset + 5, 20.5 )
+         :CmSay( nOffset + 4.4, 1.0, 'SEÑOR:', oFont )
+         :CmSay( nOffset + 4.35, 2.6, ::Nombre, oFontPrint )
+
+         // Categoria IVA del Cliente
+         :CmRect( nOffset + 5.0, 0.5, nOffset + 5.8, 20.5 )
+
+         :CmSay( nOffset + 5.2, 1.0, 'A CONSUMIDOR FINAL', oFont )
+         :CmRect( nOffset + 5.1, 5.0, nOffset + 5.7, 5.7 )
+         :CmSay( nOffset + 5.15, 5.35, 'X', oFontPrint, 0.7,,, HPDF_TALIGN_CENTER )
+
+         :CmSay( nOffset + 5.2, 7.0, 'EXENTO', oFont )
+         :CmRect( nOffset + 5.1, 9.0, nOffset + 5.7, 9.7 )
+         // :CmSay( nOffset + 5.15, 9.35, 'X', oFontPrint, 0.7,,, HPDF_TALIGN_CENTER )
+
+         :CmSay( nOffset + 5.2, 12.0, 'C.U.I.T.', oFont )
+         :CmRect( nOffset + 5.1, 13.5, nOffset + 5.7, 20.0 )
+         // :CmSay( nOffset + 5.15, 14, '20-17078759-6', oFontPrint )
+
+         // Importe en letras
+         :CmSay( nOffset + 5.9, 1.0, 'Recibimos la suma de', oFont )
+         :CmSay( nOffset + 5.9, 4.8, PadR( AllTrim(MemoLine(cLetras,50,1)), 65, '/'), oFontPrint )
+         :CmSay( nOffset + 6.4, 4.8, PadR( AllTrim(MemoLine(cLetras,50,2)), 65, '/'), oFontPrint )
+
+         // Forma de Pago
+         :CmRect( nOffset + 7.0, 0.5, nOffset + 8.3, 20.5 )
+
+         :CmRect( nOffset + 7.1, 1.0, nOffset + 7.7, 1.6 )
+         :CmSay( nOffset + 7.2, 1.8, 'EFECTIVO', oFontRed )
+
+         :CmRect( nOffset + 7.1, 3.8, nOffset + 7.7, 4.4 )
+         IF Empty( Recibos-&gt;Banco )
+            :CmSay( nOffset + 7.15, 1.3, 'X', oFontPrint, 0.7,,, HPDF_TALIGN_CENTER )
+         ELSE
+            :CmSay( nOffset + 7.15, 4.1, 'X', oFontPrint, 0.7,,, HPDF_TALIGN_CENTER )
+         ENDIF
+         :CmSay( nOffset + 7.2, 4.6, 'CON CHEQUE Nº', oFontRed )
+         IF !Empty( Recibos-&gt;Banco )
+            :CmSay( nOffset + 7.2, 7.0, LTrim(Str(Recibos-&gt;Cheque)), oFontPrintR )
+         ENDIF
+
+         :CmSay( nOffset + 7.2, 9.2, 'C/BANCO', oFontRed )
+         IF !Empty( Recibos-&gt;Banco )
+            :CmSay( nOffset + 7.2, 10.6, Recibos-&gt;Banco, oFontPrintR )
+         ENDIF
+
+         :CmSay( nOffset + 7.2, 14.5, 'SUC', oFontRed )
+         IF !Empty( Recibos-&gt;Banco )
+            :CmSay( nOffset + 7.2, 15.2, Recibos-&gt;Sucursal, oFontPrintR )
+         ENDIF
+
+         :CmSay( nOffset + 7.2, 18.8, 'sujeto a', oFontRed )
+         :CmSay( nOffset + 7.8,  1.0, 'acreditación, el que una vez hecho efectivo se aplicará al pago de los conceptos detallados', oFontRed )
+
+         :CmRect( nOffset + 8.5, 0.5, nOffset + 9.8, 20.5 )
+         :CmLine( nOffset + 8.9, 0.5, nOffset + 8.9, 20.5 )
+         :CmLine( nOffset + 8.5, 4.5, nOffset + 9.8, 4.5 )
+         :CmSay( nOffset + 8.55, 2.5, 'Nº Factura', oFontRed, 0.7,,, HPDF_TALIGN_CENTER )
+         IF Recibos-&gt;NCredito &gt; 0
+            :CmSay( nOffset + 9.1, 2.5, 'X 0001-'+StrZero(Creditos-&gt;Factura,8), oFontPrint, 0.7,,, HPDF_TALIGN_CENTER )
+         ENDIF
+         :CmLine( nOffset + 8.5, 8.5, nOffset + 9.8, 8.5 )
+         :CmSay( nOffset + 8.55, 6.5, 'Nº Código', oFontRed, 0.7,,, HPDF_TALIGN_CENTER )
+         :CmSay( nOffset + 9.1, 6.5, Recibos-&gt;CodOrg, oFontPrint, 0.7,,, HPDF_TALIGN_CENTER )
+         :CmLine( nOffset + 8.5, 12.5, nOffset + 9.8, 12.5 )
+         :CmSay( nOffset + 8.55, 10.5, 'Nº Crédito', oFontRed, 0.7,,, HPDF_TALIGN_CENTER )
+         IF Recibos-&gt;NCredito &gt; 0
+            :CmSay( nOffset + 9.1, 10.5, Str(Creditos-&gt;NCredito,5), oFontPrint, 0.7,,, HPDF_TALIGN_CENTER )
+         ENDIF
+         :CmLine( nOffset + 8.5, 16.5, nOffset + 9.8, 16.5 )
+         :CmSay( nOffset + 8.55, 14.5, 'Nº Cuota', oFontRed, 0.7,,, HPDF_TALIGN_CENTER )
+         :CmSay( nOffset + 9.1, 14.5, If( Recibos-&gt;EsAdelanto,'Anticipo',LTrim(Str(Recibos-&gt;NroCuota))+' de '+ LTrim(Str(Creditos-&gt;Cuotas))), oFontPrint, 0.7,,, HPDF_TALIGN_CENTER )
+         :CmSay( nOffset + 8.55, 18.5, 'Vencimiento Cuota', oFontRed, 0.7,,, HPDF_TALIGN_CENTER )
+         :CmSay( nOffset + 9.1, 18.5, DtoC(Recibos-&gt;FechaVto), oFontPrint, 0.7,,, HPDF_TALIGN_CENTER )
+
+         // Conpceptos
+         :CmSay( nOffset + 10, 1.0, 'Descripción del cobro', oFontRed )
+         aConceptos := { { 'Cuota Capital', Recibos-&gt;Capital } ;
+            , { 'Cuota Intereses',     Recibos-&gt;Intereses } ;
+            , { 'Intereses Moratorios',  Recibos-&gt;Punitorios } ;
+            , { 'Gastos Recuperados',  Recibos-&gt;Gastos } ;
+            , { 'Anticipos a cuenta', Recibos-&gt;Anticipos } ;
+            , { 'Descuento de Intereses', Recibos-&gt;Descuento } ;
+            , { 'Otros',     0.00 } ;
+            }
+         FOR i := 1 TO Len( aConceptos )
+            :CmSay( nOffset + 10.5 + ( i - 1 ) * 0.43, 1.0, aConceptos[ i ][ 1 ], oFontRed )
+            :CmRect( nOffset + 10.4 + ( i - 1 ) * 0.43, 5.0, nOffset + 10.4 + ( i ) * 0.43, 8.5 )
+            :CmSay( nOffset + 10.4 + ( i - 1 ) * 0.43, 8.3, Str( aConceptos[ i ][ 2 ],12,2 ), oFontPrintR,,,, HPDF_TALIGN_RIGHT )
+         NEXT
+         :CmSay( nOffset + 10.5 + ( i - 1 ) * 0.43, 1.0, 'TOTAL', oFontBold )
+         :CmRect( nOffset + 10.4 + ( i - 1 ) * 0.43, 5.0, nOffset + 10.6 + ( i ) * 0.43, 8.5, 1.5 )
+         :CmSay( nOffset + 10.5 + ( i - 1 ) * 0.43, 8.3, Str( ::ImpTotal,12,2 ), oFontBold,,,, HPDF_TALIGN_RIGHT )
+
+         // Observaciones
+         aObservaciones := { 'Recuerde que para renovar su crédito' ;
+            , 'deberá presentar su último Recibo de Haberes,' ;
+            , 'y una boleta de servicios reciente.' ;
+            }
+         :CmRect( nOffset + 10.4, 8.9, nOffset + 12.9, 16.5, 0.1 )
+         FOR i := 1 TO Len( aObservaciones )
+            :CmSay( nOffset + 10.5 + ( i - 1 ) * 0.43, 9.0, aObservaciones[ i ], oFontPrintR )
+         NEXT
+
+         // Sello
+         :CmRect( nOffset + 10.4, 16.9, nOffset + 14.3, 20.5 )
+         :CmSay( nOffset + 10.5, 18.7, 'SELLO', oFont,,,, HPDF_TALIGN_CENTER )
+         :CmSay( nOffset + 11.00, 18.7, 'DE', oFont,,,, HPDF_TALIGN_CENTER )
+         :CmSay( nOffset + 11.5, 18.7, 'CAJA', oFont,,,, HPDF_TALIGN_CENTER )
+
+         // Codigo
+         :CmSay( nOffset + 12.7, 8.9, 'CAE: '+::CAE+' Vencimiento: '+DToC(StoD(::CAEVto)), oFontPrintR )
+         :CmSay( nOffset + 13.5, 8.9, i2of5Encode( i2Of5(::cCUIT+::CbteTipo+::PtoVenta+::CAE+::CAEVto) ), oFont2of5 )
+
+      END
+   NEXT
+
+   oPrint:CmDashLine( 14.85, 0.5, 14.85, 20.5 )
+   oPrint:EndPage()
+
+   oPrint:Save( cNombrePdf:= 'RC-'+::PtoVenta+'-'+StrZero(Val(::Numero),8)+'.pdf' )
+
+RETURN cNombrePdf</code></pre></div><br>
+<br>
+Y el resultado de este código es <br>
+<br>
+<!-- m --><a class="postlink" href="https://drive.google.com/file/d/0B3uWeESvC613bjlWV1hQeXpHRUE/view?usp=sharing">https://drive.google.com/file/d/0B3uWeE ... sp=sharing</a><!-- m --><br>
+<br>
+El código seguramente resultará familiar para quien usa TPrinter.</div>
+    </div>
+  </div>
+  <div class="post" id="p197153">
+    <div class="poster">
+      <div class="name" style="color:#105289">armando.lagunas</div>
+      <div class="rank">Posts: 346</div>
+      <img class="avatar avatar-img" src="avatars/1814.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 05, 2009 03:35 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Fri Jan 06, 2017 01:37 PM
+      </div>
+      <div class="content"><p>Gracias!!</p>
+<p>Probare tu aporte....</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p197156">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Fri Jan 06, 2017 02:22 PM
+      </div>
+      <div class="content"><p>Carlos, regalo recibido y bienvenido<br>
+Vaya &quot;curro&quot; que te has pegado, y la documentación &quot;genial&quot;<br>
+Muchas gracias, tiene muy buena pinta</p></div>
+    </div>
+  </div>
+  <div class="post" id="p197160">
+    <div class="poster">
+      <div class="name" style="color:#105289">joseluisysturiz</div>
+      <div class="rank">Posts: 2064</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 06, 2006 09:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Fri Jan 06, 2017 03:27 PM
+      </div>
+      <div class="content"><p>A caballo regalado no se le mira colmillo...y menos si es con buena intencion, descargando para probarla, como dice navarro se ve muy buena la pinta del sample, cualquier detalle o sugerencia seguro te llegara por este medio o a tu privado, gracias y saludos... <!-- s:shock: --><img src="{SMILIES_PATH}/icon_eek.gif" alt=":shock:" title="Shocked" /><!-- s:shock: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p197161">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Fri Jan 06, 2017 03:27 PM
+      </div>
+      <div class="content"><p>Carlos, sigues en Madrid?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p197167">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Fri Jan 06, 2017 06:00 PM
+      </div>
+      <div class="content"><blockquote><cite>xmanuel wrote:</cite>Carlos, sigues en Madrid?</blockquote><br>
+<br>
+Mientras no me echen... jaja.<br>
+<br>
+Si Manu, ya estoy establecido, así es que a los que visiten Madrid será un placer poder invitaros con una cervecita. Y a los sevillanos que me recibisteis tan bien, devolveros las cortesías.<br>
+<br>
+Un abrazo</div>
+    </div>
+  </div>
+  <div class="post" id="p197169">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Fri Jan 06, 2017 06:47 PM
+      </div>
+      <div class="content">HolA José Luis,<br>
+<br>
+<blockquote><cite>joseluisysturiz wrote:</cite>A caballo regalado no se le mira colmillo...y menos si es con buena intencion, descargando para probarla, como dice navarro se ve muy buena la pinta del sample, cualquier detalle o sugerencia seguro te llegara por este medio o a tu privado, gracias y saludos... </blockquote><br>
+gracias por las pruebas, que es lo que hace falta para pulirla.<br>
+<br>
+He subido un par de mejoras hace una hora, y un ejemplo completo y autocontenido:<br>
+<br>
+<!-- m --><a class="postlink" href="https://drive.google.com/open?id=0B3uWeESvC613ajdOak9pZEdNR0k">https://drive.google.com/open?id=0B3uWe ... k9pZEdNR0k</a><!-- m --><br>
+<br>
+El ejemplo es el prg de arriba, pero con constantes para que no requiera fuente de datos, y en modo consola, para que no haga falta la libreria gráfica.</div>
+    </div>
+  </div>
+  <div class="post" id="p197173">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Fri Jan 06, 2017 07:34 PM
+      </div>
+      <div class="content"><p>El 15 estaré por ahí. El regalo que me ha hecho mi mujer, además de cachivaches para que adelgace, es poder deleitarme con el musical &quot;La llamda&quot; en el teatro Lara.<br>
+Llego el domingo y me voy el lunes, y creo que Isabel lo tiene todo orgnizado, pero si hay un hueco podemos vernos y charlar un rato.<br>
+Hazme llegar el numero de tu móvil por si las moscas. (A mi correo particular)  <!-- s:) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":)" title="Smile" /><!-- s:) -->  <!-- s:) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":)" title="Smile" /><!-- s:) -->  <!-- s:) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":)" title="Smile" /><!-- s:) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p197234">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Mon Jan 09, 2017 08:09 AM
+      </div>
+      <div class="content"><p>Estimado Carlos,</p>
+<p>Felices Reyes Magos, con retraso... <!-- s;) --><img src="{SMILIES_PATH}/icon_wink.gif" alt=";)" title="Wink" /><!-- s;) --></p>
+<p>Grande, muy grande tu aporte.</p>
+<p>En cuanto saque un hueco me pongo a probarlo.</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p197236">
+    <div class="poster">
+      <div class="name" style="color:#105289">AngelSalom</div>
+      <div class="rank">Posts: 728</div>
+      <img class="avatar avatar-img" src="avatars/23.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:38 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Mon Jan 09, 2017 10:24 AM
+      </div>
+      <div class="content"><p>Buena pinta. Llevo usando HaruPdf hace un tiempo con muy buenos resultados. Veré tus ejemplos, gracias.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p197237">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Mon Jan 09, 2017 11:54 AM
+      </div>
+      <div class="content"><p>Demopdf.exe, genera el archivo pdf, más no muestra el preview, esto está correcto? Gracias, saludos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p197239">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Mon Jan 09, 2017 12:43 PM
+      </div>
+      <div class="content"><blockquote><cite>karinha wrote:</cite>Demopdf.exe, genera el archivo pdf, más no muestra el preview, esto está correcto? Gracias, saludos.</blockquote><br>
+<br>
+Si, correcto. La librería genera pdfs solamente, en realidad es la librería Haru, pero con cara de TPrinter. El ejemplo es en modo consola y está hecho a propósito para mostrar que no requiere librerías gráficas, para mostar lo simple del código para quien esté familiarizado con TPrinter, el ejemplo está bastante trabajado, y la calidad del pdf generado, muy compacto. Es un documento real usado en un programa de un cliente, e incluye impresión de codigo de barras e imágenes. Y el código lo tienes al 100%.<br>
+Las funciones de la librería resuelven tambien las cuestiones relativas a fuentes, que son las que más quebraderos de cabeza dan al hacer transformaciones, que al no hacer previews te lo evitas.</div>
+    </div>
+  </div>
+  <div class="post" id="p197240">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Mon Jan 09, 2017 12:57 PM
+      </div>
+      <div class="content">Gracias Carlos. Usando el sumatrapdf.exe para visualizar el myharu.pdf, creo que el código de barras, no esté generado correctamente:<br>
+<br>
+<img src="http://i.imgur.com/r594hr4.png" alt="" loading="lazy"><br>
+<br>
+Saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p197244">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carlos Mora</div>
+      <div class="rank">Posts: 989</div>
+      <div class="avatar"></div>
+      Joined: Thu Nov 24, 2005 03:01 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Felices reyes!</span><br>
+        Posted: Mon Jan 09, 2017 01:54 PM
+      </div>
+      <div class="content"><p>Ups!</p>
+<p>Eso se debe a que la fuente ttf de los códigos de barra no está embebida. Ahora subo la corrección. Una forma de resolverlo es instalar en Windows la fuende i2of5txt.ttf que está incluída en el proyecto. </p>
+<p>Hago las correcciones y la subo. Como dije en otro post, la gestión de las fuentes es todo un tema.</p>
+<p>Gracias por las pruebas.</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-33439-page-2.html">2</a> <a href="topic-33439-page-3.html">3</a> <a href="topic-33439-page-4.html">4</a> <a href="topic-33439-page-5.html">5</a> (61 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

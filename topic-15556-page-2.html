@@ -1,0 +1,2880 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>[Plz Linares] How to change the color of a disabled folder? - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-15556">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> [Plz Linares] How to change the color of a disabled folder?</div>
+<div class="pagination">Page: <a href="topic-15556.html">1</a> <strong>2</strong> (20 posts)</div>  <div class="post" id="p80866">
+    <div class="poster">
+      <div class="name" style="color:#105289">Dietmar Jahnel</div>
+      <div class="rank">Posts: 83</div>
+      <img class="avatar avatar-img" src="avatars/162.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 10:33 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: [Plz Linares] How to change the color of a disabled folder?</span><br>
+        Posted: Sun May 17, 2009 10:29 AM
+      </div>
+      <div class="content"><blockquote>You have to use &quot;TRFolder&quot; instead of &quot;RFolder&quot;</blockquote><br>
+<br>
+Sorry, same result, dialog cannto be built.<br>
+The (only) solution seems to be the ON INIT, but that causes to much change in the code (for the moment)</div>
+    </div>
+  </div>
+  <div class="post" id="p80878">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: [Plz Linares] How to change the color of a disabled folder?</span><br>
+        Posted: Sun May 17, 2009 03:09 PM
+      </div>
+      <div class="content">Dietmar,<br>
+<br>
+I have been reviewing RFolder source code and its Redefine Method is not properly implemented.<br>
+<br>
+Also you need to add the pages to the RC file:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">one DIALOG 6, 15, 175, 117
+STYLE WS_CHILD | WS_VISIBLE
+FONT 8, "MS Sans Serif"
+{
+}
+ 
+two DIALOG 6, 15, 175, 117
+STYLE WS_CHILD | WS_VISIBLE
+FONT 8, "MS Sans Serif"
+{
+}
+ 
+three DIALOG 6, 15, 175, 117
+STYLE WS_CHILD | WS_VISIBLE
+FONT 8, "MS Sans Serif"
+{
+}</code></pre></div><br>
+But even though, after several changes in the class source code, it seems as the class is creating some SAYs that should not be created for Redefine.<br>
+<br>
+Here I post my complete changes, in case that you want to review them:<br>
+first part:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+#include "Constant.ch"
+#include "rfolder.ch"
+
+function Main()
+
+   local oDlg
+   
+   DEFINE DIALOG oDlg RESOURCE "SUCHFOLDER"
+
+   REDEFINE RFOLDER oFld ID 210 of oDlg ;
+      Prompts "Page 1", "Page 2", "Page 3" ;
+      DIALOGS "one", "two", "three" ;
+      Size 300, 300 Pixel POSICAO 3;
+      ORGANIZE 3, 2, 4  NAME "img1", "img2", "img3", "img4", "img1", "img2", "img3", "img4", "img1" ;
+      Color CLR_WHITE, nRGB( 117, 174, 162 )
+
+   ACTIVATE DIALOG oDlg CENTERED
+   
+return nil   
+
+#define COLOR_BTNFACE       15
+
+#define FD_BORDER            8
+//#define FD_HEIGHT           30
+
+#define FD_TABMARGIN        40
+
+#define DT_CENTER            1
+
+#define TCM_FIRST         4864   // 0x1300
+#define TCM_SETIMAGELIST ( TCM_FIRST +  3 )
+#define TCM_SETCURSEL    ( TCM_FIRST + 12 )
+#define TCM_SETITEMSIZE  ( TCM_FIRST + 41 )
+#define TCM_SETPADDING   ( TCM_FIRST + 43 )
+
+#define TCN_FIRST         -550
+#define TCN_SELCHANGE    ( TCN_FIRST - 1 )
+#define TCN_SELCHANGING  ( TCN_FIRST - 2 )
+
+#define TCS_MULTILINE        512  // 0x0200
+#define TCS_OWNERDRAWFIXED   8192 // 0x2000
+
+#ifdef __XPP__
+   #define Super ::TControl
+   #define New   _New
+#endif
+
+//----------------------------------------------------------------------------//
+
+CLASS TRFolder FROM TControl
+
+   CLASSDATA lRegistered AS LOGICAL
+   
+   DATA   lStartDeg AS LOGIC INIT .f.
+   DATA   bBlockWnd, nClrMove
+   DATA   nOldOpt AS NUMERIC INIT 0
+   DATA   nClrTextSel, nClrPaneSel, nOldText, nOldPane
+   DATA   aMapaPix AS ARRAY INIT {}
+   DATA   lExact
+   DATA   aCores AS ARRAY INIT {}
+   DATA   nClrFore2, nClrBack2
+   DATA   nCor1, nCor2, nCor3
+   DATA   nOldRow INIT 0
+   DATA   nOldCol INIT 0
+   DATA   aWSay AS ARRAY INIT {}
+   DATA   aHSay AS ARRAY INIT {}
+   DATA   aPrompts, aDialogs
+   DATA   aSays AS ARRAY INIT {}
+   DATA   nOption, nTabSize, nFdHeight
+   DATA   oFont, oFont2, oFont3, oFont4
+   DATA   aEnable
+   DATA   aFiles
+   DATA   aNames
+   DATA   aNames
+   DATA   nAbaPos
+   DATA   oDlg2
+   DATA   aImgs AS ARRAY INIT {}
+   DATA   aLinhas AS ARRAY INIT {}
+   DATA   nLinhas AS NUMERIC INIT 1
+   DATA   aCords AS ARRAY INIT {}
+   DATA   lAllWidth
+   DATA   lDegrade As LOGIC INIT .f.
+
+   METHOD New( nTop, nLeft, aPrompts, aDialogs, oWnd, nOption, nClrFore,;
+               nClrBack, lPixel, nWidth, nHeight,;
+               cMsg, lAllWidth, oFont,  nAbaPos, lExact, aFiles, aNames, aLinhas ) CONSTRUCTOR
+
+   METHOD REDEFINE( nID, nTop, nLeft, aPrompts, aDialogs, oWnd, nOption, nClrFore,;
+                    nClrBack, lPixel, nWidth, nHeight,;
+                    cMsg, lAllWidth, oFont,  nAbaPos, lExact, aFiles, aNames, aLinhas ) CONSTRUCTOR
+
+   METHOD SetPrompts( aPrompts )
+
+   METHOD Initiate( hDlg )
+
+   METHOD Iniciar()
+
+   METHOD Display()
+
+   METHOD Disable( nOption )
+                   
+   METHOD Enable( nOption )
+
+   METHOD Paint()
+
+   METHOD ClickAba(n)
+
+   METHOD _Compile( n ) 
+
+   METHOD _Compile2( n )
+
+   METHOD PosCol()
+   
+   METHOD PosRow(nPos)
+
+   METHOD ADD( cPrompt )
+
+   METHOD DEL( N )
+
+   METHOD CORES()
+
+   METHOD ClrD( nInd )
+
+   METHOD ClrW( nInd, nCor )
+
+   METHOD SetCores( aCores )
+
+   METHOD Exact()
+
+   METHOD NoExact()
+
+   METHOD MontaMapa()
+
+   METHOD MontaImg()
+
+   METHOD ColorSelected( nClrText, nClrPane )
+
+   METHOD ClickArea( nRow, nCol, lOK ) 
+
+   METHOD DrawText(hDC,cPrompt,Y,X,nClrText,nClrPane,oFont, i)
+
+   METHOD ReposHrz( n  )
+
+   METHOD PosMove( nRow, nCol, n )
+
+   METHOD DrawLine( hDC, nRow, nCol, nWidth, nCor )
+
+   METHOD END() INLINE ::oWnd:bMMoved := ::bBlockWnd, Super:END()
+
+   METHOD BlockWnd()
+
+   METHOD DrawLineDeg( hDC, nCol, nRow, nColF,  nRowF, nCor, nHeight )
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( nTop, nLeft, aPrompts, aDialogs, oWnd, nOption, nClrFore,;
+            nClrBack, lPixel, lDesign, nWidth, nHeight, cMsg, lAllWidth,;
+            oFont, nAbaPos, lExact, aFiles, aNames, aLinhas ) CLASS TRFolder
+
+   local n, x, i, aTemp
+
+   #ifdef __XPP__
+      #undef New
+   #endif
+
+   DEFAULT nTop := 0, nLeft := 0,;
+           aDialogs  := {},;
+           aPrompts  := { "&amp;One", "&amp;Two", "T&amp;hree" },;
+           oWnd      := GetWndDefault(),;
+           nOption   := 1,;
+           nClrFore  := CLR_BLACK,;
+           nClrBack  := GetSysColor( COLOR_BTNFACE ),;
+           lPixel    := .f.,;
+           lDesign   := .f.,;
+           nWidth    := 100, nHeight := 100,;
+           lAllWidth := .f.,;
+           aNames    := {},;
+           aFiles    := {},;
+           nAbaPos   := 1,;
+           lExact    := .f.
+           
+
+   if Len( aDialogs ) &lt; Len( aPrompts )
+      aDialogs = Array( Len( aPrompts ) )
+   endif
+   if Len( ::aSays ) &lt; Len( aPrompts )
+      ::aSays := Array( Len( aPrompts ) )
+   endif
+
+   if ::aEnable == nil
+      ::aEnable = Array( Len( aPrompts ) )
+      AFill( ::aEnable, .t. )
+   endif
+
+
+   ::nStyle    = nOR( WS_CHILD, WS_VISIBLE,;
+                      If( lDesign, WS_CLIPSIBLINGS, 0 ),;
+                      WS_TABSTOP /* , TCS_OWNERDRAWFIXED */ )
+
+   ::nId       = ::GetNewId()
+   ::oWnd      = oWnd
+   ::aPrompts  = aPrompts
+   ::aDialogs  = aDialogs
+   ::nOption   = nOption
+   ::cMsg      = cMsg
+   ::nTop      = If( lPixel, nTop, nTop * SAY_CHARPIX_H )
+   ::nLeft     = If( lPixel, nLeft, nLeft * SAY_CHARPIX_W )
+   ::nBottom   = ::nTop + nHeight - 1
+   ::nRight    = ::nLeft + nWidth - 1
+   ::lDrag     = lDesign
+   ::lCaptured = .f.
+   ::nAbaPos   = nAbaPos
+   ::nClrFore2 = nClrFore
+   ::nClrBack2 = nClrBack
+   ::lExact    = lExact
+   ::aFiles    = aFiles
+   ::aNames    = aNames
+   ::lAllWidth = lAllWidth
+
+   if aLinhas &lt;&gt; NIL
+      if len( aLinhas ) &gt; 1
+         ::nLinhas := len( aLinhas )
+         i := 1
+         for n := 1 to ::nLinhas
+             aTemp := {}
+             for x := 1 to aLinhas[n]
+                 AADD( aTemp, i )
+                 i++
+             next
+             AADD( ::aLinhas, aTemp )
+         next
+      endif
+   endif
+
+   if len(::aFiles) &gt; 0
+      if len(::aFiles) &lt; Len( ::aDialogs )
+         for n := len(::aFiles) to Len( ::aDialogs )-1
+             AADD( ::aFiles, "")
+         next
+      endif
+      for n := 1 to len( ::aFiles ) 
+          AADD(::aMapaPix, {} )
+      next
+   endif
+   if len(::aNames) &gt; 0
+      if len(::aNames) &lt; Len( ::aDialogs )
+         for n := len(::aNames) to Len( ::aDialogs )-1
+             AADD( ::aNames, "")
+         next
+      endif
+      for n := 1 to len( ::aNames ) 
+          AADD(::aMapaPix, {} )
+      next
+   endif
+
+
+
+   ::cVarName  = ""
+   ::nFdHeight = If( LargeFonts(), 25 , 22 )
+
+   ::Register()
+
+   if oFont != nil
+      ::SetFont( oFont )
+   elseif oWnd != nil .and. oWnd:oFont != nil
+      ::SetFont( oWnd:oFont )
+      oFont := oWnd:oFont
+   else
+      oFont := ::GetFont()
+   endif
+
+   if ! Empty( oWnd:hWnd )
+      #ifdef __CLIPPER__
+         ::Create()
+         ::SetPrompts()
+      #else
+         ::Create()
+         ::SetPrompts()
+      #endif
+      oWnd:AddControl( Self )
+   else
+      oWnd:DefControl( Self )
+   endif
+      
+   ::oFont := oFont
+   define font ::oFont2 NAME ::oFont:cFaceName;
+               SIZE ::oFont:nInpWidth, ::oFont:nInpHeight BOLD
+
+   if nAbaPos = 5 .or. nAbaPos = 6
+      Define Font ::oFont3 Name "Arial" SIZE ::oFont:nInpWidth, ::oFont:nInpHeight NESCAPEMENT 90*10
+      Define Font ::oFont4 Name "Arial" SIZE ::oFont:nInpWidth, ::oFont:nInpHeight NESCAPEMENT 90*10 BOLD
+      ::oFont3:nQuality := LF_QUALITY
+      ::oFont4:nQuality := LF_QUALITY
+   else
+      ::oFont3 := ::oFont
+      ::oFont4 := ::oFont2
+      ::oFont3:nQuality := LF_QUALITY
+      ::oFont4:nQuality := LF_QUALITY
+   endif
+        
+   SetWndDefault( oWnd )
+
+   ::Iniciar()
+        
+   if lExact
+      ::SetColor( oWnd:nClrPane, oWnd:nClrPane )
+      ::oDlg2:SetColor( oWnd:nClrPane, oWnd:nClrPane )
+   else
+      ::SetColor( nClrFore, nClrBack )
+   endif
+   
+   ::oDlg2:bPainted := {|| ::Paint() }
+   ::aSays[::nOption]:SetFont(::oFont4)
+
+return Self
+
+//---------------------------------------------------------------------------
+
+METHOD REDEFINE( nID,  nTop, nLeft, aPrompts, aDialogs, oWnd, nOption, nClrFore,;
+                 nClrBack, lPixel, lDesign, nWidth, nHeight, cMsg, lAllWidth,;
+                 oFont, nAbaPos, lExact, aFiles, aNames, aLinhas ) CLASS TRFolder
+
+   local n, x, i, aTemp
+
+   #ifdef __XPP__
+      #undef New
+   #endif
+
+   DEFAULT nTop := 0, nLeft := 0,;
+           aDialogs  := {},;
+           aPrompts  := { "&amp;One", "&amp;Two", "T&amp;hree" },;
+           oWnd      := GetWndDefault(),;
+           nOption   := 1,;
+           nClrFore  := CLR_BLACK,;
+           nClrBack  := GetSysColor( COLOR_BTNFACE ),;
+           lPixel    := .f.,;
+           lDesign   := .f.,;
+           nWidth    := 100, nHeight := 100,;
+           lAllWidth := .f.,;
+           aNames    := {},;
+           aFiles    := {},;
+           nAbaPos   := 1,;
+           lExact    := .f.
+           
+
+   if Len( aDialogs ) &lt; Len( aPrompts )
+      aDialogs = Array( Len( aPrompts ) )
+   endif
+   if Len( ::aSays ) &lt; Len( aPrompts )
+      ::aSays := Array( Len( aPrompts ) )
+   endif
+
+   if ::aEnable == nil
+      ::aEnable = Array( Len( aPrompts ) )
+      AFill( ::aEnable, .t. )
+   endif
+
+
+   ::nStyle    = nOR( WS_CHILD, WS_VISIBLE,;
+                      If( lDesign, WS_CLIPSIBLINGS, 0 ),;
+                      WS_TABSTOP /* , TCS_OWNERDRAWFIXED */ )
+
+   ::nId       = ::GetNewId()
+   ::oWnd      = oWnd
+   ::aPrompts  = aPrompts
+   ::aDialogs  = aDialogs
+   ::nOption   = nOption
+   ::cMsg      = cMsg
+   ::nTop      = If( lPixel, nTop, nTop * SAY_CHARPIX_H )
+   ::nLeft     = If( lPixel, nLeft, nLeft * SAY_CHARPIX_W )
+   ::nBottom   = ::nTop + nHeight - 1
+   ::nRight    = ::nLeft + nWidth - 1
+   ::lDrag     = lDesign
+   ::lCaptured = .f.
+   ::nAbaPos   = nAbaPos
+   ::nClrFore2 = nClrFore
+   ::nClrBack2 = nClrBack
+   ::lExact    = lExact
+   ::aFiles    = aFiles
+   ::aNames    = aNames
+   ::lAllWidth = lAllWidth
+
+   if aLinhas &lt;&gt; NIL
+      if len( aLinhas ) &gt; 1
+         ::nLinhas := len( aLinhas )
+         i := 1
+         for n := 1 to ::nLinhas
+             aTemp := {}
+             for x := 1 to aLinhas[n]
+                 AADD( aTemp, i )
+                 i++
+             next
+             AADD( ::aLinhas, aTemp )
+         next
+      endif
+   endif
+
+   if len(::aFiles) &gt; 0
+      if len(::aFiles) &lt; Len( ::aDialogs )
+         for n := len(::aFiles) to Len( ::aDialogs )-1
+             AADD( ::aFiles, "")
+         next
+      endif
+      for n := 1 to len( ::aFiles ) 
+          AADD(::aMapaPix, {} )
+      next
+   endif
+   if len(::aNames) &gt; 0
+      if len(::aNames) &lt; Len( ::aDialogs )
+         for n := len(::aNames) to Len( ::aDialogs )-1
+             AADD( ::aNames, "")
+         next
+      endif
+      for n := 1 to len( ::aNames ) 
+          AADD(::aMapaPix, {} )
+      next
+   endif
+
+
+
+   ::cVarName  = ""
+   ::nFdHeight = If( LargeFonts(), 25 , 22 )
+
+   ::Register()
+
+   if oFont != nil
+      ::SetFont( oFont )
+   elseif oWnd != nil .and. oWnd:oFont != nil
+      ::SetFont( oWnd:oFont )
+      oFont := oWnd:oFont
+   else
+      oFont := ::GetFont()
+   endif
+
+   if ! Empty( oWnd:hWnd )
+      #ifdef __CLIPPER__
+         ::Create()
+         ::SetPrompts()
+      #else
+         ::Create()
+         ::SetPrompts()
+      #endif
+      oWnd:AddControl( Self )
+   else
+      oWnd:DefControl( Self )
+   endif
+      
+   ::oFont := oFont
+   define font ::oFont2 NAME ::oFont:cFaceName;
+               SIZE ::oFont:nInpWidth, ::oFont:nInpHeight BOLD
+
+   if nAbaPos = 5 .or. nAbaPos = 6
+      Define Font ::oFont3 Name "Arial" SIZE ::oFont:nInpWidth, ::oFont:nInpHeight NESCAPEMENT 90*10
+      Define Font ::oFont4 Name "Arial" SIZE ::oFont:nInpWidth, ::oFont:nInpHeight NESCAPEMENT 90*10 BOLD
+      ::oFont3:nQuality := LF_QUALITY
+      ::oFont4:nQuality := LF_QUALITY
+   else
+      ::oFont3 := ::oFont
+      ::oFont4 := ::oFont2
+      ::oFont3:nQuality := LF_QUALITY
+      ::oFont4:nQuality := LF_QUALITY
+   endif
+        
+   SetWndDefault( oWnd )
+
+   // ::Iniciar()
+        
+   if lExact
+      ::SetColor( oWnd:nClrPane, oWnd:nClrPane )
+      ::oDlg2:SetColor( oWnd:nClrPane, oWnd:nClrPane )
+   else
+      ::SetColor( nClrFore, nClrBack )
+   endif
+   
+   // ::bPainted := {|| ::Paint() }
+   // ::aSays[:]:SetFont(::oFont4)
+
+return Self
+
+
+//---------------------------------------------------------------------------
+METHOD SetPrompts( aPrompts ) CLASS TRFolder
+
+   local n
+
+   if ! Empty( aPrompts )
+      ::aPrompts = aPrompts
+   endif
+
+
+return nil
+
+//---------------------------------------------------------------------------
+METHOD Paint() Class TRFolder
+local oDlg := ::aDialogs[ ::nOption ]
+local hPen, hOldPen, nRow, nCol, i, n, nCor
+
+
+   if ::nAbaPos = 1 .or. ::nAbaPos = 3
+          if len(::aLinhas) &gt; 0
+             ::ReposHrz( ::nOption )
+          endif
+   endif
+
+   if len(::aImgs) &gt; 0
+      ::MontaMapa()
+   endif
+
+
+
+      oDlg:GetDC()
+      ::CORES( ::nOption )
+
+
+      hPen := CreatePen( 0, 1, ::nCor3 )
+      hOldPen := SelectObject( oDlg:hDc, hPen )
+      MoveTo( oDlg:hDC, oDlg:nWidth-1,  0 )
+      LineTo( oDlg:hDC, oDlg:nWidth-1, oDlg:nHeight-1 )
+      LineTo( oDlg:hDC, 0, oDlg:nHeight-1 )
+      SelectObject( oDlg:hDc, hOldPen )
+      DeleteObject( hPen )
+
+      hPen := CreatePen( 0, 1, ::nCor2 )
+      hOldPen := SelectObject( oDlg:hDc, hPen )
+      MoveTo( oDlg:hDC, oDlg:nWidth-2,  1 )
+      LineTo( oDlg:hDC, oDlg:nWidth-2, oDlg:nHeight-2 )
+      LineTo( oDlg:hDC, 1, oDlg:nHeight-2 )
+      SelectObject( oDlg:hDc, hOldPen )
+      DeleteObject( hPen )
+
+      hPen := CreatePen( 0, 1, ::nCor1 )
+      hOldPen := SelectObject( oDlg:hDc, hPen )
+      MoveTo( oDlg:hDC, 0,  0 )
+      LineTo( oDlg:hDC, oDlg:nWidth-1, 0 )
+      MoveTo( oDlg:hDC, 0,  0 )
+      LineTo( oDlg:hDC, 0, ::nHeight-1 )
+      DeleteObject( hPen )
+
+      hPen := CreatePen( 0, 1, ::nCor1 )
+      hOldPen := SelectObject( oDlg:hDc, hPen )
+      MoveTo( oDlg:hDC, 1,  1 )
+      LineTo( oDlg:hDC, oDlg:nWidth-2, 1 )
+      MoveTo( oDlg:hDC, 1,  1 )
+      LineTo( oDlg:hDC, 1, ::nHeight-1 )
+      DeleteObject( hPen )
+
+
+      oDlg:ReleaseDC()
+
+
+           //*****************POSICAO 1********************//
+
+ if ::nAbaPos = 1
+     
+          oDlg := ::oDlg2
+          oDlg:GetDC()
+          *nRow := 0
+          *nCol := 0
+
+          for i := 1 to len( ::aSays )
+              ::CORES( i )
+
+              if i = ::nOption
+                 if ::nClrPaneSel &lt;&gt; NIL
+                    nCor := ::nClrPaneSel
+                 else
+                    nCor := ::aCores[i]
+                 endif
+              else
+                    nCor := ::aCores[i]
+              endif
+
+              nRow := ::aCords[i][1]
+              nCol := ::aCords[i][2]
+              ::lStartDeg := .t.
+
+              hPen := CreatePen( 0, 1, nCor )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i],  nRow )
+              for n := 1 to ::aHSay[i]-1
+                  if n &lt; 3
+                     if ::lDegrade
+                        ::DrawLineDeg( oDlg:hDC, nCol+4-n , nRow+n, nCol+::aWSay[i]-4+n, nRow+n , nCor ,::aHSay[i] )
+                     else
+                        MoveTo( oDlg:hDC, nCol+4-n,  nRow+n )
+                        LineTo( oDlg:hDC, nCol+::aWSay[i]-4+n,  nRow+n )
+                     endif
+                  else
+                     if ::lDegrade
+                        ::DrawLineDeg( oDlg:hDC, nCol,  nRow+n , nCol+::aWSay[i],  nRow+n , nCor,::aHSay[i])
+                     else
+                        MoveTo( oDlg:hDC, nCol,  nRow+n )
+                        LineTo( oDlg:hDC, nCol+::aWSay[i],  nRow+n )
+                     endif
+                  endif
+              next
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+              hPen := CreatePen( 0, 1, ::nCor1 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-4,  nRow )
+              LineTo( oDlg:hDC, nCol+3,  nRow )
+              LineTo( oDlg:hDC, nCol, nRow+3 )
+              LineTo( oDlg:hDC, nCol, nRow+::aHSay[i] )
+              *LineTo( oDlg:hDC, nCol+::aWSay[i], nRow+::aHSay[i]-1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-3,  nRow+1 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+3 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+::aHSay[i] )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+                            
+              if len(::aImgs) &gt;= i
+                 if len(::aMapaPix[i]) = 0
+                    if len( ::aFiles ) &gt; 0
+                       ::aImgs[i]:ReLoad( , ::aFiles[i] )
+                    else
+                       ::aImgs[i]:LoadImage( ::aNames[i], )
+                    endif
+                 else
+                   ::MontaImg(i)
+                 endif
+              endif
+
+              if !::aDialogs[i]:lActive                 
+                 ::aSays[i]:Disable()
+                 if len(::aImgs) &gt;= i
+                    ::aImgs[i]:Disable()
+                 endif
+              else
+                 ::aSays[i]:Enable()
+                 if len(::aImgs) &gt;= i
+                    ::aImgs[i]:Enable()
+                 endif
+              endif
+
+              if ::aDialogs[i]:lActive .and. !::lDegrade
+                 ::aSays[i]:SetColor( ::aDialogs[i]:nClrText,;
+                                      ::aDialogs[i]:nClrPane  )
+                 SetWindowText( ::aSays[i]:hWnd, ::aSays[i]:cCaption )
+              else
+                 ::DrawText( oDlg:hDC,;
+                               ::aPrompts[i],;
+                               ::aSays[i]:nTop, ::aSays[i]:nLeft,;
+                               ::aDialogs[i]:nClrText,;
+                               ::aDialogs[i]:nClrPane,;
+                               ::aSays[i]:oFont, i )
+              endif
+
+              nCol+=::aWSay[i]
+
+          next
+
+          hPen := CreatePen( 0, 1, oDlg:nClrPane )
+          hOldPen := SelectObject( oDlg:hDc, hPen )
+          MoveTo( oDlg:hDC, ::nOldCol,  ::nOldRow )
+          LineTo( oDlg:hDC, ::nOldCol,  ::nOldRow+::aHSay[1] )
+          SelectObject( oDlg:hDc, hOldPen )
+          DeleteObject( hPen )
+
+
+              i := ::nOption
+              ::CORES( i )
+              *nCol := ::PosCol(i)
+              *nRow := 0
+              nRow := ::aCords[i][1]
+              nCol := ::aCords[i][2]
+
+              hPen := CreatePen( 0, 1, ::aDialogs[i]:nClrPane )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+1,  nRow+::aHSay[i] )
+              LineTo( oDlg:hDC, nCol+::aWSay[i], nRow+::aHSay[i] )
+              MoveTo( oDlg:hDC, nCol+1,  nRow+::aHSay[i]+1 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i], nRow+::aHSay[i]+1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor1 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-4,  nRow+1 )
+              LineTo( oDlg:hDC, nCol+3,  nRow+1 )
+              LineTo( oDlg:hDC, nCol+1, nRow+3 )
+              LineTo( oDlg:hDC, nCol+1, nRow+::aHSay[i]+2 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+3 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+::aHSay[i]+2 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor3 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-3,  nRow)
+              LineTo( oDlg:hDC, nCol+::aWSay[i],  nRow+3)
+              LineTo( oDlg:hDC, nCol+::aWSay[i], nRow+::aHSay[i] )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+              ::nOldCol := nCol+::aWSay[i]
+              ::nOldRow := nRow
+
+
+          oDlg:ReleaseDC()
+
+  endif
+
+
+           //*****************POSICAO 2 / POSICAO 5********************//
+
+  if ::nAbaPos = 2 .or. ::nAbaPos = 5
+   
+           oDlg := ::oDlg2
+           oDlg:GetDC()
+           nRow := 0
+           nCol := 0
+
+          for i := 1 to len( ::aSays )
+              ::CORES( i )
+
+              if i = ::nOption
+                 if ::nClrPaneSel &lt;&gt; NIL
+                    nCor := ::nClrPaneSel
+                 else
+                    nCor := ::aCores[i]
+                 endif
+              else
+                    nCor := ::aCores[i]
+              endif
+
+              ::lStartDeg := .t.
+              hPen := CreatePen( 0, 1, nCor )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+
+               for n := 1 to ::aWSay[i]
+                  if n &lt; 3
+                     if ::lDegrade
+                        ::DrawLineDeg( oDlg:hDC, nCol+n,  nRow+4-n, nCol+n,  nRow+::aHSay[i]-4+n, nCor, ::aWSay[i])
+                     else
+                        MoveTo( oDlg:hDC, nCol+n,  nRow+4-n )
+                        lineTo( oDlg:hDC, nCol+n,  nRow+::aHSay[i]-4+n )
+                     endif
+                  else
+                     if ::lDegrade
+                        ::DrawLineDeg( oDlg:hDC, nCol+n,  nRow , nCol+n,  nRow+::aHSay[i], nCor, ::aWSay[i])
+                     else
+                        MoveTo( oDlg:hDC, nCol+n,  nRow )
+                        lineTo( oDlg:hDC, nCol+n,  nRow+::aHSay[i] )
+                     endif
+                  endif
+               next
+
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+              hPen := CreatePen( 0, 1, ::nCor1 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow )
+              lineTo( oDlg:hDC, nCol+3,  nRow )
+              LineTo( oDlg:hDC, nCol, nRow+3 )
+              LineTo( oDlg:hDC, nCol, nRow+::aHSay[i]-3 )
+              *LineTo( oDlg:hDC, nCol+::aWSay[i], nRow+::aHSay[i] )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+1,  nRow+::aHSay[i]-3 )
+              lineTo( oDlg:hDC, nCol+3,  nRow+::aHSay[i]-1 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i],  nRow+::aHSay[i]-1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              if len(::aImgs) &gt;= i
+                 if len(::aMapaPix[i]) = 0
+                    if len( ::aFiles ) &gt; 0
+                       ::aImgs[i]:ReLoad( , ::aFiles[i] )
+                    else
+                       ::aImgs[i]:ReLoad( ::aNames[i], )
+                    endif
+                 else
+                    ::MontaImg(i)
+                 endif
+              endif
+
+              if !::aDialogs[i]:lActive
+                 ::aSays[i]:Disable()
+                 if len(::aImgs) &gt;= i
+                    ::aImgs[i]:Disable()
+                 endif
+              else
+                 ::aSays[i]:Enable()
+                 if len(::aImgs) &gt;= i
+                    ::aImgs[i]:Enable()
+                 endif
+              endif
+
+              if ::nAbaPos = 2 .and. ::aDialogs[i]:lActive .and. !::lDegrade
+                 ::aSays[i]:SetColor( ::aDialogs[i]:nClrText,;
+                                      ::aDialogs[i]:nClrPane  )
+
+                 SetWindowText( ::aSays[i]:hWnd, ::aSays[i]:cCaption )
+              else
+                 *::aSays[i]:Hide()
+                 ::DrawText( oDlg:hDC,;
+                               ::aPrompts[i],;
+                               ::aSays[i]:nTop, ::aSays[i]:nLeft,;
+                               ::aDialogs[i]:nClrText,;
+                               ::aDialogs[i]:nClrPane,;
+                               ::aSays[i]:oFont, i )
+              endif
+              nRow+=::aHSay[i]
+
+          next
+
+          hPen := CreatePen( 0, 1, oDlg:nClrPane )
+          hOldPen := SelectObject( oDlg:hDc, hPen )
+          MoveTo( oDlg:hDC, ::nOldCol+3,  ::nOldRow )
+          LineTo( oDlg:hDC, ::nOldCol+::aWSay[1],  ::nOldRow )
+          SelectObject( oDlg:hDc, hOldPen )
+          DeleteObject( hPen )
+
+              i := ::nOption
+              ::CORES( i )
+              nCol := 0
+              nRow := ::PosRow( i )
+
+              hPen := CreatePen( 0, 1, ::aDialogs[i]:nClrPane )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i],  nRow+1 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i], nRow+::aHSay[i] )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]+1,  nRow+1 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]+1, nRow+::aHSay[i] )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor3 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+4,  nRow+::aHSay[i] )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]+1, nRow+::aHSay[i] )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+3,  nRow+::aHSay[i]-1 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]+1, nRow+::aHSay[i]-1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+              hPen := CreatePen( 0, 1, ::nCor1 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i],  nRow )
+              lineTo( oDlg:hDC, nCol+3,  nRow )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]+1,  nRow+1 )
+              lineTo( oDlg:hDC, nCol+3,  nRow+1 )
+              LineTo( oDlg:hDC, nCol+1, nRow+3 )
+              LineTo( oDlg:hDC, nCol+1, nRow+::aHSay[i]-3 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+              ::nOldCol := nCol
+              ::nOldRow := nRow+::aHSay[i]
+
+
+          oDlg:ReleaseDC()
+
+  endif
+
+           //*****************POSICAO 3********************//
+
+ if ::nAbaPos = 3
+
+          oDlg := ::oDlg2
+          oDlg:GetDC()
+          *nRow := 0
+          *nCol := 0
+
+
+          for i := 1 to len( ::aSays )
+              ::CORES( i )
+
+
+              if i = ::nOption
+                 if ::nClrPaneSel &lt;&gt; NIL
+                    nCor := ::nClrPaneSel
+                 else
+                    nCor := ::aCores[i]
+                 endif
+              else
+                    nCor := ::aCores[i]
+              endif
+
+              nRow := ::aCords[i][1]
+              nCol := ::aCords[i][2]
+              ::lStartDeg := .t.
+
+              hPen := CreatePen( 0, 1, nCor )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              for n := 1 to ::aHSay[i]-if( nRow = 0, 2, 0 )
+                  if n &lt; 3
+                     if ::lDegrade
+                        ::DrawLineDeg( oDlg:hDC, nCol+4-n,  nRow+::aHSay[i]-n , nCol+::aWSay[i]-4+n,  nRow+::aHSay[i]-n , nCor ,::aHSay[i] )
+                     else
+                        MoveTo( oDlg:hDC, nCol+4-n,  nRow+::aHSay[i]-n )
+                        LineTo( oDlg:hDC, nCol+::aWSay[i]-4+n,  nRow+::aHSay[i]-n )
+                     endif
+                  else
+                     if ::lDegrade
+                        ::DrawLineDeg( oDlg:hDC, nCol+1,  nRow+::aHSay[i]-n  , nCol+::aWSay[i],  nRow+::aHSay[i]-n , nCor ,::aHSay[i] )
+                     else
+                        MoveTo( oDlg:hDC, nCol+1,  nRow+::aHSay[i]-n )
+                        LineTo( oDlg:hDC, nCol+::aWSay[i],  nRow+::aHSay[i]-n )
+                     endif
+                  endif
+              next
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+              hPen := CreatePen( 0, 1, ::nCor1 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol,  nRow+if( nRow = 0, 2, 0 ) )
+              LineTo( oDlg:hDC, nCol,  nRow+::aHSay[i]-3 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+1,  nRow+::aHSay[i]-3 )
+              lineTo( oDlg:hDC, nCol+3,  nRow+::aHSay[i]-1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor3 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+3,  nRow+::aHSay[i]-1 )
+              lineTo( oDlg:hDC, nCol+::aWSay[i]-4,  nRow+::aHSay[i]-1 )
+              lineTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+::aHSay[i]-4 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+if( nRow = 0, 2, 0 ) )
+              lineTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+::aHSay[i]-3 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+              if len(::aImgs) &gt;= i
+                 if len(::aMapaPix[i]) = 0
+                    if len( ::aFiles ) &gt; 0
+                       ::aImgs[i]:ReLoad( , ::aFiles[i] )
+                    else
+                       ::aImgs[i]:ReLoad( ::aNames[i], )
+                    endif
+                 else
+                    ::MontaImg(i)
+                 endif
+              endif
+
+              ::aSays[i]:SetColor( ::aDialogs[i]:nClrText,;
+                                      ::aDialogs[i]:nClrPane  )
+              if !::aDialogs[i]:lActive
+                 ::aSays[i]:Disable()
+                 if len(::aImgs) &gt;= i
+                    ::aImgs[i]:Disable()
+                 endif
+              else
+                 ::aSays[i]:Enable()
+                 if len(::aImgs) &gt;= i
+                    ::aImgs[i]:Enable()
+                 endif
+              endif
+
+              if ::aDialogs[i]:lActive .and. !::lDegrade
+
+                 SetWindowText( ::aSays[i]:hWnd, ::aSays[i]:cCaption )
+              else
+                 ::DrawText( oDlg:hDC,;
+                               ::aPrompts[i],;
+                               ::aSays[i]:nTop, ::aSays[i]:nLeft,;
+                               ::aDialogs[i]:nClrText,;
+                               ::aDialogs[i]:nClrPane,;
+                               ::aSays[i]:oFont, i )
+              endif
+              nCol+=::aWSay[i]
+
+          next
+
+              i := ::nOption
+              ::CORES( i )
+
+              nRow := ::aCords[i][1]
+              nCol := ::aCords[i][2]              
+
+              hPen := CreatePen( 0, 1, ::aDialogs[i]:nClrPane )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+2,  nRow )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-1, nRow )
+              MoveTo( oDlg:hDC, nCol+2,  nRow+1 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-1, nRow+1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor3 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i],  nRow )
+              LineTo( oDlg:hDC, nCol+::aWSay[i], nRow+::aHSay[i]-3 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor1 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+1,  nRow+1 )
+              LineTo( oDlg:hDC, nCol+1,  nRow+::aHSay[i]-3 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+1,  nRow+::aHSay[i]-4  )
+              LineTo( oDlg:hDC, nCol+3,  nRow+::aHSay[i]-2 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-3,  nRow+::aHSay[i]-2 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+::aHSay[i]-5 )
+              lineTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow )
+              lineTo( oDlg:hDC, nCol+::aWSay[i]+1,  nRow )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+          oDlg:ReleaseDC()
+
+          ::nOldCol := nCol+::aWSay[i]
+          ::nOldRow := nRow
+
+
+  endif
+
+
+           //*****************POSICAO 4 / POSICAO 6********************//
+
+  if ::nAbaPos = 4 .or. ::nAbaPos = 6
+   
+           oDlg := ::oDlg2
+           oDlg:GetDC()
+           nRow := 0
+           nCol := 0
+
+          for i := 1 to len( ::aSays )
+              ::CORES( i )
+
+              if i = ::nOption
+                 if ::nClrPaneSel &lt;&gt; NIL
+                    nCor := ::nClrPaneSel
+                 else
+                    nCor := ::aCores[i]
+                 endif
+              else
+                    nCor := ::aCores[i]
+              endif
+
+              ::lStartDeg := .t.
+
+              hPen := CreatePen( 0, 1, nCor )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              for n := 1 to ::aWSay[i]-3
+                  if n &lt; 3
+                     if ::lDegrade
+                        ::DrawLineDeg( oDlg:hDC,  nCol+::aWSay[i]-n-1,  nRow+4-n, nCol+::aWSay[i]-n-1,  nRow+::aHSay[i]-4+n, nCor, ::aWSay[i]-3 )
+                     else
+                        MoveTo( oDlg:hDC, nCol+::aWSay[i]-n-1,  nRow+4-n )
+                        LineTo( oDlg:hDC, nCol+::aWSay[i]-n-1,  nRow+::aHSay[i]-4+n )
+                     endif
+                  else
+                     if ::lDegrade
+                        ::DrawLineDeg( oDlg:hDC, nCol+::aWSay[i]-n-1,  nRow, nCol+::aWSay[i]-n-1,  nRow+::aHSay[i], nCor, ::aWSay[i]-3)
+                     else
+                        MoveTo( oDlg:hDC, nCol+::aWSay[i]-n-1,  nRow )
+                        LineTo( oDlg:hDC, nCol+::aWSay[i]-n-1,  nRow+::aHSay[i] )
+                     endif
+                  endif
+              next
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+              hPen := CreatePen( 0, 1, ::nCor1 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-4,  nRow )
+              LineTo( oDlg:hDC, nCol+1,  nRow )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-3,  nRow+1 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+3 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor3 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+3 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-1,  nRow+::aHSay[i]-4 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-4,  nRow+::aHSay[i]-1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+2,  nRow+::aHSay[i]-1)
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-3,  nRow+::aHSay[i]-1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+              if len(::aImgs) &gt;= i
+                 if len(::aMapaPix[i]) = 0
+                    if len( ::aFiles ) &gt; 0
+                       ::aImgs[i]:ReLoad( , ::aFiles[i] )
+                    else
+                       ::aImgs[i]:ReLoad( ::aNames[i], )
+                    endif
+                 else
+                    ::MontaImg(i)
+                 endif
+              endif
+
+              ::aSays[i]:SetColor( ::aDialogs[i]:nClrText,;
+                                      ::aDialogs[i]:nClrPane  )
+              if !::aDialogs[i]:lActive
+                 ::aSays[i]:Disable()
+                 if len(::aImgs) &gt;= i
+                    ::aImgs[i]:Disable()
+                 endif
+              else
+                 ::aSays[i]:Enable()
+                 if len(::aImgs) &gt;= i
+                    ::aImgs[i]:Enable()
+                 endif
+              endif
+              
+              if ::nAbaPos = 4 .and. ::aDialogs[i]:lActive .and. !::lDegrade
+                 SetWindowText( ::aSays[i]:hWnd, ::aSays[i]:cCaption )
+              else
+                 *::aSays[i]:Hide()
+                 ::DrawText( oDlg:hDC,;
+                               ::aPrompts[i],;
+                               ::aSays[i]:nTop, ::aSays[i]:nLeft,;
+                               ::aDialogs[i]:nClrText,;
+                               ::aDialogs[i]:nClrPane,;
+                               ::aSays[i]:oFont, i )
+              endif
+
+              nRow+=::aHSay[i]
+
+          next
+
+
+          *hPen := CreatePen( 0, 1, oDlg:nClrPane )
+          *hOldPen := SelectObject( oDlg:hDc, hPen )
+          *MoveTo( oDlg:hDC, ::nOldCol,  ::nOldRow+::aHSay[1] )
+          *LineTo( oDlg:hDC, ::nOldCol+::aWSay[1]-6,  ::nOldRow+::aHSay[1] )
+          *SelectObject( oDlg:hDc, hOldPen )
+          *DeleteObject( hPen )
+
+              i := ::nOption
+              ::CORES( i )
+              nCol := 0
+              nRow := ::PosRow( i )
+
+              hPen := CreatePen( 0, 1, ::aDialogs[i]:nClrPane )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol, nRow+1 )
+              LineTo( oDlg:hDC, nCol, nRow+::aHSay[i]-1 )
+              MoveTo( oDlg:hDC, nCol+1, nRow+1 )
+              LineTo( oDlg:hDC, nCol+1, nRow+::aHSay[i]-1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor3 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+1,  nRow+::aHSay[i] )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-4, nRow+::aHSay[i] )
+              LineTo( oDlg:hDC, nCol+::aWSay[i], nRow+::aHSay[i]-4 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol,  nRow+::aHSay[i]-1 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-4, nRow+::aHSay[i]-1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+              hPen := CreatePen( 0, 1, ::nCor2 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-2, nRow+3 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-2, nRow+::aHSay[i]-3 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-4, nRow+::aHSay[i]-1 ) //&lt;-
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-2, nRow+3 )
+              LineTo( oDlg:hDC, nCol+::aWSay[i]-4, nRow+1 )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+              hPen := CreatePen( 0, 1, ::nCor1 )
+              hOldPen := SelectObject( oDlg:hDc, hPen )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-4,  nRow+1 )
+              LineTo( oDlg:hDC, nCol-1,  nRow+1 )
+              MoveTo( oDlg:hDC, nCol+::aWSay[i]-4,  nRow )
+              LineTo( oDlg:hDC, nCol,  nRow )
+              SelectObject( oDlg:hDc, hOldPen )
+              DeleteObject( hPen )
+
+
+
+   
+              ::nOldCol := nCol
+              ::nOldRow := nRow
+
+
+          oDlg:ReleaseDC()
+
+  endif
+
+  ::DrawLine( ::oDlg2:GetDC(), ::aCords[::nOption][1], ::aCords[::nOption][2],;
+                ::aWSay[::nOption], ::aHSay[::nOption], NIL, ::nOption, .t. )
+
+
+Return NIL
+//----------------------------------------------------------------------------//
+
+METHOD Iniciar() CLASS TRFolder
+
+   local n, x, nMark, nFols, oDlg, oDlg2, oSay, nRow, nCol, nW, nH, oImg
+   local nComp := 0, nTemp := 0
+
+   if Len(::aFiles ) &gt; 0
+      nComp := 20
+   endif
+   if Len(::aNames ) &gt; 0
+      nComp := 20
+   endif
+
+
+
+    //**********POSICAO 1***********//
+
+   if ::nAbaPos = 1
+      if ::nLinhas = 1
+         if  !::lAllWidth
+            nW := 0         
+            for n := 1 to len( ::aPrompts )
+                AADD( ::aWSay, len(::aPrompts[n]) * SAY_CHARPIX_W+16 + nComp )
+                AADD( ::aHSay, SAY_CHARPIX_H+10 )
+                nW += len(::aPrompts[n]) * SAY_CHARPIX_W+16+nComp
+            next
+            nW+=1
+            if nW &gt; ::nWidth
+               nW := ::nWidth
+            endif
+         else
+             nW := Int( (::nWidth)/Len(::aPrompts) )
+             nTemp := 0
+             for x := 1 to Len(::aPrompts)-1
+                 AADD( ::aWSay, nW )
+                 AADD( ::aHSay, SAY_CHARPIX_H+10 )
+                 nTemp+=nW
+             next
+             AADD( ::aWSay, ::nWidth-nTemp-1)
+             AADD( ::aHSay, SAY_CHARPIX_H+10 )
+         endif
+      else
+         for n := 1 to ::nLinhas
+             nW := Int( (::nWidth)/Len(::aLinhas[n]) )
+             nTemp := 0
+             for x := 1 to Len(::aLinhas[n])-1
+                 AADD( ::aWSay, nW )
+                 AADD( ::aHSay, SAY_CHARPIX_H+10 )
+                 nTemp+=nW
+             next
+             AADD( ::aWSay, ::nWidth-nTemp-1)
+             AADD( ::aHSay, SAY_CHARPIX_H+10 )
+         next
+         nMark := 1
+      endif
+
+      DEFINE DIALOG oDlg2 Title "" OF Self;
+            FROM 0, 0 TO ::aHSay[1]*::nLinhas, ::nWidth PIXEL ;
+            FONT Self:oFont Color ::nClrFore2, ::nClrBack2 STYLE ::nStyle 
+            oDlg2:bLClicked := {|nCol, nRow| ::ClickArea( nCol, nRow ) }
+      ACTIVATE DIALOG oDlg2 NoWait
+
+      nRow := 0 ;   nCol := 0
+
+      for n := 1 to len( ::aPrompts )
+          if len(::aFiles) &gt;= n .or. len(::aNames) &gt;= n
+             @ nRow+5, nCol+5 Image oImg Size 16,16 of oDlg2;
+                              NoBorder Pixel ADJUST Transparent
+             *oImg:lTransparent := .t.
+             oImg:Progress(.f.)
+             oImg:bLClicked := ::_Compile( n )
+             oImg:bMMoved := ::_Compile2( n )
+             AADD( ::aImgs, oImg )
+          endif
+
+          @ nRow+3, nCol+3+nComp Say oSay Var ::aPrompts[n] Size ::aWSay[n]-4-nComp, 16;
+                       of oDlg2 Pixel CENTER Color ::nClrFore2, ::nClrBack2
+          oSay:lWantClick := .t.      
+          oSay:bLClicked := ::_Compile( n )
+          oSay:bMMoved := ::_Compile2( n )
+          ::aSays[n] := oSay
+
+          AADD( ::aCords, { nRow, nCol } )
+
+          nCol += ::aWSay[n]
+
+          if ::nLinhas &gt; 1
+             nFols := Len(::aLinhas[nMark])
+             if n &gt;= ::aLinhas[nMark][nFols]
+                nCol := 0
+                nRow+=::aHSay[1]
+                nMark++
+             endif
+          endif
+      next
+            
+
+      for n := 1 to Len( ::aDialogs )
+         AADD( ::aCores, ::nClrBack2 )
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM oDlg2:nBottom-3, 0 TO ::nHeight-2, ::nWidth-2 PIXEL ;
+            FONT Self:oFont Color ::nClrFore2, ::nClrBack2 STYLE ::nStyle
+         ::aDialogs[ n ] = oDlg
+         oDlg:cVarName = "Page" + AllTrim( Str( n ) )
+
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+
+         ACTIVATE DIALOG oDlg NoWait
+         if n &lt;&gt; ::nOption
+            ::aDialogs[n]:Hide()
+         endif
+      next
+   endif
+
+
+
+   //***************POSICAO 2****************//
+
+   if ::nAbaPos = 2
+
+
+         nW := 0
+         nH := 0
+         nTemp := 0
+         for n := 1 to len( ::aPrompts )
+             if  !::lAllWidth
+                 AADD( ::aHSay, SAY_CHARPIX_H+10 )
+             else
+                if n &lt; len( ::aPrompts )
+                   AADD( ::aHSay, int(::nHeight/len(::aPrompts)) )
+                   nTemp +=int(::nHeight/len(::aPrompts))
+                else
+                   AADD( ::aHSay, ::nHeight-nTemp-1 )
+                endif
+             endif
+             if nW &lt; len(::aPrompts[n]) * SAY_CHARPIX_W+16+nComp
+                nW := len(::aPrompts[n]) * SAY_CHARPIX_W+16+nComp
+             endif
+         next      
+         for n := 1 to len( ::aPrompts )
+             AADD( ::aWSay, nW )
+         next
+
+      DEFINE DIALOG oDlg2 Title "" OF Self;
+            FROM 0, 0 TO ::nHeight, nW PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color ::nClrFore2, ::nClrBack2
+            oDlg2:bLClicked := {|nCol, nRow| ::ClickArea( nCol, nRow ) }
+      ACTIVATE DIALOG oDlg2 NoWait
+
+      nRow := 0 ;   nCol := 0
+      for n := 1 to len( ::aPrompts )
+
+          if len(::aFiles) &gt;= n .or. len(::aNames) &gt;= n
+             @ nRow+5, nCol+5 Image oImg Size 16,16 of oDlg2;
+                              NoBorder Pixel ADJUST Transparent
+             *oImg:lTransparent := .t.
+             oImg:Progress(.f.)
+             oImg:bLClicked := ::_Compile( n )
+             oImg:bMMoved := ::_Compile2( n )
+             AADD( ::aImgs, oImg )
+          endif
+
+          @ nRow+5, nCol+5+nComp Say oSay Var ::aPrompts[n] Size ::aWSay[n]-6-nComp, ::aHSay[n]-6;
+                       of oDlg2 Pixel Color ::nClrFore2, ::nClrBack2
+          oSay:lWantClick := .t.      
+          oSay:bLClicked := ::_Compile( n )
+          oSay:bMMoved := ::_Compile2( n )
+
+          AADD( ::aCords, { nRow, nCol } )
+
+          nRow += ::aHSay[n]
+          ::aSays[n] := oSay
+      next
+
+      for n := 1 to Len( ::aDialogs )
+         AADD( ::aCores, ::nClrBack2 )
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM 0, oDlg2:nRight-2 TO ::nHeight-2, ::nWidth-2 PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color ::nClrFore2, ::nClrBack2
+         ::aDialogs[ n ] = oDlg
+         oDlg:cVarName = "Page" + AllTrim( Str( n ) )
+
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+
+         ACTIVATE DIALOG oDlg NoWait
+         if n &lt;&gt; ::nOption
+            ::aDialogs[n]:Hide()
+         endif
+      next
+   endif
+
+
+   //****************POSICAO 3********************//
+
+   if ::nAbaPos = 3
+      if ::nLinhas = 1
+         if  !::lAllWidth
+            nW := 0         
+            for n := 1 to len( ::aPrompts )
+                AADD( ::aWSay, len(::aPrompts[n]) * SAY_CHARPIX_W+16 + nComp )
+                AADD( ::aHSay, SAY_CHARPIX_H+10 )
+                nW += len(::aPrompts[n]) * SAY_CHARPIX_W+16+nComp
+            next
+            nW+=1
+            if nW &gt; ::nWidth
+               nW := ::nWidth
+            endif
+         else
+             nW := Int( (::nWidth)/Len(::aPrompts) )
+             nTemp := 0
+             for x := 1 to Len(::aPrompts)-1
+                 AADD( ::aWSay, nW )
+                 AADD( ::aHSay, SAY_CHARPIX_H+10 )
+                 nTemp+=nW
+             next
+             AADD( ::aWSay, ::nWidth-nTemp-1)
+             AADD( ::aHSay, SAY_CHARPIX_H+10 )
+         endif
+      else
+         for n := 1 to ::nLinhas
+             nW := Int( (::nWidth)/Len(::aLinhas[n]) )
+             nTemp := 0
+             for x := 1 to Len(::aLinhas[n])-1
+                 AADD( ::aWSay, nW )
+                 AADD( ::aHSay, SAY_CHARPIX_H+10 )
+                 nTemp+=nW
+             next
+             AADD( ::aWSay, ::nWidth-nTemp-1)
+             AADD( ::aHSay, SAY_CHARPIX_H+10 )
+         next
+         nMark := 1
+      endif
+
+
+      DEFINE DIALOG oDlg2 Title "" OF Self;
+            FROM ::nHeight-::aHSay[1]*::nLinhas-1 , 0 TO ::nHeight-1, ::nWidth PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color ::nClrFore2, ::nClrBack2
+            oDlg2:bLClicked := {|nCol, nRow| ::ClickArea( nCol, nRow ) }
+      ACTIVATE DIALOG oDlg2 NoWait
+
+      nRow := 0 ;   nCol := 0
+      for n := 1 to len( ::aPrompts )
+          if len(::aFiles) &gt;= n .or. len(::aNames) &gt;= n
+             @ nRow+5, nCol+5 Image oImg Size 16,16 of oDlg2;
+                              NoBorder Pixel ADJUST Transparent
+             *oImg:lTransparent := .t.
+             oImg:Progress(.f.)
+             oImg:bLClicked := ::_Compile( n )
+             oImg:bMMoved := ::_Compile2( n )
+             AADD( ::aImgs, oImg )
+          endif
+
+          @ nRow+3, nCol+3+nComp Say oSay Var ::aPrompts[n] Size ::aWSay[n]-4-nComp, 16;
+                       of oDlg2 Pixel CENTER Color ::nClrFore2, ::nClrBack2
+          oSay:lWantClick := .t.      
+          oSay:bLClicked := ::_Compile( n )
+          oSay:bMMoved := ::_Compile2( n )
+          ::aSays[n] := oSay
+
+          AADD( ::aCords, { nRow, nCol } )
+
+          nCol += ::aWSay[n]
+
+          if ::nLinhas &gt; 1
+             nFols := Len(::aLinhas[nMark])
+             if n &gt;= ::aLinhas[nMark][nFols]
+                nCol := 0
+                nRow+=::aHSay[1]
+                nMark++
+             endif
+          endif
+
+      next
+
+      for n := 1 to Len( ::aDialogs )
+         AADD( ::aCores, ::nClrBack2 )
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM 0, 0 TO oDlg2:nTop, ::nWidth-2 PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color ::nClrFore2, ::nClrBack2
+         ::aDialogs[ n ] = oDlg
+         oDlg:cVarName = "Page" + AllTrim( Str( n ) )
+
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+
+         ACTIVATE DIALOG oDlg NoWait
+         if n &lt;&gt; ::nOption
+            ::aDialogs[n]:Hide()
+         endif
+      next
+   endif
+
+   //***************POSICAO 4****************//
+
+   if ::nAbaPos = 4
+      nW := 0
+      nH := 0
+      for n := 1 to len( ::aPrompts )
+          AADD( ::aHSay, SAY_CHARPIX_H+10 )
+          if nW &lt; len(::aPrompts[n]) * SAY_CHARPIX_W+16+nComp
+             nW := len(::aPrompts[n]) * SAY_CHARPIX_W+16+nComp
+          endif
+          nH += SAY_CHARPIX_H+10
+      next
+      for n := 1 to len( ::aPrompts )
+          AADD( ::aWSay, nW )
+      next
+      nH += 1
+      if nH &gt; ::nHeight
+         nH := ::nHeight
+      endif
+
+
+      DEFINE DIALOG oDlg2 Title "" OF Self;
+            FROM 0, ::nWidth-nW TO ::nHeight-1, ::nWidth-1 PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color ::nClrFore2, ::nClrBack2
+            oDlg2:bLClicked := {|nCol, nRow| ::ClickArea( nCol, nRow ) }
+      ACTIVATE DIALOG oDlg2 NoWait
+
+      nRow := 0 ;   nCol := 0
+      for n := 1 to len( ::aPrompts )
+          if len(::aFiles) &gt;= n .or. len(::aNames) &gt;= n
+             @ nRow+5, nCol+5 Image oImg Size 16,16 of oDlg2;
+                              NoBorder Pixel ADJUST Transparent
+             *oImg:lTransparent := .t.
+             oImg:Progress(.f.)
+             oImg:bLClicked := ::_Compile( n )
+             oImg:bMMoved := ::_Compile2( n )
+             AADD( ::aImgs, oImg )
+          endif
+
+          @ nRow+5, nCol+5+nComp Say oSay Var ::aPrompts[n] Size nW-6-nComp, 16;
+                       of oDlg2 Pixel Color ::nClrFore2, ::nClrBack2
+          oSay:lWantClick := .t.      
+          oSay:bLClicked := ::_Compile( n )
+          oSay:bMMoved := ::_Compile2( n )
+
+          AADD( ::aCords, { nRow, nCol } )
+
+          nRow += ::aHSay[n]
+          ::aSays[n] := oSay
+      next
+
+      for n := 1 to Len( ::aDialogs )
+         AADD( ::aCores, ::nClrBack2 )
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM 0, 0 TO ::nHeight-2, oDlg2:nLeft PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color ::nClrFore2, ::nClrBack2 
+         ::aDialogs[ n ] = oDlg
+         oDlg:cVarName = "Page" + AllTrim( Str( n ) )
+
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+
+         ACTIVATE DIALOG oDlg NoWait
+         if n &lt;&gt; ::nOption
+            ::aDialogs[n]:Hide()
+         endif
+      next
+    endif
+
+   //***************POSICAO 5****************//
+
+   if ::nAbaPos = 5
+      nW := 0
+      nH := 0
+      nTemp := 0
+      for n := 1 to len( ::aPrompts )
+          if  !::lAllWidth
+              AADD( ::aHSay, len(::aPrompts[n]) * SAY_CHARPIX_W+16+nComp )
+          else
+              if n &lt; len( ::aPrompts )
+                 AADD( ::aHSay, Int(::nHeight/len(::aPrompts)) )
+                 nTemp+=Int(::nHeight/len(::aPrompts) )
+              else
+                 AADD( ::aHSay, ::nHeight-nTemp-1 )
+              endif
+          endif
+          AADD( ::aWSay, SAY_CHARPIX_H+10 )
+      next
+
+
+      DEFINE DIALOG oDlg2 Title "" OF Self;
+            FROM 0, 0 TO ::nHeight, ::aWSay[1] PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color ::nClrFore2, ::nClrBack2
+            oDlg2:bLClicked := {|nCol, nRow| ::ClickArea( nCol, nRow ) }
+      ACTIVATE DIALOG oDlg2 NoWait
+
+      nRow := 0 ;   nCol := 0
+      for n := 1 to len( ::aPrompts )
+
+          if len(::aFiles) &gt;= n .or. len(::aNames) &gt;= n
+             @ nRow+5, nCol+5 Image oImg Size 16,16 of oDlg2;
+                              NoBorder Pixel ADJUST Transparent
+             *oImg:lTransparent := .t.
+             oImg:Progress(.f.)
+             oImg:bLClicked := ::_Compile( n )
+             oImg:bMMoved := ::_Compile2( n )
+             AADD( ::aImgs, oImg )
+          endif
+
+          @ nRow+::aHSay[n]-5, nCol+5 Say oSay Var ::aPrompts[n] Size 1, 1;
+                          of oDlg2 Pixel Color ::nClrFore2, ::nClrBack2 Font ::oFont3
+          oSay:lWantClick := .t.      
+          oSay:bLClicked := ::_Compile( n )
+          oSay:bMMoved := ::_Compile2( n )
+
+          AADD( ::aCords, { nRow, nCol } )
+
+          nRow += ::aHSay[n]
+          ::aSays[n] := oSay
+      next
+
+      for n := 1 to Len( ::aDialogs )
+         AADD( ::aCores, ::nClrBack2 )
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM 0, oDlg2:nRight-3 TO ::nHeight-2, ::nWidth-2 PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color ::nClrFore2, ::nClrBack2
+         ::aDialogs[ n ] = oDlg
+         oDlg:cVarName = "Page" + AllTrim( Str( n ) )
+
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+
+         ACTIVATE DIALOG oDlg NoWait
+         if n &lt;&gt; ::nOption
+            ::aDialogs[n]:Hide()
+         endif
+      next
+   endif
+
+   //***************POSICAO 6****************//
+
+   if ::nAbaPos = 6
+      nW := 0
+      nH := 0
+      nTemp := 0
+          for n := 1 to len( ::aPrompts )
+              if  !::lAllWidth
+                  AADD( ::aHSay, len(::aPrompts[n]) * SAY_CHARPIX_W+16+nComp )
+              else
+                 if n &lt; len( ::aPrompts )
+                    AADD( ::aHSay, int(::nHeight/len(::aPrompts)) )
+                    nTemp+=int(::nHeight/len(::aPrompts) )
+                 else
+                    AADD( ::aHSay, ::nHeight-nTemp-1 )
+                 endif
+              endif
+              AADD( ::aWSay, SAY_CHARPIX_H+12 )
+      next
+
+      DEFINE DIALOG oDlg2 Title "" OF Self;
+            FROM 0, ::nWidth-::aWSay[1]-1 TO ::nHeight-1, ::nWidth-1 PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color ::nClrFore2, ::nClrBack2
+            oDlg2:bLClicked := {|nCol, nRow| ::ClickArea( nCol, nRow ) }
+      ACTIVATE DIALOG oDlg2 NoWait
+
+      nRow := 0 ;   nCol := 0
+      for n := 1 to len( ::aPrompts )
+          if len(::aFiles) &gt;= n .or. len(::aNames) &gt;= n
+             @ nRow+5, nCol+5 Image oImg Size 16,16 of oDlg2;
+                              NoBorder Pixel ADJUST Transparent
+             *oImg:lTransparent := .t.
+             oImg:Progress(.f.)
+             oImg:bLClicked := ::_Compile( n )
+             oImg:bMMoved := ::_Compile2( n )
+             AADD( ::aImgs, oImg )
+          endif
+
+          @ nRow+::aHSay[n]-5, nCol+5 Say oSay Var ::aPrompts[n] Size 1, 1;
+                       of oDlg2 Pixel Color ::nClrFore2, ::nClrBack2  Font ::oFont3
+          oSay:lWantClick := .t.      
+          oSay:bLClicked := ::_Compile( n )
+          oSay:bMMoved := ::_Compile2( n )
+
+          AADD( ::aCords, { nRow, nCol } )
+
+          nRow += ::aHSay[n]
+          ::aSays[n] := oSay
+      next
+
+      for n := 1 to Len( ::aDialogs )
+         AADD( ::aCores, ::nClrBack2 )
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM 0, 0 TO ::nHeight-2, oDlg2:nLeft PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color ::nClrFore2, ::nClrBack2 
+         ::aDialogs[ n ] = oDlg
+         oDlg:cVarName = "Page" + AllTrim( Str( n ) )
+
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+
+         ACTIVATE DIALOG oDlg NoWait
+         if n &lt;&gt; ::nOption
+            ::aDialogs[n]:Hide()
+         endif
+      next
+    endif
+
+   oDlg2:bMMoved := {|nCol, nRow| ::PosMove( nCol, nRow ) }
+   ::oDlg2 := oDlg2
+
+   if ::oWnd:bMMoved &lt;&gt; NIL
+       ::bBlockWnd := ::oWnd:bMMoved
+   endif
+
+   ::oWnd:bMMoved := { || ::BlockWnd() }
+
+return nil
+
+//---------------------------------------------------------------------------
+
+METHOD Display() CLASS TRFolder
+
+   ::BeginPaint()
+   ::Paint()
+   ::EndPaint()
+
+return 0
+
+//---------------------------------------------------------------------------
+METHOD ClickAba( N ) CLASS TRFolder
+local i
+
+if n = ::nOption
+   Return NIL
+endif
+
+ if ::nOldText &lt;&gt; NIL
+    ::aDialogs[::nOption]:nClrText :=  ::nOldText
+ endif
+ if ::nOldPane &lt;&gt; NIL
+    ::aDialogs[::nOption]:nClrPane :=  ::nOldPane
+ endif
+
+ if ::nClrTextSel &lt;&gt; NIL
+    ::nOldText := ::aDialogs[::nOption]:nClrText
+    ::aDialogs[N]:nClrText := ::nClrTextSel
+ endif
+ if ::nClrPaneSel &lt;&gt; NIL
+    ::nOldPane := ::aDialogs[::nOption]:nClrPane
+    ::aDialogs[N]:nClrPane := ::nClrPaneSel
+ endif
+
+ ::aDialogs[N]:SetColor(::aDialogs[N]:nClrText, ::aDialogs[N]:nClrPane)
+
+ ::aSays[N]:SetFont( ::oFont4 )
+
+ ::aDialogs[::nOption]:Hide()
+ ::aSays[::nOption]:SetFont( ::oFont3 )
+
+
+ ::nOption := N
+ ::aDialogs[N]:Show()
+      
+ //::Paint()
+
+Return NIL
+
+//---------------------------------------------------------------------------
+METHOD _Compile( n ) CLASS TRFolder   
+
+Return {|| ::ClickAba(n) }
+//---------------------------------------------------------------------------
+METHOD _Compile2( n ) CLASS TRFolder   
+
+Return {|| ::PosMove(, ,n) }</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p80879">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: [Plz Linares] How to change the color of a disabled folder?</span><br>
+        Posted: Sun May 17, 2009 03:10 PM
+      </div>
+      <div class="content">Second part:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//--------------------------------------------------------------------------
+METHOD PosCol(nPos) CLASS TRFolder
+local n := 0
+local i
+
+  for i := 2 to nPos
+      n += ::aWSay[i-1]
+  next
+
+Return n
+
+//--------------------------------------------------------------------------
+METHOD PosRow(nPos) CLASS TRFolder
+local n := 0
+local i
+
+  for i := 2 to nPos
+      n += ::aHSay[i-1]
+  next
+
+Return n
+
+
+//--------------------------------------------------------------------------
+METHOD ADD( cPrompt ) CLASS TRFolder
+
+ local oDlg, oSay, oImg, nComp := 0
+ local nCor1, nCor2, nOldOption := ::nOption
+
+ if ::nClrTextSel &lt;&gt; NIL
+    nCor1 := ::nClrFore2
+    nCor2 := ::nClrBack2
+ else
+    nCor1 := ::aDialogs[1]:nClrText
+    nCor2 := ::aDialogs[1]:nClrPane
+ endif
+
+ SysRefresh()
+
+ AADD( ::aPrompts, cPrompt )
+ AADD( ::aCores, nCor2 )
+
+ if Len(::aFiles) &gt; 0 .or. Len(::aNames) &gt; 0
+    nComp := 20
+ endif
+
+ if ::nAbaPos = 1 
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM ::oDlg2:nBottom-3, 0 TO ::nHeight-2, ::nWidth-2 PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color nCor1, nCor2
+         AADD(::aDialogs, oDlg)
+         oDlg:cVarName = "Page" + AllTrim( Str( len(::aDialogs) ) )
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+         ACTIVATE DIALOG oDlg NoWait
+         oDlg:Hide()
+
+ endif
+
+ if ::nAbaPos = 2
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM 0, ::oDlg2:nRight-2 TO ::nHeight-2, ::nWidth-2 PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color nCor1, nCor2
+         AADD(::aDialogs, oDlg)
+         oDlg:cVarName = "Page" + AllTrim( Str( len(::aDialogs) ) )
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+         ACTIVATE DIALOG oDlg NoWait
+         oDlg:Hide()
+
+ endif
+ if ::nAbaPos = 5
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM 0, ::oDlg2:nRight-3 TO ::nHeight-2, ::nWidth-2 PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color nCor1, nCor2
+         AADD(::aDialogs, oDlg)
+         oDlg:cVarName = "Page" + AllTrim( Str( len(::aDialogs) ) )
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+         ACTIVATE DIALOG oDlg NoWait
+         oDlg:Hide()
+
+ endif
+
+
+ if ::nAbaPos = 3
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM 0, 0 TO ::oDlg2:nTop, ::nWidth-2 PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color nCor1, nCor2 
+         AADD(::aDialogs, oDlg)
+         oDlg:cVarName = "Page" + AllTrim( Str( len(::aDialogs) ) )
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+         ACTIVATE DIALOG oDlg NoWait
+         oDlg:Hide()
+
+ endif
+
+ if ::nAbaPos = 4 .or. ::nAbaPos = 6
+         DEFINE DIALOG oDlg Title "" OF Self;
+            FROM 0, 0 TO ::nHeight-2, ::oDlg2:nLeft PIXEL ;
+            FONT Self:oFont STYLE ::nStyle Color nCor1, nCor2 
+         AADD(::aDialogs, oDlg)
+         oDlg:cVarName = "Page" + AllTrim( Str( len(::aDialogs) ) )
+         oDlg:bPainted := {|| ::Paint() }
+         oDlg:bMMoved := {|| ::PosMove( 0, 0 )}
+         ACTIVATE DIALOG oDlg NoWait
+         oDlg:Hide()
+ endif
+
+
+ if ::nAbaPos = 1 .or. ::nAbaPos = 3
+
+    AADD(::aCords, { 0, ::PosCol( len(::aSays) )+::aWSay[len(::aSays)] } )
+
+    AADD( ::aWSay, len(cPrompt) * SAY_CHARPIX_W+16+nComp )
+    AADD( ::aHSay, SAY_CHARPIX_H+10 )
+    @ 03, ::PosCol( len(::aSays) )+::aWSay[len(::aSays)]+3+nComp Say oSay VAR cPrompt Pixel;
+                                   of ::oDlg2 CENTER;
+                                   Size ::aWSay[ len(::aWSay) ]-4-nComp, ;
+                                        ::aHSay[ len(::aHSay) ]-4;
+                                    Color nCor1, nCor2
+
+    ::oDlg2:nWidth += len(cPrompt) * SAY_CHARPIX_W+16
+
+    if Len(::aFiles) &gt; 0 .or. Len(::aNames) &gt; 0
+
+       @ 05, ::PosCol( len(::aSays) )+::aWSay[len(::aSays)]+5 IMAGE oImg Size 16, 16;
+                               NoBorder Adjust of ::oDlg2 Pixel
+       *oImg:lTransparent := .t.
+       oImg:Progress(.f.)
+       oImg:bLClicked :=  ::_Compile( len(::aImgs)+1 )
+       oImg:bMMoved := ::_Compile2( len(::aImgs)+1 )
+       AADD( ::aImgs, oImg )
+       AADD( ::aMapaPix, ::aMapaPix[1] )
+       if len(::aFiles) &gt; 0
+          AADD( ::aFiles, ::aFiles[1] )
+       else
+          AADD( ::aNames, ::aNames[1] )
+       endif
+    endif
+
+ endif
+
+ if ::nAbaPos = 2 .or. ::nAbaPos = 4
+
+    AADD(::aCords, { ::PosRow( len(::aSays) )+::aHSay[len(::aSays)], 0 })
+
+    AADD( ::aHSay, SAY_CHARPIX_H+10 )
+    AADD( ::aWSay, ::aWSay[1] )
+    @ ::PosRow( len(::aSays) )+::aHSay[len(::aSays)]+3, 3+nComp Say oSay VAR cPrompt Pixel;
+                                    of ::oDlg2;
+                                    Size ::aWSay[ len(::aWSay) ]-4-nComp, ;
+                                         ::aHSay[ len(::aHSay) ]-4;
+                                    Color nCor1, nCor2
+
+    ::oDlg2:nHeight += SAY_CHARPIX_H+10
+
+    if Len(::aFiles) &gt; 0 .or. Len(::aNames) &gt; 0
+       @  ::PosRow( len(::aSays) )+::aHSay[len(::aSays)]+5, 5 IMAGE oImg Size 16, 16;
+                               NoBorder Adjust of ::oDlg2 Pixel
+       *oImg:lTransparent := .t.
+       oImg:Progress(.f.)
+       oImg:bLClicked :=  ::_Compile( len(::aImgs)+1 )
+       oImg:bMMoved := ::_Compile2( len(::aImgs)+1 )
+       AADD( ::aImgs, oImg )
+       AADD( ::aMapaPix, ::aMapaPix[1] )
+       if len(::aFiles) &gt; 0
+          AADD( ::aFiles, ::aFiles[1] )
+       else
+          AADD( ::aNames, ::aNames[1] )
+       endif
+    endif
+
+
+ endif
+
+ if ::nAbaPos = 5 .or. ::nAbaPos = 6
+
+    AADD(::aCords, { ::PosRow( len(::aSays) )+::aHSay[len(::aSays)], 0 })
+
+    AADD( ::aHSay, len(cPrompt) * SAY_CHARPIX_W+16+nComp )
+    AADD( ::aWSay, SAY_CHARPIX_H+10 )
+    @ ::PosRow( len(::aHSay) )+::aHSay[len(::aHSay)]-5, 5 Say oSay Var cPrompt Pixel;
+                                    of ::oDlg2 Size 1,1;
+                                    Color nCor1, nCor2 Font ::oFont3
+
+    ::oDlg2:nHeight += SAY_CHARPIX_H+10
+
+    if Len(::aFiles) &gt; 0 .or. Len(::aNames) &gt; 0
+       @  ::PosRow( len(::aHSay) )+5, 5 IMAGE oImg Size 16, 16;
+                               NoBorder Adjust of ::oDlg2 Pixel
+       *oImg:lTransparent := .t.
+       oImg:Progress(.f.)
+       oImg:bLClicked :=  ::_Compile( len(::aImgs)+1 )
+       oImg:bMMoved := ::_Compile2( len(::aImgs)+1 )
+       AADD( ::aImgs, oImg )
+       AADD( ::aMapaPix, ::aMapaPix[1] )
+       if len(::aFiles) &gt; 0
+          AADD( ::aFiles, ::aFiles[1] )
+       else
+          AADD( ::aNames, ::aNames[1] )
+       endif
+    endif
+
+ endif
+
+
+ oSay:lWantClick := .t.
+ oSay:bLClicked := ::_Compile( len(::aSays)+1 )
+ oSay:bMMoved := ::_Compile2( len(::aSays)+1 )
+ AADD( ::aSays, oSay )
+
+ SysRefresh()
+
+ if ::oDlg2:nWidth &gt; ::nWidth
+    ::oDlg2:nWidth := ::nWidth
+ endif
+ if ::oDlg2:nHeight &gt; ::nHeight
+    ::oDlg2:nHeight := ::nHeight
+ endif
+
+ ::oDlg2:Refresh()
+
+
+ SysRefresh()
+
+ ::Hide()
+ ::Show()
+
+Return NIL
+
+//---------------------------------------------------------------------------
+METHOD DEL(N) CLASS TRFolder
+
+ Default n := 1
+
+ if len( ::aDialogs ) &lt; n
+    Return NIL
+ endif
+
+ ::aDialogs[N]:Hide()
+ ::aSays[N]:Hide()
+ ADEL( ::aDialogs[N] )
+ ADEL( ::aSays[N] )
+ ADEL( ::aHSay[N] )
+ ADEL( ::aWSay[N] )
+
+ if n = ::nAbaPos
+    if n &gt; 1
+       ::aDialogs[1]:Show()
+       ::nAbaPos := 1
+    else
+       if len(::aDialogs) &gt; 1
+          ::aDialogs[2]:Show()
+          ::nAbaPos := 2
+       endif
+    endif
+ endif
+
+ ::Paint()
+
+Return NIL
+
+//---------------------------------------------------------------------------
+ METHOD CORES(n) CLASS TRFolder
+ Local nCor
+
+ if n = ::nOption
+    if ::nClrPaneSel &lt;&gt; NIL
+       nCor := ::nClrPaneSel
+    else
+       nCor := ::aCores[n]
+    endif
+ else
+    nCor := ::aCores[n]
+ endif
+
+ ::nCor1 := ::ClrW( 50, nCor )
+ ::nCor2 := ::ClrD( 20, nCor )
+ ::nCor3 := ::ClrD( 40, nCor )
+
+
+Return NIL
+
+//--------------------------------------------------------------------------
+ METHOD ClrD( nInd, nCor ) CLASS TRFolder
+ local aCores := ARGB( nCor )
+
+ aCores[1] -= aCores[1]*nInd/100
+ aCores[2] -= aCores[2]*nInd/100
+ aCores[3] -= aCores[3]*nInd/100
+
+ if aCores[1] &lt; 0
+    aCores[1] := 0
+ endif
+ if aCores[2] &lt; 0
+    aCores[2] := 0
+ endif
+ if aCores[3] &lt; 0
+    aCores[3] := 0
+ endif
+
+
+Return nRGB( aCores[1], aCores[2], aCores[3] )
+//--------------------------------------------------------------------------
+ METHOD ClrW( nInd, nCor ) CLASS TRFolder
+
+ local aCores := ARGB( nCor )
+
+ aCores[1] += (255-aCores[1])*nInd/100
+ aCores[2] += (255-aCores[2])*nInd/100
+ aCores[3] += (255-aCores[3])*nInd/100
+
+ if aCores[1] &gt; 255
+    aCores[1] := 255
+ endif
+ if aCores[2] &gt; 255
+    aCores[2] := 255
+ endif
+ if aCores[3] &gt; 255
+    aCores[3] := 255
+ endif
+
+
+Return nRGB( aCores[1], aCores[2], aCores[3] )
+
+//--------------------------------------------------------------------------
+ METHOD SetCores( aCores ) CLASS TRFolder
+ local i
+
+   for i := 1 to Len( ::aDialogs )
+       if i &gt; len( aCores )
+          exit
+       endif
+       ::aSays[i]:SetColor( aCores[i][1], aCores[i][2] )
+       ::aDialogs[i]:SetColor( aCores[i][1], aCores[i][2] )
+       ::aCores[i] := aCores[i][2]
+   next
+
+ ::Refresh()
+
+ Return NIL
+
+//--------------------------------------------------------------------------
+ METHOD NoExact() CLASS TRFolder
+
+   ::SetColor(  GetSysColor( COLOR_BTNFACE ), GetSysColor( COLOR_BTNFACE ) )
+   ::oDlg2:SetColor(  GetSysColor( COLOR_BTNFACE ), GetSysColor( COLOR_BTNFACE ))
+   ::lExact := .f.
+   ::Refresh()
+
+Return NIL
+
+//--------------------------------------------------------------------------
+ METHOD Exact() CLASS TRFolder
+
+   ::SetColor( ::oWnd:nClrPane, ::oWnd:nClrPane )
+   ::oDlg2:SetColor( ::oWnd:nClrPane, ::oWnd:nClrPane )
+   ::lExact := .t.
+   ::Refresh()
+
+ Return NIL
+
+//--------------------------------------------------------------------------
+ METHOD MontaMapa()
+ local aMapa, nCor, nCorZero, aTest := ::aMapaPix[1]
+ local l, c , i
+
+       for i := 1 to len( ::aImgs )
+         aMapa := {}
+         ::aImgs[i]:GetDC()
+         nCorZero := GetPixel( ::aImgs[i]:hDC, 0, 0 ) 
+         for l := 0 to 15
+             for c := 0 to 15
+                 nCor := GetPixel( ::aImgs[i]:hDC, c, l )
+                 if nCor &lt;&gt; nCorZero //.and. nCor &lt;&gt; -1
+                    AADD( aMapa, {c, l, nCor} )
+                 endif
+             next
+         next
+         ::aMapaPix[i] := aMapa
+      next
+
+ Return NIL
+//--------------------------------------------------------------------------
+ METHOD MontaImg(i) CLASS TRFolder
+ local aMapa
+ local n
+         
+         aMapa := ::aMapaPix[i]
+
+         for n := 1 to len( aMapa )
+             *SetPixel( ::aImgs[i]:hDc, aMapa[n][1],  aMapa[n][2],  aMapa[n][3])
+             SetPixel( ::oDlg2:hDc, ::aImgs[i]:nLeft+aMapa[n][1], ::aImgs[i]:nTop+ aMapa[n][2],  aMapa[n][3])
+         next
+
+
+Return NIL
+
+//--------------------------------------------------------------------------
+ METHOD ColorSelected( nClrText, nClrPane  ) CLASS TRFolder
+
+ ::nClrTextSel :=  nClrText
+ ::nClrPaneSel :=  nClrPane
+
+ ::ClickAba( len(::aDialogs) )
+ ::ClickAba( 1 )
+
+ Return NIL
+
+//--------------------------------------------------------------------------
+ METHOD Disable( nOption )
+
+    local n := ::nOption
+    ::aDialogs[nOption]:Disable()
+    ::ClickAba( len(::aDialogs) )
+    ::ClickAba( 1 )
+    if nOption &lt;&gt; n
+       ::ClickAba( n )
+    endif
+
+ Return NIL
+//--------------------------------------------------------------------------
+ METHOD Enable( nOption )
+
+    local n := ::nOption
+
+    if nOption = NIL
+       Return NIL
+    endif
+
+    ::aDialogs[nOption]:Enable()
+    ::ClickAba( len(::aDialogs) )
+    ::ClickAba( 1 )
+    if nOption &lt;&gt; n
+       ::ClickAba( n )
+    endif
+
+ Return NIL
+
+//--------------------------------------------------------------------------
+Static Function ARGB( nCor )
+
+
+Return { nRGBRed( nCor ), nRGBGreen( nCor ), nRGBBlue( nCor ) }
+
+
+//--------------------------------------------------------------------------
+ METHOD ClickArea( nRow, nCol, lOK ) CLASS TRFolder
+ local i, nPosX, nPosY
+ local nOption := 0
+ default lOK := .t.
+
+    nPosX := nPosY := 0
+    for i := 1 to len( ::aSays )
+        if ::nAbaPos = 1 .or. ::nAbaPos = 3
+           nPosY := ::aCords[i][1]
+           nPosX := ::aCords[i][2]
+        endif
+
+        if nCol &gt; nPosX .and. nCol &lt; nPosX+::aWSay[i] .and.;
+           nRow &gt; nPosY .and. nRow &lt; nPosY+::aHSay[i]
+           nOption := i
+           exit
+        endif
+        if ::nAbaPos = 3
+           nPosX += ::aWSay[i]
+        endif
+        if ::nAbaPos = 2 .or. ::nAbaPos &gt; 3
+           nPosY += ::aHSay[i]
+        endif
+    next
+
+    if nOption &lt;&gt; 0
+       if ::aDialogs[i]:lActive
+          if lOK
+             ::ClickAba( nOption )
+          endif
+       endif
+    endif
+
+Return nOption
+
+//-------------------------------------------------------------------
+ METHOD DrawText( hDc,cPrompt,Y,X,nClrText,nClrPane,oFont, i) CLASS TRFolder
+
+ Local hOldFont, nOldMode, nOldClrText, nOldClrPane
+
+ if ::nAbaPos = 1 .or.;
+    ::nAbaPos = 3
+    x+= ( (::aWSay[i]-if(len(::aImgs)&gt;0,20,0 ))-Len(::aPrompts[i])*SAY_CHARPIX_W )/2
+ endif
+* if ::nAbaPos = 5 .or.;
+*    ::nAbaPos = 6
+*    y+= ( (::aHSay[i]-if(len(::aImgs)&gt;0,20,0))-Len(::aPrompts[i])*SAY_CHARPIX_H )/2
+* endif
+
+
+ if !::aDialogs[i]:lActive
+    nClrText := ::nCor2
+    nOldClrText:=SetTextColor(hDC,::nCor1)
+    nOldBkMode:=SetBkMode(hDC,1)
+    NoldBkMode:=SetbkMode(nrgb(224,226,222),1)
+    hOldFont:=SelectObject(hDC,oFont:hFont)
+    TextOut(hDC,Y+1,X+1,cPrompt,Len(cPrompt))
+    SelectObject(hDC,hOldFont)
+    SetBkMode(hDC,nOldBkMode)
+    SetTextColor(hDC,nOldClrText)
+ endif
+        
+
+    nOldClrText:=SetTextColor(hDC,nClrText)
+    nOldBkMode:=SetBkMode(hDC,1)
+    NoldBkMode:=SetbkMode(nrgb(224,226,222),1)
+    hOldFont:=SelectObject(hDC,oFont:hFont)
+    TextOut(hDC,Y,X,cPrompt,Len(cPrompt))
+    SelectObject(hDC,hOldFont)
+    SetBkMode(hDC,nOldBkMode)
+    SetTextColor(hDC,nOldClrText)
+
+ Return NIL
+
+//-------------------------------------------------------------------
+ METHOD ReposHrz( nOption ) CLASS TRFolder
+ local nIni, nFim, nMarca, i, x, aReorg := {}, nInd, aTemp
+ local nRow
+
+ if ::nAbaPos = 1
+    nRow := len(::alinhas)*::aHSay[1]-::aHSay[1]
+ endif
+ if ::nAbaPos = 3
+    nRow := 0
+ endif
+
+    for i := 1 to len( ::aLinhas )
+        nIni := ::aLinhas[i][1]
+        nFim := ::aLinhas[i][len(::aLinhas[i])]
+        if nOption &gt;= nIni .and. nOption &lt;= nFim
+           nMarca := i
+           AADD( aReorg, ::aLinhas[i] )
+           exit
+        endif
+    next
+    for x := nMarca+1 to len( ::aLinhas )
+           AADD( aReorg, ::aLinhas[x] )
+    next
+    for i := 1 to nMarca-1
+           AADD( aReorg, ::aLinhas[i] )
+    next
+
+
+    for i := 1 to len( aReorg )
+        aTemp := aReorg[i]
+        for x := 1 to len(aTemp)
+            nInd := aTemp[x]
+            ::aSays[nInd]:nTop := nRow+5
+            ::aCords[nInd][1] := nRow
+            if len(::aFiles) &gt; 0 .or. Len(::aNames) &gt; 0
+               if len( ::aImgs ) &gt;= nInd
+                  ::aImgs[nInd]:nTop := nRow+5
+               endif
+            endif
+        next
+        if ::nAbaPos = 1
+           nRow-=::aHSay[1]
+        endif
+        if ::nAbaPos = 3
+           nRow+=::aHSay[1]
+        endif
+    next
+
+
+ Return NIL
+
+//---------------------------------------------------------------------------
+ METHOD PosMove( nRow, nCol, n ) CLASS TRFolder
+  
+
+ if nRow &lt;&gt; NIL  
+    n := ::ClickArea( nRow, nCol, .f. )
+ endif
+
+ if n = ::nOldOpt
+    Return NIL
+ endif
+
+ if ::nOldOpt &lt;&gt; 0
+    ::DrawLine( ::oDlg2:hDC, ::aCords[::nOldOpt][1], ::aCords[::nOldOpt][2],;
+                ::aWSay[::nOldOpt], ::aHSay[::nOldOpt], ::aDialogs[::nOldOpt]:nClrPane, ::nOldOpt, .f. )
+ endif
+
+ if n &lt;&gt; 0 .and. n &lt;&gt; ::nOption
+    ::Cores(n)
+    ::DrawLine( ::oDlg2:GetDC(), ::aCords[n][1], ::aCords[n][2],;
+                ::aWSay[n], ::aHSay[n], NIL, n, .f. )
+ endif
+
+
+ ::nOldOpt := n
+
+ Return NIL
+
+//--------------------------------------------------------------------------
+ METHOD DrawLine( hDC, nRow, nCol, nWidth, nHeight, nCor, n, lOpt ) CLASS TRFolder
+
+ if nCor = NIL
+    if ::nClrMove &lt;&gt; NIL
+       nCor := ::nClrMove
+    else
+       nCor := ::nCor1
+    endif
+ endif
+
+ if n == ::nOption .and. !lOpt
+    Return nIL
+ endif
+
+       if ::nAbaPos = 1
+          if ::lDegrade
+             ::lStartDeg := .t.
+             ::DrawLineDeg( hDC, nCol+3, nRow+1, nCol+nWidth-3, nRow+1 , nCor, ::aHSay[n])
+             ::DrawLineDeg( hDC, nCol+2, nRow+2, nCol+nWidth-2, nRow+2 , nCor, ::aHSay[n])
+             ::DrawLineDeg( hDC, nCol+1, nRow+3, nCol+nWidth-1, nRow+3 , nCor, ::aHSay[n])
+             ::DrawLineDeg( hDC, nCol+1, nRow+4, nCol+nWidth-1, nRow+4 , nCor, ::aHSay[n])
+          else
+              hPen := CreatePen( 0, 1, nCor )
+              hOldPen := SelectObject( hDc, hPen )
+              MoveTo( hDC, nCol+3,  nRow+1 )
+              LineTo( hDC, nCol+nWidth-3, nRow+1 )
+              MoveTo( hDC, nCol+2,  nRow+2 )
+              LineTo( hDC, nCol+nWidth-2, nRow+2 )
+              MoveTo( hDC, nCol+1,  nRow+3 )
+              LineTo( hDC, nCol+nWidth-1, nRow+3 )
+              MoveTo( hDC, nCol+1,  nRow+4 )
+              LineTo( hDC, nCol+nWidth-1, nRow+4 )
+              SelectObject( hDc, hOldPen )
+              DeleteObject( hPen )
+          endif
+       endif
+
+       if ::nAbaPos = 2 .and. !::lDegrade
+              hPen := CreatePen( 0, 1, nCor )
+              hOldPen := SelectObject( hDc, hPen )
+              MoveTo( hDC, nCol+3,  nRow+1 )
+              LineTo( hDC, nCol+nWidth, nRow+1 )
+              MoveTo( hDC, nCol+2,  nRow+2 )
+              LineTo( hDC, nCol+nWidth, nRow+2 )
+              MoveTo( hDC, nCol+1,  nRow+3 )
+              LineTo( hDC, nCol+nWidth, nRow+3 )
+              MoveTo( hDC, nCol+1,  nRow+4 )
+              LineTo( hDC, nCol+nWidth, nRow+4 )
+              SelectObject( hDc, hOldPen )
+              DeleteObject( hPen )
+       endif
+
+
+       if ::nAbaPos = 3
+          if ::lDegrade
+             ::lStartDeg := .t.
+             ::DrawLineDeg( hDC, nCol+3, nRow+nHeight-2, nCol+nWidth-3, nRow+nHeight-2 , nCor, ::aHSay[n])
+             ::DrawLineDeg( hDC, nCol+2, nRow+nHeight-3, nCol+nWidth-2, nRow+nHeight-3 , nCor, ::aHSay[n])
+             ::DrawLineDeg( hDC, nCol+1, nRow+nHeight-4, nCol+nWidth-1, nRow+nHeight-4 , nCor, ::aHSay[n])
+             ::DrawLineDeg( hDC, nCol+1, nRow+nHeight-5, nCol+nWidth-1, nRow+nHeight-5 , nCor, ::aHSay[n])
+          else
+              hPen := CreatePen( 0, 1, nCor )
+              hOldPen := SelectObject( hDc, hPen )
+              MoveTo( hDC, nCol+3,  nRow+nHeight-2 )
+              LineTo( hDC, nCol+nWidth-3, nRow+nHeight-2 )
+              MoveTo( hDC, nCol+2,  nRow+nHeight-3 )
+              LineTo( hDC, nCol+nWidth-2, nRow+nHeight-3 )
+              MoveTo( hDC, nCol+1,  nRow+nHeight-4 )
+              LineTo( hDC, nCol+nWidth-1, nRow+nHeight-4 )
+              MoveTo( hDC, nCol+1,  nRow+nHeight-5 )
+              LineTo( hDC, nCol+nWidth-1, nRow+nHeight-5 )
+              SelectObject( hDc, hOldPen )
+              DeleteObject( hPen )
+          endif
+       endif 
+
+       if ::nAbaPos = 4 .and. !::lDegrade
+              hPen := CreatePen( 0, 1, nCor )
+              hOldPen := SelectObject( hDc, hPen )
+              MoveTo( hDC, nCol+2,  nRow+1 )
+              LineTo( hDC, nCol+nWidth-5, nRow+1 )
+              MoveTo( hDC, nCol+2,  nRow+2 )
+              LineTo( hDC, nCol+nWidth-4, nRow+2 )
+              MoveTo( hDC, nCol+2,  nRow+3 )
+              LineTo( hDC, nCol+nWidth-3, nRow+3 )
+              MoveTo( hDC, nCol+2,  nRow+4 )
+              LineTo( hDC, nCol+nWidth-2, nRow+4 )
+              SelectObject( hDc, hOldPen )
+              DeleteObject( hPen )
+       endif 
+
+       if ::nAbaPos = 5 .or. ( ::nAbaPos = 2 .and. ::lDegrade )
+          if ::lDegrade
+             ::lStartDeg := .t.
+             ::DrawLineDeg( hDC, nCol+1, nRow+3, nCol+1, nRow+nHeight-3 , nCor, ::aWSay[n])
+             ::DrawLineDeg( hDC, nCol+2, nRow+2, nCol+2, nRow+nHeight-2 , nCor, ::aWSay[n])
+             ::DrawLineDeg( hDC, nCol+3, nRow+1, nCol+3, nRow+nHeight-1 , nCor, ::aWSay[n])
+             ::DrawLineDeg( hDC, nCol+4, nRow+1, nCol+4, nRow+nHeight-1 , nCor, ::aWSay[n])
+          else
+              hPen := CreatePen( 0, 1, nCor )
+              hOldPen := SelectObject( hDc, hPen )
+              MoveTo( hDC, nCol+1, nRow+3 )
+              LineTo( hDC, nCol+1, nRow+nHeight-3 )
+              MoveTo( hDC, nCol+2, nRow+2 )
+              LineTo( hDC, nCol+2, nRow+nHeight-2 )
+              MoveTo( hDC, nCol+3, nRow+1 )
+              LineTo( hDC, nCol+3, nRow+nHeight-1 )
+              MoveTo( hDC, nCol+4, nRow+1 )
+              LineTo( hDC, nCol+4, nRow+nHeight-1 )
+              SelectObject( hDc, hOldPen )
+              DeleteObject( hPen )
+         endif
+       endif 
+
+       if ::nAbaPos = 6 .or. ( ::lDegrade .and. ::nAbaPos = 4 )
+          if ::lDegrade
+             ::lStartDeg := .t.
+             ::DrawLineDeg( hDC, nCol+nWidth-2, nRow+3, nCol+nWidth-2, nRow+nHeight-3 , nCor, ::aWSay[n])
+             ::DrawLineDeg( hDC, nCol+nWidth-3, nRow+2, nCol+nWidth-3, nRow+nHeight-2 , nCor, ::aWSay[n])
+             ::DrawLineDeg( hDC, nCol+nWidth-4, nRow+1, nCol+nWidth-4, nRow+nHeight-1 , nCor, ::aWSay[n])
+             ::DrawLineDeg( hDC, nCol+nWidth-5, nRow+1, nCol+nWidth-5, nRow+nHeight-1 , nCor, ::aWSay[n])
+          else
+              hPen := CreatePen( 0, 1, nCor )
+              hOldPen := SelectObject( hDc, hPen )
+              MoveTo( hDC, nCol+nWidth-2, nRow+5 )
+              LineTo( hDC, nCol+nWidth-2, nRow+nHeight-1 )
+              MoveTo( hDC, nCol+nWidth-3, nRow+4 )
+              LineTo( hDC, nCol+nWidth-3, nRow+nHeight-1 )
+              MoveTo( hDC, nCol+nWidth-4, nRow+3 )
+              LineTo( hDC, nCol+nWidth-4, nRow+nHeight-1 )
+              MoveTo( hDC, nCol+nWidth-5, nRow+2 )
+              LineTo( hDC, nCol+nWidth-5, nRow+nHeight-1 )
+              SelectObject( hDc, hOldPen )
+              DeleteObject( hPen )
+          endif
+       endif 
+
+
+ Return NIL
+
+//---------------------------------------------------------------------------
+ METHOD BlockWnd() CLASS TRFolder
+
+     if ::bBlockWnd &lt;&gt; NIL
+        Eval( ::bBlockWnd )
+     endif
+
+     ::PosMove( 0, 0 )
+
+ Return Nil
+//---------------------------------------------------------------------------
+METHOD DrawLineDeg( hDC, nCol, nRow, nColF,  nRowF, nCor, nHeight ) CLASS TRFolder
+Static n, nCorLine, nInd
+
+ if ::lStartDeg
+    ::lStartDeg := .f.
+    nCorLine := nCor
+    n := 0
+    nInd := 0
+ else
+    n++
+    if n &lt; nHeight/2
+       nInd += 80/nHeight
+       nCorLine := ::CLRW( nInd, nCor)
+    else
+       nInd -= 80/nHeight
+       nCorLine := ::CLRW( nInd, nCor )
+    endif
+ endif
+
+      hPen := CreatePen( 0, 1, nCorLine )
+      hOldPen := SelectObject( hDc, hPen )
+      MoveTo( hDC, nCol,  nRow )
+      LineTo( hDC, nColF, nRowF )
+      SelectObject( hDc, hOldPen )
+      DeleteObject( hPen )
+
+Return NIL
+//--------------------------------------------------------------------------
+
+METHOD Initiate( hDlg ) CLASS TRFolder
+
+   Super:Initiate( hDlg )
+
+*   ::Create()
+    ::Default()
+*   ::SetColor( CLR_WHITE, CLR_WHITE )
+
+   // ::Iniciar()
+
+return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p80881">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: [Plz Linares] How to change the color of a disabled folder?</span><br>
+        Posted: Sun May 17, 2009 03:20 PM
+      </div>
+      <div class="content"><p>Please press quote to see my posts. </p>
+<p>Don't know why they don't show.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p81277">
+    <div class="poster">
+      <div class="name" style="color:#105289">Dietmar Jahnel</div>
+      <div class="rank">Posts: 83</div>
+      <img class="avatar avatar-img" src="avatars/162.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 10:33 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: [Plz Linares] How to change the color of a disabled folder?</span><br>
+        Posted: Sun May 24, 2009 07:23 AM
+      </div>
+      <div class="content"><p>In the meantime I found this article:</p>
+<p>How To Change the Background Color of a Tab Control</p>
+<!-- m -->
+<p><a class="postlink" href="http://support.microsoft.com/?scid=kb%3Ben-us%3B179909&amp;x=14&amp;y=9">http://support.microsoft.com/?scid=kb%3 ... 9x=14y=9</a></p>
+<p>Can it be of any help?<br>
+Dietmar</p>
+<p>&amp;&amp;<!-- m --></p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-15556.html">1</a> <strong>2</strong> (20 posts)</div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

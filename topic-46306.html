@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Lean DBF API for Microservices – Inspired by Mr. Rao - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46306">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Lean DBF API for Microservices – Inspired by Mr. Rao</div>
+  <div class="post" id="p283681">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Lean DBF API for Microservices – Inspired by Mr. Rao</span><br>
+        Posted: Tue Feb 03, 2026 12:36 AM
+      </div>
+      <div class="content"><r><p>Objective:<br/><br>
+A minimalist persistence layer for microservices, adopting proven concepts from TDataBase (Mr. Rao) while deliberately omitting desktop-specific features.</p><br>
+<br>
+<p>Adopted Concepts:</p><br>
+<br>
+<p>Field Metadata as Single Source of Truth (types, lengths, memo fields)<br/><br>
+Hash-based FieldPos Access (O(1) complexity, critical under load)<br/><br>
+Explicit Locking (no hidden commits, short lock durations)<br/><br>
+Simplified Triggers/Hooks (for Insert/Update/Delete)<br/><br>
+Omitted Features:</p><br>
+<br>
+<p>UI dependencies (MsgBox, XBrowse)<br/><br>
+Global state (relations, filters, scopes)<br/><br>
+Buffer/dirty-tracking across requests<br/><br>
+Implicit type conversion or defaults</p><br>
+<br>
+<p><B><s><strong></s>Why Lean?<e></strong></e></B><br/><br>
+Microservices demand control, not convenience. The API is restricted to:</p><br>
+<br>
+<p>Open/Close, CRUD, Seek, Locking, Metadata<br/><br>
+Everything else (validation, business logic, JSON/UTF-8) belongs in higher layers.</p><br>
+<br>
+<p><B><s><strong></s>Why Functions Over OOP?<e></strong></e></B></p><br>
+<br>
+<p>Request-based: No natural object lifecycle as in GUIs.<br/><br>
+Explicit State: Each call is isolated, testable, and auditable.<br/><br>
+No Hidden Dependencies: DBF workareas and aliases are managed intentionally.<br/><br>
+Scalability: Functions are deterministic, easily mockable, and team-friendly.</p><br>
+<br>
+<p>Conclusion:<br/><br>
+Not a competitor to TDataBase, but a purpose-built derivative for server contexts.</p><br>
+<br>
+<br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;
+//==============================================================//
+// test_db_api.prg
+// Slim, generic DBF persistence API (functional style)
+// For Microservices / Server / Batch jobs
+//
+// Goals:
+// - NO classes
+// - NO UI dependencies
+// - NO implicit global state
+// - Request / context based
+// - Fast FieldPos() via hash (O(1))
+// - Explicit locking, insert, update, delete, read
+// - Optional trigger hooks (before / after)
+//
+// Inspired by ideas from Mr. Rao (TDataBase) and real-world microservice usage
+//==============================================================//
+#include "fivewin.ch"
+#include "fileio.ch"
+#include "dbinfo.ch"
+
+REQUEST DBFCDX
+
+FUNCTION MAIN
+   ? "Start"
+    DbApi_Test()
+    ? "Ende"
+RETURN NIL
+
+
+//--------------------------------------------------------------//
+// Create a DB context (request-scoped)
+//--------------------------------------------------------------//
+FUNCTION DbCtx_New( cDbf, cAlias, lShared, lReadOnly )
+   LOCAL h := {=&gt;}
+
+   hb_default( @cAlias, "DB" )
+   hb_default( @lShared, .T. )
+   hb_default( @lReadOnly, .F. )
+
+   h["dbf"]      := cDbf
+   h["alias"]    := cAlias
+   h["shared"]   := lShared
+   h["readonly"] := lReadOnly
+
+   // Metadata
+   h["struct"]  := {}
+   h["fldPos"]  := {=&gt;}   // field name -&gt; field position
+   h["hasMemo"] := .F.
+
+   // Optional trigger hooks
+   h["beforeInsert"] := NIL
+   h["afterInsert"]  := NIL
+   h["beforeUpdate"] := NIL
+   h["afterUpdate"]  := NIL
+   h["beforeDelete"] := NIL
+   h["afterDelete"]  := NIL
+
+RETURN h
+
+//--------------------------------------------------------------//
+// Open DBF and load metadata
+//--------------------------------------------------------------//
+FUNCTION Db_Open( h )
+   LOCAL n
+
+   IF ! File( h["dbf"] )
+      RETURN .F.
+   ENDIF
+
+   USE ( h["dbf"] ) SHARED NEW ALIAS ( h["alias"] )
+   IF NetErr()
+      RETURN .F.
+   ENDIF
+
+   h["struct"] := ( h["alias"] )-&gt;( DbStruct() )
+
+   FOR n := 1 TO Len( h["struct"] )
+      h["fldPos"][ h["struct"][n,1] ] := n
+      IF h["struct"][n,2] == "M"
+         h["hasMemo"] := .T.
+      ENDIF
+   NEXT
+
+RETURN .T.
+
+//--------------------------------------------------------------//
+// Close DBF
+//--------------------------------------------------------------//
+FUNCTION Db_Close( h )
+   IF Select( h["alias"] ) &gt; 0
+      ( h["alias"] )-&gt;( DbCloseArea() )
+   ENDIF
+RETURN NIL
+
+//--------------------------------------------------------------//
+// Read a record -&gt; hash
+//--------------------------------------------------------------//
+FUNCTION Db_Read( h, nRec )
+   LOCAL hRow := {=&gt;}, cFld, nPos
+
+   ( h["alias"] )-&gt;( DbGoto( nRec ) )
+   IF ( h["alias"] )-&gt;( Eof() )
+      RETURN hRow
+   ENDIF
+
+   hRow["_recno"]   := ( h["alias"] )-&gt;( RecNo() )
+   hRow["_deleted"] := ( h["alias"] )-&gt;( Deleted() )
+
+   FOR EACH cFld IN hb_HKeys( h["fldPos"] )
+      nPos := h["fldPos"][ cFld ]
+      hRow[ cFld ] := ( h["alias"] )-&gt;( FieldGet( nPos ) )
+   NEXT
+
+RETURN hRow
+
+//--------------------------------------------------------------//
+// Insert record
+//--------------------------------------------------------------//
+FUNCTION Db_Insert( h, hFields, cErr )
+   LOCAL nRec, cFld, nPos
+
+   IF h["readonly"]
+      cErr := "readonly"
+      RETURN 0
+   ENDIF
+
+   IF h["beforeInsert"] != NIL
+      IF ! Eval( h["beforeInsert"], hFields )
+         cErr := "beforeInsert_failed"
+         RETURN 0
+      ENDIF
+   ENDIF
+
+   ( h["alias"] )-&gt;( DbAppend() )
+   IF NetErr()
+      cErr := "append_failed"
+      RETURN 0
+   ENDIF
+
+   nRec := ( h["alias"] )-&gt;( RecNo() )
+
+   IF ! ( h["alias"] )-&gt;( DbRLock() )
+      cErr := "lock_failed"
+      RETURN 0
+   ENDIF
+
+   FOR EACH cFld IN hb_HKeys( hFields )
+      IF hb_HHasKey( h["fldPos"], cFld )
+         nPos := h["fldPos"][ cFld ]
+         ( h["alias"] )-&gt;( FieldPut( nPos, hFields[cFld] ) )
+      ENDIF
+   NEXT
+
+   ( h["alias"] )-&gt;( DbUnlock() )
+
+   IF h["afterInsert"] != NIL
+      Eval( h["afterInsert"], nRec )
+   ENDIF
+
+RETURN nRec
+
+//--------------------------------------------------------------//
+// Update record
+//--------------------------------------------------------------//
+FUNCTION Db_Update( h, nRec, hFields, cErr )
+   LOCAL cFld, nPos
+
+   IF h["readonly"]
+      cErr := "readonly"
+      RETURN .F.
+   ENDIF
+
+   ( h["alias"] )-&gt;( DbGoto( nRec ) )
+   IF ( h["alias"] )-&gt;( Eof() )
+      cErr := "not_found"
+      RETURN .F.
+   ENDIF
+
+   IF h["beforeUpdate"] != NIL
+      IF ! Eval( h["beforeUpdate"], nRec, hFields )
+         cErr := "beforeUpdate_failed"
+         RETURN .F.
+      ENDIF
+   ENDIF
+
+   IF ! ( h["alias"] )-&gt;( DbRLock() )
+      cErr := "lock_failed"
+      RETURN .F.
+   ENDIF
+
+   FOR EACH cFld IN hb_HKeys( hFields )
+      IF hb_HHasKey( h["fldPos"], cFld )
+         nPos := h["fldPos"][ cFld ]
+         ( h["alias"] )-&gt;( FieldPut( nPos, hFields[cFld] ) )
+      ENDIF
+   NEXT
+
+   ( h["alias"] )-&gt;( DbUnlock() )
+
+   IF h["afterUpdate"] != NIL
+      Eval( h["afterUpdate"], nRec )
+   ENDIF
+
+RETURN .T.
+
+//--------------------------------------------------------------//
+// Delete record (soft delete via DBDELETE)
+//--------------------------------------------------------------//
+FUNCTION Db_Delete( h, nRec, cErr )
+
+   IF h["readonly"]
+      cErr := "readonly"
+      RETURN .F.
+   ENDIF
+
+   ( h["alias"] )-&gt;( DbGoto( nRec ) )
+   IF ( h["alias"] )-&gt;( Eof() )
+      cErr := "not_found"
+      RETURN .F.
+   ENDIF
+
+   IF h["beforeDelete"] != NIL
+      IF ! Eval( h["beforeDelete"], nRec )
+         cErr := "beforeDelete_failed"
+         RETURN .F.
+      ENDIF
+   ENDIF
+
+   IF ! ( h["alias"] )-&gt;( DbRLock() )
+      cErr := "lock_failed"
+      RETURN .F.
+   ENDIF
+
+   ( h["alias"] )-&gt;( DbDelete() )
+   ( h["alias"] )-&gt;( DbUnlock() )
+
+   IF h["afterDelete"] != NIL
+      Eval( h["afterDelete"], nRec )
+   ENDIF
+
+RETURN .T.
+
+//--------------------------------------------------------------//
+// Seek (index-based)
+//--------------------------------------------------------------//
+FUNCTION Db_Seek( h, uKey, lSoft )
+   hb_default( @lSoft, .F. )
+RETURN ( h["alias"] )-&gt;( DbSeek( uKey, lSoft ) )
+
+//--------------------------------------------------------------//
+// Read all records -&gt; array of hashes
+//--------------------------------------------------------------//
+FUNCTION Db_ReadAll( h )
+   LOCAL a := {}, hRow
+
+   ( h["alias"] )-&gt;( DbGoTop() )
+   DO WHILE ! ( h["alias"] )-&gt;( Eof() )
+      hRow := Db_Read( h, ( h["alias"] )-&gt;( RecNo() ) )
+      AAdd( a, hRow )
+      ( h["alias"] )-&gt;( DbSkip() )
+   ENDDO
+
+RETURN a
+
+//==============================================================//
+// Simple test / demo entry point
+// Run: harbour db_api.prg test.prg
+//==============================================================//
+
+FUNCTION DbApi_Test()
+
+   LOCAL cDbf := "mytest.dbf"
+   LOCAL hDb, nRec, cErr := ""
+   LOCAL hRow
+
+   // Create test DBF if missing
+   IF ! File( cDbf )
+      DbCreate( cDbf, { ;
+         { "ID",   "N", 6, 0 }, ;
+         { "NAME", "C", 20, 0 }, ;
+         { "DATE", "D", 8, 0 } ;
+      }, "DBFCDX" )
+   ENDIF
+
+   hDb := DbCtx_New( cDbf )
+
+   IF ! Db_Open( hDb )
+      ? "Could not open DBF"
+      RETURN NIL
+   ENDIF
+
+   // Insert
+   nRec := Db_Insert( hDb, { ;
+      "ID"   =&gt; 1, ;
+      "NAME" =&gt; "Hello World", ;
+      "DATE" =&gt; Date() ;
+   }, @cErr )
+
+   ? "Inserted recno:", nRec, "error:", cErr
+
+   // Read
+   hRow := Db_Read( hDb, nRec )
+   ? "Read row:", hb_ValToExp( hRow )
+
+   // Update
+   Db_Update( hDb, nRec, { "NAME" =&gt; "Updated" }, @cErr )
+   ? "After update:", hb_ValToExp( Db_Read( hDb, nRec ) )
+
+   // Delete
+   Db_Delete( hDb, nRec, @cErr )
+   ? "Deleted flag:", Db_Read( hDb, nRec )["_deleted"]
+
+   Db_Close( hDb )
+
+RETURN NIL
+
+//==============================================================//
+// End of db_api.prg
+//==============================================================//
+
+
+&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p283685">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lean DBF API for Microservices – Inspired by Mr. Rao</span><br>
+        Posted: Tue Feb 03, 2026 07:47 AM
+      </div>
+      <div class="content"><r><H2 slug="oop-vs-functional-approach-for-this-db-read-operation"><s>## </s>OOP vs. Functional approach (for this DB read operation)</H2><br>
+<br>
+<H3 slug="oop-style-version-implicit-state"><s>### </s>OOP-style version (implicit state)</H3><br>
+<br>
+<CODE lang="harbour"><s>```harbour</s><i><br>
+</i>METHOD Read() CLASS TDbf<br>
+   LOCAL hRow := {=&gt;}, n, cField<br>
+<br>
+   /*<br>
+      Implicit state:<br>
+      - which DBF is open?<br>
+      - which alias is active?<br>
+      - which record is currently selected?<br>
+      - was Seek() or GoTo() called before?<br>
+   */<br>
+<br>
+   IF ::Eof()<br>
+      RETURN hRow<br>
+   ENDIF<br>
+<br>
+   // Implicit record identity<br>
+   hRow["_recno"]   := ::RecNo()<br>
+   hRow["_deleted"] := ::Deleted()<br>
+<br>
+   FOR n := 1 TO ::nFields<br>
+      cField := ::aFields[n]<br>
+<br>
+      // Field position is resolved implicitly<br>
+      // (often via FieldPos() internally)<br>
+      hRow[ cField ] := FieldGet( FieldPos( cField ) )<br>
+   NEXT<br>
+<br>
+RETURN hRow<i><br>
+</i><e>```</e></CODE><br>
+<br>
+<H3 slug="characteristics-oop"><s>### </s>Characteristics (OOP)</H3><br>
+<br>
+<LIST><LI><s>* </s><EMOJI seq="274c" tseq="274c">❌</EMOJI> <STRONG><s>**</s>Implicit state<e>**</e></STRONG><br/><br>
+<br>
+  <LIST><LI><s>* </s>current record lives inside the object</LI><br>
+  <LI><s>* </s>behavior depends on call order</LI></LIST></LI><br>
+<LI><s>* </s><EMOJI seq="274c" tseq="274c">❌</EMOJI> hard to test in isolation</LI><br>
+<LI><s>* </s><EMOJI seq="274c" tseq="274c">❌</EMOJI> previous calls influence current behavior</LI><br>
+<LI><s>* </s><EMOJI seq="274c" tseq="274c">❌</EMOJI> <C><s>`</s>FieldPos()<e>`</e></C> often used implicitly inside loops</LI><br>
+<LI><s>* </s><EMOJI seq="2705" tseq="2705">✅</EMOJI> convenient for interactive desktop workflows</LI></LIST><br>
+<br>
+<HR>---</HR><br>
+<br>
+<H2 slug="functional-version-db-api"><s>## </s>Functional version (<C><s>`</s>db_api<e>`</e></C>)</H2><br>
+<br>
+<CODE lang="harbour"><s>```harbour</s><i><br>
+</i>FUNCTION Db_Read( h, nRec )<br>
+   LOCAL hRow := {=&gt;}, cFld, nPos<br>
+<br>
+   /*<br>
+      Explicit state:<br>
+      - h    : DB context (alias, metadata, field positions)<br>
+      - nRec : exact record number to read<br>
+<br>
+      No hidden object state.<br>
+      No dependency on previous calls.<br>
+   */<br>
+<br>
+   // Explicit record selection<br>
+   ( h["alias"] )-&gt;( DbGoto( nRec ) )<br>
+<br>
+   IF ( h["alias"] )-&gt;( Eof() )<br>
+      RETURN hRow<br>
+   ENDIF<br>
+<br>
+   // Explicit technical metadata<br>
+   hRow["_recno"]   := ( h["alias"] )-&gt;( RecNo() )<br>
+   hRow["_deleted"] := ( h["alias"] )-&gt;( Deleted() )<br>
+<br>
+   // Explicit, O(1) field access via hash<br>
+   FOR EACH cFld IN hb_HKeys( h["fldPos"] )<br>
+      nPos := h["fldPos"][ cFld ]<br>
+      hRow[ cFld ] := ( h["alias"] )-&gt;( FieldGet( nPos ) )<br>
+   NEXT<br>
+<br>
+RETURN hRow<i><br>
+</i><e>```</e></CODE><br>
+<br>
+<H3 slug="characteristics-functional"><s>### </s>Characteristics (functional)</H3><br>
+<br>
+<LIST><LI><s>* </s><EMOJI seq="2705" tseq="2705">✅</EMOJI> <STRONG><s>**</s>No implicit state<e>**</e></STRONG></LI><br>
+<LI><s>* </s><EMOJI seq="2705" tseq="2705">✅</EMOJI> all dependencies are visible in the function call</LI><br>
+<LI><s>* </s><EMOJI seq="2705" tseq="2705">✅</EMOJI> call order does not matter</LI><br>
+<LI><s>* </s><EMOJI seq="2705" tseq="2705">✅</EMOJI> O(1) field access (no <C><s>`</s>FieldPos()<e>`</e></C> in loops)</LI><br>
+<LI><s>* </s><EMOJI seq="2705" tseq="2705">✅</EMOJI> easy to test with a simple hash</LI><br>
+<LI><s>* </s><EMOJI seq="2705" tseq="2705">✅</EMOJI> request-safe and parallel-friendly</LI></LIST><br>
+<br>
+<HR>---</HR><br>
+<br>
+<H2 slug="direct-comparison"><s>## </s>Direct comparison</H2><br>
+<br>
+<TABLE><THEAD><TR><i>| </i><TH>Aspect</TH><i>           | </i><TH>OOP</TH><i>               | </i><TH>Functional</TH><i>             |</i></TR></THEAD><i><br>
+| ---------------- | ----------------- | ---------------------- |</i><br>
+<TBODY><TR><i>| </i><TD>State</TD><i>            | </i><TD>implicit (<C><s>`</s>SELF<e>`</e></C>)</TD><i> | </i><TD>explicit (<C><s>`</s>h<e>`</e></C>, <C><s>`</s>nRec<e>`</e></C>)</TD><i> |</i></TR><br>
+<TR><i>| </i><TD>Record selection</TD><i> | </i><TD>previous call</TD><i>     | </i><TD>function parameter</TD><i>     |</i></TR><br>
+<TR><i>| </i><TD>Testability</TD><i>      | </i><TD>difficult</TD><i>         | </i><TD>easy</TD><i>                   |</i></TR><br>
+<TR><i>| </i><TD>Parallel safety</TD><i>  | </i><TD>risky</TD><i>             | </i><TD>safe</TD><i>                   |</i></TR><br>
+<TR><i>| </i><TD>Debugging</TD><i>        | </i><TD>context required</TD><i>  | </i><TD>locally understandable</TD><i> |</i></TR><br>
+<TR><i>| </i><TD>Microservice fit</TD><i> | </i><TD>medium</TD><i>            | </i><TD>high</TD><i>                   |</i></TR></TBODY></TABLE><br>
+<br>
+<HR>---</HR><br>
+<br>
+<H2 slug="key-takeaway-one-sentence"><s>## </s>Key takeaway (one sentence)</H2><br>
+<br>
+<QUOTE><i>&gt; </i><p><STRONG><s>**</s>In OOP, behavior depends on object state;<br/><br>
+<i>&gt; </i>in the functional version, behavior depends only on the parameters.<e>**</e></STRONG></p></QUOTE><br>
+<br>
+<HR>---</HR><br>
+<br>
+<CODE lang="harbour"><s>```harbour</s><i><br>
+</i>FUNCTION Db_Read( h, nRec )<br>
+   LOCAL hRow := {=&gt;}, cFld, nPos<br>
+<br>
+   /*<br>
+      Explicit state:<br>
+      - h      : request-scoped DB context (dbf, alias, metadata)<br>
+      - nRec   : the record number we want to read<br>
+<br>
+      There is NO implicit state here:<br>
+      - no object (SELF)<br>
+      - no hidden current record<br>
+      - no dependency on previous calls<br>
+   */<br>
+<br>
+   // Explicitly move to the requested record number<br>
+   // (no reliance on a previously selected record)<br>
+   ( h["alias"] )-&gt;( DbGoto( nRec ) )<br>
+<br>
+   // If the record does not exist, return an empty hash<br>
+   // (safe behavior for services, no exception, no UI)<br>
+   IF ( h["alias"] )-&gt;( Eof() )<br>
+      RETURN hRow<br>
+   ENDIF<br>
+<br>
+   /*<br>
+      Add technical metadata explicitly:<br>
+      - _recno   : DBF record identifier (important for update/delete)<br>
+      - _deleted : soft-delete flag (DBF reality)<br>
+<br>
+      These values are not hidden in object state,<br>
+      they are returned as part of the result.<br>
+   */<br>
+   hRow["_recno"]   := ( h["alias"] )-&gt;( RecNo() )<br>
+   hRow["_deleted"] := ( h["alias"] )-&gt;( Deleted() )<br>
+<br>
+   /*<br>
+      Iterate over all fields using a precomputed hash:<br>
+<br>
+      h["fldPos"] maps:<br>
+         FIELDNAME -&gt; FIELD POSITION<br>
+<br>
+      This avoids FieldPos() calls inside loops<br>
+      and guarantees O(1) access.<br>
+<br>
+      Again: no implicit lookup, everything is explicit.<br>
+   */<br>
+   FOR EACH cFld IN hb_HKeys( h["fldPos"] )<br>
+<br>
+      // Get field position from hash (no linear search)<br>
+      nPos := h["fldPos"][ cFld ]<br>
+<br>
+      // Read the raw DBF value<br>
+      // No type conversion, no JSON logic, no side effects<br>
+      hRow[ cFld ] := ( h["alias"] )-&gt;( FieldGet( nPos ) )<br>
+<br>
+   NEXT<br>
+<br>
+   /*<br>
+      Return a plain data structure (hash).<br>
+<br>
+      The caller decides:<br>
+      - how to serialize it<br>
+      - how to convert dates<br>
+      - how to handle UTF-8<br>
+      - how to build JSON<br>
+<br>
+      This keeps persistence logic clean and testable.<br>
+   */<br>
+RETURN hRow<i><br>
+</i><e>```</e></CODE><br>
+<br>
+<p><B><s><strong></s><br/><br>
+This function avoids implicit state by making<br/><br>
+record selection, field access, and context fully explicit.<e></strong></e></B></p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p283712">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lean DBF API for Microservices – Inspired by Mr. Rao</span><br>
+        Posted: Tue Feb 03, 2026 11:45 PM
+      </div>
+      <div class="content"><p><r><p>Absolutely — and that’s a <STRONG><s><strong></s>very important step<e></strong></e></STRONG>.<br/><br>
+If <C><s><code>&lt;/s&gt;db_api&lt;e&gt;</code></e></C> should stand on its own, the terminology must be <STRONG><s><strong></s>Harbour-native, neutral, and understandable without Harbourino<e></strong></e></STRONG>.</p></p>
+<p>Below is a <STRONG><s>**</s>clean, English naming and terminology guideline<e>**</e></STRONG> that works <STRONG><s>**</s>with or without Harbourino<e>**</e></STRONG>.</p>
+
+<HR>
+<p>---</HR></p>
+<H1 slug="db-api-naming-terminology-guidelines-english"><s># </s>DB_API Naming &amp; Terminology Guidelines (English)</H1>
+
+<p>These rules define <STRONG><s>**</s>shared language<e>**</e></STRONG>, not syntax sugar.<br/>
+They apply even if <STRONG><s>**</s>no Harbourino blocks are used<e>**</e></STRONG>.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="1-database-hash"><s>## </s>1. <STRONG><s>**</s>Database Hash<e>**</e></STRONG></H2>
+
+<p>A <STRONG><s>**</s>database hash<e>**</e></STRONG> is the hash returned by <C><s>`</s>DbCtx_New()<e>`</e></C>.</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;hDB := DbCtx_New( cDbf, cAlias )&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>Definition<e>**</e></STRONG></p>
+
+<p><QUOTE><i>&gt; </i><p>A <EM><s><em></s>database hash<e></em></e></EM> is a structured hash that describes how a database is accessed and controlled.</p></QUOTE></p>
+<p>It is:</p>
+
+<p><LIST><LI><s>* </s>not a table</LI></p>
+<LI><s>* </s>not a record</LI>
+<LI><s>* </s>not an alias</LI>
+<LI><s>* </s>not a connection</LI>
+<p></LIST></p>
+<p>It is a <STRONG><s>**</s>context object implemented as a hash<e>**</e></STRONG>.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="2-variable-prefix-hdb"><s>## </s>2. Variable Prefix: <C><s>`</s>hDB*<e>`</e></C></H2>
+
+<p>All database hashes <STRONG><s>**</s>must<e>**</e></STRONG> use the <C><s>`</s>hDB<e>`</e></C> prefix.</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;hDB_Beg
+hDB_Adr
+hDB_Knd&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p>This makes it immediately clear:</p>
+
+<p><QUOTE><i>&gt; </i><p><EM><s><em></s>This variable controls a database.<e></em></e></EM></p></QUOTE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="3-record-hash"><s>## </s>3. Record Hash</H2>
+
+<p>A <STRONG><s>**</s>record hash<e>**</e></STRONG> is the hash returned by <C><s>`</s>Db_Read()<e>`</e></C>.</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;hRow := Db_Read( hDB, nRec )&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p>Recommended prefixes:</p>
+
+<p><LIST><LI><s>* </s><C><s><code>&lt;/s&gt;hRow&lt;e&gt;</code></e></C></LI></p>
+<LI><s>* </s><C><s>`</s>hRec<e>`</e></C></LI>
+<p></LIST></p>
+<p>Never <C><s>`</s>hDB<e>`</e></C>.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="4-physical-database-path"><s>## </s>4. Physical Database Path</H2>
+
+<p>Physical file paths are <STRONG><s>**</s>strings<e>**</e></STRONG>, never contexts.</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;cDbfBeg := cDataPath + "BELEGUNG.DBF"&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p>Recommended prefixes:</p>
+
+<p><LIST><LI><s>* </s><C><s><code>&lt;/s&gt;cDbf&lt;e&gt;</code></e></C></LI></p>
+<LI><s>* </s><C><s>`</s>cPath<e>`</e></C></LI>
+<LI><s>* </s><C><s>`</s>cFile<e>`</e></C></LI>
+<p></LIST></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="5-db-api-function-namespace"><s>## </s>5. DB_API Function Namespace</H2>
+
+<p>All low-level database functions belong to the <C><s>`</s>Db_*<e>`</e></C> namespace.</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;DbCtx_New()
+Db_Open()
+Db_Read()
+Db_Seek()
+Db_Close()&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>Rule<e>**</e></STRONG></p>
+
+<p><QUOTE><i>&gt; </i><p><C><s><code>&lt;/s&gt;Db_*&lt;e&gt;</code></e></C> functions perform database operations only.<br/><br>
+<i>&gt; </i>They contain <STRONG><s><strong></s>no business logic<e></strong></e></STRONG>.</p></QUOTE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="6-database-context-conceptual-term"><s>## </s>6. Database Context (Conceptual Term)</H2>
+
+<p>The term <STRONG><s>**</s>database context<e>**</e></STRONG> is the conceptual name for what the database hash represents.</p>
+
+<p><QUOTE><i>&gt; </i><p><EM><s><em></s>Database context<e></em></e></EM> describes the logical access scope of a database during a request.</p></QUOTE></p>
+<p>In code, this is always represented by a <STRONG><s>**</s>database hash<e>**</e></STRONG>.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="7-alias-is-an-internal-detail"><s>## </s>7. Alias Is an Internal Detail</H2>
+
+<p>Alias names:</p>
+
+<p><LIST><LI><s>* </s>exist only inside the database hash</LI></p>
+<LI><s>* </s>are set in <C><s>`</s>DbCtx_New()<e>`</e></C></LI>
+<LI><s>* </s>must not influence variable naming</LI>
+<p></LIST></p>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;DbCtx_New( cDbf, "BEG" )&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p>The alias is <STRONG><s>**</s>not part of the public API<e>**</e></STRONG>.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="8-read-only-is-an-access-contract"><s>## </s>8. Read-Only Is an Access Contract</H2>
+
+<p><C><s>`</s>readonly<e>`</e></C> expresses <STRONG><s>**</s>intent<e>**</e></STRONG>, not database mechanics.</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;hDB["readonly"] := .T.&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p>Meaning:</p>
+
+<p><QUOTE><i>&gt; </i><p><EM><s><em></s>This context must not modify data.<e></em></e></EM></p></QUOTE></p>
+<p>This rule applies regardless of DB engine.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="9-explicit-is-preferred-over-implicit"><s>## </s>9. Explicit Is Preferred Over Implicit</H2>
+
+<p>Database access should always reference the database hash explicitly.</p>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;Db_Read( hDB, nRec )
+Db_Seek( hDB, uKey )&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p>Implicit global state (selected workarea) should not be relied upon by DB_API users.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="10-terminology-must-be-self-explaining"><s>## </s>10. Terminology Must Be Self-Explaining</H2>
+
+<p>If a term needs explanation every time, it is the wrong term.</p>
+
+<p>Good:</p>
+
+<p><CODE lang="text"><s><code>text&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;database hash
+database context
+record hash&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p>Avoid:</p>
+
+<p><CODE lang="text"><s><code>text&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;handle
+pointer
+magic object&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="one-sentence-that-defines-the-philosophy"><s>## </s>One sentence that defines the philosophy</H2>
+
+<p><QUOTE><i>&gt; </i><p><STRONG><s><strong></s>DB_API uses explicit database contexts represented as hashes to keep database access predictable, testable, and independent of global state.<e></strong></e></STRONG></p></QUOTE></p>
+<HR>
+<p>---</HR></r></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

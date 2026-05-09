@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Modificación TSMTP.prg - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-28382">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Modificación TSMTP.prg</div>
+  <div class="post" id="p158837">
+    <div class="poster">
+      <div class="name" style="color:#105289">FiveWiDi</div>
+      <div class="rank">Posts: 1444</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 02:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Modificación TSMTP.prg</span><br>
+        Posted: Tue Apr 29, 2014 10:11 PM
+      </div>
+      <div class="content">Hola a todos,<br>
+<br>
+Os dejo la clase TSMTP que he modificado un poco para casos en los que la función GetHostByAddress() no devuelve el nombre del dominio.<br>
+Cuando tienes un dominio que comparte servidor con otros dominios, parece ser (esto es lo que me cuenta mi servidor de hosting) que si se consulta por IP, no se obtiene el nombre del dominio.<br>
+Para ver la modificación buscar por 'lcHostFromIP'.<br>
+<br>
+Antonio, naturalmente si lo consideras necesario y lo añades en la siguiente versión me ahorraré adaptar código.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// FiveWin Internet outgoing mail Class
+// Modified by Luis Krause July 5, 2001; February 26, 2002; October 7, 2002; November 5, 2002;
+//                         October 9, 2003; June 1, 2005, March 26, 2008
+//    with code from Alex Shaft, Byron Hopp, Andrew Ross (PipleLine Solutions),
+//    Frank Demont, Peter Kohler, Rafael Gaona, Joaquim Ferrer,
+//    Jos‚ Lal¡n, Ray Alich (IBTC), Ignacio Vizca¡no Tapia and others
+// Special thanks to Jorge Mason for the fix to GetHostByAddress() that was GPFing on some servers
+
+// Simple Authentication and Security Layer [SASL]
+// This class only supports LOGIN type for authentication.
+// TODO: Add PLAIN and MD5 methods.
+//       PLAIN is the same as LOGIN but it doesn't use base64, i.e.:
+//       AUTH LOGIN -&gt; USER cMimeEnc( ::cUser )
+//       AUTH PLAIN -&gt; USER ::cUser
+// See rfc2554.txt for more details about ESMTP
+// [jlalin]
+/* cgp C.Gelabert 09/04/2014
+   Añadida DATA lcHostFromIP para indicar si a partir del nombre del dominio se ha obtenido la IP.
+   Hay dominios que comparten servidor que no devuelven valor para GetHostByAddress(); con
+   lcHostFromIP se gestiona esta situación.
+*/
+
+#include "FiveWin.ch"
+
+#ifndef __CLIPPER__
+#xtranslate Memory(&lt;n&gt;) =&gt;                       // only needed with Clipper, not [x]Harbour
+#endif
+
+// different session status
+#define ST_INIT       0
+#define ST_CONNECTED  1
+#define ST_RESET      2
+#define ST_MAILFROM   3
+#define ST_RCPTTO     4
+#define ST_DATA       5
+#define ST_SENT       6
+#define ST_QUIT       7
+#define ST_DONE       8
+#define ST_ERROR      9
+
+// Authentication states
+#define ST_AUTH0      10        // IBTC
+#define ST_AUTH       11        // [jlalin]
+#define ST_USER       12        // [jlalin]
+#define ST_PASS       13        // [jlalin]
+// Last defined state
+#define ST_LAST       ST_PASS   // [jlalin]
+
+#define MSG_CAPTION   "SMTP Services"
+
+//----------------------------------------------------------------------------//
+
+CLASS TSmtp
+
+   DATA   oSocket        AS OBJECT               // socket used during the mail session
+   DATA   cIPServer      AS String               // IP of the mail server
+   DATA   lcHostFromIP   AS LOGICAL INIT .F.     // .T. indicará que a partir de la IP del dominio se ha obtenido el nombre.
+
+   DATA   cFrom          AS String               // Sender email address
+   DATA   aTo            AS ARRAY INIT NIL       // Array of strings for each recipient email address
+   DATA   aCC            AS ARRAY INIT NIL
+   DATA   aBCC           AS ARRAY INIT NIL
+   DATA   cReplyTo       AS String               // added by LKM Sep/28/2002
+   DATA   lReceipt       AS LOGICAL              // added by LKM Sep/25/2002
+
+   DATA   nStatus        AS NUMERIC              // Temporary session status
+   DATA   nTo            AS NUMERIC              // Temporary recipient index into aTo recipients array
+   DATA   nCC            AS NUMERIC
+   DATA   nBCC           AS NUMERIC
+   DATA   cMsg           AS String               // Msg Text to send
+   DATA   cHTML          // AS String               // Html Text to Send - added by RRG 29.05.2002
+   DATA   cSubject       AS String               // msg subject
+   DATA   dDate          // AS String               // msg date
+   DATA   cTime          AS String               // msg time
+   DATA   nGMT           AS NUMERIC              // GMT deviation
+   DATA   cPriority      AS String               // msg priority: normal, high, low
+   DATA   aFiles         AS ARRAY INIT NIL       // Attached files
+
+   DATA   bConnecting    AS CODEBLOCK INIT NIL   // Action to perform while trying to connect
+   DATA   bConnected     AS CODEBLOCK INIT NIL   // Action to perform when already connected
+   DATA   bDone          AS CODEBLOCK INIT NIL   // Action to perform when Msg has been already sent
+   DATA   bFailure       AS CODEBLOCK INIT NIL
+
+   DATA   lTxtAsAttach   AS LOGICAL              // .T. to force Txt files as Attachments; .F. to force as Inline
+
+   DATA   cReceived      AS String INIT ""       // added by AS
+   DATA   acReply        AS ARRAY  INIT {}       // added by AS
+   DATA   cError         AS String INIT ""       // added by AS
+
+   DATA   cMailer                                // Mailer Name added by Pipeline
+   DATA   cClient                                // Mail Client Name added by Pipeline
+
+   DATA   nDelay         AS NUMERIC INIT 0       // added by LKM Sep/28/2002, based on RG's idea (see mods to TSocket class)
+
+   DATA   cUser          AS String INIT ""       // [jlalin]
+   DATA   cPassword      AS String INIT ""       // [jlalin]
+   // We can only log in one time per session
+   DATA   lAuth          AS LOGICAL              // [jlalin]
+   DATA   lDoAuth        AS LOGICAL              // IBTC
+
+   METHOD New( cIPServer, nPort, lAuth, cUser, cPassword ) CONSTRUCTOR
+
+   METHOD End()  INLINE ;                        // added by LKM
+      If( ::oSocket # Nil, ::oSocket:End(), Nil )
+
+   METHOD OnRead( oSocket, nWSAError )
+   METHOD OnConnect( oSocket, nWSAError )        // added by LKM see TSocket class
+
+   METHOD SendMail( cFrom, aTo, cMsg, cSubject, aFiles, aCC, aBCC, lReceipt, cHTML )  // added CC, BCC and Return Receipt capability LKM; cHTML added by RRG
+
+   METHOD Priority()
+
+   METHOD Failure( oSocket, nWSAError, cReply ) HIDDEN  // called from OnRead when failure occurs
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( cIPServer, nPort, lAuth, cUser, cPassword ) CLASS TSmtp
+
+   Default nPort := 25, ;
+           lAuth := .F., ;                       // IBTC
+           cUser := "", ;                        // [jlalin]
+           cPassword := ""                       // [jlalin]
+
+   If Empty( cIPServer )                         // nil or ""
+      cIPServer := "0.0.0.0"
+   Endif
+
+   ::lAuth      := .F.                           // IBTC
+   ::lDoAuth    := lAuth                         // IBTC
+   ::cUser      := AllTrim( cUser )              // [jlalin]
+   ::cPassword  := AllTrim( cPassword )          // [jlalin]
+
+   ::oSocket := TSocket():New( nPort )
+
+   ::oSocket:bRead    := {|o,n| ::OnRead( o, n ) }
+   ::oSocket:bConnect := {|o,n| ::OnConnect( o, n ) }  // lkm - see adjustment to TSocket class
+
+   // by lkm now you can provide either the IPAddress or the server name (friendly name)
+   ::cIPServer  := If( IsAlpha( cIPServer ), GetHostByName( AllTrim( cIPServer ) ), cIPServer )
+   ::nStatus    := ST_INIT
+   
+   //Traza( 1, "::cIPServer=", ::cIPServer )
+   
+   // cgp 09/04/2014
+   ::lcHostFromIP := (.Not. Empty(GetHostByAddress( ::cIPServer )) )
+   //Traza( 1, "::lcHostFrom,IP=", ::lcHostFromIP )
+
+
+   // predefined events actions
+   ::bDone := {|| MsgInfo( ;
+      "Message successfully sent through " + ::cIPServer + CRLF + ;
+      GetHostByAddress( ::cIPServer ), MSG_CAPTION ) }
+   ::bFailure := {|| ;
+      MsgStop( "Session did not complete successfully" + CRLF + CRLF + ::cError, MSG_CAPTION ) }
+
+   ::lTxtAsAttach := .T.                         // force text files as attachments, not inline
+
+Return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD OnRead( oSocket, nWSAError ) CLASS TSmtp
+
+   Local cData
+   Local nI
+   Local nPos := 0, cReply, cExt, cAns
+   Local bReply := {|| AScan( ::acReply, {|cTxt| Left( cTxt, 3 ) == cAns } ) &gt; 0 }
+   Local cTmpFile
+
+   If oSocket == Nil                             // random error with [x]Harbour
+      ::Failure()
+      Return Nil                                 // avoid r/t error
+   Endif
+
+   cData := oSocket:GetData()
+   // Buffer received data
+   ::cReceived += cData
+
+   // Pull out full lines received
+   Do While ( nPos := At( CRLF, ::cReceived ) ) &gt; 0
+      AAdd( ::acReply, Left( ::cReceived, nPos - 1 ) )
+      ::cReceived := SubStr( ::cReceived, nPos + 2 )
+   Enddo
+
+   // Has closing line been received?
+   If ATail( ::acReply ) == Nil .or. ;           // rare, but s**t happens
+         ! SubStr( ATail( ::acReply ), 4, 1 ) == " "
+      If( ATail( ::acReply ) == Nil, ::acReply := {}, Nil )
+      Return Nil
+   Endif
+
+   cReply := Left( ATail( ::acReply ), 3 )
+
+   Do Case
+      Case ::nStatus == ST_INIT                  // Socket Connection being established
+         If cReply == "220"                      // SMTP Server Ready and waiting
+            oSocket:SendData( "HELO " + ::cClient + CRLF )  // ::cFrom has "@" which some servers don't like Andrew W. Ross &lt;awr@jps.net&gt;
+            If ! ::lDoAuth                       // IBTC
+               ::nStatus := ST_CONNECTED
+            Endif
+            If ::bConnected != nil
+               Eval( ::bConnected )
+            Endif
+
+            If ::lDoAuth                         // IBTC
+               // [jlalin]
+               // If we pass User and Password we ask the server for authenticacion
+               // if cReply == "530"
+               If ! Empty( ::cUser ) .and. ! Empty( ::cPassword )
+                  If ! ::lAuth                   // We are not authenticated yet
+                     oSocket:SendData( "AUTH LOGIN" + CRLF )
+                     ::nStatus := ST_AUTH0
+                  Endif
+               Endif
+               //endif
+            Endif
+         Else
+            ::Failure( oSocket, nWSAError, cReply )
+         Endif
+
+      // IBTC
+      Case ::nStatus == ST_AUTH0
+         If SubStr( cData, 1, 3 ) == "250" .or. Eval( bReply, cAns := "334" )
+            ::nStatus := ST_AUTH
+         Else
+            ::nStatus := ST_QUIT
+         Endif
+
+      // [jlalin]
+      Case ::nStatus == ST_AUTH
+         If SubStr( cData, 1, 3 ) == "334"
+            // User and Pass must be encoded in base64
+            oSocket:SendData( cMimeEnc( ::cUser ) + CRLF )
+            ::nStatus := ST_USER
+         Else
+            ::nStatus := ST_QUIT
+         Endif
+
+      // [jlalin]
+      Case ::nStatus == ST_USER
+         If SubStr( cData, 1, 3 ) == "334"
+            oSocket:SendData( cMimeEnc( ::cPassword ) + CRLF )
+            ::nStatus := ST_PASS
+         Else
+            ::nStatus := ST_QUIT
+         Endif
+
+      // [jlalin]
+      Case ::nStatus == ST_PASS
+         If SubStr( cData, 1, 3 ) == "235"       // // Allright. Server supports authentication
+            ::nStatus := ST_CONNECTED
+            ::lAuth   := .T.                     // We are authenticate, proceed with connection.
+            oSocket:SendData( CRLF )
+         Else //if SubStr( cData, 1, 3 ) == "535" // Auth failure
+            ::Failure( oSocket, nWSAError, cReply )
+         Endif
+
+//      case ::nStatus == ST_CONNECTED
+//           oSocket:SendData( "RSET" + CRLF )
+//           ::nStatus := ST_RESET
+
+      Case ::nStatus == ST_CONNECTED .or. ::nStatus == ST_RESET
+         If cReply == "250"                      // Server happy with our repsonse. Start mail send.
+            oSocket:SendData( StrTran( "MAIL FROM:&lt;%&gt;", "%", CleanEMail( ::cFrom ) ) + CRLF )
+            ::nStatus := ST_MAILFROM
+            ::nTo     := 1    // First recipient index to send mail to
+            ::nCC     := 1
+            ::nBCC    := 1
+         Elseif Val( cReply ) &gt; 400 .and. ::nStatus == ST_CONNECTED
+            ::nStatus := ST_RESET
+            oSocket:SendData( "EHLO " + ::cClient + CRLF )  // don't use ::cFrom (see note above)
+         Else
+            ::Failure( oSocket, nWSAError, cReply )
+         Endif
+
+      Case ::nStatus == ST_MAILFROM .or. ::nStatus == ST_RCPTTO
+         If cReply == "250" .or. cReply == "251"  // Server happy with our repsonse
+            If ::nTo &lt;= Len( ::aTo )
+               oSocket:SendData( StrTran( "RCPT TO:&lt;%&gt;", "%", CleanEMail( ::aTo[ ::nTo ] ) ) + ;
+                                 CRLF )
+               ::nStatus := ST_RCPTTO
+               ::nTo++
+            Elseif ::nCC &lt;= Len( ::aCC )
+               oSocket:SendData( StrTran( "RCPT TO:&lt;%&gt;", "%", CleanEMail( ::aCC[ ::nCC ] ) ) + ;
+                                 CRLF )
+               ::nStatus := ST_RCPTTO
+               ::nCC++
+            Elseif ::nBCC &lt;= Len( ::aBCC )
+               oSocket:SendData( StrTran( "RCPT TO:&lt;%&gt;", "%", CleanEMail( ::aBCC[ ::nBCC ] ) ) + ;
+                                 CRLF )
+               ::nStatus := ST_RCPTTO
+               ::nBCC++
+            Else
+               ::nStatus := ST_DATA
+               oSocket:SendData( "DATA" + CRLF )
+            Endif
+         Else
+          
+            ::Failure( oSocket, nWSAError, cReply )
+         Endif
+
+      Case ::nStatus == ST_DATA
+         If cReply == "354"                      // Ready to accept data
+            Default ::cMsg := "", ::cSubject := "[no subject]", ::cHTML := "", ;
+                    ::dDate := Date(), ::cTime := Time(), ;
+                    ::nGMT := 0, ::cPriority := "Normal"
+
+// dfl - treat text message as alternate if there is an HTML message instead of mixing them - text and HTML in the email
+// dfl - create duplicate text and HTML messages with text as alternate message, not both text and HTML as was done originally
+
+// dfl - NextPart was not working well at all - made adjustments
+// dfl - at times part of an email was converted into an attachment
+
+            oSocket:SendData( "From: " + ::cFrom + CRLF + ;
+                              If( ! Empty( ::cReplyTo ), ;
+                                 "Reply-To: " + CleanEMail( ::cReplyTo ) + CRLF, "" ) + ;
+                              AToStr( ::aTo, "To: " ) + ;
+                              AToStr( ::aCC, "CC: " ) + ;
+                              /*AToStr( ::aBCC, "BCC: " ) +*/ ;  // or it wouldn't be a blind carbon copy at all &lt;g&gt;
+                              "Subject: " + ::cSubject + CRLF + ;
+                              "Date: " + DTtoEDT( ::dDate, ::cTime, ::nGMT ) + CRLF + ;
+                              "MIME-Version: 1.0" + CRLF + ;
+                              If( ::lReceipt, ;
+                                 "Disposition-Notification-To: " + ::cFrom + CRLF, "" ) + ;
+                              "X-MSMail-Priority: " + ::cPriority + CRLF + ;
+                              "X-Priority: " + LTrim( Str( ::Priority() ) ) + CRLF + ;
+                              "X-Mailer: " + ::cMailer + CRLF + ;
+                              If( ! Empty( ::aFiles ) .or. ! Empty( ::cHTML ), ;
+                                  "Content-Type: multipart/mixed; " + ;
+                                     'boundary="NextPart_000"' + CRLF + CRLF + ;
+                                  "This is a multi-part message in MIME format." + CRLF + CRLF + ;
+                                  "--NextPart_000" + CRLF, "" ) + ;
+                                  "Content-Type: multipart/alternative; " + ;
+                                     'boundary="NextPart_001"' + CRLF + CRLF + ;
+                                  "--NextPart_001" + CRLF + ;
+                                  "Content-Type: text/plain; " + ;
+                                    CharsetIso8859() + CRLF + ;
+                                 "Content-Transfer-Encoding: quoted-printable" + CRLF + CRLF + ;
+                                 ::cMsg + CRLF + If ( Empty( ::cHTML ), "--NextPart_001--", "") + CRLF )
+            If ! Empty( ::cHTML )  // RRG 29.05.2002 Send as HTML sytle email (Cambios para enviar correo como html)
+               oSocket:SendData( CRLF + "--NextPart_001" + CRLF + ;
+                                 "Content-Type: text/html; " +  ;
+                                   CharsetIso8859() + CRLF + ;
+                                 "Content-Transfer-Encoding: quoted-printable" + CRLF + CRLF + ;
+                                 FormHtml( ::cHTML, ::cSubject, ::cMailer ) + ;
+                                 CRLF + If ( Empty ( ::aFiles ), "", "--NextPart_001--" ) + CRLF )
+            Endif
+
+// dfl - file path was not being removed in the 'name=' and the upper case conversion was removed so the
+// dfl - actual file name case was preserved
+
+            For nI := 1 To Len( ::aFiles )
+               If File( ::aFiles[ nI ] )
+                  cExt := Upper( cFileExt( ::aFiles[ nI ] ) )
+                  If ( cExt == "TXT" .or. cExt == "LOG" .or. cExt == "HTM" ) .and. ! ::lTxtAsAttach
+                     oSocket:SendData( CRLF + "--NextPart_000" + CRLF + ;
+                                       "Content-Type: " + DocType( cExt ) + ;
+                                          'name="' + cFileNoPathSmtp( ::aFiles[ nI ] ) + '"' + CRLF + ; // dfl - get the file name without the path and don't convert to upper case
+                                       "Content-Transfer-Encoding: " + If( cExt == "HTM", "7bit", "quoted-printable" ) + CRLF + ;
+                                       "Content-Disposition: inline; " + ;  // LKM was attachment
+                                          'filename="' + cFileNoPathSmtp( ::aFiles[ nI ] ) + '"' + CRLF + CRLF )  // dfl - don't convert file name to upper case
+                     oSocket:SendFile( ::aFiles[ nI ],, ::nDelay )
+                  Else
+                     oSocket:SendData( CRLF + "--NextPart_000" + CRLF + ;
+                                       "Content-Type: " + DocType( cExt ) + ;
+                                          'name="' + cFileNoPathSmtp( ::aFiles[ nI ] ) + '"' + CRLF + ; // dfl - get the file name without the path and don't convert to upper case
+                                       "Content-Transfer-Encoding: base64" + CRLF + ;
+                                       "Content-Disposition: attachment; " + ; // LKM was inline
+                                          'filename="' + cFileNoPathSmtp( ::aFiles[ nI ] ) + '"' + CRLF + CRLF )  // dfl - don't convert file name to upper case
+                     cTmpFile := TmpFile()       // ivt (based on his fix)
+                     FMimeEnc( ::aFiles[ nI ], cTmpFile )
+                     oSocket:SendFile( cTmpFile,, ::nDelay )
+                     FErase( cTmpFile )
+                  Endif
+               Endif
+            Next
+
+// dfl - NextPart has to be terminated
+
+            oSocket:SendData( CRLF + ;
+                             If( ! Empty( ::aFiles ), "--NextPart_000--" + CRLF + CRLF, "" ) + ;
+                              CRLF + "." + CRLF )  // the dot signals the server the mail ends here (leave the CRLF before the dot!)
+            ::nStatus := ST_SENT
+
+            // the following to avoid a huge delay (5 minutes or more if the server times out!)
+            If oSocket:nRetCode == -1            // most likely the attachment(s) choked the server; increment ::nDelay by one until it works
+               AAdd( ::acReply, "421 4.4.2 Timeout while waiting for command. Increase ::nDelay" )
+               ::Failure( oSocket, 10060, "421" )  // i.e. WSAETIMEDOUT
+            Endif
+         Else
+            ::Failure( oSocket, nWSAError, cReply )
+         Endif
+
+      Case ::nStatus == ST_SENT
+         If cReply == "250" .or. Eval( bReply, cAns := "250" )  // Server happy with our repsonse (sometimes ::acReply has two elements: "250" and "500", so we can safely asume everything is ok)
+            ::nStatus := ST_QUIT                 // swapped with next line (Peter Kohler)
+            oSocket:SendData( "QUIT" + CRLF )
+         Else
+            ::Failure( oSocket, nWSAError, cReply )
+         Endif
+
+      Case ::nStatus == ST_QUIT
+         If cReply == "221" .or. cReply == "500" .or. cReply == "502" .or. cReply == "550"  // 500/550 is "unknown command" and doesn't really matter at this stage
+            ::nStatus := ST_DONE
+            If ::bDone != nil
+               Eval( ::bDone )
+            Endif
+            ::oSocket:End()
+         Else
+            ::Failure( oSocket, nWSAError, cReply )
+         Endif
+
+   EndCase
+
+   ::acReply := {}
+
+Return Nil
+
+//----------------------------------------------------------------------------//
+
+METHOD OnConnect( oSocket, nWSAError )
+
+   Local cHost
+
+   If nWSAError # 0
+      cHost := GetHostByAddress( ::cIPServer )
+      AAdd( ::acReply, "Could not establish connection to " + If( Empty( cHost ), ::cIPServer, cHost ) )
+      ::Failure( oSocket, nWSAError )
+   Endif
+
+Return Nil
+
+//----------------------------------------------------------------------------//
+
+METHOD SendMail( cFrom, aTo, cMsg, cSubject, aFiles, aCC, aBCC, lReceipt, cHTML ) CLASS TSmtp
+
+   Default aTo := {}, aCC := {}, aBCC := {}, aFiles := {}, lReceipt := .F.
+   Default ::cClient := "smtp-client"
+   Default ::cMailer := "FiveWin Mailer"
+
+   ::cFrom    := AllTrim( cFrom )
+   ::aTo      := aTo
+   ::cMsg     := cMsg
+   ::cSubject := cSubject
+   ::aFiles   := aFiles
+   ::aCC      := aCC
+   ::aBCC     := aBCC
+   ::lReceipt := lReceipt
+   ::cHTML    := cHTML                           //RRG 29.05.2002 send HTML style email (envio de email tipo html)
+
+   If Empty( cFrom )
+
+      If( ::oSocket # Nil, ::oSocket:End(), Nil )
+      MsgStop( "No sender was specified" + CRLF + ;
+         "Message won't be sent", MSG_CAPTION )
+
+   Elseif Empty( aTo ) .and. Empty( aCC ) .and. Empty( aBCC )
+
+      If( ::oSocket # Nil, ::oSocket:End(), Nil )
+      MsgStop( "No recipients were specified" + CRLF + ;
+         "Message won't be sent", MSG_CAPTION )
+
+   //Elseif ::cIPServer == "0.0.0.0" .or. Empty( GetHostByAddress( ::cIPServer ) )
+   // cgp 09/04/2014
+   Elseif ::cIPServer == "0.0.0.0" .or. ( ::lcHostFromIP .and. Empty( GetHostByAddress( ::cIPServer ) ) )
+
+      If( ::oSocket # Nil, ::oSocket:End(), Nil )
+      MsgStop( "The IP address " + ::cIPServer + " could not be resolved" + CRLF + ;
+         "Make sure you're connected to the internet and" + CRLF + ;
+         "check the firewall settings if applicable", MSG_CAPTION )
+
+   Else
+
+      If ::bConnecting != nil
+         Eval( ::bConnecting )
+      Endif
+
+      ::nStatus   := ST_INIT
+      ::acReply   := {}
+      ::cReceived := ""
+      Memory(-1)                                 // cleanup memory when sending one after another
+      If ::oSocket # Nil
+         ::oSocket:Connect( ::cIPServer )
+      Else
+         ::Failure()
+      Endif
+
+   Endif
+
+Return Nil
+
+//----------------------------------------------------------------------------//
+
+METHOD Priority() CLASS TSmtp
+
+   Local nType
+
+   Do Case
+   Case Upper( ::cPriority ) == "HIGH"
+      nType := 1
+   Case Upper( ::cPriority ) == "LOW"
+      nType := 5
+   Otherwise
+      nType := 3
+   EndCase
+
+Return nType
+
+//----------------------------------------------------------------------------//
+
+METHOD Failure( oSocket, nWSAError, cReply ) CLASS TSmtp
+
+   Local aStage := { "ST_INIT", ;
+                     "ST_CONNECTED", ;
+                     "ST_RESET", ;
+                     "ST_MAILFROM", ;
+                     "ST_RCPTTO", ;
+                     "ST_DATA", ;
+                     "ST_SENT", ;
+                     "ST_QUIT", ;
+                     "ST_DONE", ;
+                     "ST_ERROR", ;
+                     "ST_AUTH0", ;
+                     "ST_AUTH", ;
+                     "ST_USER", ;
+                     "ST_PASS" }
+
+   Default oSocket := ::oSocket, nWSAError := WSAGetLastError(), cReply := ""
+
+   If ::nStatus &gt;= ST_INIT .and. ::nStatus &lt;= ST_LAST
+      ::cError := "Stage: " + aStage[ ::nStatus + 1 ] + CRLF
+   Else
+      ::cError := ""
+   Endif
+   ::nStatus := ST_ERROR
+   ::cError += "IP Address: " + ::cIPServer + CRLF + CRLF
+   AEval( ::acReply, {|cReply| ::cError += cReply + CRLF } )
+   If nWSAError # 0
+      ::cError += "WSA Error Code: " + AllTrim( Str( nWSAError ) )
+   Endif
+
+   /*
+   If ::bFailure # Nil
+      Eval( ::bFailure )
+   Endif
+   If( oSocket # Nil, oSocket:End(), Nil )
+   */
+
+   // Antonio suggested change here ...
+
+   If ::bFailure != nil
+      Eval( ::bFailure, oSocket, nWSAError, cReply )
+   Endif
+   oSocket:ENd()
+
+Return Self
+
+//----------------------------------------------------------------------------//
+
+Static Function DTtoEDT( dDate, cTime, nGMT )
+
+// Local aWeek  := { "Sun", "Mon", "Tue", "Wed", "Thu", "Fry", "Sat" } 
+   Local aWeek  := { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }  // 30.03.2010
+   Local aMonth := { "Jan", "Feb", "Mar", "Apr", "May", "Jun", ;
+                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+   Local cGMT
+
+   If nGMT != 0
+      cGMT := " " + If( nGMT &gt; 0, "+" , "-" ) + StrZero( Abs( nGMT ), 2 ) + "00"
+   Else
+      // cGMT := ""
+      cGMT := " -0000"   // 30.03.2010
+   Endif
+
+Return aWeek[ Dow( dDate ) ]    + ", " + LTrim( Str( Day( dDate ) ) )  + " " + ;
+       aMonth[ Month( dDate ) ] + " "  + LTrim( Str( Year( dDate ) ) ) + " " + ;
+       cTime + cGMT
+
+//----------------------------------------------------------------------------//
+
+Static Function Today( nGMT )
+   Local dDate := Date(), cGMT
+   If nGMT != 0
+      cGMT := " " + If( nGMT &gt; 0, "+" , "-" ) + StrZero( Abs( nGMT ), 2 ) + "00"
+   Else
+      cGMT := ""
+   Endif
+Return SubStr( CDoW( dDate ), 1, 3 )   + ", " + ;
+       LTrim( Str( Day( dDate ), 2 ) ) + " " + ;
+       SubStr( CMonth( dDate ), 1, 3 ) + " " + ;
+       Str( Year( dDate ), 4 )         + " " + ;
+       Time() + cGMT
+
+//----------------------------------------------------------------------------//
+
+Static Function AToStr( aArray, cPrefix )
+
+   Local cStr := "", nI, nLen := Len( aArray )
+
+   Default cPrefix := ""
+
+   If nLen &gt; 0
+      cStr := cPrefix
+   Endif
+
+   For nI := 1 To nLen
+      cStr += AllTrim( aArray[nI] ) + If( nI &lt; nLen, ", ", "" )
+   Next
+
+   cStr += If( ! Empty( cStr ), CRLF, "" )
+
+Return cStr
+
+//----------------------------------------------------------------------------//
+
+Static Function DocType( cExt )
+
+   Local cType
+
+   If cExt $ "EXE*COM*OBJ*LIB*DLL*VBX*OCX*HLP*CHM"
+      cType := "application/octet-stream; "
+   Elseif cExt $ "ZIP*ARC*ZOO*TAR"
+      cType := "application/x-zip-compressed; "
+   Elseif cExt $ "HTM*HTML*SHT*SHTML*MHT*MHTML"
+      cType := "text/html; "
+   Elseif cExt == "CSS"
+      cType := "text/css; "
+   Elseif cExt $ "XML*XSL"
+      cType := "text/xml; "
+   Elseif cExt $ "TXT*TEXT*LOG*BAT"
+      cType := "text/plain; "
+   Elseif cExt == "PDF"
+      cType := "application/pdf; "
+   Elseif cExt $ "BMP*DIB"
+      cType := "application/bmp; "
+   Elseif cExt == "GIF"
+      cType := "image/gif; "
+   Elseif cExt $ "JPG*JPE**JPEG*JFI*JFIF*PJP"
+      cType := "image/jpeg; "
+   Elseif cExt $ "XLS*XLT*XLA*XLB*XLC*XLL*XLM*XLW"
+      cType := "application/x-msexcel; "
+   Elseif cExt $ "PPT*PPS*POT*PWZ"
+      cType := "application/x-mspowerpoint; "
+   Elseif cExt $ "MPG*MPE*MPEG*M1S*M1A*MP2*MPM*MPA"
+      cType := "video/mpeg; "
+   Elseif cExt $ "PIC*PICT*PCT"
+      cType := "image/pict; "
+   Elseif cExt == "PNG"
+      cType := "image/png; "
+   Elseif cExt $ "MOV*QT*QTL*QTS*QTX*QTI*QTI*QTIF*QDA*QDAT*QPX*QTP"
+      cType := "video/quicktime; "
+   Elseif cExt $ "TIF*TIFF"
+      cType := "image/tiff; "
+   Elseif cExt $ "AVI*VFW"
+      cType := "video/avi; "
+   Elseif cExt $ "DOC*RTF*WBK*DOT*WIZ"
+      cType := "application/msword; "
+   Elseif cExt $ "RMI*MID*WAV*CDA*MIDI*MP2*MP3*WMA*MJF*MP1*VOC*IT*XM*S3M*STM*MOD*ULT*MTM*HMI*XMI*CMF*MUS*MIZ*HMZ*MSS*GMD*MIDS*HMP"
+      cType := "audio/mid; "
+   Else
+      cType := "application/x-unknown-content-type; "
+   Endif
+
+Return cType
+
+//----------------------------------------------------------------------------//
+
+Static Function FormHtml( cHTML, cSubject, cMailer )
+Local cOpen := "", cClose := ""
+
+If At( "&lt;html&gt;", Lower( cHTML ) ) == 0
+   cOpen := ;
+      '&lt;!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"' + CRLF + ;
+      '                      "http://www.w3.org/TR/1999/REC-html401-19991224/loose.dtd"&gt;' + CRLF + ;
+      '&lt;html&gt;' + CRLF + ;
+      '&lt;head&gt;' + CRLF + ;
+      '   &lt;title&gt;' + cSubject + '&lt;/title&gt;' + CRLF + ;
+      '   &lt;meta http-equiv="Content-Type"' + CRLF + ;
+      '         content="text/html; charset=iso-8859-1"&gt;' + CRLF + ;
+      '   &lt;meta name="generator"' + CRLF + ;
+      '         content="' + cMailer + '"&gt;' + CRLF + ;
+      '&lt;/head&gt;' + CRLF + ;
+      '&lt;body&gt;' + CRLF
+
+   cClose := ;
+      CRLF + ;
+      '&lt;/body&gt;' + CRLF + ;
+      '&lt;/html&gt;'
+
+Endif
+
+Return cOpen + cHTML + cClose
+
+//----------------------------------------------------------------------------//
+// IBTC: Convert "Your Name &lt;your@email.com&gt;" into "your@email.com"
+Static Function CleanEMail( cEMail )
+Local nLeft, nRight
+
+If ( nLeft := At( "&lt;", cEMail ) ) &gt; 0
+   If ( nRight := At( "&gt;", cEMail ) ) &gt; 0
+      cEMail := SubStr( cEMail, nLeft + 1, nRight - nLeft - 1 )
+   Else
+      cEMail := SubStr( cEMail, nLeft + 1 )
+   Endif
+Endif
+
+Return AllTrim( cEMail )
+
+//----------------------------------------------------------------------------//
+
+Static Function TmpFile()
+Local cTmpDir := GetEnv( "TEMP" ) + "\"          // LK Mar/26/2008 added path to avoid file being created in _SET_DEFAULT directory
+Local cTmpName := "__temp"
+
+Do While File( cTmpName := cTmpDir + "__" + StrZero( nRandom( 99999 ), 5 ) + ".tmp" )
+Enddo
+FClose( FCreate( cTmpName ) )
+
+Return cTmpName
+
+//----------------------------------------------------------------------------//
+
+static Function CharsetIso8859()
+
+   local c := "charset="
+   
+   c += "iso"
+   c += "-"
+   c += "8859"
+   c += "-"
+   c += "1"
+
+return c
+
+
+//---------------------------------------------------------------------------//
+
+// dfl - Return the file name without converting it to upper case.
+
+function cFileNoPathSmtp( cPathMask )  // returns just the filename no path
+
+    local n := RAt( "\", cPathMask )
+
+return ( If( n &gt; 0 .and. n &lt; Len( cPathMask ),;
+                  Right( cPathMask, Len( cPathMask ) - n ),;
+                  If( ( n := At( ":", cPathMask ) ) &gt; 0,;
+                      Right( cPathMask, Len( cPathMask ) - n ),;
+                      cPathMask ) ) )
+
+//---------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p158845">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Modificación TSMTP.prg</span><br>
+        Posted: Wed Apr 30, 2014 02:12 PM
+      </div>
+      <div class="content"><p>Hola, tienes un ejemplo sencillo de cómo utilizar esta clase? </p>
+<p>Muchas gracias</p>
+<p>Salu2.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p158852">
+    <div class="poster">
+      <div class="name" style="color:#105289">FiveWiDi</div>
+      <div class="rank">Posts: 1444</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 02:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Modificación TSMTP.prg</span><br>
+        Posted: Wed Apr 30, 2014 10:03 PM
+      </div>
+      <div class="content"><blockquote><cite>karinha wrote:</cite>Hola, tienes un ejemplo sencillo de cómo utilizar esta clase? <br>
+<br>
+Muchas gracias<br>
+<br>
+Salu2.</blockquote><br>
+Sinceramente no.<br>
+No tengo el código suficientemente aislado para que funcione.</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

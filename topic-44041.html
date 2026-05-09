@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>phpBB to LLM - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-44041">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> phpBB to LLM</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-44041-page-2.html">2</a> <a href="topic-44041-page-3.html">3</a> (34 posts)</div>  <div class="post" id="p266364">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">phpBB to LLM</span><br>
+        Posted: Thu Dec 21, 2023 09:57 AM
+      </div>
+      <div class="content"><r>1. Create a SQL dump file from your phpBB forums:<br/><br>
+<br/><br>
+mysqldump --user=username --password=YourPassword database_phpbb &gt; dumpfile.sql<br/><br>
+<br/><br>
+2. We "clean" the dump file using this code:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+function Main()
+
+    local cSQL := hb_memoRead( "dumpfile.sql" )
+    local hHTMLCodes := { ;
+        """ =&gt; '"',;
+        "&amp;num;" =&gt; '#',;
+        "&amp;dollar;" =&gt; '$',;
+        "&amp;percnt;" =&gt; '%',;
+        "&amp;" =&gt; '&amp;',;
+        "&amp;apos;" =&gt; "'",;
+        "&amp;lpar;" =&gt; '(',;
+        "&amp;rpar;" =&gt; ')',;
+        "&amp;ast;" =&gt; '*',;
+        "&amp;plus;" =&gt; '+',;
+        "&amp;comma;" =&gt; ',',;
+        "&amp;hyphen-minus;" =&gt; '-',;
+        "&amp;period;" =&gt; '.',;
+        "&amp;sol;" =&gt; '/',;
+        "&amp;colon;" =&gt; ':',;
+        "&amp;semi;" =&gt; ';',;
+        "&lt;" =&gt; '&lt;',;
+        "&amp;equals;" =&gt; '=',;
+        "&gt;" =&gt; '&gt;',;
+        "&amp;quest;" =&gt; '?',;
+        "&amp;commat;" =&gt; '@',;
+        "&amp;lsqb;" =&gt; '[',;
+        "&amp;bsol;" =&gt; '\\',;
+        "&amp;rsqb;" =&gt; ']',;
+        "&amp;Hat;" =&gt; '^',;
+        "&amp;lowbar;" =&gt; '_',;
+        "&amp;grave;" =&gt; '`',;
+        "&amp;lcub;" =&gt; '{',;
+        "&amp;verbar;" =&gt; '|',;
+        "&amp;rcub;" =&gt; '}',;
+        "~" =&gt; '~' }
+
+    hb_memoWrit( "forums.sql", hb_strReplace( cSQL, hHTMLCodes ) )
+
+return nil    &lt;e&gt;</code></pre></div></e></CODE><br>
+3. Create a local mysql "forums" database and using Heidi restore the dumpfile.sql into it<br/><br>
+<br/><br>
+4. Create a DBF from it using this code:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+request dbfcdx
+
+function Main()
+
+    local oCn := Maria_Connect( { "localhost", "forums", "username", "YourPassword" } )
+    local cSQL 
+
+    TEXT INTO cSQL 
+    SELECT
+        DATE_FORMAT(FROM_UNIXTIME(phpbb_posts.post_time), '%Y-%m-%d') AS date,
+        DATE_FORMAT(FROM_UNIXTIME(phpbb_posts.post_time), '%H:%i') AS time,
+        phpbb_forums.forum_name AS forum,
+        phpbb_topics.topic_title AS topic,
+        phpbb_users.username AS username,
+        phpbb_posts.post_text AS text
+    FROM
+        phpbb_posts
+    JOIN
+        phpbb_users ON phpbb_posts.poster_id = phpbb_users.user_id
+    JOIN
+        phpbb_topics ON phpbb_posts.topic_id = phpbb_topics.topic_id
+    JOIN
+        phpbb_forums ON phpbb_posts.forum_id = phpbb_forums.forum_id;
+    ENDTEXT
+
+    oCn:SaveToDbf( cSQL, "posts.dbf" )
+
+return nil    &lt;e&gt;</code></pre></div></e></CODE><br>
+5. Now we create a small dataset in json to make tests:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+request dbfcdx
+
+function Main()
+
+    local aPosts := {}, n
+
+    USE posts VIA "dbfcdx"
+
+    INDEX ON posts-&gt;topic + posts-&gt;date + posts-&gt;time + posts-&gt;forum TO subject
+    GO TOP
+
+    for n = 1 to 20
+       AAdd( aPosts, GetTopic() )
+    next
+    hb_memoWrit( "forums.json", hb_jsonEncode( aPosts ) )
+    XBrowser( aPosts )
+
+return nil
+
+function GetTopic()
+
+    local hTopic := {=&gt;}, cTopic := StrToUtf8( RTrim( posts-&gt;topic ) )
+
+    hTopic[ "topic" ]    = StrToUtf8( RTrim( posts-&gt;topic )  )
+    hTopic[ "messages" ] = {}
+
+    AAdd( hTopic[ "messages" ], GetPost() )
+    SKIP 
+    while posts-&gt;topic == cTopic
+       AAdd( hTopic[ "messages" ], GetPost() ) 
+       SKIP 
+    end
+
+return hTopic    
+
+function GetPost() 
+
+    local hPost := {=&gt;}
+
+    hPost[ "topic" ]    = StrToUtf8( RTrim( posts-&gt;topic ) )
+    hPost[ "forum" ]    = StrToUtf8( RTrim( posts-&gt;forum ) )
+    hPost[ "username" ] = StrToUtf8( RTrim( posts-&gt;username ) )
+    hPost[ "date" ]     = posts-&gt;date 
+    hPost[ "time" ]     = RTrim( posts-&gt;time )
+    hPost[ "text" ]     = StrToUtf8( posts-&gt;text )
+
+return hPost    
+
+#pragma BEGINDUMP
+
+#include &lt;windows.h&gt;
+#include &lt;hbapi.h&gt;
+
+HB_FUNC( STRTOUTF8 )
+{
+   int iLength1;
+   int iLength2;
+   LPWSTR szWideText;
+   char * szDest;
+
+   iLength1 = MultiByteToWideChar( CP_ACP, 0, hb_parc( 1 ), hb_parclen( 1 ), NULL, 0 );
+   szWideText = ( LPWSTR ) hb_xgrab( ( iLength1 + 1 ) * 2 );
+   MultiByteToWideChar( CP_ACP, 0, hb_parc( 1 ), hb_parclen( 1 ), szWideText, iLength1 );
+   szWideText[ iLength1 ] = NULL;
+   iLength2 = WideCharToMultiByte( CP_UTF8, 0, szWideText, iLength1, NULL, 0, NULL, NULL );
+   szDest = ( char * ) hb_xgrab( iLength2 + 1 );
+   WideCharToMultiByte( CP_UTF8, 0, szWideText, iLength1, szDest, iLength2, NULL, NULL );
+   hb_xfree( ( void * ) szWideText );
+   szDest[ iLength2 ] = NULL;
+   hb_retc( szDest );
+   hb_xfree( ( void * ) szDest );
+}    
+
+#pragma ENDDUMP
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+6. next we load this forums.json as a dataset to HuggingFace to verify that it is correct. Open a free account at HuggingFace, create a dataset and upload forums.json. If you can properly inspect the forums.json from HuggingFace then it means that forums.json is ok.<br/><br>
+<br/><br>
+The structure of the generated json file is as follows:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;[
+   {  "topic": the title of the topic,
+      "messages":
+      [ 
+         {
+            "topic": the title of the topic,
+            "forum": the forum name,
+            "username": name of the author,
+            "date": date of the post,
+            "time": time of the post,
+            "text": text of the post
+         },
+        next posts for the same topic
+      ]
+   },
+   next topic,
+   ...
+]&lt;e&gt;</code></pre></div></e></CODE><br>
+so basically it is a list of the topics, with the name of the topic and the list of messages for such topic.<br/><br>
+<br/><br>
+Here you have the Google Colab file to run the fine tunning training from Microsoft Phi2:<br/><br>
+<URL url="https://github.com/FiveTechSoft/FWH_tools/blob/master/fivetech_forums.ipynb"><s><a href="</s><LINK_TEXT text="https://github.com/FiveTechSoft/FWH_too ... rums.ipynb">https://github.com/FiveTechSoft/FWH_tools/blob/master/fivetech_forums.ipynb</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://github.com/FiveTechSoft/FWH_too ... rums.ipynb">https://github.com/FiveTechSoft/FWH_tools/blob/master/fivetech_forums.ipynb</LINK_TEXT><e></a></e></URL><br/><br>
+<br/><br>
+======== original post<br/><br>
+<br/><br>
+Some days ago our friend Bruno Cantero suggested me a great idea:<br/><br>
+<br/><br>
+to generate an AI LLM from these forums, as these forums have been running for 18 years, so it may be a great dataset to train an AI LLM <E>:-)</E><br/><br>
+<br/><br>
+So first thing we need is to build a dataset from it. Here I am posting some initial tests that I expect that we may be able to complete with the help of Uwe and Rao:<br/><br>
+<br/><br>
+topics.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+function Main()
+
+    local cURL  := "http://forums.fivetechsupport.com/viewtopic.php?f3&amp;t=8"
+    local cHTML := WebPageContents( cUrl )
+ 
+    MsgInfo( Len( GetTopics( cHtml ) ) )
+ 
+return nil
+
+function GetTopics( cHtml )
+
+   local nAt, cTopic
+   local aTopics := {}
+
+   while ( nAt := At( 'class="post bg', cHtml ) ) != 0
+      cTopic = SubStr( cHtml, nAt + Len( 'class="post bg' ) )
+      cTopic = SubStr( cTopic, 1, At( '&lt;hr class="divider"', cTopic ) + Len( '&lt;hr class="divider"' ) )
+      AAdd( aTopics, GetTopic( cTopic ) )
+      cHtml = SubStr( cHtml, At( '&lt;hr class="divider"', cHtml ) +  + Len( '&lt;hr class="divider"' ) )
+   end 
+   
+return aTopics   
+
+function GetTopic( cTopic )
+
+   local hTopic := {=&gt;}
+   local cContent := SubStr( cTopic, At( '&lt;div class="content"&gt;', cTopic ) + Len( '&lt;div class="content"&gt;' ) )
+   local cAuthor := SubStr( cTopic, At( '&lt;p class="author"&gt;', cTopic ) + Len( '&lt;p class="author"&gt;' ) )
+
+   cContent = SubStr( cContent, 1, At( "&lt;/div&gt;", cContent ) - 1 )
+
+   cAuthor  = SubStr( cAuthor, 1, At( "&lt;/strong&gt;", cAuthor ) - 5 )
+   cAuthor  = SubStr( cAuthor, RAt( "&gt;", cAuthor ) + 1 )
+
+   MsgInfo( cContent, cAuthor )
+
+   hTopic[ "contents" ] = cContent
+   hTopic[ "author" ] = cAuthor
+
+return hTopic   
+ &lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266371">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Thu Dec 21, 2023 11:49 AM
+      </div>
+      <div class="content"><p><r>Another ideal use would be a DBF to LLM <E>:-)</E><br/><br>
+<br/><br>
+We already have llama64.dll to run it !</r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p266373">
+    <div class="poster">
+      <div class="name" style="color:#105289">paquitohm</div>
+      <div class="rank">Posts: 318</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 14, 2022 08:37 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Thu Dec 21, 2023 12:22 PM
+      </div>
+      <div class="content"><p><t>Antonio,<br/><br>
+<br/><br>
+Pues me parece una buenisima idea.<br/><br>
+<br/><br>
+Se podria interrogar a la IA sobre cual es el mejor vendedor, cuando vendio mas, que vendedor ha decrecido, etc<br/><br>
+<br/><br>
+slds</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p266374">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Thu Dec 21, 2023 12:27 PM
+      </div>
+      <div class="content"><r>hi Antonio,<br>
+<QUOTE author="Antonio Linares"><s><blockquote><cite>Antonio Linares wrote:</cite></s>Another ideal use would be a DBF to LLM <E>:-)</E><br/><br>
+<br/><br>
+We already have llama64.dll to run it !<e></blockquote></e></QUOTE><br>
+i do have a DBF of Fivewin Forum<br/><br>
+<br/><br>
+i use my phpBB "Codebox" Reader based on Idea of Uwe<br/><br>
+<URL url="https://www.hmgforum.com/viewtopic.php?t=7281"><s><a href="</s>https://www.hmgforum.com/viewtopic.php?t=7281<e>" rel="noopener"></s>https://www.hmgforum.com/viewtopic.php?t=7281<e></a></e></URL><br/><br>
+<br/><br>
+extract "Codebox" Tag is not my Problem, it are HTML "Sign" which i try to STRTRAN()<br/><br>
+it work so far with CODE but in "Body" i still have a lot HTML "Sign"<br/><br>
+<br/><br>
+Question : is there a Function HTML2TEXT() to get plain TEXT from HTML Message  <E>:?:</E></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266380">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Thu Dec 21, 2023 04:31 PM
+      </div>
+      <div class="content"><r><QUOTE author="paquitohm"><s><blockquote><cite>paquitohm wrote:</cite></s>Antonio,<br/><br>
+<br/><br>
+Pues me parece una buenisima idea.<br/><br>
+<br/><br>
+Se podria interrogar a la IA sobre cual es el mejor vendedor, cuando vendio mas, que vendedor ha decrecido, etc<br/><br>
+<br/><br>
+slds<e></blockquote></e></QUOTE><br>
+<br>
+totalmente de acuerdo. Tenemos que conseguirlo <E>:-)</E></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266387">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Thu Dec 21, 2023 08:47 PM
+      </div>
+      <div class="content"><p><t>I also generate a DBF based on Rao and Uwe code.<br/><br>
+<br/><br>
+I only extract the source samples from all the posts.  Offline I then search the dbf for keywords of any kind.  It helped me many many times in finding solutions because It is showing sample code.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p266394">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Fri Dec 22, 2023 06:43 AM
+      </div>
+      <div class="content"><r>This is the type of csv file that we have to generate from a DBF:<br/><br>
+<br/><br>
+customer.csv<br>
+<QUOTE><s><blockquote></s>ID,FIRST,LAST,STREET,CITY,STATE,ZIP,HIREDATE,MARRIED,AGE,SALARY,NOTES<br/><br>
+1,Homer,Simpson,32179 Maiden Lane,Springfield,IL,20503-8202,1992-09-18,True,50,5900.0,This is a test for record 1<br/><br>
+2,Ceci,Gibbard,9540 Raynes Park Road,Miami,MA,55774-2304,1984-10-17,False,28,123700.0,This is a test for record 2<br/><br>
+3,Reg,Kaczocha,30522 Park Ten Place,Scottsdale,WY,09226-1483,1989-05-23,True,43,82900.0,This is a test for record 3<br/><br>
+4,David,Jochum,8211 Carnegie Center,Hingham,IL,71947-5114,1900-10-10,True,34,120000.0,This is a test for record 4<br/><br>
+5,Simpson,Cafee,32736 Meadowbrook Drive,Nedlands,ID,38179-3789,1990-12-11,True,88,51800.0,This is a test for record 5<br/><br>
+6,Tom,Logan,6180 Roselle Street,West Covina,CT,82378-0904,1992-02-24,True,90,20400.0,This is a test for record 6<br/><br>
+7,Gary,Brock,3893 Canandaigua Road,Senford,WV,94177-5329,1987-09-12,True,58,145300.0,This is a test for record 7<br/><br>
+8,Frank,Fonseca,18712 Sherman Way,Ashby,RI,08218-8409,1988-02-16,False,46,118900.0,This is a test for record 8<br/><br>
+9,Rick,Sencovici,13802 South University,Arcadia,HI,82063-8091,1987-01-17,True,55,23700.0,This is a test for record 9<br/><br>
+10,Hugh,Lupton,16472 S. LaSalle Street,Tarzana,AK,79021-0643,1989-08-28,False,89,96700.0,This is a test for record 10<br/><br>
+11,Oskar,Farley,19123 Washington Street,Boston,IN,25885-0851,1985-08-31,True,46,77300.0,This is a test for record 11<br/><br>
+12,Johnny,Fischer,30621 Inridge Drive,McLean,WA,86275-8035,1988-11-12,False,37,2300.0,This is a test for record 12<br/><br>
+13,Corkey,Young,9069 Avon Place,Lund,NC,36199-1793,1988-12-24,True,54,30000.0,This is a test for record 13<br/><br>
+14,Phyllis,Lechuga,1457 Indianapolis Ave,Council Bluffs,AR,73036-5749,1987-01-29,False,94,84600.0,This is a test for record 14<br/><br>
+15,Chester,Padilla,32385 Federal Street,Ashby,MS,82882-2447,1985-12-22,True,90,144000.0,This is a test for record 15<br>
+<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266398">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Fri Dec 22, 2023 09:31 AM
+      </div>
+      <div class="content"><p><t>Dear Antonio,<br/><br>
+<br/><br>
+Can we download the DBF (phpBB) file from somewhere?<br/><br>
+<br/><br>
+Best regards,<br/><br>
+<br/><br>
+Otto</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p266399">
+    <div class="poster">
+      <div class="name" style="color:#105289">VictorCasajuana</div>
+      <div class="rank">Posts: 308</div>
+      <div class="avatar"></div>
+      Joined: Wed Mar 28, 2018 04:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Fri Dec 22, 2023 09:47 AM
+      </div>
+      <div class="content"><p><t>Hola Antonio, tienes acceso a la base de datos del foro? en este caso sería más sencillo extraer la información.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p266401">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Fri Dec 22, 2023 10:22 AM
+      </div>
+      <div class="content"><r>Estimado Victor,<br/><br>
+<br/><br>
+Si, claro, tenemos acceso a la base de datos. <br/><br>
+<br/><br>
+De todas formas la cuestión ahora es como organizar esos datos para que puedan ser entrenados en un modelo de IA pre entrenado.<br/><br>
+<br/><br>
+Por el momento hemos encontrado este modelo que nos da una primera idea:<br>
+<QUOTE><s><blockquote></s>data = {<br/><br>
+    'text': ['Initial post for programming question.', 'Reply 1: I think the issue is with your code.',<br/><br>
+             'Reply 2: Can you provide more details?', 'Initial post for hardware issue.',<br/><br>
+             'Reply 1: Have you checked the connections?', 'Reply 2: Try updating your drivers.'],<br/><br>
+    'label': ['programming', 'programming', 'programming', 'hardware', 'hardware', 'hardware']<br/><br>
+}<br/><br>
+<br>
+<e></blockquote></e></QUOTE><br>
+poco a poco <E>:-)</E></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266402">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Fri Dec 22, 2023 10:24 AM
+      </div>
+      <div class="content"><r><QUOTE author="Otto"><s><blockquote><cite>Otto wrote:</cite></s>Dear Antonio,<br/><br>
+<br/><br>
+Can we download the DBF (phpBB) file from somewhere?<br/><br>
+<br/><br>
+Best regards,<br/><br>
+<br/><br>
+Otto<e></blockquote></e></QUOTE><br>
+<br>
+Dear Otto,<br/><br>
+<br/><br>
+We have not generated a DBF from these forums yet, but surely we will do it <E>:-)</E></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266411">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Fri Dec 22, 2023 01:32 PM
+      </div>
+      <div class="content"><p><r>Dear Otto, Victor,<br/><br>
+<br/><br>
+We already have a posts.dbf with all the forums posts <E>:-)</E><br/><br>
+<br/><br>
+We are reviewing if it has some private info that must not be shared...</r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p266417">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Sat Dec 23, 2023 04:51 PM
+      </div>
+      <div class="content"><r>This seems to be fine:<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+request dbfcdx
+
+function Main()
+
+    local oCn := Maria_Connect( { "localhost", "forums", "root", "password" } )
+    local cSQL 
+
+    TEXT INTO cSQL 
+    SELECT
+        DATE_FORMAT(FROM_UNIXTIME(phpbb_posts.post_time), '%Y-%m-%d') AS date,
+        DATE_FORMAT(FROM_UNIXTIME(phpbb_posts.post_time), '%H:%i') AS time,
+        phpbb_forums.forum_name AS forum,
+        phpbb_topics.topic_title AS topic,
+        phpbb_users.username AS username,
+        phpbb_posts.post_text AS text
+    FROM
+        phpbb_posts
+    JOIN
+        phpbb_users ON phpbb_posts.poster_id = phpbb_users.user_id
+    JOIN
+        phpbb_topics ON phpbb_posts.topic_id = phpbb_topics.topic_id
+    JOIN
+        phpbb_forums ON phpbb_posts.forum_id = phpbb_forums.forum_id;
+    ENDTEXT
+
+    oCn:SaveToDbf( cSQL, "c:\temp\posts.dbf" )
+
+return nil    &lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266418">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Sat Dec 23, 2023 05:22 PM
+      </div>
+      <div class="content"><r>Here you have a posts.dbf and posts.fpt with all the contents of these forums <E>:-)</E><br/><br>
+<br/><br>
+We appreciate if you can review it and check if they are fine for you:<br/><br>
+<URL url="https://github.com/FiveTechSoft/forums/blob/master/posts_dbf.zip"><s><a href="</s><LINK_TEXT text="https://github.com/FiveTechSoft/forums/ ... ts_dbf.zip">https://github.com/FiveTechSoft/forums/blob/master/posts_dbf.zip</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://github.com/FiveTechSoft/forums/ ... ts_dbf.zip">https://github.com/FiveTechSoft/forums/blob/master/posts_dbf.zip</LINK_TEXT><e></a></e></URL><br/><br>
+<br/><br>
+join these parts using Total Commander so you get a posts_fpt.zip<br/><br>
+<URL url="https://github.com/FiveTechSoft/forums/blob/master/posts_fpt.001"><s><a href="</s><LINK_TEXT text="https://github.com/FiveTechSoft/forums/ ... ts_fpt.001">https://github.com/FiveTechSoft/forums/blob/master/posts_fpt.001</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://github.com/FiveTechSoft/forums/ ... ts_fpt.001">https://github.com/FiveTechSoft/forums/blob/master/posts_fpt.001</LINK_TEXT><e></a></e></URL><br/><br>
+<URL url="https://github.com/FiveTechSoft/forums/blob/master/posts_fpt.002"><s><a href="</s><LINK_TEXT text="https://github.com/FiveTechSoft/forums/ ... ts_fpt.002">https://github.com/FiveTechSoft/forums/blob/master/posts_fpt.002</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://github.com/FiveTechSoft/forums/ ... ts_fpt.002">https://github.com/FiveTechSoft/forums/blob/master/posts_fpt.002</LINK_TEXT><e></a></e></URL><br/><br>
+<URL url="https://github.com/FiveTechSoft/forums/blob/master/posts_fpt.003"><s><a href="</s><LINK_TEXT text="https://github.com/FiveTechSoft/forums/ ... ts_fpt.003">https://github.com/FiveTechSoft/forums/blob/master/posts_fpt.003</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://github.com/FiveTechSoft/forums/ ... ts_fpt.003">https://github.com/FiveTechSoft/forums/blob/master/posts_fpt.003</LINK_TEXT><e></a></e></URL></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266419">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: phpBB to LLM</span><br>
+        Posted: Sat Dec 23, 2023 09:19 PM
+      </div>
+      <div class="content"><r>First try building the dataset. hb_jsonEncode() GPFs...<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+
+request dbfcdx
+
+function Main()
+
+    local aPosts := {}
+
+    USE posts VIA "dbfcdx"
+
+    INDEX ON posts-&gt;topic + posts-&gt;date + posts-&gt;time + posts-&gt;forum TO subject
+    GO TOP
+
+    while ! EoF()
+       AAdd( aPosts, GetTopic() )
+    end       
+
+    // hb_jsonEncode( aPosts )
+    MsgInfo( Len( aPosts ) )
+
+return nil
+
+function GetTopic()
+
+    local hTopic := {=&gt;}, cTopic := posts-&gt;topic
+
+    hTopic[ "topic" ]    = posts-&gt;topic 
+    hTopic[ "messages" ] = {}
+
+    AAdd( hTopic[ "messages" ], GetPost() )
+    SKIP 
+    while posts-&gt;topic == cTopic
+       AAdd( hTopic[ "messages" ], GetPost() ) 
+       SKIP 
+    end
+
+return hTopic    
+
+function GetPost() 
+
+    local hPost := {=&gt;}
+
+    hPost[ "topic" ]    = posts-&gt;topic 
+    hPost[ "username" ] = posts-&gt;username 
+    hPost[ "text" ]     = posts-&gt;text
+
+return hPost    &lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-44041-page-2.html">2</a> <a href="topic-44041-page-3.html">3</a> (34 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

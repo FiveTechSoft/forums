@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Construyendo dinamicamente árbol con la jerarquía de Clases - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-23852">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Construyendo dinamicamente árbol con la jerarquía de Clases</div>
+  <div class="post" id="p128353">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Construyendo dinamicamente árbol con la jerarquía de Clases</span><br>
+        Posted: Tue Apr 10, 2012 11:14 AM
+      </div>
+      <div class="content">Un primer intento de construir dinamicamente un árbol con la jerarquia de Classes usadas en una aplicación <br>
+<br>
+classtree.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+static aClasses := {}
+
+function Main()
+
+   local oWnd
+
+   DEFINE WINDOW oWnd TITLE "Classes hierarchy"
+
+   ACTIVATE WINDOW oWnd ;
+      ON INIT BuildClassesTree( oWnd )
+
+return nil
+
+function BuildClassesTree( oWnd )
+
+   local n := 1, oClass, oTree, oItem, oChild
+
+   while ! Empty( __ClassName( n ) )
+      AAdd( aClasses, TClass():New( __ClassName( n++ ) ) )
+   end
+
+   for each oClass in aClasses
+      oClass:GetSuper()
+   next
+
+   for each oClass in aClasses
+      oClass:GetChilds()
+   next
+
+   oTree = TTreeView():New( 1, 1, oWnd )
+   oTree:nWidth = 152
+   // oTree:SetImageList( oImageList )
+   // oTree:Add( "Files" )
+   for each oClass in aClasses
+     if Empty( oClass:cSuper )
+        oItem = oTree:Add( oClass:cName )
+        for each oChild in oClass:aChilds
+           oItem:Add( oChild:cName )
+        next 
+     endif
+   next
+
+   oTree:Expand()
+
+return nil
+
+CLASS TClass
+
+   DATA   cName
+   DATA   cSuper
+   DATA   aChilds INIT {}
+
+   METHOD New( cName )
+
+   METHOD GetSuper()
+
+   METHOD GetChilds()
+
+ENDCLASS
+
+METHOD New( cName ) CLASS TClass
+
+   ::cName  = cName
+   ::cSuper = ""
+
+return Self
+
+METHOD GetSuper() CLASS TClass
+
+   local oClass, oInstance := &amp;( ::cName + "()" )
+
+   for each oClass in aClasses
+      try
+         if oInstance:IsDerivedFrom( oClass:cName ) .and. ::cName != oClass:cName
+            ::cSuper = oClass:cName
+         endif
+      end
+   next
+
+return nil
+
+METHOD GetChilds() CLASS TClass
+
+   local oClass
+
+   for each oClass in aClasses
+      if oClass:cSuper == ::cName
+         AAdd( ::aChilds, oClass )
+      endif
+   next
+
+return nil 
+
+function Error()
+
+return ErrorNew()</code></pre></div><br>
+<br>
+<img src="http://img861.imageshack.us/img861/8924/captureyj.png" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p128357">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Construyendo dinamicamente árbol con la jerarquía de Clases</span><br>
+        Posted: Tue Apr 10, 2012 11:38 AM
+      </div>
+      <div class="content">Una versión mejorada <br>
+<br>
+ClassTree.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+static aClasses := {}
+
+function Main()
+
+   local oWnd, o := TDialog()
+
+   DEFINE WINDOW oWnd TITLE "Classes hierarchy"
+
+   ACTIVATE WINDOW oWnd ;
+      ON INIT BuildClassesTree( oWnd )
+
+return nil
+
+function BuildClassesTree( oWnd )
+
+   local oTree := TTreeView():New( 1, 1, oWnd ) 
+   local oClass
+
+   oTree:nWidth = 200
+   oWnd:oLeft = oTree
+
+   // oTree:SetImageList( oImageList )
+
+   GetClasses()
+ 
+   for each oClass in aClasses
+     if Empty( oClass:cSuper )
+        AddChilds( oTree:Add( oClass:cName ), oClass:aChilds ) 
+     endif
+   next
+
+   oTree:Expand()
+
+return nil
+
+function AddChilds( oItem, aChilds )
+
+   local oChild, oSubItem
+
+   for each oChild in aChilds
+      oSubItem = oItem:Add( oChild:cName )
+      AddChilds( oSubItem, oChild:aChilds ) 
+   next
+
+return nil
+
+function GetClasses()
+
+   local n := 1, oClass
+
+   while ! Empty( __ClassName( n ) )
+      AAdd( aClasses, TClass():New( __ClassName( n++ ) ) )
+   end
+
+   for each oClass in aClasses
+      oClass:GetSuper()
+   next
+
+   for each oClass in aClasses
+      oClass:GetChilds()
+   next
+
+return nil
+
+CLASS TClass
+
+   DATA   cName
+   DATA   cSuper
+   DATA   aChilds INIT {}
+
+   METHOD New( cName )
+
+   METHOD GetSuper()
+
+   METHOD GetChilds()
+
+ENDCLASS
+
+METHOD New( cName ) CLASS TClass
+
+   ::cName  = cName
+   ::cSuper = ""
+
+return Self
+
+METHOD GetSuper() CLASS TClass
+
+   local oClass, oInstance := &amp;( ::cName + "()" )
+
+   for each oClass in aClasses
+      try
+         if oInstance:IsDerivedFrom( oClass:cName ) .and. ::cName != oClass:cName
+            ::cSuper = oClass:cName
+         endif
+      end
+   next
+
+return nil
+
+METHOD GetChilds() CLASS TClass
+
+   local oClass
+
+   for each oClass in aClasses
+      if oClass:cSuper == ::cName
+         AAdd( ::aChilds, oClass )
+      endif
+   next
+
+return nil 
+
+function Error()
+
+return ErrorNew()</code></pre></div><br>
+<br>
+<img src="http://img171.imageshack.us/img171/8917/capturenel.png" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p128358">
+    <div class="poster">
+      <div class="name" style="color:#105289">lucasdebeltran</div>
+      <div class="rank">Posts: 1303</div>
+      <img class="avatar avatar-img" src="avatars/1765.jpg" alt="" loading="lazy">
+      Joined: Tue Jul 21, 2009 08:12 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Construyendo dinamicamente árbol con la jerarquía de Clases</span><br>
+        Posted: Tue Apr 10, 2012 12:06 PM
+      </div>
+      <div class="content"><p>Antonio,</p>
+<p>Muchas gracias.</p>
+<p>¿Y este ejemplo podría convertirse en otro para detectar recursos no liberados en las clases o en las funciones de la aplicación?.</p>
+<p>Salu2</p></div>
+    </div>
+  </div>
+  <div class="post" id="p128362">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Construyendo dinamicamente árbol con la jerarquía de Clases</span><br>
+        Posted: Tue Apr 10, 2012 12:28 PM
+      </div>
+      <div class="content"><p>Lucas,</p>
+<p>FiveWIn ya proporciona funciones para detectar cualquier recurso no liberado, creado desde las propias clases de FiveWin ó construidos por el programador. De todas formas los recursos no tienen una organización jerárquica, luego no veo un paralelismo entre lo que comentas y el ejemplo que estamos viendo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p128363">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Construyendo dinamicamente árbol con la jerarquía de Clases</span><br>
+        Posted: Tue Apr 10, 2012 12:30 PM
+      </div>
+      <div class="content">Esta imagen es de 1991 y pertenece a Actor (c) Whitewater Group, adquirido posteriormente y abandonado por Symantec:<br>
+<br>
+<a href="http://en.wikipedia.org/wiki/Actor_(programming_language)" rel="noopener">http&#58;//en&#46;wikipedia&#46;org/wiki/Actor_(programming_language)</a><br>
+<br>
+Veamos cuanto poder aproximar nuestro ejemplo a este browser <br>
+<br>
+<img src="http://img213.imageshack.us/img213/1920/capturemc.png" alt="" loading="lazy"><br>
+<br>
+<img src="http://img853.imageshack.us/img853/5022/capturearg.png" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p128365">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Construyendo dinamicamente árbol con la jerarquía de Clases</span><br>
+        Posted: Tue Apr 10, 2012 12:37 PM
+      </div>
+      <div class="content"><p>A propósito, poseo una copia original de Actor, con los manuales etc, pero no vienen incluidos los fuentes de las Classes.</p>
+<p>Alguno de vosotros tiene una copia de Actor con fuentes ? <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p128373">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Construyendo dinamicamente árbol con la jerarquía de Clases</span><br>
+        Posted: Tue Apr 10, 2012 02:25 PM
+      </div>
+      <div class="content"><p>Maestro, esto te sirve?</p>
+<!-- m -->
+<p><a class="postlink" href="http://www.koders.com/cpp/fid7BDFFA087DF07FFD66BBBB26DDC23899A8C27346.aspx?s=opengl">http://www.koders.com/cpp/fid7BDFFA087D ... x?s=opengl</a></p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p128375">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Construyendo dinamicamente árbol con la jerarquía de Clases</span><br>
+        Posted: Tue Apr 10, 2012 03:00 PM
+      </div>
+      <div class="content">Joao,<br>
+<br>
+No, gracias por el intento. <br>
+<br>
+Esto es lo más próximo que he encontrado:<br>
+<br>
+<a href="http://biphome.spray.se/mikael_aronsson/index_ac.html" rel="noopener">http&#58;//biphome&#46;spray&#46;se/mikael_aronsson/index_ac&#46;html</a><br>
+<br>
+<blockquote>The goal with this project is to produce as full 32 bit implementation of the Actor language and class library for Win32</blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p128395">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Construyendo dinamicamente árbol con la jerarquía de Clases</span><br>
+        Posted: Tue Apr 10, 2012 09:49 PM
+      </div>
+      <div class="content">Versión mejorada:<br>
+<br>
+ClassTree.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+#include "Splitter.ch"
+
+static aClasses := {}, oSplit1, oSplit2, oLbxDatas, oLbxMethods 
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oWnd, o := TDialog()
+
+   DEFINE WINDOW oWnd TITLE "Classes hierarchy" ;
+      MENU BuildMenu()
+
+   ACTIVATE WINDOW oWnd ;
+      ON INIT BuildClassesTree( oWnd ) ;
+      ON RESIZE ( If( oSplit1 != nil, oSplit1:AdjLeft(),),;
+                  If( oSplit2 != nil, oSplit2:AdjRight(),) )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function BuildMenu()
+
+   local oMenu
+
+   MENU oMenu
+      MENUITEM "About"
+   ENDMENU
+
+return oMenu
+
+//----------------------------------------------------------------------------//
+
+function BuildClassesTree( oWnd )
+
+   local oTree := TTreeView():New( 0, 0, oWnd ) 
+   local oClass, cData, cMethod
+
+   oTree:nWidth = 180
+   // oTree:SetImageList( oImageList )
+
+   oTree:Expand()
+
+   @ 0, 186 LISTBOX oLbxDatas VAR cData ITEMS { "one", "two", "three" } ;
+      SIZE 200, 200 PIXEL OF oWnd
+
+   @ 0, 391 LISTBOX oLbxMethods VAR cMethod ITEMS { "one", "two", "three" } ;
+      SIZE 200, 200 PIXEL OF oWnd
+
+   @ 0, 181 SPLITTER oSplit1 ;
+      VERTICAL ;
+      PREVIOUS CONTROLS oTree ; 
+      HINDS CONTROLS oLbxDatas ;
+      LEFT MARGIN 150 ;  
+      RIGHT MARGIN oSplit2:nLast + 100 ;
+      SIZE 4, 300  PIXEL ;
+      OF oWnd STYLE
+
+   @ 0, 386 SPLITTER oSplit2 ;
+      VERTICAL ;
+      PREVIOUS CONTROLS oLbxDatas ;
+      HINDS CONTROLS oLbxMethods ;
+      LEFT MARGIN oSplit1:nFirst + 120 ;
+      RIGHT MARGIN 80 ;
+      SIZE 4, 300 PIXEL ;
+      OF oWnd STYLE
+
+   GetClasses()
+ 
+   for each oClass in aClasses
+     if Empty( oClass:cSuper )
+        AddChilds( oTree:Add( oClass:cName ), oClass:aChilds ) 
+     endif
+   next
+
+   oTree:bChanged = { || ShowClassInfo( oTree ) }
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function ShowClassInfo( oTree )
+
+   local oItem := oTree:GetSelected()
+
+   if oItem != nil .and. oItem:Cargo != nil 
+      oLbxDatas:SetItems( oItem:Cargo:aDatas )
+      oLbxMethods:SetItems( oItem:Cargo:aMethods )
+   else
+      oLbxDatas:SetItems( {} )
+      oLbxMethods:SetItems( {} )
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function AddChilds( oItem, aChilds )
+
+   local oChild, oSubItem
+
+   for each oChild in aChilds
+      oSubItem = oItem:Add( oChild:cName )
+      oSubItem:Cargo = oChild      
+      AddChilds( oSubItem, oChild:aChilds ) 
+   next
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function GetClasses()
+
+   local n := 1, oClass
+
+   while ! Empty( __ClassName( n ) )
+      AAdd( aClasses, TClass():New( __ClassName( n++ ) ) )
+   end
+
+   for each oClass in aClasses
+      oClass:GetSuper()
+   next
+
+   for each oClass in aClasses
+      oClass:GetChilds()
+   next
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+CLASS TClass
+
+   DATA   cName
+   DATA   cSuper
+   DATA   aChilds INIT {}
+   DATA   aDatas
+   DATA   aMethods
+
+   METHOD New( cName )
+
+   METHOD GetSuper()
+
+   METHOD GetChilds()
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( cName ) CLASS TClass
+
+   ::cName  = cName
+   ::cSuper = ""
+
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD GetSuper() CLASS TClass
+
+   local oClass, oInstance := &amp;( ::cName + "()" )
+
+   if ::aDatas == nil
+      ::aDatas   = __objGetMsgList( oInstance, .T. )
+      ::aMethods = __objGetMsgList( oInstance, .F. )
+   endif
+
+   for each oClass in aClasses
+      try
+         if oInstance:IsDerivedFrom( oClass:cName ) .and. ::cName != oClass:cName
+            ::cSuper = oClass:cName
+         endif
+      end
+   next
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD GetChilds() CLASS TClass
+
+   local oClass
+
+   for each oClass in aClasses
+      if oClass:cSuper == ::cName
+         AAdd( ::aChilds, oClass )
+      endif
+   next
+
+return nil 
+
+//----------------------------------------------------------------------------//
+
+function Error()
+
+return ErrorNew()</code></pre></div><br>
+<br>
+<img src="http://img843.imageshack.us/img843/8941/captureovp.png" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

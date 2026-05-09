@@ -1,0 +1,1563 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Generar hb_unrar lib para MinGW - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-39307">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Generar hb_unrar lib para MinGW</div>
+  <div class="post" id="p234575">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Generar hb_unrar lib para MinGW</span><br>
+        Posted: Sat Aug 29, 2020 06:19 PM
+      </div>
+      <div class="content">Buenas tardes,<br>
+<br>
+he descargado la última versión de unrar.dll desde <a href="http://www.winrar.es/descargas/32/descargar-unrar-dll-para-windows-en-ingles" rel="noopener">http&#58;//www&#46;winrar&#46;es/descargas/32/descargar-unrar-dll-para-windows-en-ingles</a>. En su día pude crear la librería para el compilador de Borland mediante el siguiente fichero makelib.bat<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">@echo off
+
+rem Builds Harbour library hbunrar.lib.
+
+:OPT
+  call ..\..\..\batch\makelibopt.bat hbunrar h %*
+  if %MV_EXIT%==Y    goto END
+  if %MV_DODONLY%==Y goto CLEANUP
+
+:BUILD
+  if not exist unrar.dll call :NODLL
+
+  %MG_BCC%\bin\impdef unrar.def unrar.dll
+  %MG_BCC%\bin\implib unrar.lib unrar.def
+
+  if exist %MV_BUILD%\%MV_LIBNAME%.lib del %MV_BUILD%\%MV_LIBNAME%.lib
+
+  %MV_HRB%\bin\harbour unrar.prg -n -q0 -w -es2 -gc0 -i%MV_HRB%\include;%MG_ROOT%\include
+  %MG_BCC%\bin\bcc32 -c -O2 -tW -tWM -d -a8 -OS -I%MV_HRB%\include;%MG_BCC%\include -L%MV_LIB%;%MG_BCC%\lib unrar.c
+  %MG_BCC%\bin\bcc32 -c -O2 -tW -tWM -d -a8 -OS -I%MV_HRB%\include;%MG_BCC%\include -L%MV_LIB%;%MG_BCC%\lib hb_unrar.c
+
+  %MG_BCC%\bin\tlib %MV_BUILD%\%MV_LIBNAME%.lib +unrar.obj +hb_unrar.obj
+
+:CLEANUP
+  if %MV_DODEL%==N goto END
+  call :DELFILES unrar.c unrar.obj unrar.def hb_unrar.obj
+  goto END
+
+:DELFILES
+  if exist %1 del %1
+  shift
+  if not "%1"=="" goto DELFILES
+  goto :EOF
+
+:NODLL
+  echo.
+  echo. Missing unrar.dll, please download it from:
+  echo. http://www.rarlab.com/rar/UnRARDLL.exe
+  echo.
+  echo. Make aborted.
+  echo.
+  goto :EOF
+
+:END
+  call ..\..\..\batch\makelibend.bat</code></pre></div><br>
+<br>
+Usando los siguientes ficheros fuente:<br>
+<br>
+hb_unrar.c<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+ * Harbour Project source code:
+ * UnRar library low level (client api) interface code
+ *
+ * Copyright 2007 P.Chornyj &lt;myorg63@mail.ru&gt;
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
+#include &lt;windows.h&gt;
+#include "unrar.h"
+#include "hbapi.h"
+#include "hbvm.h"
+#include "hbstack.h"
+#include "hbapiitm.h"
+#include "hbapifs.h"
+#include "hbver.h"
+
+#if HB_VER_MAJOR &lt; 1
+#error Too old version [x]Harbour
+#endif
+#define RAR_ARCNAME     1
+#define RAR_FILENAME    2
+#define RAR_FLAGS       3
+#define RAR_PACKSIZE    4
+#define RAR_UNPSIZE     5
+#define RAR_HOSTOS      6
+#define RAR_FILECRC     7
+#define RAR_FILETIME    8
+#define RAR_UNPVER      9
+#define RAR_METHOD      10
+#define RAR_FILEATTR    11
+
+#define RAR_ST_SUCCESS  0
+#define RAR_ST_OPEN     1
+#define RAR_ST_OUT      2
+#define RAR_ST_OPEN_OUT 3
+#define RAR_ST_HBROKEN  4
+
+typedef UINT ( CALLBACK *RGetApiDllVersion ) ( void );
+
+static void       OpenProcessFileError( int Error );
+static void       OutProcessFileError( int Error, const char *Filename );
+static void       ClearError( void );
+int CALLBACK      CallbackProc( UINT msg, LONG UserData, LONG P1, LONG P2 );
+static PHB_ITEM   RGetDate( UINT FileTime );
+static PHB_ITEM   RConvertFileTimeToString( UINT FileTime, BOOL includeTime, BOOL includeSeconds );
+
+static UINT       s_CmtBufSize = 16384;
+static int        s_iOpenError = 0;
+static char       s_msgOpenError[64];
+static int        s_iOutError = 0;
+static char       s_msgOutError[64];
+static char       s_FName[_MAX_PATH + 1];
+static BOOL       s_bHeaderBroken = FALSE;
+static PHB_SYMB   pSymbolCallback = 0;
+
+/*
+   Get Unrar.DLL API version
+*/
+
+HB_FUNC( HB_RARGETDLLVERSION )
+{
+   int               iResult = 0;
+   HINSTANCE         m_hDLL;
+   RGetApiDllVersion m_UnRarDllApiVersion;
+
+   m_hDLL = LoadLibrary( "unrar.dll" );
+
+   if( m_hDLL != NULL )
+   {
+      m_UnRarDllApiVersion = ( (RGetApiDllVersion) GetProcAddress(m_hDLL, "RARGetDllVersion") );
+      if( m_UnRarDllApiVersion != NULL )
+      {
+         iResult = m_UnRarDllApiVersion();
+      }
+
+      FreeLibrary( m_hDLL );
+   }
+   else
+   {
+      iResult = -1;
+   }
+
+   hb_retni( iResult );
+}
+
+/*
+   Archive comments operations  
+*/
+
+HB_FUNC( HB_RARSETCMTBUFSIZE )
+{
+   BOOL  bResult = FALSE;
+   int   iSize = hb_parni( 1 );
+
+   if( iSize &gt;= 64 &amp;&amp; iSize &lt;= 56535 )
+   {
+      s_CmtBufSize = hb_parni( 1 );
+
+      bResult = TRUE;
+   }
+   else
+   {
+      s_CmtBufSize = 16384;
+   }
+
+   hb_retl( bResult );
+}
+
+HB_FUNC( HB_RARGETCMTBUFSIZE )
+{
+   hb_retni( s_CmtBufSize );
+}
+
+HB_FUNC( HB_RARGETCOMMENT )
+{
+   PHB_ITEM                      pCmtState = hb_param( 2, HB_IT_INTEGER );
+   HANDLE                        hArcData;
+   char                          *CmtBuf = ( char * ) hb_xgrab( s_CmtBufSize );
+   struct RAROpenArchiveDataEx   OpenArchiveData;
+
+   hb_xmemset( &amp;OpenArchiveData, 0, sizeof(OpenArchiveData) );
+   OpenArchiveData.ArcName = ( char * ) hb_parc( 1 );
+   OpenArchiveData.CmtBuf = CmtBuf;
+   OpenArchiveData.CmtBufSize = s_CmtBufSize;
+   OpenArchiveData.OpenMode = RAR_OM_LIST;
+
+   ClearError();
+
+   hArcData = RAROpenArchiveEx( &amp;OpenArchiveData );
+   if( OpenArchiveData.OpenResult == 0 )
+   {
+      if( OpenArchiveData.CmtState == 1 )
+      {
+         char  *szTempR = ( char * ) hb_xgrab( OpenArchiveData.CmtSize + 1 );
+
+         hb_xmemset( szTempR, 0, OpenArchiveData.CmtSize + 1 );
+         hb_strncpy( szTempR, OpenArchiveData.CmtBuf, OpenArchiveData.CmtSize );
+
+         hb_retclen_buffer( szTempR, OpenArchiveData.CmtSize );
+      }
+      else
+      {
+         hb_retc( "" );
+      }
+
+      if( pCmtState != NULL )
+      {
+         hb_storni( OpenArchiveData.CmtState, 2 );
+      }
+   }
+   else
+   {
+      OpenProcessFileError( OpenArchiveData.OpenResult );
+
+      hb_retc( "" );
+   }
+
+   RARCloseArchive( hArcData );
+
+   hb_xfree( CmtBuf );
+}
+
+/*
+   Get archive info     
+*/
+
+HB_FUNC( HB_RARGETARCHIVEINFO )
+{
+   HANDLE                        hArcData;
+   int                           iResult = 0;
+   char                          *CmtBuf = ( char * ) hb_xgrab( s_CmtBufSize );
+   struct RAROpenArchiveDataEx   OpenArchiveData;
+
+   hb_xmemset( &amp;OpenArchiveData, 0, sizeof(OpenArchiveData) );
+   OpenArchiveData.ArcName = ( char * ) hb_parc( 1 );
+   OpenArchiveData.CmtBuf = CmtBuf;
+   OpenArchiveData.CmtBufSize = s_CmtBufSize;
+   OpenArchiveData.OpenMode = RAR_OM_LIST;
+
+   ClearError();
+
+   hArcData = RAROpenArchiveEx( &amp;OpenArchiveData );
+   if( OpenArchiveData.OpenResult == 0 )
+   {
+      iResult = OpenArchiveData.Flags;
+   }
+   else
+   {
+      OpenProcessFileError( OpenArchiveData.OpenResult );
+   }
+
+   RARCloseArchive( hArcData );
+
+   hb_xfree( CmtBuf );
+
+   hb_retni( iResult );
+}
+
+/*
+   Get Number Of Files in Archive   
+*/
+
+HB_FUNC( HB_RARGETFILESCOUNT )
+{
+   HANDLE                        hArcData;
+   int                           RHCode;
+   struct RAROpenArchiveDataEx   OpenArchiveData;
+   LONG                          lFileCount = 0;
+
+   hb_xmemset( &amp;OpenArchiveData, 0, sizeof(OpenArchiveData) );
+   OpenArchiveData.ArcName = ( char * ) hb_parc( 1 );
+   OpenArchiveData.CmtBuf = NULL;
+   OpenArchiveData.OpenMode = RAR_OM_LIST;
+
+   ClearError();
+
+   hArcData = RAROpenArchiveEx( &amp;OpenArchiveData );
+   if( OpenArchiveData.OpenResult == 0 )
+   {
+      struct RARHeaderDataEx  HeaderData;
+      int                     PFCode;
+      PHB_ITEM                pPassword = hb_param( 2, HB_IT_STRING );
+      BOOL                    bIncludeDirectory = hb_parl( 3 );
+
+      if( pPassword != NULL )
+      {
+         RARSetPassword( hArcData, ( char * ) hb_itemGetCPtr(pPassword) );
+      }
+
+      //  RARSetCallback( hArcData, CallbackProc, 0 );
+
+      HeaderData.CmtBuf = NULL;
+      while( (RHCode = RARReadHeaderEx(hArcData, &amp;HeaderData)) == 0 )
+      {
+         if( bIncludeDirectory )
+         {
+            lFileCount++;
+         }
+         else
+         {
+            if( !(HeaderData.FileAttr &amp; HB_FA_DIRECTORY) )
+            {
+               lFileCount++;
+            }
+         }
+
+         if( (PFCode = RARProcessFile(hArcData, RAR_SKIP, NULL, NULL)) != 0 )
+         {
+            OutProcessFileError( PFCode, HeaderData.FileName );
+            break;
+         }
+      }
+
+      if( RHCode == ERAR_BAD_DATA )
+      {
+         s_bHeaderBroken = TRUE;
+      }
+   }
+   else
+   {
+      OpenProcessFileError( OpenArchiveData.OpenResult );
+   }
+
+   hb_retnl( lFileCount );
+
+   RARCloseArchive( hArcData );
+}
+
+/*
+   Get file list from archive
+*/
+
+HB_FUNC( HB_RGETFILESLIST )
+{
+   PHB_ITEM                      pFileList = hb_itemArrayNew( 0 );
+   HANDLE                        hArcData;
+   int                           RHCode;
+   struct RAROpenArchiveDataEx   OpenArchiveData;
+
+   hb_xmemset( &amp;OpenArchiveData, 0, sizeof(OpenArchiveData) );
+   OpenArchiveData.ArcName = ( char * ) hb_parc( 1 );
+   OpenArchiveData.CmtBuf = NULL;
+   OpenArchiveData.OpenMode = RAR_OM_LIST;
+
+   ClearError();
+
+   hArcData = RAROpenArchiveEx( &amp;OpenArchiveData );
+   if( OpenArchiveData.OpenResult == 0 )
+   {
+      struct RARHeaderDataEx  HeaderData;
+      int                     PFCode;
+
+      PHB_ITEM                pPassword = hb_param( 2, HB_IT_STRING );
+
+      BOOL                    fFileTimeAsDate = hb_parl( 3 );
+      BOOL                    fIncludeTime = hb_parl( 4 );
+      BOOL                    fIncludeSeconds = hb_parl( 5 );
+
+      PHB_ITEM                pArcName = hb_itemNew( NULL );
+      PHB_ITEM                pFileName = hb_itemNew( NULL );
+      PHB_ITEM                pFlags = hb_itemNew( NULL );
+      PHB_ITEM                pUnpSize = hb_itemNew( NULL );
+      PHB_ITEM                pPackSize = hb_itemNew( NULL );
+      PHB_ITEM                pHostOS = hb_itemNew( NULL );
+      PHB_ITEM                pFileCRC = hb_itemNew( NULL );
+      PHB_ITEM                pUnpVer = hb_itemNew( NULL );
+      PHB_ITEM                pMethod = hb_itemNew( NULL );
+      PHB_ITEM                pFileAttr = hb_itemNew( NULL );
+
+      if( pPassword != NULL )
+      {
+         RARSetPassword( hArcData, ( char * ) hb_itemGetCPtr(pPassword) );
+      }
+
+      RARSetCallback( hArcData, CallbackProc, 0 );
+
+      HeaderData.CmtBuf = NULL;
+      while( (RHCode = RARReadHeaderEx(hArcData, &amp;HeaderData)) == 0 )
+      {
+         PHB_ITEM pSubarray = hb_itemArrayNew( 11 );
+         __int64  PackSize = HeaderData.PackSize + ( ((__int64) HeaderData.PackSizeHigh) &lt;&lt; 32 );
+         __int64  UnpSize = HeaderData.UnpSize + ( ((__int64) HeaderData.UnpSizeHigh) &lt;&lt; 32 );
+         char     buff[32];
+
+         hb_arraySet( pSubarray, RAR_ARCNAME, hb_itemPutC(pArcName, HeaderData.ArcName) );
+         hb_arraySet( pSubarray, RAR_FILENAME, hb_itemPutC(pFileName, HeaderData.FileName) );
+         hb_arraySet( pSubarray, RAR_FLAGS, hb_itemPutNI(pFlags, HeaderData.Flags) );
+         hb_arraySet( pSubarray, RAR_PACKSIZE, hb_itemPutND(pPackSize, PackSize) );
+         hb_arraySet( pSubarray, RAR_UNPSIZE, hb_itemPutND(pUnpSize, UnpSize) );
+         hb_arraySet( pSubarray, RAR_HOSTOS, hb_itemPutNI(pHostOS, HeaderData.HostOS) );
+         hb_arraySet( pSubarray, RAR_FILECRC, hb_itemPutNI(pFileCRC, HeaderData.FileCRC) );
+
+         if( fFileTimeAsDate )
+         {
+            hb_arraySet( pSubarray, RAR_FILETIME, RGetDate(HeaderData.FileTime) );
+         }
+         else
+         {
+            hb_arraySet( pSubarray, RAR_FILETIME, RConvertFileTimeToString(HeaderData.FileTime, fIncludeTime, fIncludeSeconds) );
+         }
+
+         hb_arraySet( pSubarray, RAR_UNPVER, hb_itemPutNI(pUnpVer, HeaderData.UnpVer) );
+         hb_arraySet( pSubarray, RAR_METHOD, hb_itemPutNI(pMethod, HeaderData.Method) );
+         hb_arraySet( pSubarray, RAR_FILEATTR, hb_itemPutC(pFileAttr, hb_fsAttrDecode(HeaderData.FileAttr, buff)) );
+
+         hb_arrayAdd( pFileList, pSubarray );
+         hb_itemRelease( pSubarray );
+
+         if( (PFCode = RARProcessFile(hArcData, RAR_SKIP, NULL, NULL)) != 0 )
+         {
+            OutProcessFileError( PFCode, HeaderData.FileName );
+            break;
+         }
+      }
+
+      hb_itemRelease( pArcName );
+      hb_itemRelease( pFileName );
+      hb_itemRelease( pFlags );
+      hb_itemRelease( pUnpSize );
+      hb_itemRelease( pPackSize );
+      hb_itemRelease( pHostOS );
+      hb_itemRelease( pFileCRC );
+      hb_itemRelease( pUnpVer );
+      hb_itemRelease( pMethod );
+      hb_itemRelease( pFileAttr );
+
+      if( RHCode == ERAR_BAD_DATA )
+      {
+         s_bHeaderBroken = TRUE;
+      }
+   }
+   else
+   {
+      OpenProcessFileError( OpenArchiveData.OpenResult );
+   }
+
+   #ifdef __XHARBOUR__
+   hb_itemRelease( hb_itemReturn(pFileList) );
+   #else
+   hb_itemReturnRelease( pFileList );
+   #endif
+
+   RARCloseArchive( hArcData );
+}
+
+HB_FUNC( HB_RGETFILENAMESLIST )
+{
+   PHB_ITEM                      pFileList = hb_itemArrayNew( 0 );
+   HANDLE                        hArcData;
+   int                           RHCode;
+   struct RAROpenArchiveDataEx   OpenArchiveData;
+
+   hb_xmemset( &amp;OpenArchiveData, 0, sizeof(OpenArchiveData) );
+   OpenArchiveData.ArcName = ( char * ) hb_parc( 1 );
+   OpenArchiveData.CmtBuf = NULL;
+   OpenArchiveData.OpenMode = RAR_OM_LIST;
+
+   ClearError();
+   hArcData = RAROpenArchiveEx( &amp;OpenArchiveData );
+   if( OpenArchiveData.OpenResult == 0 )
+   {
+      struct RARHeaderDataEx  HeaderData;
+      int                     PFCode;
+      PHB_ITEM                pPassword = hb_param( 2, HB_IT_STRING );
+      PHB_ITEM                pFileName = hb_itemNew( NULL );
+
+      if( pPassword != NULL )
+      {
+         RARSetPassword( hArcData, ( char * ) hb_itemGetCPtr(pPassword) );
+      }
+
+      RARSetCallback( hArcData, CallbackProc, 0 );
+
+      HeaderData.CmtBuf = NULL;
+      while( (RHCode = RARReadHeaderEx(hArcData, &amp;HeaderData)) == 0 )
+      {
+         hb_arrayAdd( pFileList, hb_itemPutC(pFileName, HeaderData.FileName) );
+
+         if( (PFCode = RARProcessFile(hArcData, RAR_SKIP, NULL, NULL)) != 0 )
+         {
+            OutProcessFileError( PFCode, HeaderData.FileName );
+            break;
+         }
+      }
+
+      hb_itemRelease( pFileName );
+
+      if( RHCode == ERAR_BAD_DATA )
+      {
+         s_bHeaderBroken = TRUE;
+      }
+   }
+   else
+   {
+      OpenProcessFileError( OpenArchiveData.OpenResult );
+   }
+
+   #ifdef __XHARBOUR__
+   hb_itemRelease( hb_itemReturn(pFileList) );
+   #else
+   hb_itemReturnRelease( pFileList );
+   #endif
+
+   RARCloseArchive( hArcData );
+}
+
+/*
+   Process Files
+*/
+
+HB_FUNC( HB_RPROCESSFILES )
+{
+   BOOL                          fResult = TRUE;
+   HANDLE                        hArcData;
+   int                           RHCode;
+   struct RAROpenArchiveDataEx   OpenArchiveData;
+
+   int                           Operation = hb_parni( 1 );
+   PHB_ITEM                      pArray = hb_param( 5, HB_IT_ARRAY );
+
+   hb_xmemset( &amp;OpenArchiveData, 0, sizeof(OpenArchiveData) );
+   OpenArchiveData.ArcName = ( char * ) hb_parc( 2 );
+   OpenArchiveData.CmtBuf = NULL;
+   OpenArchiveData.OpenMode = RAR_OM_EXTRACT;
+
+   ClearError();
+
+   hArcData = RAROpenArchiveEx( &amp;OpenArchiveData );
+   if( OpenArchiveData.OpenResult == 0 )
+   {
+      struct RARHeaderDataEx  HeaderData;
+      int                     PFCode;
+
+      PHB_ITEM                pPassword = hb_param( 3, HB_IT_STRING );
+      PHB_ITEM                pPath = hb_param( 4, HB_IT_STRING );
+
+      DWORD                   ulLen = hb_itemGetCLen( pPath );
+      char                    *pszDst = ( char * ) hb_xgrab( ulLen + 1 );
+
+      hb_xmemset( pszDst, 0, ulLen + 1 );
+
+      // Convert path from ANSI to OEM. Is need ?
+
+      CharToOemBuff( (LPCSTR) hb_itemGetCPtr(pPath), (LPSTR) pszDst, ulLen );
+
+      if( pPassword != NULL )
+      {
+         RARSetPassword( hArcData, ( char * ) hb_itemGetCPtr(pPassword) );
+      }
+
+      RARSetCallback( hArcData, CallbackProc, Operation );
+
+      HeaderData.CmtBuf = NULL;
+
+      while( (RHCode = RARReadHeaderEx(hArcData, &amp;HeaderData)) == 0 )
+      {
+         PHB_ITEM pValue = hb_itemNew( NULL );
+         hb_itemPutC( pValue, HeaderData.FileName );
+
+         if( pArray != NULL )
+         {
+            if( (PFCode = RARProcessFile(hArcData, (hb_arrayScan(pArray, pValue, NULL, NULL,
+            #ifdef __XHARBOUR__
+            FALSE,
+            #endif
+            FALSE) &gt; 0) ? Operation : RAR_SKIP, pszDst, NULL)) != 0 )
+            {
+               OutProcessFileError( PFCode, HeaderData.FileName );
+               fResult = FALSE;
+               break;
+            }
+         }
+         else
+         {
+            if( (PFCode = RARProcessFile(hArcData, Operation, pszDst, NULL)) != 0 )
+            {
+               OutProcessFileError( PFCode, HeaderData.FileName );
+               fResult = FALSE;
+               break;
+            }
+         }
+
+         hb_itemRelease( pValue );
+      }
+
+      if( RHCode == ERAR_BAD_DATA )
+      {
+         fResult = FALSE;
+         s_bHeaderBroken = TRUE;
+      }
+
+      hb_xfree( pszDst );
+   }
+   else
+   {
+      fResult = FALSE;
+      OpenProcessFileError( OpenArchiveData.OpenResult );
+   }
+
+   RARCloseArchive( hArcData );
+
+   hb_retl( fResult );
+}
+
+/*
+   Error processing
+*/
+
+static void OutProcessFileError( int Error, const char *FileName )
+{
+   switch( Error )
+   {
+      case ERAR_UNKNOWN_FORMAT:     strcpy( s_msgOutError, "Unknown archive format" ); break;
+      case ERAR_BAD_ARCHIVE:        strcpy( s_msgOutError, "Bad volume" ); break;
+      case ERAR_ECREATE:            strcpy( s_msgOutError, "File create error" ); break;
+      case ERAR_EOPEN:              strcpy( s_msgOutError, "Volume open error" ); break;
+      case ERAR_ECLOSE:             strcpy( s_msgOutError, "File close error" ); break;
+      case ERAR_EREAD:              strcpy( s_msgOutError, "Read error" ); break;
+      case ERAR_EWRITE:             strcpy( s_msgOutError, "Write error" ); break;
+      case ERAR_BAD_DATA:           strcpy( s_msgOutError, "CRC error" ); break;
+      case ERAR_UNKNOWN:            strcpy( s_msgOutError, "Unknown error" ); break;
+      case ERAR_MISSING_PASSWORD:   strcpy( s_msgOutError, "Password for encrypted file is not specified" ); break;
+   }
+
+   s_iOutError = Error;
+   strcpy( s_FName, FileName );
+}
+
+static void OpenProcessFileError( int Error )
+{
+   switch( Error )
+   {
+      case ERAR_NO_MEMORY:       strcpy( s_msgOpenError, "Not enough memory to initialize data structures" ); break;
+      case ERAR_BAD_DATA:        strcpy( s_msgOpenError, "Archive header broken" ); break;
+      case ERAR_BAD_ARCHIVE:     strcpy( s_msgOpenError, "File is not valid RAR archive" ); break;
+      case ERAR_UNKNOWN_FORMAT:  strcpy( s_msgOpenError, "Unknown encryption used for archive headers" ); break;
+      case ERAR_EOPEN:           strcpy( s_msgOpenError, "File open error" ); break;
+   }
+
+   s_iOpenError = Error;
+}
+
+HB_FUNC( HB_RARGETPROCSTATUS )
+{
+   INT   iResult;
+
+   if( (s_iOpenError == 0) &amp;&amp; (s_iOutError == 0) )
+   {
+      iResult = RAR_ST_SUCCESS;
+   }
+   else if( (s_iOpenError != 0) &amp;&amp; (s_iOutError != 0) )
+   {
+      iResult = RAR_ST_OPEN_OUT;
+   }
+   else if( s_iOpenError != 0 )
+   {
+      iResult = RAR_ST_OPEN;
+   }
+   else
+   {
+      iResult = RAR_ST_OUT;
+   }
+
+   if( iResult == RAR_ST_SUCCESS )
+   {
+      iResult = ( s_bHeaderBroken ) ? RAR_ST_HBROKEN : iResult;
+   }
+
+   hb_retni( iResult );
+}
+
+static void ClearError( void )
+{
+   s_iOpenError = 0;
+   s_msgOpenError[0] = '\0';
+
+   s_iOutError = 0;
+   s_msgOutError[64] = '\0';
+   s_FName[0] = '\0';
+
+   s_bHeaderBroken = FALSE;
+}
+
+HB_FUNC( HB_RARGETERRORINFO )
+{
+   PHB_ITEM pResult = hb_itemArrayNew( 5 );
+   PHB_ITEM tmp;
+
+   tmp = hb_itemPutNI( NULL, s_iOpenError );
+   hb_arraySet( pResult, 1, tmp );
+
+   tmp = hb_itemPutC( NULL, s_msgOpenError );
+   hb_arraySet( pResult, 2, tmp );
+
+   tmp = hb_itemPutNI( NULL, s_iOutError );
+   hb_arraySet( pResult, 3, tmp );
+
+   tmp = hb_itemPutC( NULL, s_msgOutError );
+   hb_arraySet( pResult, 4, tmp );
+
+   tmp = hb_itemPutC( NULL, s_FName );
+   hb_arraySet( pResult, 5, tmp );
+
+   hb_itemRelease( tmp );
+
+   ClearError();
+
+   #ifdef __XHARBOUR__
+   hb_itemRelease( hb_itemReturn(pResult) );
+   #else
+   hb_itemReturnRelease( pResult );
+   #endif
+}
+
+/*
+   Convert FileTime to date or string
+*/
+
+static PHB_ITEM RGetDate( UINT FileTime )
+{
+   FILETIME    ft;
+   SYSTEMTIME  st;
+   PHB_ITEM    pResult = hb_itemNew( NULL );
+
+   DosDateTimeToFileTime( HIWORD(FileTime), LOWORD(FileTime), &amp;ft );
+   FileTimeToSystemTime( &amp;ft, &amp;st );
+
+   return( hb_itemPutD(pResult, st.wYear, st.wMonth, st.wDay) );
+}
+
+static PHB_ITEM RConvertFileTimeToString( UINT FileTime, BOOL includeTime, BOOL includeSeconds )
+{
+   PHB_ITEM    pResult = hb_itemNew( NULL );
+   FILETIME    ft;
+   SYSTEMTIME  st;
+   char        buff[20];
+   ULONG       i;
+
+   DosDateTimeToFileTime( HIWORD(FileTime), LOWORD(FileTime), &amp;ft );
+   FileTimeToSystemTime( &amp;ft, &amp;st );
+
+   buff[0] = '\0';
+   i = sprintf( buff, "%04d-%02d-%02d", st.wYear, st.wMonth, st.wDay );
+
+   if( includeTime )
+   {
+      i += sprintf( buff + i, " %02d:%02d", st.wHour, st.wMinute );
+      if( includeSeconds )
+      {
+         i += sprintf( buff + i, ":%02d", st.wSecond );
+      }
+   }
+
+   return( hb_itemPutCL(pResult, buff, i) );
+}
+
+/*
+   CALLBACK
+*/
+
+static int CALLBACK CallbackProc( UINT msg, LONG UserData, LONG P1, LONG P2 )
+{
+   if( !pSymbolCallback )
+   {
+      pSymbolCallback = hb_dynsymSymbol( hb_dynsymGet("HB_RARCALLBACKFUNC") );
+   }
+
+   if( pSymbolCallback )
+   {
+      hb_vmPushSymbol( pSymbolCallback );
+      hb_vmPushNil();
+      hb_vmPushInteger( msg );
+      hb_vmPushLong( UserData );
+
+      switch( msg )
+      {
+         case UCM_CHANGEVOLUME:
+            {
+               ULONG ulLen;
+               char  buffer[_MAX_PATH+1];
+
+               buffer[0] = '\0';
+               ulLen = sprintf( buffer, "%s", ( char * ) P1 );
+
+               hb_vmPushString( ( const char * ) buffer, ulLen );
+               hb_vmPushLong( P2 );
+
+               hb_vmDo( 4 );
+               if( P2 == RAR_VOL_NOTIFY )
+               {
+                  return( hb_parni(-1) );
+               }
+               else if( P2 == RAR_VOL_ASK )
+               {
+                  if( HB_IS_STRING(hb_param(-1, HB_IT_ANY)) )
+                  {
+                     hb_strncpy( ( char * ) P1, hb_parc(-1), _MAX_PATH );
+
+                     return( 0 );
+                  }
+                  else
+                  {
+                     return( hb_parni(-1) );
+                  }
+               }
+            }
+
+         case UCM_NEEDPASSWORD:
+            {
+               hb_vmPushLong( P1 );
+               hb_vmPushLong( P2 );
+
+               hb_vmDo( 4 );
+
+               hb_strncpy( ( char * ) P1, hb_parc(-1), P2 );
+
+               return( 0 );
+            }
+
+         case UCM_PROCESSDATA:
+            {
+               /* TODO? */
+
+               hb_vmPushPointer( ( void * ) &amp;P1 );
+               hb_vmPushLong( P2 );
+
+               hb_vmDo( 4 );
+            }
+      }
+   }
+
+   return( 0 );
+}</code></pre></div><br>
+<br>
+unrar.h<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#ifndef _UNRAR_DLL_
+#define _UNRAR_DLL_
+
+#pragma pack(push, 1)
+
+#define ERAR_SUCCESS             0
+#define ERAR_END_ARCHIVE        10
+#define ERAR_NO_MEMORY          11
+#define ERAR_BAD_DATA           12
+#define ERAR_BAD_ARCHIVE        13
+#define ERAR_UNKNOWN_FORMAT     14
+#define ERAR_EOPEN              15
+#define ERAR_ECREATE            16
+#define ERAR_ECLOSE             17
+#define ERAR_EREAD              18
+#define ERAR_EWRITE             19
+#define ERAR_SMALL_BUF          20
+#define ERAR_UNKNOWN            21
+#define ERAR_MISSING_PASSWORD   22
+#define ERAR_EREFERENCE         23
+#define ERAR_BAD_PASSWORD       24
+
+#define RAR_OM_LIST              0
+#define RAR_OM_EXTRACT           1
+#define RAR_OM_LIST_INCSPLIT     2
+
+#define RAR_SKIP              0
+#define RAR_TEST              1
+#define RAR_EXTRACT           2
+
+#define RAR_VOL_ASK           0
+#define RAR_VOL_NOTIFY        1
+
+#define RAR_DLL_VERSION       8
+
+#define RAR_HASH_NONE         0
+#define RAR_HASH_CRC32        1
+#define RAR_HASH_BLAKE2       2
+
+#define UCM_CHANGEVOLUME   0
+#define UCM_PROCESSDATA    1
+#define UCM_NEEDPASSWORD   2
+
+#define RAR_ARCNAME        1
+#define RAR_FILENAME       2
+#define RAR_FLAGS          3
+#define RAR_PACKSIZE       4
+#define RAR_UNPSIZE        5
+#define RAR_HOSTOS         6
+#define RAR_FILECRC        7
+#define RAR_FILETIME       8
+#define RAR_UNPVER         9
+#define RAR_METHOD         10
+#define RAR_FILEATTR       11
+
+#define RAR_ST_SUCCESS     0
+#define RAR_ST_OPEN        1
+#define RAR_ST_OUT         2
+#define RAR_ST_OPEN_OUT    3
+#define RAR_ST_HBROKEN     4
+
+
+#ifdef _UNIX
+#define CALLBACK
+#define PASCAL
+#define LONG long
+#define HANDLE void *
+#define LPARAM long
+#define UINT unsigned int
+#endif
+
+#define RHDF_SPLITBEFORE 0x01
+#define RHDF_SPLITAFTER  0x02
+#define RHDF_ENCRYPTED   0x04
+#define RHDF_SOLID       0x10
+#define RHDF_DIRECTORY   0x20
+
+
+struct RARHeaderData
+{
+  char         ArcName[260];
+  char         FileName[260];
+  unsigned int Flags;
+  unsigned int PackSize;
+  unsigned int UnpSize;
+  unsigned int HostOS;
+  unsigned int FileCRC;
+  unsigned int FileTime;
+  unsigned int UnpVer;
+  unsigned int Method;
+  unsigned int FileAttr;
+  char         *CmtBuf;
+  unsigned int CmtBufSize;
+  unsigned int CmtSize;
+  unsigned int CmtState;
+};
+
+
+struct RARHeaderDataEx
+{
+  char         ArcName[1024];
+  wchar_t      ArcNameW[1024];
+  char         FileName[1024];
+  wchar_t      FileNameW[1024];
+  unsigned int Flags;
+  unsigned int PackSize;
+  unsigned int PackSizeHigh;
+  unsigned int UnpSize;
+  unsigned int UnpSizeHigh;
+  unsigned int HostOS;
+  unsigned int FileCRC;
+  unsigned int FileTime;
+  unsigned int UnpVer;
+  unsigned int Method;
+  unsigned int FileAttr;
+  char         *CmtBuf;
+  unsigned int CmtBufSize;
+  unsigned int CmtSize;
+  unsigned int CmtState;
+  unsigned int DictSize;
+  unsigned int HashType;
+  char         Hash[32];
+  unsigned int RedirType;
+  wchar_t      *RedirName;
+  unsigned int RedirNameSize;
+  unsigned int DirTarget;
+  unsigned int MtimeLow;
+  unsigned int MtimeHigh;
+  unsigned int CtimeLow;
+  unsigned int CtimeHigh;
+  unsigned int AtimeLow;
+  unsigned int AtimeHigh;
+  unsigned int Reserved[988];
+};
+
+
+struct RAROpenArchiveData
+{
+  char         *ArcName;
+  unsigned int OpenMode;
+  unsigned int OpenResult;
+  char         *CmtBuf;
+  unsigned int CmtBufSize;
+  unsigned int CmtSize;
+  unsigned int CmtState;
+};
+
+typedef int (CALLBACK *UNRARCALLBACK)(UINT msg,LPARAM UserData,LPARAM P1,LPARAM P2);
+
+#define ROADF_VOLUME       0x0001
+#define ROADF_COMMENT      0x0002
+#define ROADF_LOCK         0x0004
+#define ROADF_SOLID        0x0008
+#define ROADF_NEWNUMBERING 0x0010
+#define ROADF_SIGNED       0x0020
+#define ROADF_RECOVERY     0x0040
+#define ROADF_ENCHEADERS   0x0080
+#define ROADF_FIRSTVOLUME  0x0100
+
+#define ROADOF_KEEPBROKEN  0x0001
+
+struct RAROpenArchiveDataEx
+{
+  char         *ArcName;
+  wchar_t      *ArcNameW;
+  unsigned int  OpenMode;
+  unsigned int  OpenResult;
+  char         *CmtBuf;
+  unsigned int  CmtBufSize;
+  unsigned int  CmtSize;
+  unsigned int  CmtState;
+  unsigned int  Flags;
+  UNRARCALLBACK Callback;
+  LPARAM        UserData;
+  unsigned int  OpFlags;
+  wchar_t      *CmtBufW;
+  unsigned int  Reserved[25];
+};
+
+enum UNRARCALLBACK_MESSAGES {
+  UCM_CHANGEVOLUME,UCM_PROCESSDATA,UCM_NEEDPASSWORD,UCM_CHANGEVOLUMEW,
+  UCM_NEEDPASSWORDW
+};
+
+typedef int (PASCAL *CHANGEVOLPROC)(char *ArcName,int Mode);
+typedef int (PASCAL *PROCESSDATAPROC)(unsigned char *Addr,int Size);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+HANDLE PASCAL RAROpenArchive(struct RAROpenArchiveData *ArchiveData);
+HANDLE PASCAL RAROpenArchiveEx(struct RAROpenArchiveDataEx *ArchiveData);
+int    PASCAL RARCloseArchive(HANDLE hArcData);
+int    PASCAL RARReadHeader(HANDLE hArcData,struct RARHeaderData *HeaderData);
+int    PASCAL RARReadHeaderEx(HANDLE hArcData,struct RARHeaderDataEx *HeaderData);
+int    PASCAL RARProcessFile(HANDLE hArcData,int Operation,char *DestPath,char *DestName);
+int    PASCAL RARProcessFileW(HANDLE hArcData,int Operation,wchar_t *DestPath,wchar_t *DestName);
+void   PASCAL RARSetCallback(HANDLE hArcData,UNRARCALLBACK Callback,LPARAM UserData);
+void   PASCAL RARSetChangeVolProc(HANDLE hArcData,CHANGEVOLPROC ChangeVolProc);
+void   PASCAL RARSetProcessDataProc(HANDLE hArcData,PROCESSDATAPROC ProcessDataProc);
+void   PASCAL RARSetPassword(HANDLE hArcData,char *Password);
+int    PASCAL RARGetDllVersion();
+
+#ifdef __cplusplus
+}
+#endif
+
+#pragma pack(pop)
+
+#endif</code></pre></div><br>
+<br>
+unrar.ch<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#define RAR_ARCNAME        1
+#define RAR_FILENAME       2
+#define RAR_FLAGS          3
+#define RAR_PACKSIZE       4
+#define RAR_UNPSIZE        5
+#define RAR_HOSTOS         6
+#define RAR_FILECRC        7
+#define RAR_FILETIME       8
+#define RAR_UNPVER         9
+#define RAR_METHOD         10
+#define RAR_FILEATTR       11
+
+#define RAR_OM_LIST        0
+#define RAR_OM_EXTRACT     1
+
+#define RAR_SKIP           0
+#define RAR_TEST           1
+#define RAR_EXTRACT        2
+
+#define RAR_VOL_ASK        0
+#define RAR_VOL_NOTIFY     1
+
+#define UCM_CHANGEVOLUME   0
+#define UCM_PROCESSDATA    1
+#define UCM_NEEDPASSWORD   2
+
+#define RAR_ST_SUCCESS     0
+#define RAR_ST_OPEN        1
+#define RAR_ST_OUT         2
+#define RAR_ST_OPEN_OUT    3
+#define RAR_ST_HBROKEN     4
+
+#define ERAR_END_ARCHIVE   10
+#define ERAR_NO_MEMORY     11
+#define ERAR_BAD_DATA      12
+#define ERAR_BAD_ARCHIVE      13
+#define ERAR_UNKNOWN_FORMAT   14
+#define ERAR_EOPEN            15
+#define ERAR_ECREATE       16
+#define ERAR_ECLOSE        17
+#define ERAR_EREAD         18
+#define ERAR_EWRITE        19
+#define ERAR_SMALL_BUF     20
+#define ERAR_UNKNOWN          21
+#define ERAR_MISSING_PASSWORD 22</code></pre></div><br>
+<br>
+unrar.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+ * Author: P.Chornyj &lt;myorg63@mail.ru&gt;
+ *
+ * Last revision : 2007.12.06
+ *
+*/
+
+#include "common.ch"
+#include "unrar.ch"
+
+FUNCTION Hb_RarGetFilesList( ArchiveName, cPassWord, lFileTimeAsDate, lIncludeTime, lIncludeSeconds )
+   LOCAL aResult
+
+   DEFAULT lFileTimeAsDate TO FALSE
+   DEFAULT lIncludeTime    TO TRUE
+   DEFAULT lIncludeSeconds TO FALSE
+
+   IF File( ArchiveName )
+      aResult := Hb_RGetFilesList( ArchiveName, cPassWord, lFileTimeAsDate, lIncludeTime, lIncludeSeconds )
+   ENDIF
+
+RETURN iif( ValType( aResult ) == "A", aResult, {} )
+
+/*
+*/
+FUNCTION Hb_UnrarFiles( ArchiveName, cPassWord, cPath, File )
+RETURN Hb_ProcessFile( ArchiveName, cPassWord, cPath, File, RAR_EXTRACT )
+
+/*
+*/
+FUNCTION Hb_RarTestFiles( ArchiveName, cPassWord, File )
+RETURN Hb_ProcessFile( ArchiveName, cPassWord, , File, RAR_TEST )
+
+   /*
+*/
+STATIC FUNCTION Hb_ProcessFile( ArchiveName, cPassWord, cPath, File, Operation )
+   LOCAL lSuccess := .F.
+   LOCAL sw, sw1, i, j
+   LOCAL aFileList := {}, aFile := {}
+
+   IF File( ArchiveName )
+      IF ( HB_ISNIL( File ) )       
+         lSuccess := Hb_RProcessFiles( Operation, ArchiveName, cPassWord, cPath )   
+      ELSE
+         aFileList := Hb_RGetFileNamesList( ArchiveName, cPassWord )
+
+         sw := ValType( File )
+         SWITCH sw
+      CASE "N"
+         IF ( File &gt;= 1 .AND. File &lt;= Len( aFileList ) )
+            AAdd( aFile, aFileList[ File ] )
+         ENDIF
+         EXIT
+      CASE "C"
+         IF ( AScan( aFileList, {|e| e == File  } ) &gt; 0  )
+            AAdd( aFile, File )
+         ENDIF
+         EXIT
+      CASE "A"
+         FOR i := 1 TO Len( File )
+
+            sw1 := ValType( File[i] )
+            SWITCH sw1
+         CASE "N"
+            IF ( File[i] &gt;= 1 .AND. File[i] &lt;= Len( aFileList ) )
+               AAdd( aFile, aFileList[ File[ i ] ] )
+            ENDIF
+            EXIT
+         CASE "C"
+            j := AScan( aFileList, {|e| e == File[i] } )
+            IF ( j &gt; 0 )
+               AAdd( aFile, aFileList[ j ] )
+            ENDIF
+            EXIT
+            END SWITCH
+         NEXT
+
+         END SWITCH     
+
+         IF .NOT. Empty ( aFile )
+            lSuccess := Hb_RProcessFiles( Operation, ArchiveName, cPassWord, cPath, aFile ) 
+         ENDIF
+      ENDIF
+   ENDIF
+
+RETURN lSuccess</code></pre></div><br>
+<br>
+Pero no he logrado crear la librería para MinGW.<br>
+Alguien que conozca lo suficiente hbmk2 podría crear el fichero hb_unrar.hbp para gerenera la librería hb_unrar.a para MinGW ?<br>
+<br>
+Muchas gracias.<br>
+<br>
+Saludos,</div>
+    </div>
+  </div>
+  <div class="post" id="p234601">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Generar hb_unrar lib para MinGW</span><br>
+        Posted: Mon Aug 31, 2020 08:51 AM
+      </div>
+      <div class="content">go.bat<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">set path=c:\gcc81\bin\
+c:\harbour\bin\hbmk2 unrar.hbp</code></pre></div><br>
+<br>
+unrar.hbp<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">-hblib
+
+hb_unrar.c
+unrar.prg</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p234604">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Generar hb_unrar lib para MinGW</span><br>
+        Posted: Mon Aug 31, 2020 09:28 AM
+      </div>
+      <div class="content">Antonio,<br>
+<br>
+una vez añadidas unrar.a y hn_unrar.a y la dll al proyecto da el siguiente error:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">f:/develop/ccompilers/winlibs/102032/mingw32/bin/../lib/gcc/i686-w64-mingw32/10.2.0/../../../../i686-w64-mingw32/bin/ld.exe: F:\Proyectos\TytoAlba\MINGW\New\libhb_unrar.a(hb_unrar.o):hb_unrar.c:(.text+0xf29): undefined reference to `RARCloseArchive@4'</code></pre></div><br>
+<br>
+No encuentra las funciones exportadas de la dll:<br>
+<br>
+unrar.def<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">; .text   : RVA: 00001000, File offset: 00000400
+; .rdata  : RVA: 00022000, File offset: 00020c00
+; .data   : RVA: 00026000, File offset: 00024600
+; .rsrc   : RVA: 0002f000, File offset: 00025e00
+; .reloc  : RVA: 00030000, File offset: 00026400
+; Reading exports from section: .rdata
+; Export table: unrar.dll
+; Ordinal base: 1
+; Ordinal table RVA: 00025738
+; Name table RVA: 0025708
+; Export address table RVA: 000256d8
+LIBRARY unrar.dll
+EXPORTS
+RARCloseArchive ; .text ; RVA 00005990
+RARGetDllVersion ; .text ; RVA 00005090
+RAROpenArchive ; .text ; RVA 00005c00
+RAROpenArchiveEx ; .text ; RVA 000059e0
+RARProcessFile ; .text ; RVA 000053e0
+RARProcessFileW ; .text ; RVA 00005400
+RARReadHeader ; .text ; RVA 00005490
+RARReadHeaderEx ; .text ; RVA 00005690
+RARSetCallback ; .text ; RVA 00005030
+RARSetChangeVolProc ; .text ; RVA 00005010
+RARSetPassword ; .text ; RVA 00005070
+RARSetProcessDataProc ; .text ; RVA 00005050</code></pre></div><br>
+<br>
+Para generar la libreria unrar.a desde la dll unrar.dll he utilizado lo siguiente:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">REM MinGW 10.2 32 bits
+set PATH=%PATH%;F:\Develop\CCompilers\WinLibs\102032\mingw32\bin
+
+REM pexports UnRar.dll &gt; UnRar.def
+REM dlltool -d UnRar.def -D UnRar.dll -k -l UnRar.a
+
+pexports -v UnRar.dll &gt; UnRar.def
+
+dlltool -A --dllname UnRar.dll --def UnRar.def --output-lib UnRar.a</code></pre></div><br>
+<br>
+Muchas gracias.<br>
+<br>
+Un abrazo,</div>
+    </div>
+  </div>
+  <div class="post" id="p234628">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Generar hb_unrar lib para MinGW</span><br>
+        Posted: Tue Sep 01, 2020 09:23 AM
+      </div>
+      <div class="content"><p>Hay que añadir esta línea dentro del fichero unrar.hbp</p>
+<p>-depimplibs=unrar.dll</p>
+<p>Aún así, no llega a construir la librería de importación directamente</p>
+<p>debe faltar algo...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p234629">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Generar hb_unrar lib para MinGW</span><br>
+        Posted: Tue Sep 01, 2020 10:31 AM
+      </div>
+      <div class="content"><p>De esta forma podemos generar la librería de importación:</p>
+<p>hbmk2 -hbimplib unrar.dll</p></div>
+    </div>
+  </div>
+  <div class="post" id="p234658">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Generar hb_unrar lib para MinGW</span><br>
+        Posted: Wed Sep 02, 2020 07:23 AM
+      </div>
+      <div class="content">Buenos días !<br>
+<br>
+Podemos generar las librerías con MinGW siguiendo el proceso de <a href="viewtopic.php?f=6&amp;t=39325" rel="noopener">viewtopic.php?f=6&amp;t=39325</a>, cambiando los caminos a dónde tengamos nuestro Harbour y MinGW.<br>
+<br>
+Lo curioso y extraño es que cuando hacemos<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">-hbimplib
+
+unrar.dll</code></pre></div><br>
+<br>
+la librería liburar.a generada será del mismo tamaño que la dll unrar.dll usada para generar la librería de importación. Eso seguramente, tiene que ser un error. Pero he podico comprobar que luego las librerías generadas, funcionan.<br>
+<br>
+Alguien se anima a corregir este pequeño problema ?<br>
+<br>
+Muchas gracias.<br>
+<br>
+Saludos,</div>
+    </div>
+  </div>
+  <div class="post" id="p234673">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Generar hb_unrar lib para MinGW</span><br>
+        Posted: Thu Sep 03, 2020 09:08 AM
+      </div>
+      <div class="content">Gracias a Grigory Filatov del grupo Harbour developers.<br>
+<br>
+Grigory me ha comentado que use la utilidad lib2a <a href="https://code.google.com/archive/p/lib2a/downloads" rel="noopener">https&#58;//code&#46;google&#46;com/archive/p/lib2a/downloads</a><br>
+<br>
+He descargado la utilidad y la he probado, obteniendo los resultados esperados.<br>
+<br>
+Pero finalmente he optado por usar la herramienta que viene actualmente con MinGW para generar ficheros def, esta utilidad es gendef.exe<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">gendef UnRar.dll</code></pre></div><br>
+<br>
+Generando el fichero UnRar.def<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">;
+; Definition file of UnRAR.dll
+; Automatic generated by gendef
+; written by Kai Tietz 2008
+;
+LIBRARY "UnRAR.dll"
+EXPORTS
+RARCloseArchive@4
+RARGetDllVersion
+RAROpenArchive@4
+RAROpenArchiveEx@4
+RARProcessFile@16
+RARProcessFileW@16
+RARReadHeader@8
+RARReadHeaderEx@8
+RARSetCallback@12
+RARSetChangeVolProc@8
+RARSetPassword@8
+RARSetProcessDataProc@8</code></pre></div><br>
+<br>
+Para crear la libreia libUnRar.a<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">dlltool.exe -d UnRar.def -D UnRar.dll -k -l libUnRar.a</code></pre></div><br>
+<br>
+Muchas gracias a todos.<br>
+<br>
+Saludos,</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

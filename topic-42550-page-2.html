@@ -1,0 +1,1288 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>DLLCALL under Fivewin - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-42550">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> DLLCALL under Fivewin</div>
+<div class="pagination">Page: <a href="topic-42550.html">1</a> <strong>2</strong> <a href="topic-42550-page-3.html">3</a> <a href="topic-42550-page-4.html">4</a> (46 posts)</div>  <div class="post" id="p255974">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Fri Dec 02, 2022 03:59 PM
+      </div>
+      <div class="content"><p><t>Dear Jimmy,<br/><br>
+<br/><br>
+Please post a small and self contained PRG to test it here<br/><br>
+<br/><br>
+many thanks</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p255975">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Fri Dec 02, 2022 05:30 PM
+      </div>
+      <div class="content"><r>hi Antonio,<br/><br>
+<br/><br>
+here it is<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FIVEWIN.ch"
+#include "common.ch"
+
+#include "dll.ch"
+#include "hbdyn.ch"
+
+#include "EJECTDLL.CH"
+
+#define FILE_SHARE_READ                   0x00000001
+#define FILE_SHARE_WRITE                  0x00000002
+#define FILE_SHARE_DELETE                 0x00000004
+#define FILE_SHARE_VALID_FLAGS            0x00000007
+
+#define GENERIC_READ                      0x80000000
+#define GENERIC_WRITE                     0x40000000
+#define GENERIC_EXECUTE                   0x20000000
+#define GENERIC_ALL                       0x10000000
+
+#define OPEN_EXISTING                     3
+
+#define DRIVE_UNKNOWN         0
+#define DRIVE_NO_ROOT_DIR     1
+#define DRIVE_REMOVABLE       2
+#define DRIVE_FIXED           3
+#define DRIVE_REMOTE          4
+#define DRIVE_CDROM           5
+#define DRIVE_RAMDISK         6
+
+#define SW_SHOW               5
+
+#define DLL_CDECL                   0x08
+#define DLL_STDCALL                 0x20
+#define DLL_SYSTEM                  0x04
+#if defined( __PLATFORM__WINDOWS )
+#define DLL_OSAPI                   DLL_STDCALL
+#elif defined( __PLATFORM__OS2 )
+#define DLL_OSAPI                   DLL_SYSTEM
+#else
+#define DLL_OSAPI                   DLL_CDECL
+#endif
+
+
+MEMVAR hDLL
+
+*+--------------------------------------------------------------------
+*+
+*+    Procedure USBeject()
+*+
+*+    Called from ( dualgrid.prg )   1 - static procedure buildmainmenu()
+*+
+*+--------------------------------------------------------------------
+*+
+PROCEDURE USBeject()
+
+LOCAL oDlg, oListbox
+LOCAL cDrive  := SPACE( 2 )
+LOCAL cTitle  := "Please, select"
+LOCAL aDrives := aDrives()
+
+LOCAL bSetGet := {|x| cDrive := x }
+LOCAL bChange
+LOCAL bValid
+LOCAL bLDblClicked
+LOCAL bWhen
+LOCAL bDrawItem
+
+PRIVATE hDLL
+
+   DEFINE DIALOG oDlg FROM 5, 10 TO 24, 55 TITLE cTitle
+
+      oListbox := TListBox() :New( 10, 20, bSetGet, aDrives, 145, 95, bChange, ;
+                             oDlg, bValid, , , .T., .F., ;
+                             bLDblClicked, , "", .T., bWhen,, ;
+                             bDrawItem, .F., .F. )
+
+      @  7,  7 BUTTON "&amp;OK" OF oDlg SIZE 40, 12 ;
+              ACTION( EjectMedia( cDrive ), oDlg:End() ) DEFAULT
+
+      @  7, 17 BUTTON "&amp;Cancel" OF oDlg SIZE 40, 12 ;
+              ACTION( cDrive := nil, oDlg:End() )
+
+#IFDEF __HMG__
+   END DIALOG
+#ENDIF
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+RETURN
+
+*+--------------------------------------------------------------------
+*+
+*+    Function EjectMedia()
+*+
+*+    Called from ( hbeject.prg )   1 - procedure usbeject()
+*+
+*+--------------------------------------------------------------------
+*+
+FUNCTION EjectMedia( cDrive, UseCDdrives )
+
+   // ***************************************************************
+   //
+   //  USBeject based on https://support.microsoft.com/en-us/kb/165721
+   //
+   //  will eject CD / DVD and "flush Buffer" if USB Drive
+   //
+   // ***************************************************************
+
+LOCAL hVolRead  := - 1 // "CreateFileA"
+LOCAL nLock     := 0 // "DeviceIoControl",hVolRead, FSCTL_LOCK_VOLUME
+LOCAL nDisMount := 0 // "DeviceIoControl",hVolRead, FSCTL_DISMOUNT_VOLUME
+LOCAL nEject    := 0 // "DeviceIoControl",hVolRead, IOCTL_STORAGE_EJECT_MEDIA
+LOCAL nAccess   := 0
+LOCAL nType     := 0
+LOCAL cMsg      := ""
+LOCAL nRemove   := 0
+LOCAL lRet      := .T.
+LOCAL cAction   := GETENV( "SYSTEMROOT" ) + "\SYSTEM32\HOTPLUG.DLL"
+LOCAL cRoot     := "RUNDLL32.EXE "
+LOCAL cPath     := GETENV( "TEMP" ) + "\"
+
+   DEFAULT UseCDdrives TO .F.
+
+   IF PCOUNT() = 0
+      MsgInfo( "need Drive Letter" )
+      RETURN .F.
+   ENDIF
+   IF EMPTY( cDrive )
+      MsgInfo( "Error no Drive Letter" )
+      RETURN .F.
+   ELSE
+      cDrive := SUBSTR( cDrive, 1, 1 )
+   ENDIF
+
+   cAction += ",HotPlugSafeRemovalDriveNotification "
+   cAction += VOLUMENAME( cDrive + ":\" )
+   cAction += " ("
+   cAction += cDrive + ":)"
+
+*  msginfo( cDrive )
+
+   nType := DriveType( cDrive )
+   DO CASE
+      CASE nType = DRIVE_UNKNOWN
+      CASE nType = DRIVE_NO_ROOT_DIR
+      CASE nType = DRIVE_REMOVABLE                                    //  Floppy
+         nAccess := GENERIC_READ + GENERIC_WRITE
+      CASE nType = DRIVE_FIXED
+      CASE nType = DRIVE_REMOTE
+      CASE nType = DRIVE_CDROM
+         IF UseCDdrives = .T.
+            nAccess := GENERIC_READ
+         ENDIF
+      CASE nType = DRIVE_RAMDISK
+      OTHERWISE
+         MsgInfo( "can not use Type " + STR( nType ) )
+   ENDCASE
+
+   IF EMPTY( nAccess )
+      RETURN .F.
+   ENDIF
+
+   IF EMPTY(hDll)
+       hDll := LoadLibrary( "Kernel32.dll" )
+   ENDIF
+
+   SayInfo( "waiting for Drive " + cDrive + CRLF )
+   hVolRead := CreateVolHandle( @cMsg, nType, nAccess, cDrive )
+
+   IF hVolRead = - 1
+      MsgInfo( "Unable to open drive " + cDrive )
+      lRet := .F.
+   ELSE
+
+      // *********************************************************
+      //
+      //  https://msdn.microsoft.com/en-us/library/Aa363216.aspx
+      //
+      //  BOOL WINAPI DeviceIoControl(
+      //    _In_        HANDLE       hDevice,
+      //    _In_        DWORD        dwIoControlCode,
+      //    _In_opt_    LPVOID       lpInBuffer,
+      //    _In_        DWORD        nInBufferSize,
+      //    _Out_opt_   LPVOID       lpOutBuffer,
+      //    _In_        DWORD        nOutBufferSize,
+      //    _Out_opt_   LPDWORD      lpBytesReturned,
+      //    _Inout_opt_ LPOVERLAPPED lpOverlapped
+      //  );
+      //
+      // *********************************************************
+
+      nLock := LockVolume( hVolRead )
+      IF nLock &lt;&gt; 0
+         cMsg := "LockVolume()" + CRLF
+         SayInfo( cMsg )
+
+         nDisMount := DismountVolume( hVolRead )
+         IF nDisMount &lt;&gt; 0
+            cMsg := "DismountVolume()" + CRLF
+            SayInfo( cMsg )
+
+            // nRemove := PreventRemovalOfVolume( hVolRead, .F. )
+            nRemove := 1
+            IF nRemove &lt;&gt; 0
+               cMsg := "PreventRemovalOfVolume()" + CRLF
+               SayInfo( cMsg )
+
+               nEject := AutoEjectVolume( hVolRead )
+               //     IF nEject = 0
+               cMsg := "AutoEjectVolume()" + CRLF
+               SayInfo( cMsg )
+
+               //     ELSE
+               //         cMsg := "Error : can not AutoEjectVolume() "+hb_valToExp(nEject))
+               //         lRet := .F.
+               //     ENDIF
+            ELSE
+               cMsg := "Error : can not PreventRemovalOfVolume() " + hb_valToExp( nRemove )
+               lRet := .F.
+               SayInfo( cMsg )
+            ENDIF
+         ELSE
+            cMsg := "Error : can not DismountVolume() " + hb_valToExp( nDisMount )
+            lRet := .F.
+            SayInfo( cMsg )
+         ENDIF
+      ELSE
+         cMsg := "Error : can not LockVolume() " + hb_valToExp( nLock )
+         lRet := .F.
+         SayInfo( cMsg )
+      ENDIF
+   ENDIF
+
+   CloseVolume( hVolRead )
+
+   IF lRet = .F.
+      Msginfo( cMsg )
+   ELSE
+      SayInfo( "remove your USE-Stick now" )
+      hb_IdleSleep( 2.0 )
+      IF nType &lt;&gt; DRIVE_CDROM                                  // will eject
+         MEMOWRIT( cPath + "ShowMsg.BAT", cRoot + cAction )
+         ShellExecute( 0, "runas", cPath + "ShowMsg.BAT",,, SW_SHOW )
+
+         hb_IdleSleep( 2.0 )
+         FERASE( cPath + "ShowMsg.BAT" )
+      ENDIF
+   ENDIF
+
+RETURN lRet
+
+*+--------------------------------------------------------------------
+*+
+*+    Static Function CreateVolHandle()
+*+
+*+    Called from ( hbeject.prg )   1 - function ejectmedia()
+*+
+*+--------------------------------------------------------------------
+*+
+STATIC FUNCTION CreateVolHandle( cMsg, nType, nAccess, cDrive )
+
+LOCAL hVolWrite
+LOCAL hVolRead
+LOCAL nFlush    := 0                                                  // "FlushFileBuffers"
+LOCAL cPath     := ""
+LOCAL nShare    := FILE_SHARE_READ + FILE_SHARE_WRITE
+LOCAL nDispo    := OPEN_EXISTING
+LOCAL nAttrib   := 0 // FILE_FLAG_OVERLAPPED + FILE_FLAG_BACKUP_SEMANTICS
+
+FWLOG "CreateVolHandle"
+
+   /**********************************************************
+   *
+   * https://msdn.microsoft.com/en-us/library/aa363858.aspx
+   *
+   * HANDLE WINAPI CreateFile(
+   *   _In_     LPCTSTR               lpFileName,
+   *   _In_     DWORD                 dwDesiredAccess,
+   *   _In_     DWORD                 dwShareMode,
+   *   _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+   *   _In_     DWORD                 dwCreationDisposition,
+   *   _In_     DWORD                 dwFlagsAndAttributes,
+   *   _In_opt_ HANDLE                hTemplateFile
+   * );
+   *
+   **********************************************************/
+
+   cPath := "\\.\"
+   cPath += cDrive
+   cPath += ":"
+
+   hVolWrite := CreateFile( cPath  , ; // lpFileName
+                            nAccess, ; // dwDesiredAccess
+                            nShare , ; // dwShareMode
+                            NULL   , ; // lpSecurityAttributes
+                            nDispo , ; // dwCreationDisposition
+                            nAttrib, ; // dwFlagsAndAttributes
+                            NULL )     // hTemplateFile
+
+   IF hVolWrite = - 1
+      msginfo("Error hVolWrite = - 1 ")
+      RETURN hVolWrite
+   ELSE
+      // flush buffer
+      //
+      IF nType &lt;&gt; DRIVE_CDROM
+         // Kernel32
+         nFlush := FlushFileBuffers( hVolWrite )
+         cMsg := "FlushFile()" + CRLF
+      ENDIF
+   ENDIF
+
+   CloseHandle(hVolWrite )
+
+   // open again RO
+   //
+   nAccess := GENERIC_READ
+
+   hVolRead := CreateFile( cPath  , ; // lpFileName
+                           nAccess, ; // dwDesiredAccess
+                           nShare , ; // dwShareMode
+                           NULL   , ; // lpSecurityAttributes
+                           nDispo , ; // dwCreationDisposition
+                           nAttrib, ; // dwFlagsAndAttributes
+                           NULL )     // hTemplateFile
+RETURN hVolRead
+
+*+--------------------------------------------------------------------
+*+
+*+    Static Function LockVolume()
+*+
+*+    Called from ( hbeject.prg )   1 - function ejectmedia()
+*+
+*+--------------------------------------------------------------------
+*+
+STATIC FUNCTION LockVolume( hVolRead )
+LOCAL nBytes := 0
+LOCAL nLock
+
+   nLock := DeviceIoControl( hVolRead, ;
+                     FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, @nBytes, NULL )
+
+RETURN nLock
+
+*+--------------------------------------------------------------------
+*+
+*+    Static Function DismountVolume()
+*+
+*+    Called from ( hbeject.prg )   1 - function ejectmedia()
+*+
+*+--------------------------------------------------------------------
+*+
+STATIC FUNCTION DismountVolume( hVolRead )
+LOCAL nBytes    := 0
+LOCAL nDisMount
+
+   nDisMount := DeviceIoControl( hVolRead, ;
+                     FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0, @nBytes, NULL )
+RETURN nDisMount
+
+*+--------------------------------------------------------------------
+*+
+*+    Static Function AutoEjectVolume()
+*+
+*+    Called from ( hbeject.prg )   1 - function ejectmedia()
+*+
+*+--------------------------------------------------------------------
+*+
+STATIC FUNCTION AutoEjectVolume( hVolRead )
+LOCAL nBytes := 0
+LOCAL nEject
+
+   nEject := DeviceIoControl( hVolRead, ;
+                 IOCTL_STORAGE_EJECT_MEDIA, NULL, 0, NULL, 0, @nBytes, NULL )
+RETURN nEject
+
+*+--------------------------------------------------------------------
+*+
+*+    Static Function UnlockVolume()
+*+
+*+--------------------------------------------------------------------
+*+
+STATIC FUNCTION UnlockVolume( hVolRead )
+LOCAL nBytes  := 0
+LOCAL nUnlock
+
+   nUnlock := DeviceIoControl( hVolRead, ;
+                       FSCTL_UNLOCK_VOLUME, NULL, 0, NULL, 0, @nBytes, NULL )
+RETURN nUnlock
+
+*+--------------------------------------------------------------------
+*+
+*+    Static Function CloseVolume()
+*+
+*+    Called from ( hbeject.prg )   1 - function ejectmedia()
+*+
+*+--------------------------------------------------------------------
+*+
+STATIC FUNCTION CloseVolume( hVolRead )
+LOCAL lClose
+   lClose := CloseHandle( hVolRead )
+RETURN lClose
+
+*+--------------------------------------------------------------------
+*+
+*+    Static Function PreventRemovalOfVolume()
+*+
+*+--------------------------------------------------------------------
+*+
+STATIC FUNCTION PreventRemovalOfVolume( hVolRead, fPreventRemoval )
+
+LOCAL nBytes  := 0
+LOCAL nRemove
+LOCAL pmr     := 1                           // PREVENT_MEDIA_REMOVAL():New()
+LOCAL nSize   := pmr:_sizeof_()
+
+   pmr:PreventMediaRemoval := fPreventRemoval
+   nSize := 1
+
+   nRemove := DeviceIoControl( hVolRead, ;
+           IOCTL_STORAGE_MEDIA_REMOVAL, @pmr, nSize, NULL, 0, @nBytes, NULL )
+
+RETURN nRemove
+
+*+--------------------------------------------------------------------
+*+
+*+    Procedure SayInfo()
+*+
+*+    Called from ( hbeject.prg )   9 - function ejectmedia()
+*+
+*+--------------------------------------------------------------------
+*+
+PROCEDURE SayInfo( cText )
+
+RETURN
+
+* https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
+DLL FUNCTION CreateFile(lpFileName            AS LPSTR ,;
+                        dwDesiredAccess       AS DWORD ,;
+                        dwShareMode           AS DWORD ,;
+                        lpSecurityAttributes  AS LONG ,;
+                        dwCreationDisposition AS DWORD ,;
+                        dwFlagsAndAttributes  AS DWORD ,;
+                        hTemplateFile         AS LONG ) AS LONG PASCAL FROM "CreateFileA" LIB hDll
+
+* https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers
+DLL FUNCTION FlushFileBuffers(hVolWrite       AS LONG) AS LONG PASCAL FROM "FlushFileBuffers" LIB hDll
+
+* https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle
+DLL FUNCTION CloseHandle( hVolRead           AS LONG) AS LONG PASCAL FROM "CloseHandleA" LIB hDll
+
+* https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-deviceiocontrol
+DLL FUNCTION DeviceIoControl( hDevice         AS LONG ,;
+                              dwIoControlCode AS DWORD ,;
+                              lpInBuffer      AS VOID ,;
+                              nInBufferSize   AS DWORD,;
+                              lpOutBuffer     AS VOID ,;
+                              nOutBufferSize  AS DWORD,;
+                              lpBytesReturned AS DWORD,;   // LPDWORD
+                              lpOverlapped    AS LPOVERLAPPED ) AS LONG PASCAL FROM "DeviceIoControl" LIB hDll
+
+*+ EOF: HBEJECT.PRG&lt;e&gt;</code></pre></div></e></CODE><br>
+use a Drive which IS "removeable" (no Icon show in Demo Sample)<br/><br>
+<br/><br>
+get "EJECTDLL.CH" from this Threa below<br/><br>
+<br/><br>
+thx for help</r></div>
+    </div>
+  </div>
+  <div class="post" id="p255990">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Sat Dec 03, 2022 08:53 AM
+      </div>
+      <div class="content"><p><t>Dear Jimmy,<br/><br>
+<br/><br>
+I get "Error no Drive Letter" in all cases (I have inserted a USB pendrive)<br/><br>
+<br/><br>
+what to test ? How ?</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p255994">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Sat Dec 03, 2022 09:39 AM
+      </div>
+      <div class="content"><r><QUOTE author="Antonio Linares"><s><blockquote><cite>Antonio Linares wrote:</cite></s>If it works with HMG then it means there is a #define in FWH that is clashing with a Harbour #define or maybe HMG defines it in a different way<br/><br>
+<br/><br>
+Please review this example to see how easily a new define can replace a previous one, and Harbour does not warn you:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#define TEST 123
+#define TEST "Another"
+
+function Main()
+
+   ? TEST
+
+return nil&lt;e&gt;</code></pre></div></e></CODE><e></blockquote></e></QUOTE><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;Warning W0002  Redefinition or duplicate definition of #define TEST&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+You should work with warnings activated. The correct way is:<br/><br>
+<br>
+<QUOTE><s><blockquote></s>#define TEST 123<br/><br>
+#undef TEST<br/><br>
+#define TEST "Another"<br/><br>
+<br/><br>
+function Main()<br/><br>
+<br/><br>
+   ? TEST<br/><br>
+<br/><br>
+return nil<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p255995">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Sat Dec 03, 2022 09:48 AM
+      </div>
+      <div class="content"><p><r>Thank you Enrico for the clarification <E>:-)</E></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p256026">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Mon Dec 05, 2022 03:09 AM
+      </div>
+      <div class="content"><r>hi Antonio,<br>
+<QUOTE author="Antonio Linares"><s><blockquote><cite>Antonio Linares wrote:</cite></s>I get "Error no Drive Letter" in all cases (I have inserted a USB pendrive)<br/><br>
+what to test ? How ?<e></blockquote></e></QUOTE><br>
+you need to press ENTER as i do not know how to use DblClick with Listbox (yet)<br/><br>
+it will take some Seconds until it crash<br/><br>
+<br/><br>
+---<br/><br>
+<br/><br>
+i have search and found "Original" CPP Code <br/><br>
+perhaps it is better to understand  when know CPP<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;// EjectMediaByLetter.cpp by Uwe Sieber - http://www.uwe-sieber.de
+//
+// Simple demonstration how to flush, lock and dismount a volume and eject a media from a drive
+//
+// Works under W2K, XP, W2K3, Vista, Win7, Win8, not tested under Win9x
+//
+// Console application - expects the drive letter of the drive to eject as parameter
+//
+// you are free to use this code in your projects
+//
+
+#define WIN32_LEAN_AND_MEAN
+
+#include &lt;stdio.h&gt;
+#include &lt;windows.h&gt;
+#include &lt;winioctl.h&gt;
+
+
+// returned errorlevels, nice to have when writing documentation later :-)
+enum {
+    ERRL_SUCCESS = 0,
+    ERRL_INVALID_PARAM,
+    ERRL_NO_VOLREAD,
+    ERRL_NO_LOCK,
+    ERRL_NO_EJECT
+};
+
+
+//-------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------
+// we expect a single drive letter as param, e.g.
+// ejectmediabyletter X
+//-------------------------------------------------------------------------------
+int main(int argc, char* argv[])
+{
+    bool ForceEject = false;  // dismount and ejecting even we got no lock
+
+    if ( argc != 2 ) {
+        return ERRL_INVALID_PARAM;      
+    }
+
+    char DriveLetter = argv[1][0];   // grab the drive letter only
+    DriveLetter &amp;= ~0x20;            // make uppercase
+
+    if ( DriveLetter &lt; 'A' || DriveLetter &gt; 'Z' ) {
+        return ERRL_INVALID_PARAM;
+    }
+
+    char szRootPath[] = "X:\\";   // "X:\"  -&gt; for GetDriveType
+    szRootPath[0] = DriveLetter;
+
+    char szVolumeAccessPath[] = "\\\\.\\X:";   // "\\.\X:"  -&gt; to open the volume
+    szVolumeAccessPath[4] = DriveLetter;
+
+    int res;
+    DWORD dwRet;
+    DWORD dwDriveType = GetDriveType(szRootPath);
+
+    // if it is no CD drive then we try to flush the volume
+    if ( dwDriveType != DRIVE_CDROM ) {
+        // try to flush, write access required which only admins will get
+        HANDLE hVolWrite = CreateFile(szVolumeAccessPath, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+        if ( hVolWrite != INVALID_HANDLE_VALUE ) {
+            printf("Flushing cache...");
+            res = FlushFileBuffers(hVolWrite);
+            if ( res ) {
+                printf(" OK\n");
+            } else {
+                printf(" failed  err=%u\n", GetLastError());
+            }
+            CloseHandle(hVolWrite);
+        }
+    }
+
+    HANDLE hVolRead = CreateFile(szVolumeAccessPath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    if ( hVolRead == INVALID_HANDLE_VALUE ) {
+        printf("error %u opening the volume for read access -&gt; abort\n", GetLastError());
+        return ERRL_NO_VOLREAD;
+    }
+
+
+    // allowing (unlocking) eject, usually for CD/DVD only, but does not hurt (and returns TRUE) for other drives
+    printf("Allowing eject...");
+    PREVENT_MEDIA_REMOVAL pmr = {0}; // pmr.PreventMediaRemoval = FALSE;
+    res = DeviceIoControl(hVolRead, IOCTL_STORAGE_MEDIA_REMOVAL, &amp;pmr, sizeof(pmr), NULL, 0, &amp;dwRet, NULL);
+    if ( res  ) {
+        printf(" OK\n");
+    } else {
+        printf(" failed  err=%u\n", GetLastError());
+    }
+
+
+    // try to lock the volume, seems to flush too, maybe even with read access...
+    printf("Locking volume...");
+    int Locked = DeviceIoControl(hVolRead, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &amp;dwRet, NULL);
+    if ( Locked  ) {
+        printf(" OK\n");
+    } else {
+        printf(" failed  err=%u\n", GetLastError());
+    }
+
+    if ( !Locked &amp;&amp; !ForceEject ) {
+        return ERRL_NO_LOCK;
+    }
+
+    // dismount the file system if either we got a lock or we want to force it
+    printf("Dismounting volume...");
+    res = DeviceIoControl(hVolRead, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0, &amp;dwRet, NULL);
+    if ( res ) {
+        printf(" OK\n");
+    } else {
+        printf(" failed  err=%u\n", GetLastError());
+    }
+
+    printf("Ejecting media...");
+    res = DeviceIoControl(hVolRead, IOCTL_STORAGE_EJECT_MEDIA, NULL, 0, NULL, 0, &amp;dwRet, NULL);
+    if ( res ) {
+        printf(" OK\n");
+    } else {
+        printf(" failed  err=%u\n", GetLastError());
+    }
+
+    if ( Locked ) {
+        DeviceIoControl(hVolRead, FSCTL_UNLOCK_VOLUME, NULL, 0, NULL, 0, &amp;dwRet, NULL);
+    }
+
+    CloseHandle(hVolRead);
+
+    if ( res ) {
+        return ERRL_SUCCESS;
+    }
+    
+    return ERRL_NO_EJECT;
+
+}
+//----------------------------------/main----------------------------------------
+//-------------------------------------------------------------------------------
+ &lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p256027">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Mon Dec 05, 2022 03:13 AM
+      </div>
+      <div class="content"><r>hi Enrico.<br>
+<QUOTE author="Enrico Maria Giordano"><s><blockquote><cite>Enrico Maria Giordano wrote:</cite></s>You should work with warnings activated. The correct way is:<e></blockquote></e></QUOTE><br>
+is it to use hbmk.hbm with<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;-w1 -es2 &lt;e&gt;</code></pre></div></e></CODE><br>
+for "smallest" Warning</r></div>
+    </div>
+  </div>
+  <div class="post" id="p256031">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Mon Dec 05, 2022 08:39 AM
+      </div>
+      <div class="content"><p><t>I recommend -w3.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p256032">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Mon Dec 05, 2022 09:14 AM
+      </div>
+      <div class="content"><p><t>Dear Jimmy,<br/><br>
+<br/><br>
+When Harbour crashes it generates a hb_out.log file. Your example reports this:<br/><br>
+<br/><br>
+Called from FWCALLDLL(0)<br/><br>
+Called from DEVICEIOCONTROL(459) in jimmy.prg<br/><br>
+Called from LOCKVOLUME(340) in jimmy.prg<br/><br>
+Called from EJECTMEDIA(191) in jimmy.prg<br/><br>
+Called from (b)USBEJECT(77) in jimmy.prg<br/><br>
+Called from TBUTTON:CLICK(181) in .\source\classes\BUTTON.PRG<br/><br>
+<br/><br>
+So the error is coming from DEVICEIOCONTROL(459)</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p256154">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Thu Dec 08, 2022 06:05 PM
+      </div>
+      <div class="content"><r>hi Antonio,<br/><br>
+<br/><br>
+as i still can´t get a working Solution for DEVICEIOCONTROL under Fivewin i have search for HB_FUNC() to use it<br/><br>
+<br/><br>
+this CODE does now work so far ... <br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FIVEWIN.ch"
+#include "common.ch"
+
+PROCEDURE MAIN()
+LOCAL oDlg, oListbox
+LOCAL cDrive  := SPACE( 2 )
+LOCAL cTitle  := "Please, select"
+LOCAL aDrives := aDrives()
+
+LOCAL bSetGet      := { | x | cDrive := x }
+LOCAL bChange
+LOCAL bValid
+LOCAL bLDblClicked
+LOCAL bWhen
+LOCAL bDrawItem
+
+   DEFINE DIALOG oDlg FROM 5, 10 TO 24, 55 TITLE cTitle
+
+      oListbox := TListBox() :New( 10, 20, bSetGet, aDrives, 145, 95, bChange, ;
+                             oDlg, bValid,,, .T., .F., ;
+                             bLDblClicked,, "", .T., bWhen,, ;
+                             bDrawItem, .F., .F. )
+
+      @  7,  7 BUTTON "&amp;OK" OF oDlg SIZE 40, 12 ;
+              ACTION( USBeject( cDrive ), oDlg:End() ) DEFAULT
+
+      @  7, 17 BUTTON "&amp;Cancel" OF oDlg SIZE 40, 12 ;
+              ACTION( cDrive := nil, oDlg:End() )
+
+#IFDEF __HMG__
+   END DIALOG
+#ENDIF
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+RETURN
+
+STATIC PROCEDURE USBeject(cDriveLetter )
+   IF EjectRemovable( cDriveLetter )
+      MsgInfo( "The Drive " + cDriveLetter + " Can be Safely Removed", "Atenttion ! , Remove USB Ok" )
+   ELSE
+      MsgInfo( "Failed to Safely Remove/Eject Drive " + cDriveLetter , "Atenttion ! , Failed Remove USB" )
+   ENDIF
+RETURN
+
+
+********************************************************************************
+*  http://www.hmgforum.com/viewtopic.php?f=5&amp;t=4524&amp;hilit=cDriveLetter&amp;start=10
+*  Made By PeteWG ( Pete ) &amp;  gfilatov (Grigory)
+********************************************************************************
+
+#pragma begindump
+
+#include &lt;windows.h&gt;
+#include &lt;winioctl.h&gt;
+#include &lt;tchar.h&gt;
+#include &lt;stdio.h&gt;
+
+// Prototypes
+BOOL EjectVolume(TCHAR cDriveLetter);
+HANDLE OpenVolume(TCHAR cDriveLetter);
+BOOL LockVolume(HANDLE hVolume);
+BOOL DismountVolume(HANDLE hVolume);
+BOOL PreventRemovalOfVolume(HANDLE hVolume, BOOL fPrevent);
+BOOL AutoEjectVolume(HANDLE hVolume);
+BOOL CloseVolume(HANDLE hVolume);
+
+LPTSTR szVolumeFormat = TEXT("\\\\.\\%c:");
+LPTSTR szRootFormat = TEXT("%c:\\");
+
+HANDLE OpenVolume(TCHAR cDriveLetter)
+{
+   HANDLE hVolume;
+   UINT uDriveType;
+   TCHAR szVolumeName[8];
+   TCHAR szRootName[5];
+   DWORD dwAccessFlags;
+
+   wsprintf(szRootName, szRootFormat, cDriveLetter);
+   uDriveType = GetDriveType(szRootName);
+
+   switch(uDriveType)
+   {
+   case DRIVE_REMOVABLE:
+     dwAccessFlags = GENERIC_READ | GENERIC_WRITE;
+     break;
+   case DRIVE_CDROM:
+     dwAccessFlags = GENERIC_READ;
+     break;
+   default:
+     return INVALID_HANDLE_VALUE;
+   }
+
+   wsprintf(szVolumeName, szVolumeFormat, cDriveLetter);
+
+   hVolume = CreateFile( szVolumeName,
+                         dwAccessFlags,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE,
+                         NULL,
+                         OPEN_EXISTING,
+                         0,
+                         NULL );
+   return hVolume;
+}
+
+BOOL CloseVolume(HANDLE hVolume)
+{
+   return CloseHandle(hVolume);
+}
+
+#define LOCK_TIMEOUT        10000       // 10 Seconds
+#define LOCK_RETRIES        20
+
+BOOL LockVolume( HANDLE hVolume )
+{
+   DWORD dwBytesReturned;
+   DWORD dwSleepAmount;
+   int nTryCount;
+
+   dwSleepAmount = LOCK_TIMEOUT / LOCK_RETRIES;
+
+   for( nTryCount = 0; nTryCount &lt; LOCK_RETRIES; nTryCount++ )
+   {
+     if( DeviceIoControl( hVolume, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0,
+                          &amp;dwBytesReturned, NULL ) )
+         return TRUE;
+
+     Sleep( dwSleepAmount );
+   }
+
+   return FALSE;
+}
+
+BOOL DismountVolume( HANDLE hVolume )
+{
+   DWORD dwBytesReturned;
+   return DeviceIoControl( hVolume, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0,
+                           &amp;dwBytesReturned, NULL );
+}
+
+BOOL PreventRemovalOfVolume(HANDLE hVolume, BOOL fPreventRemoval)
+{
+   DWORD dwBytesReturned;
+   PREVENT_MEDIA_REMOVAL PMRBuffer;
+   PMRBuffer.PreventMediaRemoval = fPreventRemoval;
+   return DeviceIoControl( hVolume, IOCTL_STORAGE_MEDIA_REMOVAL,
+                           &amp;PMRBuffer, sizeof(PREVENT_MEDIA_REMOVAL),
+                           NULL, 0, &amp;dwBytesReturned, NULL );
+}
+
+AutoEjectVolume( HANDLE hVolume )
+{
+   DWORD dwBytesReturned;
+   return DeviceIoControl( hVolume, IOCTL_STORAGE_EJECT_MEDIA, NULL, 0, NULL, 0,
+                         &amp;dwBytesReturned,
+                         NULL );
+}
+
+BOOL EjectVolume( TCHAR cDriveLetter )
+{
+   HANDLE hVolume;
+
+   BOOL fRemoveSafely = FALSE;
+   BOOL fAutoEject = FALSE;
+
+   hVolume = OpenVolume(cDriveLetter);
+   if( hVolume == INVALID_HANDLE_VALUE )
+     return FALSE;
+
+   if( LockVolume(hVolume) &amp;&amp; DismountVolume(hVolume) )
+   {
+     fRemoveSafely = TRUE;
+
+     if (PreventRemovalOfVolume(hVolume, FALSE) &amp;&amp; AutoEjectVolume(hVolume))
+         fAutoEject = TRUE;
+   }
+
+   if( ! CloseVolume(hVolume) )
+     return FALSE;
+
+   return TRUE;
+}
+
+#include "hbapi.h"
+#include "hbapifs.h"
+HB_FUNC( EJECTREMOVABLE )
+{
+   char * szDrive = hb_parc( 1 );
+   hb_retl( EjectVolume( *szDrive ) );
+   return;
+}
+
+#pragma enddump
+
+*+ EOF: FWEJECT.PRG&lt;e&gt;</code></pre></div></e></CODE><br>
+but those Function begin with BOOL so i can just call them from HB_FUNC() not from *.PRG<br/><br>
+<br/><br>
+what i want : <br/><br>
+call each BOOL Function from PRG so i can display a Message after each Step instead of only OK or FAIL<br/><br>
+<br/><br>
+---<br/><br>
+how to fix there Warnings<br>
+<QUOTE><s><blockquote></s>Warning W8004 FWEJECT.prg 192: 'fAutoEject' is assigned a value that is never used in function EjectVolume<br/><br>
+Warning W8004 FWEJECT.prg 192: 'fRemoveSafely' is assigned a value that is never used in function EjectVolume<br/><br>
+Warning W8075 FWEJECT.prg 198: Suspicious pointer conversion in function HB_FUN_EJECTREMOVABLE<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p256155">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Thu Dec 08, 2022 07:01 PM
+      </div>
+      <div class="content"><r><QUOTE author="Jimmy"><s><blockquote><cite>Jimmy wrote:</cite></s>how to fix there Warnings<br>
+<QUOTE><s><blockquote></s>Warning W8004 FWEJECT.prg 192: 'fAutoEject' is assigned a value that is never used in function EjectVolume<br/><br>
+Warning W8004 FWEJECT.prg 192: 'fRemoveSafely' is assigned a value that is never used in function EjectVolume<br/><br>
+Warning W8075 FWEJECT.prg 198: Suspicious pointer conversion in function HB_FUN_EJECTREMOVABLE<e></blockquote></e></QUOTE><e></blockquote></e></QUOTE><br>
+<br>
+Try:<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;BOOL fRemoveSafely; // = FALSE;
+BOOL fAutoEject; // = FALSE;&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;hb_retl( EjectVolume( ( TCHAR ) *szDrive ) );&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p256157">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Thu Dec 08, 2022 08:40 PM
+      </div>
+      <div class="content"><r>You have to write the Harbour wrappers for those C functions. In example for function BOOL DismountVolume( HANDLE hVolume ):<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;HB_FUNC( DISMOUNTVOLUME )
+{
+   hb_retl( DismountVolume( hb_parnll( 1 ) ) );
+}&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p256158">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Thu Dec 08, 2022 08:46 PM
+      </div>
+      <div class="content"><r>I just asked chatGPT to write them <E>:-)</E><br/><br>
+<br/><br>
+This is the result. Warning: chatGPT fails so you have to check its implementation:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;HB_FUNC(EJECTVOLUME)
+{
+   return EjectVolume(hb_parc(1));
+}
+
+HB_FUNC(OPENVOLUME)
+{
+   return OpenVolume(hb_parc(1));
+}
+
+HB_FUNC(LOCKVOLUME)
+{
+   return LockVolume(hb_parnl(1));
+}
+
+HB_FUNC(DISMOUNTVOLUME)
+{
+   return DismountVolume(hb_parnl(1));
+}
+
+HB_FUNC(PREVENTREMOVALOFVOLUME)
+{
+   return PreventRemovalOfVolume(hb_parnl(1), hb_parl(2));
+}
+
+HB_FUNC(AUTOEJECTVOLUME)
+{
+   return AutoEjectVolume(hb_parnl(1));
+}
+
+HB_FUNC(CLOSEVOLUME)
+{
+   return CloseVolume(hb_parnl(1));
+}
+ &lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p256159">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Thu Dec 08, 2022 08:49 PM
+      </div>
+      <div class="content"><p><r>return should not be called in the code, instead Harbour hb_ret...() should be used<br/><br>
+<br/><br>
+I am asking chatGPT to fix it <E>:-D</E></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p256160">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Jimmy</div>
+      <div class="rank">Posts: 1770</div>
+      <div class="avatar"></div>
+      Joined: Thu Sep 05, 2019 05:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DLLCALL under Fivewin</span><br>
+        Posted: Thu Dec 08, 2022 09:56 PM
+      </div>
+      <div class="content"><r>hi Enrico,<br>
+<QUOTE author="Enrico Maria Giordano"><s><blockquote><cite>Enrico Maria Giordano wrote:</cite></s>Try:<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;BOOL fRemoveSafely; // = FALSE;
+BOOL fAutoEject; // = FALSE;&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;hb_retl( EjectVolume( ( TCHAR ) *szDrive ) );&lt;e&gt;</code></pre></div></e></CODE><e></blockquote></e></QUOTE><br>
+thx, i will try it</r></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-42550.html">1</a> <strong>2</strong> <a href="topic-42550-page-3.html">3</a> <a href="topic-42550-page-4.html">4</a> (46 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

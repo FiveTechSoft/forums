@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Big problem : oSocket:OnRead and oSocket:bRead ? - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-17532">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Big problem : oSocket:OnRead and oSocket:bRead ?</div>
+  <div class="post" id="p91214">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Big problem : oSocket:OnRead and oSocket:bRead ?</span><br>
+        Posted: Wed Dec 02, 2009 04:05 AM
+      </div>
+      <div class="content">I have used oSocket to send &amp; received data but the protocol have to receive data and send ack.  The problem is I don't which one will get the data (between oSocket:bRead or oSocket:OnRead())?<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">*--------------------*
+function Client()
+
+   oSocket := TSocket():New( nPort )
+
+   oSocket:bRead    = { | oSocket | OnRead( oSocket ) }  // oSocket:GetData() }  // 
+
+   // Never use a MsgInfo() here because it hangs Windows!!!
+   oSocket:bConnect = { || OnConnected() }
+
+   oSocket:bClose   = { || MsgInfo( "Server has closed!" ) }
+
+   oSocket:Connect( cSvrIP ) // use the server IP address here
+
+return nil
+
+*-------------------*
+Function OnConnected
+local n := 0
+local AddChr
+local StartAck2, EndAck, EndTrnOk 
+
+lRun := !lRun
+
+if !empty(PMSChkPBX)
+    // save to logfile()
+    // SaveLog( 'PMS : '+PMSSTrnMsn )
+    if SendData( PMSSTrnMsn ) &gt; 0
+
+        if !empty(PMSAcknow)
+            StartAck2 := ''
+            WaitPeriod(5000)  // Loop for 5 seconds
+            do while (StartAck2 &lt;&gt; PMSAcknow) .and. WaitPeriod()   // Wait for PMS Acknowledge Chr
+            StartAck2 := oSocket:OnRead()    // read Chr from comm port
+            if right(StartAck2,len(PMSSTrnMsn)) = PMSSTrnMsn
+                    StartAck2 := right(StartAck2,len(PMSSTrnMsn))
+                    exit
+            end
+            if StartAck2 = PMSETrnMsn
+                    exit
+            end
+            end
+        end
+        
+    AddChr := BCC(PMSChkPBX)
+        do while n &lt;= 2
+            SendData( PMSChkPBX+AddChr )
+            // SaveLog( 'PMS : '+PMSChkPBX+AddChr )
+        // oSocket:SendData( PMSChkPBX+AddChr )
+        MsgWait('Please wait for connection : '+str(n+1,2),,1)
+        if lConnect 
+            exit
+        end
+        n++
+        end
+        // if not reply for 3 times, END Socket()
+        if n &gt; 2
+        oSocket:End()
+        end
+        
+        EndAck  := ''
+        EndTrnOk := .t.
+        if !empty(PMSAcknow)
+            EndTrnOk := .f.
+           WaitPeriod(nDelay)
+           do while (EndAck &lt;&gt; PMSAcknow) .and. WaitPeriod()
+                EndAck := oSocket:OnRead()    // read Chr from IP
+            end
+
+           if (EndAck = PMSAcknow)   // .or. (right(EndThai,len(PMSAcknow)) = PMSAcknow) // PMS Acknowledge for End of Text
+                EndTrnOk := .T.
+            end
+
+            if EndTrnOk  // Start send End Trn
+            if !empty( PMSETrnMsn )
+                SendData( PMSETrnMsn )
+                end
+           end
+        end     
+    end     
+    
+    
+   // PABX Respond
+   if EndTrnOk 
+        StartAck2 := ''
+        WaitPeriod(3000)  // Loop for 5 seconds
+        do while (right(StartAck2,len(PMSSTrnMsn)) &lt;&gt; PMSSTrnMsn) .and. WaitPeriod()    // Wait for PMS Acknowledge Chr
+            StartAck2 := oSocket:OnRead()     // read Chr from comm port
+        end
+
+        if StartAck2 = PMSSTrnMsn
+            if SendData( PMSAcknow ) &gt; 0     // Send Acknowledge Chr
+            PABXText := PMSAcknow
+            end
+
+            // wait for Data Link Recovery  L70070
+            StartAck2 := ''
+            WaitPeriod(3000)  // Loop for 5 seconds
+            do while left(right(StartAck2,2),1) &lt;&gt; Chr(3) .and. WaitPeriod()   // Wait for PMS Acknowledge Chr
+            StartAck2 := oSocket:OnRead()    // read Chr from comm port
+            // if ChrIn = Chr(3) .and. 'L1450' $ StartAck2
+            if StartAck2=STX+SA+UA+'L70070  '+ETX
+                    exit
+            end
+            end
+
+            if subs(StartAck2,1,8) == subs(PMSChkPBX,1,8)
+
+            SendData( PMSAcknow ) &gt; 0   // Send Acknowledge Chr
+
+            // wait for EOT
+            StartAck2 := ''
+            WaitPeriod(3000)  // Loop for 5 seconds
+            do while (StartAck2 &lt;&gt; PMSETrnMsn) .and. WaitPeriod()   // Wait for PMS Acknowledge Chr
+                    StartAck2 := oSocket:OnRead()    // read Chr from comm port
+            end
+            end
+        end
+   end
+end
+
+if 'L1450' $ PABXText
+else
+   PABXText := ''
+end 
+    
+    
+end
+
+lRun := !lRun
+
+return nil
+
+// (MEMVAR-&gt;lRun := .T., oWnd:SetMsg("Connected!") )
+*-------------------------*
+function OnRead( oSocket )
+local cAnswer := oSocket:GetData()
+if !empty(cAnswer)
+    SaveLog( 'NEC: '+cAnswer )
+end   
+return cAnswer</code></pre></div><br>
+Any help will be appreicate.<br>
+Regards,<br>
+Dutch</div>
+    </div>
+  </div>
+  <div class="post" id="p91220">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Big problem : oSocket:OnRead and oSocket:bRead ?</span><br>
+        Posted: Wed Dec 02, 2009 08:48 AM
+      </div>
+      <div class="content"><p>Dutch,</p>
+<p>bRead is evaluated when new data arrives, then OnRead() reads the arrived data.</p>
+<p>So the sequence is:</p>
+<p>Event (new data arrives) --&gt; We proceed to read the arrived data --&gt; once all expected data has arrived then you may send an acknowledge</p></div>
+    </div>
+  </div>
+  <div class="post" id="p91236">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Big problem : oSocket:OnRead and oSocket:bRead ?</span><br>
+        Posted: Wed Dec 02, 2009 11:46 AM
+      </div>
+      <div class="content"><p>Dear Antonio,</p>
+<p>I don't know what I understand is correct or not?</p>
+<p>case 1. when unexpected data, We will use ::bRead routine.  ??<br>
+case 2. when expected data, (after we send request <em>inquiry</em>) and it will send data back.  We will use ::OnRead() ??<br>
+case 3. on 2nd case expected data will run to :bRead also?</p>
+<p>Regards,<br>
+Dutch</p>
+<p>PS. In the past, this program run via RS232 (Com port).</p></div>
+    </div>
+  </div>
+  <div class="post" id="p91238">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Big problem : oSocket:OnRead and oSocket:bRead ?</span><br>
+        Posted: Wed Dec 02, 2009 01:45 PM
+      </div>
+      <div class="content"><p>Dutch,</p>
+<p>You should only read data when Windows tell you so, and it tells it to you invoking bRead.</p>
+<p>So you should not wait for new data inside OnRead. That is a common mistake because this process is not properly understood.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p91239">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Big problem : oSocket:OnRead and oSocket:bRead ?</span><br>
+        Posted: Wed Dec 02, 2009 01:49 PM
+      </div>
+      <div class="content"><p>Dutch,</p>
+<p>Imagine this example:</p>
+<p>1) I tell you to go somewhere and get an envelope for me.</p>
+<p>2) You go there, get the envelope and return it to me.</p>
+<p>3) Again I ask you to go for a new envelope. etc</p>
+<p>A common error is:</p>
+<p>1) I tell you to go somewhere and get an envelope for me.</p>
+<p>2) You go and get the envelope, but you remain there waiting for more envelops for me</p>
+<p>That is not what I told you <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>mod_harbour.v2.1 and RESTful API - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46315">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-45.html">mod_harbour</a> mod_harbour.v2.1 and RESTful API</div>
+  <div class="post" id="p283741">
+    <div class="poster">
+      <div class="name" style="color:#105289">ssbbs</div>
+      <div class="rank">Posts: 129</div>
+      <img class="avatar avatar-img" src="avatars/159.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 03:03 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">mod_harbour.v2.1 and RESTful API</span><br>
+        Posted: Thu Feb 05, 2026 02:33 AM
+      </div>
+      <div class="content"><r><p>Using mod_harbour.v2.1 to implement a RESTful API call</p><br>
+<LIST><LI><s>- </s>Since mod_harbour.v2.1 does not support URLs like <URL url="https://xxx.xxx.xxx/api.prg/user/1">https://xxx.xxx.xxx/api.prg/user/1</URL>, you need to add this functionality manually.</LI><br>
+<LI><s>- </s>Modify mod_harbour.v2.1/source/ap_func_c.c and add the AP_GETURI() function:<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;//----------------------------------------------------------------//
+// mh_GetUri() cannot retrieve URLs like: http?://xxx.xxx/api.prg/user/1
+// So we add this function to get the full URI
+HB_FUNC(AP_GETURI)
+{
+   hb_retc(GetRequestRec()-&gt;uri);
+}
+&lt;e&gt;</code></pre></div></e></CODE><br>
+b. 	Because JWT is required, download the file from:  <URL url="https://github.com/matteobaccan/HarbourJwt"><s><a href="</s>https://github.com/matteobaccan/HarbourJwt<e>" rel="noopener"></s>https://github.com/matteobaccan/HarbourJwt<e></a></e></URL> — you only need the jwt.prg file.<br/><br>
+c. 	Modify ./mod_harbour.v2.1/libmhapache.hbp and add: \your_path\jwt.prg<br/><br>
+d. 	Modify ./mod_harbour.v2.1/source/externs.hbx and add: extern AP_GETURI<br/><br>
+e. 	Recompile to generate libmhapache.dll and mod_harbour.v2.so</LI><br>
+<LI><s>2. 	</s>Modify the Apache httpd.conf configuration:<br/><br>
+You need to set two environment variables:<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;    SetEnv JWT_SECRET "your_sha256"
+    SetEnv JWT_REFRESH_SECRET "your_sha256"
+&lt;e&gt;</code></pre></div></e></CODE></LI></LIST><br>
+<br>
+<p>JWT_SECRET: Access Token, used to validate access requests<br/><br>
+JWT_REFRESH_SECRET: Refresh Token, used to obtain a new Access Token when the old one expires<br/><br>
+If your website manages multiple RESTful APIs at the same time, you can separate them using &lt;Directory&gt; blocks, for example:</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;&lt;Directory "{DOCUMENTPATH}/api"&gt;
+    SetEnv JWT_SECRET "...."
+    SetEnv JWT_REFRESH_SECRET "...."
+&lt;/Directory&gt;
+
+&lt;Directory "{DOCUMENTPATH}/zzz"&gt;
+    SetEnv JWT_SECRET "...."
+    SetEnv JWT_REFRESH_SECRET "...."
+&lt;/Directory&gt;
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>To generate the SHA256 values, use the following command and paste the result into JWT_SECRET and JWT_REFRESH_SECRET:</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;    openssl rand -base64 32
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>Next is the [Frontend] test webpage content:</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;&lt;!DOCTYPE html&gt;
+&lt;html lang="zh-TW"&gt;
+&lt;head&gt;
+    &lt;meta charset="UTF--8"&gt;
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;
+    &lt;title&gt;mod_harbour RESTful API 測試&lt;/title&gt;
+    &lt;style&gt;
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: auto; }
+        h1, h2 { border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .container { display: flex; gap: 20px; }
+        .controls, .output { flex: 1; min-width: 0; /* 解決 flex 項目被內容撐開的問題 */ }
+        button { display: block; width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; background-color: #f0f0f0; cursor: pointer; }
+        button:hover { background-color: #e0e0e0; }
+        input { width: calc(100% - 22px); padding: 10px; margin-bottom: 10px; }
+        pre { background-color: #2d2d2d; color: #f1f1f1; padding: 15px; border-radius: 5px; white-space: pre; overflow-x: auto; }
+        label { font-weight: bold; margin-bottom: 5px; display: block; }
+    &lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+
+&lt;i&gt;    &lt;/i&gt;&lt;h1&gt;mod_harbour RESTful API 測試&lt;/h1&gt;
+
+&lt;i&gt;    &lt;/i&gt;&lt;div class="container"&gt;
+&lt;i&gt;    &lt;/i&gt;    &lt;div class="controls"&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;h2&gt;控制面板&lt;/h2&gt;
+
+&lt;i&gt;    &lt;/i&gt;        &lt;button onclick="getAllUsers()"&gt;GET /users (取得所有使用者)&lt;/button&gt;
+
+&lt;i&gt;    &lt;/i&gt;        &lt;hr&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;label for="userId"&gt;使用者 ID:&lt;/label&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;input type="text" id="userId" placeholder="輸入 ID (例如: 1)" value="1"&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;button onclick="getUserById()"&gt;GET /users/{id} (取得單一使用者)&lt;/button&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;button onclick="deleteUser()"&gt;DELETE /users/{id} (刪除使用者)&lt;/button&gt;
+
+&lt;i&gt;    &lt;/i&gt;        &lt;hr&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;label for="userName"&gt;姓名:&lt;/label&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;input type="text" id="userName" placeholder="輸入姓名"&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;label for="userEmail"&gt;Email:&lt;/label&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;input type="text" id="userEmail" placeholder="輸入 Email"&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;button onclick="createUser()"&gt;POST /users (新增使用者)&lt;/button&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;button onclick="updateUser()"&gt;PUT /users/{id} (更新使用者)&lt;/button&gt;
+
+&lt;i&gt;    &lt;/i&gt;        &lt;hr&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;h2&gt;身分驗證 (JWT)&lt;/h2&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;label for="loginUser"&gt;使用者名稱:&lt;/label&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;input type="text" id="loginUser" value="admin"&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;label for="loginPass"&gt;密碼:&lt;/label&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;input type="password" id="loginPass" value="password"&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;button onclick="login()"&gt;POST /login (登入並取得 Token)&lt;/button&gt;
+
+&lt;i&gt;    &lt;/i&gt;        &lt;button onclick="getProfile()"&gt;GET /profile (測試保護路由)&lt;/button&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;button onclick="logout()"&gt;登出 (清除 Token)&lt;/button&gt;
+
+&lt;i&gt;    &lt;/i&gt;    &lt;/div&gt;
+&lt;i&gt;    &lt;/i&gt;    &lt;div class="output"&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;h2&gt;輸出結果&lt;/h2&gt;
+&lt;i&gt;    &lt;/i&gt;        &lt;pre id="response"&gt;點擊按鈕以發送請求...&lt;/pre&gt;
+&lt;i&gt;    &lt;/i&gt;    &lt;/div&gt;
+&lt;i&gt;    &lt;/i&gt;&lt;/div&gt;
+
+&lt;i&gt;    &lt;/i&gt;&lt;script&gt;
+&lt;i&gt;    &lt;/i&gt;    // API 的基礎 URL，指向 .prg 原始碼檔案
+&lt;i&gt;    &lt;/i&gt;    const API_BASE_URL = '/RESTful/api.prg';
+&lt;i&gt;    &lt;/i&gt;    // 頁面載入時，嘗試從 localStorage 讀取 token
+&lt;i&gt;    &lt;/i&gt;    let jwtToken = localStorage.getItem('jwtToken'); 
+
+&lt;i&gt;    &lt;/i&gt;    // 如果一開始就有 token，可以提示使用者
+&lt;i&gt;    &lt;/i&gt;    if (jwtToken) {
+&lt;i&gt;    &lt;/i&gt;        console.log('偵測到已儲存的 Token，目前為登入狀態。');
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;    const responseElement = document.getElementById('response');
+
+&lt;i&gt;    &lt;/i&gt;    // 新增：嘗試刷新 Access Token 的函式
+&lt;i&gt;    &lt;/i&gt;    async function tryRefreshToken() {
+&lt;i&gt;    &lt;/i&gt;        try {
+&lt;i&gt;    &lt;/i&gt;            // 注意：這裡不需要手動帶入 headers，因為瀏覽器會自動帶上 HttpOnly cookie
+&lt;i&gt;    &lt;/i&gt;            const response = await fetch(API_BASE_URL + '/refresh_token', { method: 'POST' });
+
+&lt;i&gt;    &lt;/i&gt;            if (!response.ok) {
+&lt;i&gt;    &lt;/i&gt;                return false;
+&lt;i&gt;    &lt;/i&gt;            }
+&lt;i&gt;    &lt;/i&gt;            const data = await response.json();
+&lt;i&gt;    &lt;/i&gt;            if (data.token) {
+&lt;i&gt;    &lt;/i&gt;                jwtToken = data.token;
+&lt;i&gt;    &lt;/i&gt;                localStorage.setItem('jwtToken', jwtToken);
+&lt;i&gt;    &lt;/i&gt;                return true;
+&lt;i&gt;    &lt;/i&gt;            }
+&lt;i&gt;    &lt;/i&gt;            return false;
+&lt;i&gt;    &lt;/i&gt;        } catch (error) {
+&lt;i&gt;    &lt;/i&gt;            console.error('Error during token refresh:', error);
+&lt;i&gt;    &lt;/i&gt;            return false;
+&lt;i&gt;    &lt;/i&gt;        }
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;    async function apiCall(method, path, body = null) {
+&lt;i&gt;    &lt;/i&gt;        const url = API_BASE_URL + path;
+&lt;i&gt;    &lt;/i&gt;        const options = {
+&lt;i&gt;    &lt;/i&gt;            method: method,
+&lt;i&gt;    &lt;/i&gt;            headers: {}
+&lt;i&gt;    &lt;/i&gt;        };
+
+&lt;i&gt;    &lt;/i&gt;        options.headers['Content-Type'] = 'application/json';
+&lt;i&gt;    &lt;/i&gt;        if (jwtToken) {
+&lt;i&gt;    &lt;/i&gt;            options.headers['Authorization'] = `Bearer ${jwtToken}`;
+&lt;i&gt;    &lt;/i&gt;        };
+
+&lt;i&gt;    &lt;/i&gt;        if (body) {
+&lt;i&gt;    &lt;/i&gt;            options.body = JSON.stringify(body);
+&lt;i&gt;    &lt;/i&gt;        }
+
+&lt;i&gt;    &lt;/i&gt;        try {
+&lt;i&gt;    &lt;/i&gt;            responseElement.textContent = `正在發送 ${method} 請求至 ${url} ...`;
+&lt;i&gt;    &lt;/i&gt;            let response = await fetch(url, options);
+
+&lt;i&gt;    &lt;/i&gt;            // 新增：如果收到 401 (Unauthorized)，嘗試刷新 token 並重試
+&lt;i&gt;    &lt;/i&gt;            if (response.status === 401 &amp;&amp; path !== '/login' &amp;&amp; path !== '/refresh_token') {
+&lt;i&gt;    &lt;/i&gt;                console.log('Access Token 可能已過期，正在嘗試刷新...');
+&lt;i&gt;    &lt;/i&gt;                const refreshSuccess = await tryRefreshToken();
+
+&lt;i&gt;    &lt;/i&gt;                if (refreshSuccess) {
+&lt;i&gt;    &lt;/i&gt;                    console.log('Token 刷新成功，正在重試原始請求...');
+&lt;i&gt;    &lt;/i&gt;                    // 使用新的 token 更新 Authorization 標頭
+&lt;i&gt;    &lt;/i&gt;                    options.headers['Authorization'] = `Bearer ${jwtToken}`;
+&lt;i&gt;    &lt;/i&gt;                    // 重試請求
+&lt;i&gt;    &lt;/i&gt;                    response = await fetch(url, options);
+&lt;i&gt;    &lt;/i&gt;                } else {
+&lt;i&gt;    &lt;/i&gt;                    console.log('Token 刷新失敗，請重新登入。');
+&lt;i&gt;    &lt;/i&gt;                    alert('您的連線階段已過期，請重新登入。');
+&lt;i&gt;    &lt;/i&gt;                    await logout(); // 清理前端和後端的登入狀態
+&lt;i&gt;    &lt;/i&gt;                    return;
+&lt;i&gt;    &lt;/i&gt;                }
+&lt;i&gt;    &lt;/i&gt;            }
+
+&lt;i&gt;    &lt;/i&gt;            let responseText = `狀態: ${response.status} ${response.statusText}\n\n`;
+&lt;i&gt;    &lt;/i&gt;            
+&lt;i&gt;    &lt;/i&gt;            // 處理沒有內容的回應 (例如 204 No Content)
+&lt;i&gt;    &lt;/i&gt;            if (response.status === 204) {
+&lt;i&gt;    &lt;/i&gt;                responseText += "操作成功，無返回內容。";
+&lt;i&gt;    &lt;/i&gt;            } else {
+&lt;i&gt;    &lt;/i&gt;                // 如果是登入成功，儲存新的 access token
+&lt;i&gt;    &lt;/i&gt;                if (path === '/login' &amp;&amp; response.ok) {
+&lt;i&gt;    &lt;/i&gt;                    const data = await response.json();
+&lt;i&gt;    &lt;/i&gt;                    localStorage.setItem('jwtToken', data.token); // 將 Token 儲存到 localStorage
+&lt;i&gt;    &lt;/i&gt;                    jwtToken = data.token;
+&lt;i&gt;    &lt;/i&gt;                    alert('登入成功！Access Token 已儲存。');
+&lt;i&gt;    &lt;/i&gt;                    responseText += JSON.stringify(data, null, 2);
+&lt;i&gt;    &lt;/i&gt;                    responseElement.textContent = responseText;
+&lt;i&gt;    &lt;/i&gt;                    return; // 結束函式
+&lt;i&gt;    &lt;/i&gt;                }
+
+&lt;i&gt;    &lt;/i&gt;                const data = await response.json();
+&lt;i&gt;    &lt;/i&gt;                responseText += JSON.stringify(data, null, 2);
+&lt;i&gt;    &lt;/i&gt;            }
+&lt;i&gt;    &lt;/i&gt;            
+&lt;i&gt;    &lt;/i&gt;            responseElement.textContent = responseText;
+
+&lt;i&gt;    &lt;/i&gt;        } catch (error) {
+&lt;i&gt;    &lt;/i&gt;            responseElement.textContent = `發生錯誤:\n${error}`;
+&lt;i&gt;    &lt;/i&gt;        }
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;    function getAllUsers() {
+&lt;i&gt;    &lt;/i&gt;        apiCall('GET', '/users');
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;    function getUserById() {
+&lt;i&gt;    &lt;/i&gt;        const id = document.getElementById('userId').value;
+&lt;i&gt;    &lt;/i&gt;        if (!id) {
+&lt;i&gt;    &lt;/i&gt;            alert('請輸入使用者 ID');
+&lt;i&gt;    &lt;/i&gt;            return;
+&lt;i&gt;    &lt;/i&gt;        }
+&lt;i&gt;    &lt;/i&gt;        apiCall('GET', `/users/${id}`);
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;    function createUser() {
+&lt;i&gt;    &lt;/i&gt;        const name = document.getElementById('userName').value;
+&lt;i&gt;    &lt;/i&gt;        const email = document.getElementById('userEmail').value;
+
+&lt;i&gt;    &lt;/i&gt;        if (!name || !email) {
+&lt;i&gt;    &lt;/i&gt;            alert('請輸入姓名和 Email');
+&lt;i&gt;    &lt;/i&gt;            return;
+&lt;i&gt;    &lt;/i&gt;        }
+
+&lt;i&gt;    &lt;/i&gt;        const body = { name, email };
+&lt;i&gt;    &lt;/i&gt;        apiCall('POST', '/users', body);
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;    function updateUser() {
+&lt;i&gt;    &lt;/i&gt;        const id = document.getElementById('userId').value;
+&lt;i&gt;    &lt;/i&gt;        const name = document.getElementById('userName').value;
+&lt;i&gt;    &lt;/i&gt;        const email = document.getElementById('userEmail').value;
+
+&lt;i&gt;    &lt;/i&gt;        if (!id) {
+&lt;i&gt;    &lt;/i&gt;            alert('請輸入要更新的使用者 ID');
+&lt;i&gt;    &lt;/i&gt;            return;
+&lt;i&gt;    &lt;/i&gt;        }
+
+&lt;i&gt;    &lt;/i&gt;        if (!name &amp;&amp; !email) {
+&lt;i&gt;    &lt;/i&gt;            alert('請至少輸入姓名或 Email 來進行更新');
+&lt;i&gt;    &lt;/i&gt;            return;
+&lt;i&gt;    &lt;/i&gt;        }
+
+&lt;i&gt;    &lt;/i&gt;        const body = {};
+&lt;i&gt;    &lt;/i&gt;        if (name) body.name = name;
+&lt;i&gt;    &lt;/i&gt;        if (email) body.email = email;
+
+&lt;i&gt;    &lt;/i&gt;        apiCall('PUT', `/users/${id}`, body);
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;    function deleteUser() {
+&lt;i&gt;    &lt;/i&gt;        const id = document.getElementById('userId').value;
+&lt;i&gt;    &lt;/i&gt;        if (!id) {
+&lt;i&gt;    &lt;/i&gt;            alert('請輸入要刪除的使用者 ID');
+&lt;i&gt;    &lt;/i&gt;            return;
+&lt;i&gt;    &lt;/i&gt;        }
+&lt;i&gt;    &lt;/i&gt;        if (confirm(`確定要刪除 ID 為 ${id} 的使用者嗎？`)) {
+&lt;i&gt;    &lt;/i&gt;            apiCall('DELETE', `/users/${id}`);
+&lt;i&gt;    &lt;/i&gt;        }
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;    function login() {
+&lt;i&gt;    &lt;/i&gt;        const username = document.getElementById('loginUser').value;
+&lt;i&gt;    &lt;/i&gt;        const password = document.getElementById('loginPass').value;
+
+&lt;i&gt;    &lt;/i&gt;        if (!username || !password) {
+&lt;i&gt;    &lt;/i&gt;            alert('請輸入使用者名稱和密碼');
+&lt;i&gt;    &lt;/i&gt;            return;
+&lt;i&gt;    &lt;/i&gt;        }
+
+&lt;i&gt;    &lt;/i&gt;        const body = { username, password };
+&lt;i&gt;    &lt;/i&gt;        jwtToken = null; // 登入前先清除記憶體中的舊 token
+&lt;i&gt;    &lt;/i&gt;        localStorage.removeItem('jwtToken'); // 同時清除 localStorage 中的舊 token
+&lt;i&gt;    &lt;/i&gt;        apiCall('POST', '/login', body);
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;    function getProfile() {
+&lt;i&gt;    &lt;/i&gt;        if (!jwtToken) {
+&lt;i&gt;    &lt;/i&gt;            alert('請先登入以取得 Token！');
+&lt;i&gt;    &lt;/i&gt;            return;
+&lt;i&gt;    &lt;/i&gt;        }
+&lt;i&gt;    &lt;/i&gt;        apiCall('GET', '/profile');
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;    async function logout() {
+&lt;i&gt;    &lt;/i&gt;        // 先呼叫後端 API 來清除 HttpOnly cookie
+&lt;i&gt;    &lt;/i&gt;        await apiCall('POST', '/logout');
+
+&lt;i&gt;    &lt;/i&gt;        // 然後清理前端的 token
+&lt;i&gt;    &lt;/i&gt;        jwtToken = null;
+&lt;i&gt;    &lt;/i&gt;        localStorage.removeItem('jwtToken');
+&lt;i&gt;    &lt;/i&gt;        alert('已登出成功。');
+&lt;i&gt;    &lt;/i&gt;    }
+
+&lt;i&gt;    &lt;/i&gt;&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>Next is the [Backend] main program:</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;&lt;?prg
+/*
+ * api.prg (範例程式)
+ * 這是一個使用 mod_harbour v2.1 開發的簡單 RESTful API 範例 (物件導向版本)。
+ *
+ * 這個版本將原來的程序化程式碼重構為一個名為 UserApi 的類別，
+ * 使得程式碼結構更清晰、更易於維護和擴展。
+ *
+ * 主要功能：
+ * - 管理 "users" 資源，提供 CRUD 操作。
+ * - 使用 JWT (JSON Web Token) 進行身分驗證。
+ * - 實現 Refresh Token 機制以延長使用者登入狀態。
+ * - 採用物件導向設計，將所有相關邏輯封裝在 UserApi 類別中。
+ */
+#include "hbclass.ch"
+// --- 主程序 ---
+PROCEDURE Main()
+
+   // 取得當前請求的 HTTP 方法 (GET, POST, PUT, DELETE)。
+   LOCAL cMethod  := AP_Method()
+   // 使用我們在 C 原始碼中新增的 AP_GetUri() 函式
+   LOCAL hHeaders := AP_HeadersIn()
+   LOCAL cURI     := AP_GetUri() // 請求的 URL 路徑，例如 /RESTful/api.prg/users/1
+   LOCAL cBody    := AP_GetBody() // 預先讀取 body，避免在多個方法中重複讀取
+   LOCAL oApi
+
+   // 建立 API 物件並傳入請求資訊
+   oApi := UserApi():New( cMethod, cURI, hHeaders, cBody )
+
+   // 執行請求處理
+   oApi:HandleRequest()
+
+RETURN
+
+// --- API 類別定義 ---
+CLASS UserApi
+
+   // --- 資料成員 (Properties) ---
+   // 模擬資料庫
+   DATA aUsers          INIT {}
+   // 檔案快取時間戳
+   DATA tsLastModTime     INIT NIL
+
+   // JWT 密鑰
+   DATA cJwtSecret        INIT ""
+   DATA cJwtRefreshSecret INIT ""
+
+   // 請求相關資料
+   DATA cMethod         INIT ""
+   DATA cURI            INIT ""
+   DATA hHeaders        INIT NIL
+   DATA cBody           INIT ""
+
+   // --- 方法 (Methods) ---
+   METHOD New( cMethod, cURI, hHeaders, cBody )
+   METHOD HandleRequest()
+
+   // API 端點方法
+   METHOD GetAllUsers()
+   METHOD GetUser( nID )
+   METHOD CreateUser()
+   METHOD UpdateUser( nID )
+   METHOD DeleteUser( nID )
+   METHOD Login()
+   METHOD GetProfile()
+   METHOD RefreshToken()
+   METHOD Logout()
+
+   // 輔助方法
+   METHOD VerifyToken() PROTECTED
+   METHOD SendError( nStatusCode, cMessage ) PROTECTED
+   METHOD FindUser( nID ) PROTECTED
+   METHOD FindUserIndex( nID ) PROTECTED
+   METHOD GetNextID() PROTECTED
+   METHOD LoadData() PROTECTED
+   METHOD SaveData() PROTECTED
+   METHOD InitData() PROTECTED
+   METHOD GetCookieValue( cCookieHeader, cCookieName ) PROTECTED
+
+ENDCLASS
+// --- 類別實作 ---
+....
+....
+?&gt;
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>Important!! Please reconfigure your own Access Token and Refresh Token lifecycle!!</p><br>
+<br>
+<p>You can view full code from:<URL url="https://www4.zzz.com.tw/phpBB3/viewtopic.php?f=2&amp;t=370"><s><a href="</s>https://www4.zzz.com.tw/phpBB3/viewtopic.php?f=2&amp;t=370<e>" rel="noopener"></s>https://www4.zzz.com.tw/phpBB3/viewtopic.php?f=2&amp;t=370<e></a></e></URL></p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p283767">
+    <div class="poster">
+      <div class="name" style="color:#105289">russimicro</div>
+      <div class="rank">Posts: 409</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 31, 2010 03:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: mod_harbour.v2.1 and RESTful API</span><br>
+        Posted: Fri Feb 06, 2026 03:39 AM
+      </div>
+      <div class="content"><p><t><p>Good evening..</p> </p>
+<p>could you show us how to compile with msvc64 2019 or 2022.. and the link to download the version of Harbour according to msvc64..</p>
+
+<p>JONSSON RUSSI</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283779">
+    <div class="poster">
+      <div class="name" style="color:#105289">ssbbs</div>
+      <div class="rank">Posts: 129</div>
+      <img class="avatar avatar-img" src="avatars/159.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 03:03 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: mod_harbour.v2.1 and RESTful API</span><br>
+        Posted: Sat Feb 07, 2026 03:36 AM
+      </div>
+      <div class="content"><r><p>I am using MSVC64 with VS Studio 2019<br/><br>
+Method to compile mod_harbour.v2.1:<br/><br>
+  1.Download the project from GitHub<br/><br>
+  2.Run the file inside named go64.bat</p><br>
+<br>
+<p>After execution, it will generate:<br/><br>
+libmhapache.dll<br/><br>
+mod_harbour.v2.so</p><br>
+<br>
+<QUOTE author="russimicro" post_id="283767" time="1770349149" user_id="1875"><s>[quote=russimicro post_id=283767 time=1770349149 user_id=1875]</s><br>
+<p>could you show us how to compile with msvc64 2019 or 2022.. and the link to download the version of Harbour according to msvc64..</p><br>
+<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p283780">
+    <div class="poster">
+      <div class="name" style="color:#105289">russimicro</div>
+      <div class="rank">Posts: 409</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 31, 2010 03:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: mod_harbour.v2.1 and RESTful API</span><br>
+        Posted: Sat Feb 07, 2026 03:59 AM
+      </div>
+      <div class="content"><p><t><p>Good evening.. <br/><br>
+I managed to compile partially... it gives me these errors...<br/><br>
+ function CURL_EASY_ER_BUFF_GET() ; return function CURL_MULTI_ADD_HANDLE() ; return function CURL_MULTI_CLEANUP() ; return function CURL_MULTI_INFO_READ() ; return function CURL_MULTI_INIT() ; return function CURL_MULTI_PERFORM() ; return function CURL_MULTI_POLL() ; return function CURL_MULTI_REMOVE_HANDLE() ; return function CURL_WS_RECV() ; return function CURL_WS_SEND() ; return function BIO_GET_CONN_ADDRESS() ; return function SSL_CTX_USE_RSAPRIVATEKEY() ; return ...</p> </p>
+<p>I defined them ... to bypass the error.</p>
+
+<p>But the libmhapache.dll generates an error... <br/>
+Is it possible for you to share the mod_harbour and the Harbour version you use..</p>
+
+<p>Thanks</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283781">
+    <div class="poster">
+      <div class="name" style="color:#105289">ssbbs</div>
+      <div class="rank">Posts: 129</div>
+      <img class="avatar avatar-img" src="avatars/159.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 03:03 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: mod_harbour.v2.1 and RESTful API</span><br>
+        Posted: Sat Feb 07, 2026 04:08 AM
+      </div>
+      <div class="content"><p><t><p>disable: <br/></p>
+<h1>{allmsvc}hbcurl.hbc</p></h1>
+<p>add:<br/>
+#[hbcurl]<br/>
+{msvc64}-lhbcurl</p>
+
+<p>old libcurl is:<br/>
+{msvc64}-llibcurl-x64</p>
+
+<p>my libcurl is:<br/>
+#[curl]<br/>
+{msvc64}-llibcurl</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283790">
+    <div class="poster">
+      <div class="name" style="color:#105289">russimicro</div>
+      <div class="rank">Posts: 409</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 31, 2010 03:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: mod_harbour.v2.1 and RESTful API</span><br>
+        Posted: Sat Feb 07, 2026 12:23 PM
+      </div>
+      <div class="content"><p><r><p>-hbdynvm<br/><br>
+{msvc64}-ooutput/win64/libmhapache<br/><br>
+{msvc}-ooutput/win32/libmhapache<br/><br>
+{gcc}-o./output/linux/libmhapache.so<br/><br>
+{linux|darwin}-static</p> </p>
+<p>-mt<br/>
+-trace<br/>
+-info<br/>
+-rebuild</p>
+
+<p>-l-hbfship<br/>
+-l-hbxpp</p>
+
+<p>{msvc}-llibssl-1_1<br/>
+{msvc}-llibcrypto-1_1<br/>
+{msvc64}-llibcrypto-1_1-x64<br/>
+{msvc64}-llibssl-1_1-x64<br/>
+#{msvc64}-llibcurl-x64<br/>
+{msvc}-llibcurl<br/>
+{msvc64}-lhbcurl<br/>
+{msvc64}-llibcurl</p>
+
+<p>{allmsvc}-lapr-1<br/>
+{allmsvc}-laprutil-1<br/>
+{allmsvc}-llibapr-1<br/>
+{allmsvc}-llibaprutil-1<br/>
+{allmsvc}-llibhttpd</p>
+
+<p>-Ld:\xampp\apache\lib</p>
+
+<p>-id:\xampp\apache\include<br/>
+source/mh_apache.prg<br/>
+source/ap_func.prg<br/>
+source/ap_func_c.c<br/>
+source/cookies.prg<br/>
+source/legacy_func.prg<br/>
+source/legacy_func_c.c<br/>
+source/main.prg<br/>
+source/persistence.prg<br/>
+source/prepro.prg<br/>
+source/preproPHP.prg<br/>
+source/trace.prg<br/>
+source/errorsys.prg<br/>
+source/sessions.prg<br/>
+source/jwt.prg</p>
+
+<p>{allmsvc}-cflag=-Id:\xampp\apache\include<br/>
+{gcc}-cflag=-I/usr/include/apache2<br/>
+{gcc}-cflag+=-I/usr/include/apr-1.0<br/>
+{allmsvc}-id:\xampp\apache\include<br/>
+{darwin}-cflag=-I/usr/include/apache2<br/>
+{darwin}-cflag+=-I/usr/include/apr-1.0<br/>
+{darwin}-cflag+=-I/usr/local/Cellar/httpd/2.4.47/include/httpd<br/>
+{darwin}-cflag+=-I/usr/local/Cellar/apr-util/1.6.1_3/libexec/include/apr-1<br/>
+{darwin}-cflag+=-I/usr/local/Cellar/apr/1.7.0_2/libexec/include/apr-1</p>
+
+<p>{allmsvc}hbwin.hbc<br/>
+{allmsvc}hbhpdf.hbc<br/>
+{allmsvc}xhb.hbc<br/>
+{allmsvc}hbct.hbc<br/>
+#{allmsvc}hbcurl.hbc<br/>
+{allmsvc}hbmzip.hbc<br/>
+{allmsvc}hbziparc.hbc<br/>
+{allmsvc}hbmemio.hbc<br/>
+{allmsvc}hbnetio.hbc<br/>
+{allmsvc}hbssl.hbc<br/>
+{allmsvc}hbmisc.hbc</p>
+
+<p>{gcc}-dflag=@libs.txt<br/>
+{darwin}-dflag=@libs_osx.txt</p>
+
+<p>{darwin}-FCoreFoundation<br/>
+{darwin}-FSecurity</p>
+
+<p>//********************************************</p>
+
+<p>These lib...<br/>
+ libcrypto-1_1-x64.lib<br/>
+libssl-1_1-x64.lib <br/>
+it can't find them...<br/>
+ I took them from C:harbour_binaries-masterWindowsharbour_windows_64.ziplibwinmsvc64<br/>
+and these I downloaded from the web...<br/>
+ssleay32.lib<br/>
+libeay32.lib</p>
+
+<p>//*************************************************</p>
+
+<p>error :<br/>
+libhpdf.lib(hpdfpdfa.obj) : error LNK2019: s¡mbolo externo <STRONG><s>__</s>imp<e>__</e></STRONG>ctime64 sin resolver al que se hace referencia en la funci¢n HPDF_PDFA_GenerateID<br/>
+libhpdf.lib(hpdfpdfa.obj) : error LNK2019: s¡mbolo externo <STRONG><s>__</s>imp<e>__</e></STRONG>time64 sin resolver al que se hace referencia en la funci¢n HPDF_PDFA_GenerateID<br/>
+...<br/>
+...<br/>
+...</p>
+
+<p>It seems like it might be the Harbour version for msv64.. could you share it..?</p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283791">
+    <div class="poster">
+      <div class="name" style="color:#105289">russimicro</div>
+      <div class="rank">Posts: 409</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 31, 2010 03:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: mod_harbour.v2.1 and RESTful API</span><br>
+        Posted: Sat Feb 07, 2026 02:00 PM
+      </div>
+      <div class="content"><p><t><p>I also need to include the TDOLPHIN and HBZEBRA libraries</p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283792">
+    <div class="poster">
+      <div class="name" style="color:#105289">ssbbs</div>
+      <div class="rank">Posts: 129</div>
+      <img class="avatar avatar-img" src="avatars/159.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 03:03 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: mod_harbour.v2.1 and RESTful API</span><br>
+        Posted: Sat Feb 07, 2026 03:18 PM
+      </div>
+      <div class="content"><p><t><p>about PDF:<br/><br>
+I only use:<br/><br>
+{allmsvc}hbhpdf.hbc<br/><br>
+no need "libhpdf.lib"</p></p>
+<p>about SSL:<br/>
+  ssleay32.lib<br/>
+  libeay32.lib<br/>
+  is openssl 1.0.2(u)<br/>
+I'm use v3.4.1.</p>
+
+<p>What library is need about you?</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283795">
+    <div class="poster">
+      <div class="name" style="color:#105289">russimicro</div>
+      <div class="rank">Posts: 409</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 31, 2010 03:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: mod_harbour.v2.1 and RESTful API</span><br>
+        Posted: Sun Feb 08, 2026 01:08 AM
+      </div>
+      <div class="content"><p><t><p>Good evening... S</p></p>
+<p>ince I am starting with mod_harbour, could you provide the mod_harbour and the harbour you use... and if they are the latest versions, even better. I also need to be able to include the dolphin library.</p>
+
+<p>Thanks</p>
+
+<p>JONSSON RUSSI</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283796">
+    <div class="poster">
+      <div class="name" style="color:#105289">ssbbs</div>
+      <div class="rank">Posts: 129</div>
+      <img class="avatar avatar-img" src="avatars/159.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 03:03 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: mod_harbour.v2.1 and RESTful API</span><br>
+        Posted: Sun Feb 08, 2026 03:56 AM
+      </div>
+      <div class="content"><r><p>You’d better learn to compile on your own, or it’ll be a hassle when you need to fix issues!<br/><br>
+If you run into any issues, feel free to bring them up for discussion.</p><br>
+<br>
+<QUOTE author="russimicro" post_id="283795" time="1770512921" user_id="1875"><s>[quote=russimicro post_id=283795 time=1770512921 user_id=1875]</s><br>
+<p>Good evening... S</p><br>
+<br>
+<p>ince I am starting with mod_harbour, could you provide the mod_harbour and the harbour you use... and if they are the latest versions, even better. I also need to be able to include the dolphin library.</p> <br>
+<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

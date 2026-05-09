@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Para Antonio... posible bug en Harbour - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-32827">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Para Antonio... posible bug en Harbour</div>
+  <div class="post" id="p193078">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Para Antonio... posible bug en Harbour</span><br>
+        Posted: Mon Aug 15, 2016 10:09 AM
+      </div>
+      <div class="content">Sé que no es aquí sitio más apropiado pero como mi inglés es pésimo no quiero escribir en la lista...<br>
+<br>
+Tengo una funcion en C que básicamente recibe un parametro por referencia y lo guarda en una estructura.<br>
+<br>
+Luego con un GET acepto el valor desde un PRG pero, he aquí el problema, cuando la variable la declaro en el PRG como LOCAL el valor no es visible en C, en cambio cuando lo hago como STATIC sí.<br>
+He averiguado que si antes del GET pongo esto _GET_( niVar, &quot;niVar&quot; ) si funciona bien aunque sea local. Por lo que deduzco que el GET hace algo por que hacer perder la referencia a la variable.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "hdo.ch"
+#include "InKey.ch"
+
+//------------------------------------------------------------------------------
+
+procedure main()
+
+    static nSocIni, nSocFin  // Con local no funciona, static si... porque?     &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;
+    local oDb, oStmt, oCur, e
+    local cDb := "agenda.db"
+    local cTabla := "socios"
+    local cSql := "SELECT * FROM " + cTabla + " WHERE clavesocio BETWEEN ? AND ? ;"
+    local getlist := {}
+            
+    nSocIni := nSocFin := 0
+
+    cls
+
+    oDb := THDO():new( "sqlite" )
+
+    oDb:setAttribute( ATTR_ERRMODE, .t. )
+
+    if oDb:connect( cDb )
+        TRY
+            oStmt := oDb:prepare( cSql )  // Prepara la sentencia y crea el objeto oStmt
+
+            oStmt:bindParam( 1, @nSocIni )   // &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt; AQUI LAS METO EN LA ESTRUCTURA EN C
+            oStmt:bindParam( 2, @nSocFin )  // &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt; AQUI LAS METO EN LA ESTRUCTURA EN C
+
+            @ maxrow(), 00 say "Presiona &lt;INTRO&gt; para selecionar rangos o &lt;ESC&gt; para salir..."
+
+            while inkey( 0 ) != K_ESC
+
+                cls
+
+                @ 02, 02 say "Entrada de datos:"
+                @ 04, 02 say "Entre rango inicial:" get nSocIni picture "@K9"
+                @ 05, 02 say "Entre rango final..:" get nSocFin picture "@K9" valid validaRango( nSocIni, nSocFin )
+    
+                read
+                
+                if lastkey() != K_ESC .and. updated()
+
+                    oStmt:execute() // Ejecuta la sentencia     &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt; AQUI USO LAS VARIABLES PERO EN C PERO SOLO PASA EL VALOR SI SON STATIC O LAS ASIGNO SIN EL GETSYSTEM
+
+                    // Creamos un cursor local (navigator) como un hash table
+                    oCur := THashCursor():new( oStmt:fetchAll( FETCH_HASH ) )
+
+                    cls
+
+                    @ 00, 00 say "Resultado de la consulta -&gt; " + hb_ntos( oStmt:rowCount() ) + " registros:" color "W+/R"
+                    @ maxrow(), 00 say "&lt;ESC&gt; para volver al menu..." color "W+/R"
+
+                    if oCur:reccount() &gt; 0
+                        miBrwCursor( oCur, 1, 0, maxrow() - 1, maxcol() )
+                    else
+                        msg( "No hay registros en ese rango" )
+                    endif
+
+                    oCur:free()
+                else
+                    msg( "Nada que hacer..." )
+                endif
+
+                cls
+                @ maxrow(), 00 say "Presiona &lt;INTRO&gt; para selecionar rangos o &lt;ESC&gt; para salir..."
+            end
+            
+        CATCH e
+            eval( errorblock(), e )
+        FINALLY
+            if oStmt:className() == "THDOSTATEMENT"
+                oStmt:free()
+            endif
+            msg( "Se acabo" )
+        end
+
+    endif
+
+    oDb:disconnect()
+
+return
+
+//------------------------------------------------------------------------------</code></pre></div><br>
+<br>
+Qué puede ser?                      </div>
+    </div>
+  </div>
+  <div class="post" id="p193089">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Mon Aug 15, 2016 10:27 PM
+      </div>
+      <div class="content"><p>Manu,</p>
+<p>Puedes mostrar el código de bindParam() ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193093">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Tue Aug 16, 2016 06:01 AM
+      </div>
+      <div class="content">Gracias Antonio, por supuesto que si, pero me reitero cuando lo asigno directamente aunque sea local funciona<br>
+así funciona nSocIni  := 5 es cuando lo paso por el GET cuando deja de funcionar salvo que la declare como static...<br>
+<br>
+Aquí está el c´digo del métod BINDPARAM:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (c):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-c">&lt;div class="c" id="{CB}" style="font-family: monospace;"&gt;
+HB_METHOD( THDOSTATEMENT_BINDPARAM )
+{
+    PHDOSTMT stmt = hb_getStmt();
+
+    if( stmt )
+    {
+        STMT_BINDPARAM( stmt, hb_param( 1, HB_IT_NUMERIC | HB_IT_STRING ),
+                        hb_param( 2, HB_IT_BYREF ), hb_parni( 3 ), hb_parni( 4 ) );
+    }
+}
+
+ &lt;/div&gt;</code></pre></div><br>
+<br>
+Y aquí está el código de la función bindParam()<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (c):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-c">&lt;div class="c" id="{CB}" style="font-family: monospace;"&gt;
+static HB_ERRCODE bindParam( PHDOSTMT stmt, PHB_ITEM pParam, PHB_ITEM pVariable, HB_USHORT uiType, HB_SIZE nLen )
+{
+    if( pParam &amp;&amp; pVariable )
+    {
+        /* Si no existe la lista de parametros la creamos y la inicializamos */
+        if( !stmt-&gt;pListParam )
+        {
+            stmt-&gt;pListParam = ( PHDO_LISTBIND ) hb_xalloc( sizeof( HDO_LISTBIND ) );
+
+            if( stmt-&gt;pListParam )
+            {
+                stmt-&gt;pListParam-&gt;uiCount = 0;
+                stmt-&gt;pListParam-&gt;pListBind = NULL;
+            }
+            else
+            {
+                hdo_throwException( stmt-&gt;hdo, HDO_NOTMEMPAR, NULL );
+                return HB_FAILURE;
+            }
+        }
+
+        if( stmt-&gt;pListParam )
+        {
+            PHDO_BIND pBind = ( PHDO_BIND ) hb_xalloc( sizeof( HDO_BIND ) );
+
+            if( pBind )
+            {
+                HB_UINT i = stmt-&gt;pListParam-&gt;uiCount++;
+
+                stmt-&gt;pListParam-&gt;pListBind = ( PHDO_BIND * ) hb_xrealloc( stmt-&gt;pListParam-&gt;pListBind,
+                                          sizeof( PHDO_BIND ) * stmt-&gt;pListParam-&gt;uiCount );
+                pBind-&gt;pId = hb_itemNew( pParam );
+                pBind-&gt;pVariable = pVariable;
+                pBind-&gt;uiType = uiType ? uiType : HB_ITEM_TYPE( pVariable );
+                pBind-&gt;nMaxLen = nLen;
+
+                *( stmt-&gt;pListParam-&gt;pListBind + i ) = pBind;
+
+                return HB_SUCCESS;
+            }
+            else
+            {
+                hdo_throwException( stmt-&gt;hdo, HDO_NOTMEMPAR, NULL );
+                return HB_FAILURE;
+            }
+        }
+    }
+
+    hdo_throwException( stmt-&gt;hdo, !pVariable ? HDO_NOTREFER : HDO_NOTINTORSTR, NULL );
+    return HB_FAILURE;
+}
+ &lt;/div&gt;</code></pre></div><br>
+<br>
+A ver si descubrimos porqué...  </div>
+    </div>
+  </div>
+  <div class="post" id="p193095">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Tue Aug 16, 2016 06:37 AM
+      </div>
+      <div class="content"><p>Si almacenas una variable a bajo nivel, tienes que bloquearla para que el recolector de basura no la destruya.</p>
+<p>Eso explicaría porque las static funcionan y no las locales.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193099">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Tue Aug 16, 2016 09:34 AM
+      </div>
+      <div class="content"><p>Prueba con:</p>
+<p>pBind-&gt;pVariable = hb_gcLock( pVariable );</p>
+<p>para liberar la variable:</p>
+<p>hb_gcUnlock( pBind-&gt;pVariable );</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193109">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Tue Aug 16, 2016 12:29 PM
+      </div>
+      <div class="content"><!-- s:roll: -->
+<p>me temo que de eso no es ya lo he probado.<br>
+Te recuerdo que si en vez de tomar el valor del GET se lo asigno directamente SÍ funciona.<br>
+Además pVariable  es un PHB_ITEM pasado por referencia con lo que se supone que el ITEMAPI lo habrá hecho automáticamente.</p>
+<p>Ya que estás Antonio me podrías decir para qué vale y cuándo se debe usar la función &quot;hb_itemUnRef()&quot;  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --></p>
+<p>Muchas gracias por tu tiempo  <!-- s:oops: --><img src="{SMILIES_PATH}/icon_redface.gif" alt=":oops:" title="Embarassed" /><!-- s:oops: --></p>
+<p><img src="{SMILIES_PATH}/icon_rolleyes.gif" alt=":roll:" title="Rolling Eyes" /><!-- s:roll: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p193121">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Tue Aug 16, 2016 03:47 PM
+      </div>
+      <div class="content"><p>Manu,</p>
+<p>&gt; Te recuerdo que si en vez de tomar el valor del GET se lo asigno directamente SÍ funciona.</p>
+<p>Puedes proporcionar un ejemplo auto contenido que no use ninguna librería externa y<br>
+que reproduzca el problema ?</p>
+<p>&gt; Además pVariable es un PHB_ITEM pasado por referencia con lo que se supone que el ITEMAPI lo habrá hecho automáticamente.</p>
+<p>El que las locales fallen es un caso típìco de que la local ha sido destruida. El que se pase por referencia<br>
+no creo que haga que la variable se bloquee. Una vez sales de una función, las locales se destruyen.</p>
+<p>&gt; Ya que estás Antonio me podrías decir para qué vale y cuándo se debe usar la función &quot;hb_itemUnRef()&quot;  </p>
+<p>/<em> De-references item passed by the reference </em>/</p>
+<p>PHB_ITEM hb_itemUnRef( PHB_ITEM pItem )</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193138">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Tue Aug 16, 2016 08:43 PM
+      </div>
+      <div class="content">Antonio antes de nada volverte a dar las gracias por tu tiempo...<br>
+<br>
+Aquí tienes un ejemplo simplon<br>
+Parte PRG:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> procedure main()
+ 
+    local getlist := {}
+    local parametro := 0 // Solo funciona si se asigna directamente
+    //static parametro := 0  // Asi funciona siempre
+    local hSt := creaSt()
+    
+    bindParam( hSt, @parametro )
+    
+    cls
+    
+    // Desmarca la que preceda entre los dos casos:
+    
+    // Caso (1) Asignacion directa
+    // parametro := 100  // Asignado directamente funciona siempre
+
+    // Caso (2) Solo funciona si se declara la variable "parametro" como static
+    @ 05, 10 SAY "Introduce el parametro:" GET parametro PICTURE "@K9"
+    READ
+    
+    execute( hSt )
+    
+    Inkey( 100 )
+    
+return</code></pre></div><br>
+<br>
+Parte de C<br>
+<div class="codebox"><div class="codehead"><span>Code (c):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-c">&lt;div class="c" id="{CB}" style="font-family: monospace;"&gt;
+
+#include "item.api"
+#include &lt;windows.h&gt;
+
+typedef struct miStructura
+{
+    HB_USHORT uiCount;
+    PHB_ITEM  pVariable;                
+} MIESTR, *PMIESTR;
+
+HB_FUNC( MYMSG )
+{
+   MessageBox( NULL, hb_parc( 1 ), "Atencion",
+                         MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL );
+}
+
+
+/*
+ * Crea una estructura vacia
+ */
+ 
+HB_FUNC( CREAST ) 
+{
+    PMIESTR lc = ( PMIESTR ) hb_xalloc( sizeof( MIESTR ) );
+    
+    if( lc )
+    {
+        lc-&gt;uiCount = 0;
+        
+        hb_retptr( lc );
+    }
+    else
+    {
+        hb_ret();
+        MessageBox( NULL, "No se ha creado la estructura", "Atencion", MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL );
+    }
+}
+
+HB_FUNC( BINDPARAM ) 
+{
+    PMIESTR lc = ( PMIESTR ) hb_parptr( 1 );
+    
+    if( lc )
+    {
+        PHB_ITEM  pVariable = hb_param( 2, HB_IT_BYREF );
+        
+        if( pVariable )
+        {
+            lc-&gt;pVariable = pVariable;
+            lc-&gt;uiCount++;
+        }
+        else
+        {
+            MessageBox( NULL, "Parametro 2 no se paso por referencia", "Atencion", MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL );
+        }
+    }
+    else
+    {
+        MessageBox( NULL, "Parametro 1 incorrecto", "Atencion", MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL );
+    }
+}
+
+HB_FUNC( EXECUTE ) 
+{
+    PMIESTR lc = ( PMIESTR ) hb_parptr( 1 );
+    
+    if( lc )
+    {
+       char szBuffer[3 ];
+
+        wsprintf( szBuffer, "%d", hb_itemGetNI( lc-&gt;pVariable ) );
+
+        MessageBox( NULL, szBuffer, "Atencion", MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL );
+    }
+    else
+    {
+        MessageBox( NULL, "Parametro 1 incorrecto", "Atencion", MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL );
+    }
+}
+
+ &lt;/div&gt;</code></pre></div><br>
+<br>
+Si la variable &quot;parametro&quot; se declara como local solo funciona si se asigna directamente. Prueba a comentar la parte del GET &quot;caso 2&quot;<br>
+Si la variable &quot;parametro&quot; se declara como static funciona con el &quot;caso 1&quot; y con la parte del GET &quot;caso 2&quot;<br>
+<br>
+A ver si puedes ver el problemilla y como solucionarlo usando el GET y sin &quot;trucos&quot;  </div>
+    </div>
+  </div>
+  <div class="post" id="p193223">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Thu Aug 18, 2016 04:54 PM
+      </div>
+      <div class="content"><p>A mi me aparece siempre un cero mostrado desde tu función Execute()</p>
+<p>No entiendo bien lo que quieres hacer</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193229">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Thu Aug 18, 2016 08:22 PM
+      </div>
+      <div class="content">Lo que tendría que salir es el valor introducido en el get, pero desde C, lo que pretendo es que cuando introduzca un valor desde PRG sin necesidad de pasarlo como un parámetro en una función en C ya sea visible. Y ya te digo, funciona siempre que la variable en cuestión no pase por un GET, por eso creo que es un fallo del getSystem de Harbour que no respeta la referencia original...<br>
+<br>
+Mira este trozo de codigo:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> 
+procedure main()
+ 
+    local getlist := {}
+    local parametro := 0 // Solo funciona si se asigna directamente &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;
+    //static parametro := 0  // Asi funciona siempre &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;
+    local hSt := creaSt()</code></pre></div><br>
+comenta el local y descomenta el static:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> procedure main()
+ 
+    local getlist := {}
+    //local parametro := 0 // Solo funciona si se asigna directamente
+    static parametro := 0  // Asi funciona siempre
+    local hSt := creaSt()</code></pre></div><br>
+<br>
+y prueba ahora. <br>
+<br>
+ATENCION OTRA COSA:<br>
+Además prueba a poner lo que te indico aunque la variable parametro sea local si funciona <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> procedure main()
+ 
+    local getlist := {}
+    local parametro := 0 // Solo funciona si se asigna directamente
+    //static parametro := 0  // Asi funciona siempre
+    local hSt := creaSt()
+
+    _GET_( parametro , "parametro " )  // &lt;&lt;&lt;&lt;&lt;&lt; Si pongo esto también funciona, OJO por encima de la función bindParam, por eso pienso que se pierde la referencia cuando pasa por el get
+
+    bindParam( hSt, @parametro )
+   
+    cls
+   
+    // Desmarca la que preceda entre los dos casos:
+   
+    // Caso (1) Asignacion directa
+    // parametro := 100  // Asignado directamente funciona siempre
+
+    // Caso (2) Solo funciona si se declara la variable "parametro" como static
+    @ 05, 10 SAY "Introduce el parametro:" GET parametro PICTURE "@K9"
+    READ
+   
+    execute( hSt )
+   
+    Inkey( 100 )
+   
+return</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p193276">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Fri Aug 19, 2016 03:58 PM
+      </div>
+      <div class="content"><p>Manuel,</p>
+<p>Lo suyo es que lo comentes en la lista de usuarios de Harbour</p>
+<p>Con que pongas un ejemplo es suficiente</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193335">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Para Antonio... posible bug en Harbour</span><br>
+        Posted: Mon Aug 22, 2016 06:12 PM
+      </div>
+      <div class="content"><p>OK, ya lo he puesto.<br>
+Aún así s puedes miralo a ver si conseguimos algo  <!-- s:? --><img src="{SMILIES_PATH}/icon_confused.gif" alt=":?" title="Confused" /><!-- s:? --></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

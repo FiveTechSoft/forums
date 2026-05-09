@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01 - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-33589">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01</div>
+  <div class="post" id="p198290">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01</span><br>
+        Posted: Fri Feb 03, 2017 03:23 PM
+      </div>
+      <div class="content">Purpose of this post is to explain the improvements made to this feature and using the improvements in the application.<br>
+<br>
+Maketotals() not only calculates totals but also averages, standard deviaion, variance, max, min, count, etc. Usage<br>
+<br>
+We are aware of the usage during creation of XBrowse:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oBrw:lFooter := .t.
+oCol:nFooterType := AGGR_SUM // or AGGR_AVG, _STD, COUNT, etc. Ref: xbrowse.ch
+oBrw:MakeTotals()</code></pre></div><br>
+<br>
+nFooterType can be switched to different types during runtime and different results can be viewed without having to recompute the aggregates.<br>
+<br>
+Advantage of using oBrw:MakeTotals() is that (i) it simplifies the program code and (ii) when needed it does complex computations like STD but it does not offer any performance gains. This method literally calculates the aggregates by scanning the data from the beginning till end. For this reason, while it is appropriate to call this method initially once, calling this method during runtime frequently may hit the performance.<br>
+<br>
+But we need to update the aggregates when the values of a record are modified during runtime. When the value of a cell is changed with inline edit, xbrowse recomputes the aggregates using the difference between the original and modified values and refreshes the footer without having the call MakeTotals() again. This recalculation feature highly improves the performance.<br>
+<br>
+<strong>Issues:</strong><br>
+<br>
+However this recalculation feaure is used by xbrowse only when the value of a cell is modified with inline edit and the recalculation is limited only to the column modified. <br>
+(1) It is possible the modifying the value of one column might affect the values in the other columns too. In such cases the programmer had to explicitly call MakeTotals({othercolumns}) for such other columns.<br>
+<br>
+(2) When (a) record is edited outside xbrowse in a dialog, (b) record is appended or (c) deleted, recalculation feature is not available and the programmer needs to explicity call oBrw:MakeTotals().<br>
+<br>
+In both the above cases, there is hit on the performance. Extent of performance deterioation depends on the size of the data and speed of data access. So for obvious reasons, when we make changes to data, we would like the aggregates to be re-calculated without having to completely re-total the columns.<br>
+<br>
+<strong>Improvements in FWH 16.12:</strong><br>
+Issue (1) above is addressed. When the value of a column is changed by inline edit, aggregates of all columns which are automatially changed are also recomputed and footers updated, without having to call MakeTotals() for other affected columns. Since this is only recalculation applying the differences and therefore extremely fast. The application program need not make any explicit calls to recompute and update footers.<br>
+<br>
+<strong>Improvements in FWH 17.01:</strong><br>
+Issue (2) above is addressed. There can be two cases.<br>
+<br>
+Case-1: Programs using the recommended built-in methods to edit / append / delete records, i.e,<br>
+oBrw:EditSource( .t. ) for appending new records<br>
+oBrw:EditSource()  for Edit<br>
+oBrw:Delete() for deletion of records.<br>
+When these methods are used to add/edit/delete operations, the incremental recalculation of totals is done automatically, without any extra code. <br>
+<br>
+Note: Whether we show totals are not, we recommend using EditSource(.t./.f.) method for add/edit of data and oBrw:Delete() for deletion of data.<br>
+(Sample provided towards the end)<br>
+<br>
+Case-2: Programs not using the recommended methods but using its own way of saving changes and deletions. In this case, please follow these steps:<br>
+<br>
+Edit (modifying existing record)<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oBrw:SaveTotals()
+&lt; save edited data&gt;
+oBrw:RecalcTotals()</code></pre></div><br>
+<br>
+Appending new record<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oBrw:SaveTotals( .t. )  // .t. for Blank
+&lt; save new record &gt;
+oBrw:ReCalcTotals()</code></pre></div><br>
+<br>
+Deletion of Record<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oBrw:SaveTotals()
+&lt; delete record &gt;
+oBrw:RecalcTotals( .t. )  // .t. for deletion</code></pre></div><br>
+<br>
+This way in case of all changes of data only incremental recalculation is adopted, avoiding time consuming MakeTotals()<br>
+<br>
+The following sample program illustrates<br>
+- Recommended way to code xbrowse with add/edit/delete features using datarow<br>
+- Creating fully portable code. Demonstrates how the same code for browse and edits works without any change for dbf and ado (for any datasource)<br>
+- incidentally also demonstrates automatic incremental recalculation of totals using datarow for edits/appends<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+REQUEST DBFCDX
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local uSource
+
+   RDDSETDEFAULT( "DBFCDX" )
+   SET DELETED ON
+   SetGetColorFocus()
+
+   uSource  := OpenTable()
+
+   Browse1( uSource )
+   Browse2( uSource )
+
+   CloseTable( uSource )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function Browse1( uSource )
+
+   local oDlg, oBar, oFont, oBrw
+   local bRowCalc
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-14
+   DEFINE DIALOG oDlg SIZE 400,500 PIXEL TRUEPIXEL FONT oFont
+
+   DEFINE BUTTONBAR oBar OF oDlg SIZE 80,32 2015
+
+   @ 50,20 XBROWSE oBrw SIZE -20,-20 PIXEL OF oDlg ;
+      DATASOURCE uSource AUTOCOLS ;
+      COLSIZES 40,80,60,60,100 ;
+      CELL LINES NOBORDER FOOTERS FASTEDIT
+
+   bRowCalc := { || oBrw:Amount:Value := oBrw:Qty:Value * oBrw:Rate:Value }
+
+   WITH OBJECT oBrw
+      AEval( :aCols, { |o| o:nEditType := EDIT_GET }, 2, 3 )
+      WITH OBJECT :Qty
+         :nFooterType   := AGGR_SUM
+         :bOnChange     := bRowCalc
+      END
+      WITH OBJECT :Rate
+         :bOnChange     := bRowCalc
+         :bFooter       := { || oBrw:Amount:nTotal / oBrw:Qty:nTotal } // Weighted average
+      END
+      :Amount:nFooterType  := AGGR_SUM
+      :Item:cFooter        := "TOTALS"
+      //
+      :lHScroll      := .f.
+      :bEdit         := { |oRec| EditDlg( oRec ) }
+      :MakeTotals()
+      :CreateFromCode()
+   END
+
+   DEFINE BUTTON OF oBar PROMPT "Add"     CENTER ACTION oBrw:EditSource( .t. )
+   DEFINE BUTTON OF oBar PROMPT "Edit"    CENTER ACTION oBrw:EditSource()
+   DEFINE BUTTON OF oBar PROMPT "Delete"  CENTER ACTION oBrw:Delete()
+   DEFINE BUTTON OF oBar PROMPT "Close"   CENTER ACTION oDlg:End()
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oFont
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function Browse2( uSource )
+
+   local oDlg, oBar, oFont, oBrw, oRec, oGet
+   local bRowCalc
+   local lEdit    := .f.
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-14
+   DEFINE DIALOG oDlg SIZE 640,300 PIXEL TRUEPIXEL FONT oFont
+
+   @ 50,20 XBROWSE oBrw SIZE 360,-20 PIXEL OF oDlg ;
+      DATASOURCE uSource AUTOCOLS ;
+      COLSIZES 40,80,60,60,100 ;
+      CELL LINES NOBORDER FOOTERS FASTEDIT
+
+   bRowCalc := { || oBrw:Amount:Value := oBrw:Qty:Value * oBrw:Rate:Value }
+
+   WITH OBJECT oBrw
+      AEval( :aCols, { |o| o:nEditType := EDIT_GET }, 2, 3 )
+      WITH OBJECT :Qty
+         :nFooterType   := AGGR_SUM
+         :bOnChange     := bRowCalc
+      END
+      WITH OBJECT :Rate
+         :bOnChange     := bRowCalc
+         :bFooter       := { || oBrw:Amount:nTotal / oBrw:Qty:nTotal } // Weighted average
+      END
+      :Amount:nFooterType  := AGGR_SUM
+      :Item:cFooter        := "TOTALS"
+      //
+      :lHScroll      := .f.
+      :MakeTotals()
+      oRec           := :DataRow( nil, nil, .t. )
+      :bChange       := { || oRec:Load(), lEdit := .f., oDlg:AEvalWhen(), oDlg:Update() }
+      //
+      :CreateFromCode()
+   END
+
+   @  80,420 SAY "Item : "     SIZE 60,20 PIXEL OF oDlg RIGHT
+   @ 110,420 SAY "Quantity : " SIZE 60,20 PIXEL OF oDlg RIGHT
+   @ 140,420 SAY "Rate : "     SIZE 60,20 PIXEL OF oDlg RIGHT
+   @ 170,420 SAY "Amount : "   SIZE 60,20 PIXEL OF oDlg RIGHT
+
+   @  80,500 GET oGet VAR oRec:Item    SIZE 100,20 PIXEL OF oDlg UPDATE ;
+      WHEN lEdit VALID ( oDlg:Update(), .t. )
+   @ 110,500 GET oRec:Qty     SIZE 100,20 PIXEL OF oDlg UPDATE RIGHT ;
+      WHEN lEdit VALID If( oRec:Qty &gt; 0, ( oRec:Amount := oRec:Qty * oRec:Rate, oDlg:Update(), .t. ), .f. )
+   @ 140,500 GET oRec:Rate    SIZE 100,20 PIXEL OF oDlg UPDATE RIGHT ;
+      WHEN lEdit VALID If( oRec:Rate &gt; 0, ( oRec:Amount := oRec:Qty * oRec:Rate, oDlg:Update(), .t. ), .f. )
+   @ 170,500 GET oRec:Amount  SIZE 100,20 PIXEL OF oDlg UPDATE RIGHT READONLY
+
+   @ 240,400 BTNBMP PROMPT "Save" SIZE 90,30 PIXEL OF oDlg FLAT ;
+      WHEN oRec:Modified() ;
+      ACTION ( oRec:Save(), lEdit := .f., oDlg:AEvalWhen(), oDlg:Update(), ;
+               oBrw:SetFocus() )
+
+   @ 240,530 BTNBMP PROMPT "Cancel" SIZE 90,30 PIXEL OF oDlg FLAT ;
+      WHEN lEdit ;
+      ACTION ( oRec:Undo(), lEdit := .f., oRec:Load(), oDlg:AEvalWhen(), oDlg:Update(), ;
+               oBrw:SetFocus() )
+
+   @ 10, 20 BTNBMP PROMPT "|&lt;" SIZE 60,30 PIXEL OF oDlg FLAT ;
+      WHEN oBrw:KeyNo &gt; 1 ACTION ( oBrw:GoTop(), oBrw:SetFocus() )
+   @ 10,090 BTNBMP PROMPT "&lt;" SIZE 60,30 PIXEL OF oDlg FLAT ;
+      WHEN oBrw:KeyNo &gt; 1 ACTION ( oBrw:GoUp(), oBrw:SetFocus() )
+   @ 10,160 BTNBMP PROMPT "&gt;" SIZE 60,30 PIXEL OF oDlg FLAT ;
+      WHEN oBrw:KeyNo &lt; oBrw:nLen ACTION ( oBrw:GoDown(), oBrw:SetFocus() )
+   @ 10,230 BTNBMP PROMPT "&gt;|" SIZE 60,30 PIXEL OF oDlg FLAT ;
+      WHEN oBrw:KeyNo &lt; oBrw:nLen ACTION ( oBrw:GoBottom(), oBrw:SetFocus() )
+   @ 10,300 BTNBMP PROMPT "Delete" SIZE 60,30 PIXEL OF oDlg FLAT ;
+      WHEN oBrw:nLen &gt; 0 .and. !lEdit ;
+      ACTION ( oBrw:Delete(), Eval( oBrw:bChange ), oDlg:AEvalWhen(), oDlg:Update(), oBrw:SetFocus() )
+
+   @ 10,400 BTNBMP PROMPT "Add" SIZE  90,30 PIXEL OF oDlg FLAT ;
+      WHEN !lEdit ;
+      ACTION ( oRec:Load( .t. ), oDlg:Update(), lEdit := .t., oDlg:AEvalWhen(), oGet:SetFocus() )
+
+   @ 10,530 BTNBMP PROMPT "Edit" SIZE  90,30 PIXEL OF oDlg FLAT ;
+      WHEN !lEdit ;
+      ACTION ( lEdit := .t., oDlg:AEvalWhen(), oGet:SetFocus() )
+
+   oDlg:bPainted := { || oDlg:Box( 50, 400, 210, 620 ) }
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oFont
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function EditDlg( oRec )
+
+   local lNew     := ( oRec:RecNo == 0 )
+   local oDlg, oFont
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-14
+
+   DEFINE DIALOG oDlg SIZE 400,190 PIXEL TRUEPIXEL FONT oFont ;
+      TITLE If( lNew, "APPEND", "EDIT" )
+
+   @  40,40 SAY "Item : "     SIZE 60,20 PIXEL OF oDlg RIGHT
+   @  70,40 SAY "Quantity : " SIZE 60,20 PIXEL OF oDlg RIGHT
+   @ 100,40 SAY "Rate : "     SIZE 60, 20 PIXEL OF oDlg RIGHT
+   @ 130,40 SAY "Amount : "   SIZE 60, 20 PIXEL OF oDlg RIGHT
+
+   @  40,140 GET oRec:Item    SIZE 100,20 PIXEL OF oDlg UPDATE ;
+      VALID ( oDlg:Update(), .t. )
+   @  70,140 GET oRec:Qty     SIZE 100,20 PIXEL OF oDlg UPDATE RIGHT ;
+      VALID If( oRec:Qty &gt; 0, ( oRec:Amount := oRec:Qty * oRec:Rate, oDlg:Update(), .t. ), .f. )
+   @ 100,140 GET oRec:Rate    SIZE 100,20 PIXEL OF oDlg UPDATE RIGHT ;
+      VALID If( oRec:Rate &gt; 0, ( oRec:Amount := oRec:Qty * oRec:Rate, oDlg:Update(), .t. ), .f. )
+   @ 130,140 GET oRec:Amount  SIZE 100,20 PIXEL OF oDlg UPDATE RIGHT READONLY
+
+   oDlg:bPainted  := { || oDlg:Box( 20, 20, 170, 260 ) }
+
+   @  20,280 BTNBMP PROMPT "UNDO"  SIZE 100,40 PIXEL OF oDlg FLAT UPDATE ;
+      WHEN oRec:Modified() ACTION ( oRec:Undo(), oDlg:Update() )
+   @  75,280 BTNBMP PROMPT "SAVE"  SIZE 100,40 PIXEL OF oDlg FLAT UPDATE ;
+      WHEN oRec:Modified() ACTION ( oRec:Save(), oDlg:Update() )
+   @ 130,280 BTNBMP PROMPT { || If( oRec:Modified(), "CANDEL", "CLOSE" ) } ;
+      SIZE 100,40 PIXEL OF oDlg FLAT UPDATE ;
+      ACTION ( oRec:Undo(), oDlg:End() )
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oFont
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function OpenTable()
+
+   local oCn, oRs
+   local uSource, nChoice  := 0
+   local aCols := { ;
+      { "ID",     "+",  4, 0 }, ;
+      { "ITEM",   "C", 10, 0 }, ;
+      { "QTY",    "N",  3, 0 }, ;
+      { "RATE",   "N",  2, 0 }, ;
+      { "AMOUNT", "N",  5, 0 }  }
+
+   local aTran := { ;
+      { "ITM-1", 100, 20, 2000 }, ;
+      { "ITM-2", 120, 30, 3600 }, ;
+      { "ITM-3",  50, 40, 2000 }  }
+
+   nChoice  := Alert( "Choose Database", { "DBF", "ACCESS" } )
+   nChoice  := Max( 1, nChoice )
+
+   if nChoice == 1
+
+      if ! File( "TESTSUM.DBF" )
+         DBCREATE( "TESTSUM.DBF", aCols, "DBFCDX", .T., "TST" )
+         FW_ArrayToDBF( aTran, "ITEM,QTY,RATE,AMOUNT" )
+         CLOSE TST
+      endif
+
+      USE TESTSUM NEW ALIAS TST SHARED VIA "DBFCDX"
+      SET FILTER TO !DELETED()
+      GO TOP
+
+      uSource     := "TST"
+
+   else
+      if ! File( "testsum.mdb" )
+         FW_CreateMDB( "testsum.mdb" )
+      endif
+      oCn   := FW_OpenAdoConnection( "testsum.mdb" )
+      if ! FW_AdoTableExists( "testsum", oCn )
+         FWAdoCreateTable( "testsum", aCols, oCn )
+      endif
+      oRs   := FW_OpenRecordSet( oCn, "testsum" )
+      if oRs:RecordCount() == 0
+         AEval( aTran, { |a| oRs:AddNew( { "ITEM", "QTY", "RATE", "AMOUNT" }, a ) } )
+      endif
+      oRs:MoveFirst()
+      uSource     := oRs
+   endif
+
+return uSource
+
+//----------------------------------------------------------------------------//
+
+static function CloseTable( uSource )
+
+   if ValType( uSource ) == 'C'
+      ( uSource )-&gt;( DBCLOSEAREA() )
+   elseif ValType( uSource ) == 'O'
+      uSource:ActiveConnection:Close()
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+<a href="https://imageshack.com/i/pnHZzeT5p" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/923/HZzeT5.png" alt="" loading="lazy"></a><br>
+<br>
+<a href="https://imageshack.com/i/pmErCZJhp" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/922/ErCZJh.png" alt="" loading="lazy"></a></div>
+    </div>
+  </div>
+  <div class="post" id="p198322">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01</span><br>
+        Posted: Sat Feb 04, 2017 03:28 PM
+      </div>
+      <div class="content">Aa question  <br>
+maketotals is compatible with old  release ?<br>
+<br>
+I explain you :<br>
+on an app I have some columns <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> WITH OBJECT  oApp():oGrid:aCols[ 8]
+                                                :nFooterType      := AGGR_SUM
+                                                :bSumCondition    := { |nVal,oCol| If( oApp():oGrid:oCol( 2 ):Value == 'U', nVal := -nVal, nil ), .t. }
+                                             END
+
+                                          WITH OBJECT  oApp():oGrid:aCols[ 9]
+                                                :nFooterType      := AGGR_SUM
+                                                :bSumCondition    := { |nVal,oCol| If( oApp():oGrid:oCol( 2 ):Value == 'U', nVal := -nVal, nil ), .t. }
+                                          END
+
+                                          WITH OBJECT  oApp():oGrid:aCols[ 10]
+                                                :nFooterType      := AGGR_SUM
+                                                :bSumCondition    := { |nVal,oCol| If( oApp():oGrid:oCol( 2 ):Value == 'U', nVal := -nVal, nil ), .t. }
+                                          END
+
+
+
+                                        WITH OBJECT   oApp():oGrid:aCols[ 14 ]
+                                                  :AddResource("GRID_ENTRATA")
+                                                  :nDataStrAlign := AL_RIGHT
+                                                  :cEditPicture := '999,999.99'
+                                                  :lTotal := .t.
+                                                  :nTotal := 0
+                                                  *:nFooterType := AGGR_TOTAL
+                                                  :nFootStrAlign := AL_RIGHT
+                                                  :nFootBmpNo := 1 // Footer BMP
+
+                                               END
+
+                                        WITH OBJECT   oApp():oGrid:aCols[ 15 ]
+                                                  :AddResource("GRID_USCITA")
+                                                  :nDataStrAlign := AL_RIGHT
+                                                  :cEditPicture := '999,999.99'
+                                                  :lTotal := .t.
+                                                  :nTotal := 0
+                                                  *:nFooterType := AGGR_TOTAL
+                                                  :nFootStrAlign := AL_RIGHT
+                                                  :nFootBmpNo := 1 // Footer BMP
+
+                                               END
+
+
+                                        WITH OBJECT   oApp():oGrid:aCols[ 16 ]
+                                                  :AddResource("GRID_CASSA")
+                                                  :nDataStrAlign := AL_RIGHT
+                                                  :cEditPicture := '999,999.99'
+                                                  :lTotal := .t.
+                                                  :nTotal :=0
+                                                  :nFooterType := AGGR_SUM
+                                                  :nFootStrAlign := AL_RIGHT
+                                                  :nFootBmpNo := 1 // Footer BMP
+
+                                               END
+
+
+
+-.......
+
+
+ oApp():oGrid:lFooter:=.t.
+ oApp():oGrid:MakeTotals()</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p198323">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01</span><br>
+        Posted: Sat Feb 04, 2017 05:50 PM
+      </div>
+      <div class="content"><p>Mr Silvio</p>
+<p>Incremental recalculation was not compatible with bSumCondition even in earlier versions. Call of full MakeTotals() was necessary. The position remains the same even in the present version.</p>
+<p>We are still working on this issue. When ready I will send you revised xbrowse.prg for your testing and feedback.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p198324">
+    <div class="poster">
+      <div class="name" style="color:#105289">ukoenig</div>
+      <div class="rank">Posts: 4043</div>
+      <img class="avatar avatar-img" src="avatars/1257.jpg" alt="" loading="lazy">
+      Joined: Wed Dec 19, 2007 06:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01</span><br>
+        Posted: Sat Feb 04, 2017 06:04 PM
+      </div>
+      <div class="content">In the meantime I finished the 1. release of my xBrowse-testsample.<br>
+It covers most of the different solutions in just one sample.<br>
+It can be used as a basic to include Your own tests.<br>
+Please look at the README.txt to make the needed changes to xbrowse for celledit / seekbar<br>
+The 1. browser uses seekbars, the 2. works with the normal say for incremental seek.<br>
+Maybe Mr.Rao can do improvements if needed to the sample ?<br>
+I will use this sample for xBrowse-tests of future releases of FWH.<br>
+<br>
+<img src="http://www.pflegeplus.com/IMAGES/Xbrwsbar2.jpg" alt="" loading="lazy"><br>
+<br>
+Full source DOWNLOAD<br>
+<br>
+<!-- m --><a class="postlink" href="http://www.pflegeplus.com/DOWNLOADS/Xbrwsbar1.zip">http://www.pflegeplus.com/DOWNLOADS/Xbrwsbar1.zip</a><!-- m --><br>
+<br>
+regards<br>
+Uwe </div>
+    </div>
+  </div>
+  <div class="post" id="p198330">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01</span><br>
+        Posted: Sat Feb 04, 2017 11:24 PM
+      </div>
+      <div class="content">Uwe,<br>
+<br>
+If I click on the Last header, the seekbars is show in the first field, but the seek is in the second.<br>
+I can't compile or change, because I'm on 16.11<br>
+<br>
+<img src="http://www.maveco.be/fivewin/uwe.jpg" alt="" loading="lazy"><br>
+<br>
+<br>
+This sample is for FWH 16.12 and up ?<br>
+<br>
+Maybe also interesting to expand the sample to select more seekbars ?  <br>
+<br>
+I see the seekbars (FWH 16.11) on every field like the original post of Mr. Rao. and the combination of more than one seek option could be interesting for the newbies.<br>
+<br>
+Then we have a sample that has more to offer, since you enhanced the</div>
+    </div>
+  </div>
+  <div class="post" id="p198338">
+    <div class="poster">
+      <div class="name" style="color:#105289">ukoenig</div>
+      <div class="rank">Posts: 4043</div>
+      <img class="avatar avatar-img" src="avatars/1257.jpg" alt="" loading="lazy">
+      Joined: Wed Dec 19, 2007 06:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01</span><br>
+        Posted: Sun Feb 05, 2017 08:34 AM
+      </div>
+      <div class="content">Marc,<br>
+<br>
+I just tested it. Yes it is true.<br>
+Compiled with FWH-release <span style="color:#FF0000">17.01</span><br>
+<br>
+Before uploading, I still added :<br>
+<br>
+<span style="color:#0000FF"><strong>oBrw1:SetGroupHeader( &quot;Name&quot;, 1, 2 )<br>
+oBrw1:SetGroupHeader( &quot;Data&quot;, 3, 5 )</strong></span><br>
+<br>
+with these two lines, the seekbar doesn't work.<br>
+<br>
+that is the reason that I'm creating more complex samples to test new options.<br>
+Maybe Mr. Rao can fix it.<br>
+<br>
+Full source DOWNLOAD<br>
+<br>
+<span style="color:#FF0000">I added two EXE-files. <br>
+One with group- and another one without groupheader.</span><br>
+<br>
+<!-- m --><a class="postlink" href="http://www.pflegeplus.com/DOWNLOADS/Xbrwseekb2.zip">http://www.pflegeplus.com/DOWNLOADS/Xbrwseekb2.zip</a><!-- m --><br>
+<br>
+<img src="http://www.pflegeplus.com/IMAGES/Xbrwseekb2.jpg" alt="" loading="lazy"><br>
+<br>
+regards<br>
+Uwe </div>
+    </div>
+  </div>
+  <div class="post" id="p198365">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01</span><br>
+        Posted: Sun Feb 05, 2017 10:39 PM
+      </div>
+      <div class="content"><p>Thanks<br>
+We shall check this and fix it.<br>
+Hope it is working correctly without group headers.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p198389">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01</span><br>
+        Posted: Mon Feb 06, 2017 02:51 AM
+      </div>
+      <div class="content">Fixed and the fix is available in FWH 17.02.<br>
+<br>
+You can implement the fix with the following correction.<br>
+Please locate these lines in the <br>
+METHOD PaintHeader(...) CLASS TXBrwColumn<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   if nCol != nil
+      if nCol != 0
+         ::nDisplayCol := nCol
+      endif
+   else</code></pre></div><br>
+Please modify the second line as below:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   if nCol != nil
+      if nCol != 0 .and. nGrpWidth == nil // change here
+         ::nDisplayCol := nCol
+      endif
+   else</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p198393">
+    <div class="poster">
+      <div class="name" style="color:#105289">ukoenig</div>
+      <div class="rank">Posts: 4043</div>
+      <img class="avatar avatar-img" src="avatars/1257.jpg" alt="" loading="lazy">
+      Joined: Wed Dec 19, 2007 06:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse MakeTotals: Improvements in FWH 16.12 and 17.01</span><br>
+        Posted: Mon Feb 06, 2017 09:24 AM
+      </div>
+      <div class="content">Thank You very much,<br>
+<br>
+tested and works fine.<br>
+<br>
+<img src="http://www.pflegeplus.com/IMAGES/Xbrwheader2.jpg" alt="" loading="lazy"><br>
+<br>
+regards<br>
+Uwe </div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

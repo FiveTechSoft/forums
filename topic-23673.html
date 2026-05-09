@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>OT: XBrowse-MySql-TMysql - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-23673">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> OT: XBrowse-MySql-TMysql</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-23673-page-2.html">2</a> (29 posts)</div>  <div class="post" id="p127231">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Mon Mar 12, 2012 09:23 PM
+      </div>
+      <div class="content">Hola amigos, tengo este codigo que me ha funcionado perfectamnte desde hace muuuuuuuuuuuchos años en un sistema de contabilidad que desarrollé y que he venido mejorando a traves de lenguajes xbase hasta llegar a FiveWin - xHarbour.<br>
+<br>
+Hoy quiero plasmarlo en MySql Server y TMysql, y para terminarlo necesito que me ayuden a terminar de &quot;traducir&quot; de FiveWin a MySql, este pequeño codigo. Si a alguien le es útil, pués aquí está, y si lo mejora sería interesante que lo subiera al foro.<br>
+<br>
+Es un codigo que utilizo para INSERTAR (NO AGREGAR) datos en una pequeña dbf en la cual necesito insertar datos entre los datos. <br>
+<br>
+Quiero agradecer a Willy y William que me han apoyado en mis inicios hacia MySql, ya que sin su ayuda creo que no hubiera &quot;arrancado&quot;.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">ESTE ES EL CODIGO EN FIVEWIN
+//-------------------------------------
+Function InsGopMult(oLbx)
+local cAlias:=(oLbx:cAlias)
+LOCAL nLin := (cAlias)-&gt;Lin
+
+DbSelectArea(cAlias)
+   (cAlias)-&gt;(dbAPPEND())
+   (cAlias)-&gt;lin := nLin
+
+   //Reconstruir las lineas y para q'se coloque en el registro agregado
+   nLin+=1
+   ReconstLin(nLin,cAlias)
+   oLbx:Refresh()
+return nil
+
+//--------------------------
+FUNCTION ReconstLin(nLinea,cAlias)
+local nLin
+
+cFicTemp:="GPMDEF"
+CreaFich(@cFicTemp)  //Function para crear fichero temporal
+
+     (cAlias)-&gt;( __dbCopy( (cFicTemp), { },,,,, .F., ) )
+     DBUSEAREA(.T.,,(cFicTemp),(cFicTemp),.F.)
+     (cFicTemp)-&gt;(dbgotop())
+     nLin:=1
+     while (cFicTemp)-&gt;(!eof())
+       (cFicTemp)-&gt;lin :=nLin
+       (cFicTemp)-&gt;(dbskip())
+       nLin+=1
+     enddo
+     (cFicTemp)-&gt;(dbcloseArea())
+
+     DBSELECTAREA(cAlias)
+     (cAlias)-&gt;(__dbzap())
+     __dbapp((cFicTemp),{},,,,,.f.,)
+      ferase(cPathDef+"\"+(cFicTemp)+".dbf")
+      (cAlias)-&gt;(dbSeek(nLinea))
+
+  SysRefresh()
+Return nil
+
+
+
+/ESTE ES EL CODIGO EN MYSQL
+//--------------------------// Inserta linea
+Function InsGopMult(oLbx,oQuery)   //ESTA PARTE ESTA BIEN
+LOCAL nLin := oQuery:lin
+
+  oServer:Query("INSERT INTO gopmult (lin) VALUES ('"+cValToChar(nLin)+"')")
+
+  oQuery:Refresh()
+  oLbx:Refresh()
+
+  //Reconstruir las lineas y para q'se coloque en el registro insertado
+  nLin+=1
+  ReconstLin(nLin,oQuery)
+
+  oQuery:Refresh()
+  oLbx:Refresh()
+
+return nil
+
+//ESTA ES LA QUE DA PROBLEMAS. Aunque la function funciona, los datos devueltos a  GopMult son desordenados.
+//--------------------------//Reconstruir lineas
+FUNCTION ReconstLin(nLinea,oQuery)    
+local nLin,oTempo,nLinAnter
+
+  oServer:Query("CREATE TABLE goptempo SELECT * FROM gopmult")  //gopmult es la tabla principal en este caso
+
+  oTempo:=oServer:Query("SELECT * FROM goptempo")
+  oTempo:GoTop()
+
+  nLin:=1
+  While !oTempo:Eof()    
+    nLinAnter := oTempo:lin
+    oServer:Query("UPDATE goptempo SET lin = '"+cValToChar(nLin)+"' WHERE lin = '"+cValToChar(nLinAnter)+"' LIMIT 1")
+    oTempo:Skip()
+    nLin+=1
+  Enddo
+
+  oServer:Query("DELETE FROM gopmult")
+  oServer:Query("OPTIMIZE TABLE gopmult")
+  oServer:Query("INSERT INTO gopmult SELECT * FROM goptempo")
+
+  oServer:Query("DROP TABLE IF EXISTS goptempo")
+  oQuery:Refresh()
+
+  oQuery:GoTop()
+  oQuery:Locate("lin",nLinea)
+  SysRefresh()
+
+Return nil</code></pre></div><br>
+<br>
+Saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p127247">
+    <div class="poster">
+      <div class="name" style="color:#105289">Willi Quintana</div>
+      <div class="rank">Posts: 1053</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 02:37 AM
+      </div>
+      <div class="content">Hola, si entendi que la idea es insertar un registro en browse ordenado y que luego el cursor se reubique en el registro nuevo, pues seria algo asi:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//--------------------------// Insertar un dato
+Function InsGopMult(oLbx,oQuery)   
+LOCAL nLin := oQuery:lin
+
+  oServer:Query("INSERT INTO gopmult (lin) VALUES ('"+cValToChar(nLin)+"')")
+  oQuery:Refresh()                   // esto "recarga" la data de la tabla al cursor oQuery
+  MySetBrowse( oLbx, oQuery )   // no se si esto es necesario,,, prueba....
+  oQuery:Seek(nLin, "lin")         // aqui se ubica el dato nLin en el campo &lt;lin&gt; 
+  oLbx:Refresh()                      // recargas el browse y listo
+
+Return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p127259">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 01:22 PM
+      </div>
+      <div class="content">Willi, antes que nada, agradezco sinceramente tu apoyo. Te digo que ya tengo en un 80-90% avanzado mi sistema de contabilidad en FW-xH-MySql-TMysql.<br>
+<br>
+Referente al caso expuesto anteriormente, ya se me hacía raro que en el Mysql.prg que tengo no aparezca el METHOD Seek, sin embargo compilé conforme a tu ejemplo  y no me dió error, aunque el resultado es el mismo. La librería de TMysql que uso me la cedió William Morales, pero no tengo información sobre sus datas y métodos.<br>
+<br>
+Creo que me faltó exponer más información sobre este código, (que utilizo para insertar datos dentro de los datos de una dbf, en cualquier posición)  por lo que te presento un ejemplo más completo.<br>
+<br>
+//CREO LA TABLA PRINCIPAL (puede contener un máximo de 120 registros o lineas)<br>
+oServer:Query(&quot;CREATE TABLE IF NOT EXISTS gopmult(&quot; +;<br>
+           &quot;LIN        INT(3) NOT NULL DEFAULT 0 COMMENT 'control lineas',&quot; +;<br>
+           &quot;NOMBRE1    VARCHAR(50) NULL DEFAULT '' COMMENT 'cuenta',&quot; +;<br>
+           <strong>&quot;INDEX gopmult (LIN) )&quot;+;   //No uso primary Key porque necesito num de lineas (lin) duplicados en su momento.</strong><br>
+           &quot;ENGINE = InnoDB ;&quot;)<br>
+<br>
+<br>
+//ABRO LA CONSULTA EN XBROWSE<br>
+ oQuery:=oServer:Query(&quot;SELECT * FROM gopmult&quot;)<br>
+<br>
+  oLbx := TXBrowse():New( oDlg ) <br>
+  oLbx:SetMySql(oQuery,.f.)<br>
+<br>
+  oLbx:nMarqueeStyle := MARQSTYLE_HIGHLCELL ...etc,etc<br>
+<br>
+  oCol = oLbx:AddCol()<br>
+  oCol:bEditValue = { || oQuery:lin }<br>
+  oCol:cEditPicture = &quot;@Z 999&quot;<br>
+  oCol:cHeader = &quot;Lin&quot; <br>
+..., ..., ....<br>
+  REDEFINE BUTTONBMP obt1 PROMPT &quot;&amp;Ins Linea &quot; ID 101 OF oDlg BITMAP &quot;NUEVO&quot; TEXTRIGHT ACTION InsGopMult(oLbx,oQuery)<br>
+<br>
+etc,etc......<br>
+<br>
+<br>
+//--------------------------// Inserta linea<br>
+Function InsGopMult(oLbx,oQuery)<br>
+LOCAL nLin := oQuery:lin<br>
+<br>
+  oServer:Query(&quot;INSERT INTO gopmult (lin) VALUES ('&quot;+cValToChar(nLin)+&quot;')&quot;)<br>
+<br>
+  if oServer:lError<br>
+     MsgInfo(oServer:Error)<br>
+  endif<br>
+<br>
+  oQuery:Refresh()<br>
+  oLbx:Refresh()<br>
+<br>
+//Cuando se insertan reg se duplica el no. de lin para que el indice lo coloque en su posicion numerica. Luego esto es<br>
+//corregido o reconstruido en ReconstLin() que vuelve a renumerar las lineas. De esta manera el item se inserta en una //posicion cualquiera dentro de los demas registros de la tabla.<br>
+<br>
+  //Reconstruir las lineas y para q'se coloque en el registro insertado<br>
+  nLin+=1<br>
+  ReconstLin(nLin,oQuery)<br>
+<br>
+  oQuery:Refresh()<br>
+  oLbx:Refresh()<br>
+return nil<br>
+<br>
+//--------------------------//Reconstruir lineas<br>
+FUNCTION ReconstLin(nLinea,oQuery)<br>
+local nLin,oTempo,nLinAnter<br>
+<br>
+  oServer:Query(&quot;CREATE TABLE goptempo SELECT * FROM gopmult&quot;)<br>
+<br>
+  oTempo:=oServer:Query(&quot;SELECT * FROM goptempo&quot;)<br>
+  oTempo:GoTop()<br>
+<br>
+ //Aqui lo que hace es re-numerar las lineas del 1 hasta el ultimo.<br>
+  nLin:=1<br>
+  While !oTempo:Eof()<br>
+    nLinAnter := oTempo:lin<br>
+    oServer:Query(&quot;UPDATE goptempo SET lin = '&quot;+cValToChar(nLin)+&quot;' WHERE lin = '&quot;+cValToChar(nLinAnter)+&quot;' LIMIT 1&quot;)<br>
+    oTempo:Skip()<br>
+    nLin+=1<br>
+  Enddo<br>
+<br>
+  oServer:Query(&quot;DELETE FROM gopmult&quot;)  //borramos todos los reg en tabla principal (esta tabla tiene un index no PK)<br>
+  oServer:Query(&quot;INSERT INTO gopmult SELECT * FROM goptempo&quot;)  // y los agregamos desde  tabla de uso temporal<br>
+  oServer:Query(&quot;OPTIMIZE TABLE gopmult&quot;)  //optimizamos la tabla principal, no sé si es necesario en este momento<br>
+<br>
+  oServer:Query(&quot;DROP TABLE IF EXISTS goptempo&quot;)  //borramos la tabla copia de la tabla principal<br>
+<br>
+  oQuery:Refresh() <br>
+<br>
+  oQuery:GoTop()<br>
+  //oQuery:Locate(&quot;lin&quot;,nLinea)<br>
+  oQuery:Seek(nLinea,&quot;lin&quot;)   //incluida tu sugerencia (aqui se coloca en el registro deseado)<br>
+  SysRefresh()<br>
+Return nil<br>
+<br>
+<strong>El problema es que los registros que antes estaban ordenados en la tabla principal, al vaciarla y agregarlos desde la copia que creamos para reconstruir las lineas, los registros no se muestran ordenados por lin. Parece que en el proceso la tabla principal corrompe su indice (INDEX (LIN), o es que el estoy equivocado con el uso de indices NO PRIMARY KEY.</strong><br>
+<br>
+Saludos</div>
+    </div>
+  </div>
+  <div class="post" id="p127260">
+    <div class="poster">
+      <div class="name" style="color:#105289">wmormar</div>
+      <div class="rank">Posts: 1076</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 01:38 PM
+      </div>
+      <div class="content">Siguiendo el codigo de Willi Quintana,<br>
+<br>
+Al abrir el query para el listbox<br>
+//ABRO LA CONSULTA EN XBROWSE<br>
+oQuery:=oServer:Query(&quot;SELECT * FROM gopmult ORDER BY lin&quot;)<br>
+<br>
+Despues con un simple refresh sin problemas.<br>
+<br>
+Saludos<br>
+<br>
+<blockquote><cite>Willi Quintana wrote:</cite>Hola, si entendi que la idea es insertar un registro en browse ordenado y que luego el cursor se reubique en el registro nuevo, pues seria algo asi:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//--------------------------// Insertar un dato
+Function InsGopMult(oLbx,oQuery)   
+LOCAL nLin := oQuery:lin
+
+  oServer:Query("INSERT INTO gopmult (lin) VALUES ('"+cValToChar(nLin)+"')")
+  oQuery:Refresh()                   // esto "recarga" la data de la tabla al cursor oQuery
+  MySetBrowse( oLbx, oQuery )   // no se si esto es necesario,,, prueba....
+  oQuery:Seek(nLin, "lin")         // aqui se ubica el dato nLin en el campo &lt;lin&gt; 
+  oLbx:Refresh()                      // recargas el browse y listo
+
+Return nil</code></pre></div></blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p127262">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 02:13 PM
+      </div>
+      <div class="content"><p>Hola William, gracias por responder.<br>
+Lo que necesito hacer (en dbf's-FWXH trabaja perfectamente), es lo siguiente.</p>
+<p>Supongamos estos items en estos campos en el oBrw:<br>
+Esta tabla que es la principal (GopMult), tiene un indice que no es PRIMARY KEY sino solamente INDEX (LIN)<br>
+LIN          NOMBRE<br>
+1              A <br>
+2              B<br>
+3              C<br>
+4              D <br>
+5              E</p>
+<p>Quiero insertar entre lin 2 y lin 3, un registro.<br>
+Lo que hace la function InsGopMult(oLbx,oQuery), es agregar un nuevo registro con el numero 2, es decir momentaneamente existen dos registros en el campo LIN con el numero 2. <br>
+1              A <br>
+2              B<br>
+2           <br>
+3              C<br>
+4              D <br>
+5              E</p>
+<p>Luego, la funtion ReconstLin(nLinea,oQuery),  hace una copia temporal (sin indice) de la tabla principal, y luego recorre todos sus registros numerandolos del 1 hasta el fin. Seguidamente limpia la tabla principal y hace un INSERT en esta desde la tabla copia, agregando todos sus registros.</p>
+<p>Recordemos que la tabla principal tiene un indice no PK, y al mostrar el brw con los datos recien agregados, estos no se muestran ordenados por lin (¿que pasa con el indice? Hago un mal uso de él?, Si lo hago PRIMARY KEY no me permitiría claves duplicadas.<br>
+6               //El orden &quot;por las cuajadas&quot; como decimos aqui.<br>
+1              A <br>
+4              B<br>
+3              A <br>
+2              B<br>
+5              D </p>
+<p>Lo que quiero decir es que el recien reg agregado se convierte en 3 y ser el registro seleccionado.<br>
+En este momento voy a probar recreando el indice de la tabla principal, ya que no estoy seguro si OPTIMIZE TABLE lo hace.<br>
+Saludos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p127270">
+    <div class="poster">
+      <div class="name" style="color:#105289">Willi Quintana</div>
+      <div class="rank">Posts: 1053</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 03:00 PM
+      </div>
+      <div class="content"><p>Hola,,, en vez de ::Seek, podria hacerse una busqueda secuencial,,,,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p127272">
+    <div class="poster">
+      <div class="name" style="color:#105289">Willi Quintana</div>
+      <div class="rank">Posts: 1053</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 03:17 PM
+      </div>
+      <div class="content"><p>Francisco Hola,,, en vez de ::Seek, podria hacerse una busqueda secuencial,,,,recuerda que no los index sean primarios o secundarios, se usan para hacer los SELECT, asi que me parece que deberias usar la potencia de las consultas para conseguir lo que deseas y sin usar tablas temporales,,, comunicate conmigo,.. <!-- e --><a href="mailto:svite@hotmail.com">svite@hotmail.com</a><!-- e --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p127275">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 03:31 PM
+      </div>
+      <div class="content"><p>Willi.<br>
+El código se refiere a un módulo para que el cliente tenga opción a configurar la presentación del Estado de Resultados de su empresa. Es decir mi programa tiene la &quot;Opcion por defecto&quot; y la &quot;Definido por el usuario&quot;. Es para que ellos ordenen, a &quot;su gusto y antojo&quot;, la presentación de las cuentas en el ESTADO DE PERDIDAS O GANANCIAS (ESTADO DE RESULTADOS). Por ejemplo:</p>
+<p>LIN   DESCRIPCION DE LA CUENTA<br>
+1      Ingresos por venta de autos usados<br>
+2      Ingresos por venta de chatarra<br>
+3      Ingresos por venta de llantas</p>
+<p>Si necesitase incluir una nueva cuenta, por ejemplo, Ventas de autos nuevos y quiere que se presente como la 2a. cuenta descrita, el programa lo hace asi:</p>
+<p>El operador, o cliente se coloca en la lin 1 e inserta un nuevo registro, lo que hace que los demas registros se desplacen hacia abajo, dejando el recien ingresado en la lin 2. Lo mismo si se decide por introducirlo para que quede entre una deteminada lin y la siguiente. Ej. Si quiere que el nuevo registro se coloque despues de Ingresos por venta de chatarra, lo que hace el usuario es colocarse en la lin 2 e introducir el nuevo registro desplazando al resto hacia abajo . La ordenación la hace la function ReconstLin(nLinea,oQuery), ya descrita.</p>
+<p>En cuanto a no user ::Seek, así lo hacía utilizando locate(&quot;lin&quot;,nlinea)  (ambos trabajan bien). Continúo &quot;coqueando&quot;.<br>
+Saludos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p127276">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 03:37 PM
+      </div>
+      <div class="content"><p>Willi,- mientras posteabas yo estaba escribiendo. No me di cuenta de tu post hasta despues. Me comunico contigo.<br>
+Saludos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p127279">
+    <div class="poster">
+      <div class="name" style="color:#105289">Willi Quintana</div>
+      <div class="rank">Posts: 1053</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 04:14 PM
+      </div>
+      <div class="content">Revisa esto:<br>
+crea una tabla asi:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CREATE TABLE `gopmult` (
+  `idgopmult` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+  `lin` CHAR(10) NOT NULL DEFAULT '',
+  `detalle` VARCHAR(45) NOT NULL DEFAULT '',
+  PRIMARY KEY(`idprueba`)
+)
+ENGINE = InnoDB;</code></pre></div><br>
+sobre esta tabla que tiene &lt;lin&gt; como tipo char hacemos lo siguiente<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// browse inicial
+
+idgopmult    lin      detalle
+---------------------------------------------------------------
+1                1         aaaaaaaaaaaaa
+2                2         bbbbbbbbbbbbb
+3                3         ccccccccccccccc
+4                4         ddddddddddddd
+5                5         eeeeeeeeeeeee
+
+
+oQry:=oServer:Query("SELECT * FROM gopmult ORDER By lin")
+...
+//insertamos la 1ra linea
+// 1ro leemos el valor de lin en la linea en la que nos ubicamos en el browse
+
+cDetalle := "?????????"
+cLin := oQry:Lin
+//  duplicamos cLin  
+cLin := cLin + oQry:Lin
+//  si cLin es "4"  quedara  "44" y luego insertamos
+
+oServer:Query("INSERT INTO gopmult (lin, detalle) VALUES ('" + cLin + "', '" + cDetalle + "')" 
+oQry:Refresh()
+// listo, en el browse debe mostrarse asi:
+
+idgopmult    lin      detalle
+---------------------------------------------------------------
+1                1         aaaaaaaaaaaaa
+2                2         bbbbbbbbbbbbb
+3                3         ccccccccccccccc
+4                4         ddddddddddddd
+5                44        ???????????????????
+6                5         eeeeeeeeeeeee</code></pre></div><br>
+comentame,,,,<br>
+Salu2</div>
+    </div>
+  </div>
+  <div class="post" id="p127286">
+    <div class="poster">
+      <div class="name" style="color:#105289">Raymundo Islas M.</div>
+      <div class="rank">Posts: 592</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 14, 2006 11:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 05:24 PM
+      </div>
+      <div class="content"><p>Francisco,</p>
+<p>Si te entendi, puede que funcione lo siguiente :</p>
+<ul>
+<li>create table tempo select * from datos where row_id &gt; xxxx</li>
+<li>delete from datos where row_id &gt; xxxx</li>
+<li>insert into datos (x,y) values (aaa,bbb)</li>
+<li>insert into datos (x,y,z) select * from tempo</li>
+<li>@r := 0</li>
+<li>update datos set campo = ( @r := @r + 1 )</li>
+<li>drop table tempo</li>
+</ul>
+<p>Aqui se requiere tener un campo que maneje el consecutivo de registros ( row_id es igual a recno() ), en mi caso, todas mis tablas lo tienen y lo manejo como auto increment.<br>
+solo ajusta los nombres de tus campos y debe funcionar. Ya lo probe aqui usando Navicat en una tabla dummy y funciono al 100%</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p127300">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 09:27 PM
+      </div>
+      <div class="content"><p>Willi, no funcionó.<br>
+Si la tabla está vacía inserta bien el &quot;1&quot;, al insertar la segunda vez hace lo que dices &quot;11&quot;, pero si continúas insertando siempre toma &quot;11&quot;. No es el comportamiento deseado:<br>
+//--------------------------//<br>
+Function InsGopMult(oLbx,oQuery)<br>
+LOCAL cLin := oQuery:lin  //lin actualmente seleccionada<br>
+local cDetalle:= &quot;HOLALALAL &quot;+oQuery:lin</p>
+<p>if cLin = &quot;&quot;   //sin esto y si la tabla esta vacía, inserta blanco en lin y detalle si lo hace.<br>
+  cLin := &quot;1&quot;<br>
+endif</p>
+<p>cLin := cLin + oQuery:lin </p>
+<p>oServer:Query(&quot;INSERT INTO gopmult (lin, nombre1) VALUES ('&quot; + cLin + &quot;', '&quot; + cDetalle + &quot;')&quot;) <br>
+oQuery:locate(&quot;lin&quot;,cLin)<br>
+oQuery:Refresh()<br>
+oLbx:Refresh()</p>
+<p>Raymundo, tu código se comporta parecido al de Willi:</p>
+<p>LOCAL nRec := oQuery:Recno()<br>
+local cDetalle:= &quot;HOLALALAL &quot;+alltrim(str(nRec))<br>
+local cLin := alltrim(str(nRec))<br>
+local r:=0</p>
+<p>oServer:Query(&quot;CREATE TABLE tempo SELECT * FROM gopmult WHERE '&quot;+cValTochar(Recno())+&quot;' &gt; '&quot;+cValToChar(nRec)+&quot;'&quot;)<br>
+oServer:Query(&quot;DELETE FROM gopmult WHERE '&quot;+cValTochar(Recno())+&quot;' &gt; '&quot;+cValToChar(nRec)+&quot;'&quot;)<br>
+oServer:Query(&quot;INSERT INTO gopmult (lin, nombre1) VALUES ('&quot; + cLin + &quot;', '&quot; + cDetalle + &quot;')&quot;) <br>
+oServer:Query(&quot;INSERT INTO gopmult SELECT * FROM tempo&quot;)<br>
+oServer:Query(&quot;UPDATE gopmult SET lin = (@r := @r + 1)&quot;)   //da Err: column LIN cannot be null, pero inserta el reg.<br>
+oServer:Query(&quot;DROP TABLE tempo&quot;)</p>
+<p>oQuery:Refresh()<br>
+  oLbx:Refresh()</p>
+<p>Sigo en la pelea.<br>
+Saludos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p127308">
+    <div class="poster">
+      <div class="name" style="color:#105289">Raymundo Islas M.</div>
+      <div class="rank">Posts: 592</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 14, 2006 11:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 10:28 PM
+      </div>
+      <div class="content"><p>Francisco,</p>
+<p>No pongas la variable r como local, mandala como un query.</p>
+<p>oServer:Query(&quot;@r := 0&quot;) </p>
+<p>Quizas por eso te manda el aviso/error y por ende, no te actualize el consecutivo de registro. Hazlo antes del update</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p127311">
+    <div class="poster">
+      <div class="name" style="color:#105289">FranciscoA</div>
+      <div class="rank">Posts: 2170</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 18, 2008 01:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 10:47 PM
+      </div>
+      <div class="content"><p>Raymundo, tienes razón. Dejó de enviar el mensaje e inserta correctamente. Vamos avanzando. Luego comento.<br>
+Gracias.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p127314">
+    <div class="poster">
+      <div class="name" style="color:#105289">Willi Quintana</div>
+      <div class="rank">Posts: 1053</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OT: XBrowse-MySql-TMysql</span><br>
+        Posted: Tue Mar 13, 2012 11:23 PM
+      </div>
+      <div class="content">Francisco,,, esto debe funcionar....<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CREATE TABLE `gopmult` (
+  `idgopmult` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ctrl` CHAR(10) NOT NULL DEFAULT '',
+  `lin` INT(10) NOT NULL DEFAULT '0',
+  `detalle` VARCHAR(45) NOT NULL DEFAULT '',
+  PRIMARY KEY(`idprueba`)
+)
+ENGINE = InnoDB;
+ 
+....
+...
+..
+.
+
+
+// browse inicial
+
+idgopmult   ctrl  lin      detalle
+---------------------------------------------------------------
+1           1      0   aaaaaaaaaaaaa
+2           2      0   bbbbbbbbbbbbb
+3           3      0   ccccccccccccc
+4           4      0   ddddddddddddd
+5           5      0   eeeeeeeeeeeee
+
+
+oQry:=oServer:Query("SELECT * FROM gopmult ORDER By lin")
+...
+//insertamos la 1ra linea
+// 1ro leemos el valor de lin en la linea en la que nos ubicamos en el browse
+
+cDetalle := "?????????"
+cCtrl := oQry:ctrl
+//  duplicamos cCtrl  
+cLin := cLin + SUBSTR(oQry:ctrl,1,1)
+//  si cLin es "4"  quedara  "44" y luego insertamos
+
+oServer:Query("INSERT INTO gopmult (ctrl, detalle) VALUES ('" + cCtrl + "', '" + cDetalle + "')" 
+
+oServer:Query("SET @r = 0;")        // declaramos una variable inicial
+
+oServer:Query("UPDATE gopmult SET lin = (@r := @r + 1) ORDER BY crlt")  // actualizamos
+
+oQry:Refresh()
+// listo, en el browse debe mostrarse asi:
+
+idgopmult   ctrl  lin      detalle
+---------------------------------------------------------------
+1           1      1   aaaaaaaaaaaaa
+2           2      2   bbbbbbbbbbbbb
+3           3      3   ccccccccccccc
+4           4      4   ddddddddddddd
+6           44     5   xxxxxxxxxxxxx 
+5           5      6   eeeeeeeeeeeee</code></pre></div></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-23673-page-2.html">2</a> (29 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

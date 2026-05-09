@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>A new Class TGantt - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-22574">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> A new Class TGantt</div>
+  <div class="post" id="p120358">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A new Class TGantt</span><br>
+        Posted: Wed Oct 05, 2011 08:17 PM
+      </div>
+      <div class="content">We couldn't resist to implement a much simpler and better coded Class TGantt <br>
+<br>
+So here you have it. We will include it in next FWH build, and we plan to continue enhancing it.<br>
+<br>
+gantt.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+#define GWL_STYLE       -16
+
+static nOldCol, nOldRow
+
+//----------------------------------------------------------------------------//
+
+CLASS TGantt FROM TControl
+
+   DATA   aItems INIT {}
+   DATA   oItem, oLbx
+   DATA   lCaptured AS LOGICAL INIT .F.
+   DATA   hPen
+   DATA   lLResize, lRResize AS LOGICAL INIT .F.
+   DATA   bChange, bPressed
+   DATA   lGridMonth INIT .F.  
+
+   CLASSDATA lRegistered AS LOGICAL
+
+   METHOD New( nTop, nLeft, nWidth, nHeight, oWnd, lBorder,;
+               lVScroll, lHScroll, nClrFore, nClrBack, bchange, dpresed, oLbx ) CONSTRUCTOR
+
+   METHOD Redefine( nId, oWnd, nClrFore, nClrBack ) CONSTRUCTOR
+
+   METHOD AddItem( nTop, nLeft, nBottom, nRight )
+
+   METHOD AtItem( nRow, nCol )
+
+   METHOD EraseBkGnd( hDC ) INLINE 1
+
+   METHOD GridMonth()
+
+   METHOD Display() INLINE ::BeginPaint(), ::Paint(), ::EndPaint(), 0
+
+   METHOD Paint()
+
+   METHOD LButtonDown( nRow, nCol, nKeyFlags ) 
+   METHOD LButtonUp( nRow, nCol, nKeyFlags )  
+
+   METHOD MouseMove( nRow, nCol, nKeyFlags ) 
+   
+   METHOD End()
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( nTop, nLeft, nWidth, nHeight, oWnd, lBorder,;
+            lVScroll, lHScroll, nClrFore, nClrBack, bChange, bPressed, oLbx ) CLASS TGantt
+
+   DEFAULT lBorder := .T., nClrFore := 0, nClrBack := CLR_WHITE,;
+           lVScroll := .F., lHScroll := .F.,; 
+           oWnd := GetWndDefault()
+
+   ::cCaption   = ""
+   ::oWnd      = oWnd
+   ::bChange   = bChange
+   ::bPressed  = bPressed
+   ::oLbx      = oLbx
+   ::nStyle    = nOr( WS_CHILD,;
+                      If( lBorder, WS_BORDER, 0 ),;
+                      If( lVScroll, WS_VSCROLL, 0 ),;
+                      If( lHScroll, WS_HSCROLL, 0 ),;
+                      WS_VISIBLE, WS_TABSTOP )
+   ::Register()       
+
+   ::SetColor( nClrFore, nClrBack )
+
+   ::hPen = CreatePen( PS_SOLID, 1, nRGB( 128, 128, 128 ) )
+
+   if oWnd:lVisible
+      ::Create()
+      ::Default()
+      ::lVisible = .t.
+      oWnd:AddControl( Self )
+   else
+      oWnd:DefControl( Self )
+      ::lVisible  = .F.
+   endif
+
+   /*
+   if lVScroll
+      DEFINE SCROLLBAR ::oVScroll VERTICAL OF Self
+   endif
+   if lHScroll
+      DEFINE SCROLLBAR ::oHScroll HORIZONTAL OF Self
+   endif
+   */
+   
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD Redefine( nId, oWnd, nClrFore, nClrBack, bChange, bPressed, oLbx ) CLASS TGantt
+
+   DEFAULT oWnd := GetWndDefault()
+
+   ::nId       = nId
+   ::cCaption  = ""
+   ::lCaptured = .F.
+   ::oWnd      = oWnd
+   ::bChange   = bChange
+   ::bPressed   = bPressed
+   ::oLbx      = oLbx
+
+   ::Register()
+
+   ::SetColor( nClrFore, nClrBack )
+   
+   if lAnd( GetWindowLong( ::hWnd, GWL_STYLE ), WS_VSCROLL )
+      DEFINE SCROLLBAR ::oVScroll VERTICAL OF Self
+   endif
+   if lAnd( GetWindowLong( ::hWnd, GWL_STYLE ), WS_HSCROLL )
+      DEFINE SCROLLBAR ::oHScroll HORIZONTAL OF Self
+   endif
+
+   oWnd:DefControl( Self )
+
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD AddItem( nTop, nLeft, nBottom, nRight, nClrBack ) CLASS TGantt
+
+   local oItem := TGanttItem():New( Self, nTop, nLeft, nBottom, nRight, nClrBack )
+   
+   AAdd( ::aItems, oItem )
+   
+return oItem   
+   
+//----------------------------------------------------------------------------//
+
+METHOD AtItem( nRow, nCol ) CLASS TGantt
+
+   local nItem := AScan( ::aItems, { | oItem | oItem:IsOver( nRow, nCol ) } ) 
+
+return If( nItem != 0, ::aItems[ nItem ], nil )
+
+//----------------------------------------------------------------------------//
+
+METHOD GridMonth() CLASS TGantt
+
+   local n, nWidth := ::nWidth() / 31
+   
+   MoveTo( ::hDC, 0, 18 )
+   LineTo( ::hDC, ::nWidth, 18 )
+   
+   for n = 1 to 30
+      MoveTo( ::hDC, nWidth * n, 0 ) 
+      LineTo( ::hDC, nWidth * n, ::nHeight )
+   next  
+   
+   for n = 1 to 31
+      ::Say( 3, 7 + ( ( n - 1 ) * nWidth ),;
+             If( n &lt; 10, " ", "" ) + AllTrim( Str( n ) ),,, If( ::oFont != nil, ::oFont,), .T. )
+   next     
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD Paint() CLASS TGantt
+
+   local aInfo := ::DispBegin()
+   
+   FillRect( ::hDC, GetClientRect( ::hWnd ), ::oBrush:hBrush )
+   
+   if ::lGridMonth
+      ::GridMonth()
+   endif   
+   
+   AEval( ::aItems, { | oItem | oItem:Paint() } )
+
+   if ::bPainted != nil
+      Eval( ::bPainted, ::hDC )
+   endif
+
+   ::DispEnd( aInfo )
+
+return 0
+
+//----------------------------------------------------------------------------//
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) CLASS TGantt
+
+   local oItem
+
+   if ::lCaptured
+      if ::oItem:IsOver( nRow, nCol, 5 )
+         ::oItem:DrawBorder() // to remove the previous painted lines
+         if ::lRResize
+            ::oItem:nRight = nCol - ( nOldCol - ::oItem:nRight )
+         elseif ::lLResize 
+            ::oItem:nLeft = nCol - ( nOldCol - ::oItem:nLeft )
+         else 
+            ::oItem:nLeft = nCol - ( nOldCol - ::oItem:nLeft )
+            ::oItem:nRight = nCol - ( nOldCol - ::oItem:nRight )
+         endif
+         ::oItem:DrawBorder()
+         nOldCol = nCol
+         return nil
+      endif   
+   else
+      if ( oItem := ::AtItem( nRow, nCol ) ) != nil
+         if nCol &lt; oItem:nLeft + 5 .or. nCol &gt; oItem:nRight - 5
+            CursorWE()
+            return nil
+         endif
+      endif       
+   endif      
+
+return Super:MouseMove( nRow, nCol, nKeyFlags )
+
+//----------------------------------------------------------------------------//
+
+METHOD LButtonDown( nRow, nCol, nKeyFlags ) CLASS TGantt
+
+   local oItem
+
+   if ::oLbx != nil
+      ::oLbx:LButtonDown( nRow + 32, 40, nKeyFlags )
+   endif
+
+   if ( oItem := ::AtItem( nRow, nCol ) ) != nil
+      nOldCol = nCol
+      nOldRow = nRow
+      ::lCaptured = .T.
+      ::oItem = oItem
+      ::oItem:DrawBorder()
+      ::lLResize = nCol &lt; oItem:nLeft + 5
+      ::lRResize = nCol &gt; oItem:nRight - 5
+      if ::lLResize .or. ::lRResize
+         CursorWE()
+      else   
+         CursorHand()   
+      endif    
+   endif
+       
+return Super:LButtonDown( nRow, nCol, nKeyFlags )
+
+//----------------------------------------------------------------------------//
+
+METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TGantt
+
+   if ::lCaptured
+      ::oItem:DrawBorder() // to remove the last painted lines
+      ::Refresh()
+      if ::bChange != nil
+         Eval( ::bChange, Self )
+      endif
+      ::lCaptured = .F.
+   endif
+
+return Super:LButtonUp( nRow, nCol, nKeyFlags )
+
+//----------------------------------------------------------------------------//
+
+METHOD End() CLASS TGantt
+
+   DeleteObject( ::hPen )
+
+return Super:End()
+
+//----------------------------------------------------------------------------//
+
+CLASS TGanttItem
+
+   DATA   nTop, nLeft, nBottom, nRight
+   DATA   nClrBack
+   DATA   oGantt
+   
+   METHOD New( oGantt, nTop, nLeft, nBottom, nRight, nClrBack )
+
+   METHOD DrawBorder()
+   
+   METHOD IsOver( nRow, nCol, nMargin )
+   
+   METHOD Paint()
+   
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( oGantt, nTop, nLeft, nBottom, nRight, nClrBack ) CLASS TGanttItem
+
+   ::oGantt   = oGantt
+   ::nTop     = nTop
+   ::nLeft    = nLeft
+   ::nBottom  = nBottom
+   ::nRight   = nRight
+   ::nClrBack = nClrBack
+   
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD IsOver( nRow, nCol, nMargin ) CLASS TGanttItem
+
+   DEFAULT nMargin := 0
+
+return nRow &gt;= ::nTop .and. nCol &gt;= ::nLeft - nMargin .and. ;
+       nRow &lt;= ::nBottom .and. nCol &lt;= ::nRight + nMargin
+
+//----------------------------------------------------------------------------//
+
+METHOD DrawBorder() CLASS TGanttItem
+
+   local hDC     := ::oGantt:GetDC()
+   local nOldRop := SetROP2( hDC, 7 )
+   local nOldPen := SelectObject( hDC, ::oGantt:hPen )
+   
+   MoveTo( hDC, ::nLeft,  ::nTop )
+   LineTo( hDC, ::nRight - 1, ::nTop )
+   LineTo( hDC, ::nRight - 1, ::nBottom - 1 )
+   LineTo( hDC, ::nLeft,  ::nBottom - 1 )
+   LineTo( hDC, ::nLeft,  ::nTop )
+   SetROP2( hDC, nOldRop )
+   SelectObject( hDC, nOldPen )
+   ::oGantt:ReleaseDC()
+   
+return nil
+
+//----------------------------------------------------------------------------//
+
+METHOD Paint() CLASS TGanttItem
+
+   local hPen := CreatePen( 0, 1, ::nClrBack )
+   
+   FillRect( ::oGantt:GetDC(), { ::nTop, ::nLeft, ::nBottom, ::nRight }, hPen )
+   
+   DeleteObject( hPen )  
+   ::oGantt:ReleaseDC()
+   
+return nil
+
+//-----------------------------------------------------//</code></pre></div><br>
+<br>
+TestGant.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+#include "Gantt.ch"
+
+function Main()
+
+   local oFont, oWnd, oGantt
+
+   DEFINE FONT oFont NAME "Verdana" SIZE 0, -10
+
+   DEFINE WINDOW oWnd TITLE "Class TGantt test"
+   
+   @ 1, 1 GANTT oGantt SIZE 300, 300 OF oWnd
+   
+   oGantt:SetFont( oFont )
+   oGantt:lGridMonth = .T.
+   
+   oGantt:AddItem( 30, 10,  50,  80, CLR_BLUE )
+   oGantt:AddItem( 60, 30,  80, 110, CLR_RED )
+   oGantt:AddItem( 90, 50, 110,  90, CLR_GREEN )
+   oGantt:AddItem( 120, 10, 140,  80, CLR_CYAN )  
+   oGantt:AddItem( 150, 50, 170, 120, CLR_YELLOW )
+   
+   oWnd:oClient = oGantt
+
+   oWnd:Center()
+
+   ACTIVATE WINDOW oWnd
+
+return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p120361">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Wed Oct 05, 2011 08:26 PM
+      </div>
+      <div class="content">Here you have it, with a working example and full source code included:<br>
+<br>
+<a href="http://code.google.com/p/fivewin-contributions/downloads/detail?name=newgantt.zop&amp;can=2&amp;q=" rel="noopener">http&#58;//code&#46;google&#46;com/p/fivewin-contributions/downloads/detail?name=newgantt&#46;zop&amp;can=2&amp;q=</a></div>
+    </div>
+  </div>
+  <div class="post" id="p120365">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Wed Oct 05, 2011 10:45 PM
+      </div>
+      <div class="content">Antonio,<br>
+<br>
+As always your code is clear and clean.<br>
+<br>
+Referring to the addItem() method:<br>
+<br>
+oGantt:AddItem( 150, 50, 170, 120, CLR_YELLOW )<br>
+<br>
+Eventually the addItem() method needs to be changed to something like:<br>
+<br>
+oGantt:AddItem( cDescription, dStart, dEnd, nColor )<br>
+<br>
+Internally the class can figure out the coordinates of the task display based on the start and end date of the task and the start date of the earliest task.<br>
+<br>
+Later we need to consider task dependencies. Tasks can be dependent on another task being completed or partially completed. So, instead of a start date, a task starts at another's end date, or 5 days before the end date, or two days after another task's start date, etc.<br>
+<br>
+Sometimes a task needs finer starts and ends including the hour. This is useful for scheduling, for instance.<br>
+<br>
+Another issue is that tasks need to be displayed in what is called a Work Breakdown Structure (WBS) which is basically an outline format. Tasks at the lowest level have start and end dates (or dependencies) and tasks at the higher levels start when the first subtask starts and end when the last subtask ends. These upper level items (not really tasks) may or may not have a bar displayed. The bar might be a different form so it is easily visible as not being a task. The color of an item might default to a color based on the level of the item in the WBS.<br>
+<br>
+The WBS needs to have at least three levels. This means that we would need a nLevel parameter and possibly a oParent parameter in the addItem() method.<br>
+<br>
+Project management is complicated and thus I think it is wise to consider what will be needed eventually when designing the Gantt class. Perhaps it would be useful to write up an informal Gantt class specification before getting too far into the class design. Everyone could contribute to this specification.<br>
+<br>
+Lots to think about. Comments welcome.<br>
+<br>
+Regards,<br>
+James<br>
+<br>
+Here is a sample WBS:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Project Alpha
+   Design Phase
+       Interface
+       class
+       input
+       output
+   Coding Phase
+       interface
+       class
+       input
+       output
+    Testing Phase
+       ...</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p120423">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Thu Oct 06, 2011 05:18 PM
+      </div>
+      <div class="content"><p>Thats a nice start.  I will be happy to start working with it.</p>
+<p>You defined a specific grid, but what we really need I believe is the ability to define a grid, and also to start with a text element.</p>
+<p>For example, how about a chart for the following information:</p>
+<p>First column:   Task information ( text )</p>
+<p>Column 2 to n are steps to be perfomed.</p>
+<p>James is correct about the format, although it is not necessarily dates we are tracking.  Work in progress may be through stages, not dates.</p>
+<p>Also, we need to be able to use this with resources ...</p>
+<p>Tim</p></div>
+    </div>
+  </div>
+  <div class="post" id="p120440">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Thu Oct 06, 2011 08:14 PM
+      </div>
+      <div class="content">Tim,<br>
+<br>
+<blockquote>James is correct about the format, although it is not necessarily dates we are tracking. Work in progress may be through stages, not dates.</blockquote><br>
+<br>
+I do believe that a Gantt chart by definition is showing the schedule of a project so the scale is time. <!-- m --><a class="postlink" href="http://en.wikipedia.org/wiki/Gantt_chart">http://en.wikipedia.org/wiki/Gantt_chart</a><!-- m --><br>
+<br>
+It appears that what you are looking for is a horizontal bar chart rather than a Gantt chart with a WBS. In your case you would want all the items' bars to start at zero? You also don't need a WBS either I am guessing? <br>
+<br>
+Regards,<br>
+James</div>
+    </div>
+  </div>
+  <div class="post" id="p120442">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Thu Oct 06, 2011 08:47 PM
+      </div>
+      <div class="content">I have downloaded and tested this free Gantt application as it is a very good way to understand how the Class TGantt should behave:<br>
+<br>
+<a href="http://softlayer.dl.sourceforge.net/project/openproj/OpenProj%20Binaries/1.4/openproj-1.4.msi" rel="noopener">http&#58;//softlayer&#46;dl&#46;sourceforge&#46;net/project/openproj/OpenProj%20Binaries/1&#46;4/openproj-1&#46;4&#46;msi</a><br>
+<br>
+<img src="http://ubuntulife.files.wordpress.com/2009/11/openproj_big.jpg" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p120446">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Thu Oct 06, 2011 09:44 PM
+      </div>
+      <div class="content"><p>Antonio,</p>
+<p>I was just going to post a link to a sample Gantt chart, but you have already posted a good one.</p>
+<p>Others may not really need a Gnatt but something similar as Tim has indicated. I suspect that many, if not most, may not need a Gantt chart since Gantts were designed for project management. Perhaps we should take a poll to see.</p>
+<p>Does anyone want to describe the type of chart they need? A picture would be helpful too.</p>
+<p>Regards,<br>
+James</p></div>
+    </div>
+  </div>
+  <div class="post" id="p120458">
+    <div class="poster">
+      <div class="name" style="color:#105289">Bayron</div>
+      <div class="rank">Posts: 883</div>
+      <img class="avatar avatar-img" src="avatars/1853.jpg" alt="" loading="lazy">
+      Joined: Thu Dec 24, 2009 12:46 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Fri Oct 07, 2011 02:48 AM
+      </div>
+      <div class="content"><p>In my prior Job I had to make the scheduling work in many big Construction Projects were Union Companies had to be scheduled, and I used MicroSoft Projects, but I don't see any other use ratter than to build scheduling software, I never even used it in the small construction projects, as building up to 10 row houses...</p>
+<p>So I will not have the need for a Gantt diagram Class now or in the near future... It will be great to have it, but I will preffer that effort to be put into the New Metro Class...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p120469">
+    <div class="poster">
+      <div class="name" style="color:#105289">frose</div>
+      <div class="rank">Posts: 392</div>
+      <img class="avatar avatar-img" src="avatars/1690.gif" alt="" loading="lazy">
+      Joined: Tue Mar 10, 2009 11:54 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Fri Oct 07, 2011 06:42 AM
+      </div>
+      <div class="content"><p>Hi to all,</p>
+<p>since years we are looking to substitute our old fashioned planning tables with paper cards for each production step with a modern future-proofed solution.</p>
+<p>Round about one year ago we decided to adapt a Manufacturing Execution System (MES)-modul to our FiveWin-based ERP-system, called ‘JobDISPO MES’. It’s a high sophisticated piece of software with a lot of features, impossible for us to program these things by ourselves, even if FiveWin offers a Gantt class.</p>
+<p>Meanwhile we are quite happy, that we are working with a competent partner, whose firm with the complex process of automatically optimization of work sequences.</p>
+<p>But maybe there are some other needs for us to use this new Gantt class. Perhaps to visualize the results of the JobDISPO-process back in the ERP-system. So we appreciate these activities and looking forward to have a easy to use Gantt class for future implementations.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p120549">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Fri Oct 07, 2011 08:40 PM
+      </div>
+      <div class="content"><p>James &amp; Antonio,</p>
+<p>I'm looking at this to schedule jobs.  You schedule across months.  I would like to schedule a job across a single day, or perhaps more.</p>
+<p>Here is what I would want to schedule:</p>
+<p>Description<br>
+Start Time<br>
+End Time<br>
+Status </p>
+<p>The status field would determine the color of the bar.  For example, Green would be &quot;in progress&quot;, Red would be &quot;hold&quot;, Yellow could be &quot;Testing&quot; and Blue could be completed.  The bar would start at the start time, progress to the current time ( or end time if it is posted ), and the color would reflect the status.  The description would be in a left column.</p>
+<p>Tim</p></div>
+    </div>
+  </div>
+  <div class="post" id="p120920">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Fri Oct 14, 2011 09:47 PM
+      </div>
+      <div class="content"><p>Tim,</p>
+<p>What you are describing is a standard Gantt chart. Typically, the horizontal scale can be hours, days, or months. You have a description, start, end, and percent complete which are all typical scheduling data and are used in a Gantt. We really just need to add the hour to the start and end dates and provide a X-axis in hours for you to get what you need.</p>
+<p>addItem( description, start date, start time, end date, end time, percent complete)</p>
+<p>Perhaps it would be useful to build a base class that is a simple horizontal bar chart. Then the Gantt chart could inherit from that class. This way we could fill both needs with less work.</p>
+<p>Comments anyone?</p>
+<p>Regards,<br>
+James</p></div>
+    </div>
+  </div>
+  <div class="post" id="p120946">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: A new Class TGantt</span><br>
+        Posted: Sat Oct 15, 2011 08:13 AM
+      </div>
+      <div class="content"><p>James,</p>
+<p>I agree with you. We plan to continue this development asap <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

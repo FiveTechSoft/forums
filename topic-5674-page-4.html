@@ -1,0 +1,1090 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Report generator - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-5674">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Report generator</div>
+<div class="pagination">Page: <a href="topic-5674.html">1</a> <a href="topic-5674-page-2.html">2</a> <a href="topic-5674-page-3.html">3</a> <strong>4</strong> <a href="topic-5674-page-5.html">5</a> (68 posts)</div>  <div class="post" id="p25419">
+    <div class="poster">
+      <div class="name" style="color:#105289">Rochinha</div>
+      <div class="rank">Posts: 310</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 08, 2006 10:09 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Mon Jan 22, 2007 11:01 PM
+      </div>
+      <div class="content">he!he!he!<br>
+<br>
+I'm a Mathusalem, I begin with a FiveDOS, he!he!he!.<br>
+<br>
+In the begining i create a script reader for my reports. simple and quick.<br>
+<br>
+Script 1:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">--RPT1008N.FRM
+HT **** INFORMATIVO COMERCIAL ****
+HT -------------------------------------------------------------------------------------------------------------------
+HT PEDIDO COMPRA   PRODUTO    DESCRICAO                                     QUANTDADE VALORVENDA VALORCUSTO VALORLUCRO
+HT ------ -------- ---------- --------------------------------------------- --------- ---------- ---------- ----------
+DT 999999 99/99/99 XXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX 999999999 999,999.99 999,999.99 999,999.99
+ET**** END OF REPORT ****
+GT                               Total 999,999.99 999,999.99 999,999.99
+TA es
+NX es008
+DC idpedido;dataped;substr(resumido,1,10);descricao;quantidade;quantidade*valorvenda;quantidade*customedio;quantidade*valorvenda-quantidade*customedio
+GC 0;0;0;0;0;quantidade*valorvenda;quantidade*customedio;quantidade*valorvenda-quantidade*customedio
+CQ dataped
+--SM areceber
+--RE NAO
+ST SIM
+LP 115
+--WH MONTH(ARECEBER) &gt; 3</code></pre></div><br>
+<br>
+Script 2:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">--RPT1007N.FRM
+HT **** INFORMATIVO FINANCEIRO ****
+HT -----------------------------------------------------------------------------------------------------------------
+HT PEDIDO N.CHEQUE   DATA     VENCTO        VALOR  DESCONTO     JUROS     TOTAL    JA PAGO PAGO EM   RESTANTE DIA PG
+HT ------ ---------- -------- -------- ---------- --------- --------- --------- ---------- -------- --------- --- --
+DT 999999 XXXXXXXXXX 99/99/99 99/99/99 999,999.99 99,999.99 99,999.99 99,999.99 999,999.99 99/99/99 99,999.99 999 99
+ET**** END OF REPORT ****
+GT                               Total 999,999.99 99,999.99 99,999.99 99,999.99 999,999.99          99,999.99
+TA contas
+NX conta018
+DC idpedido;idboleto;data;areceber;valor;desconto;juros;valor+juros-desconto;iif(flag,iif(valorpg&gt;valor+juros-desconto,valorpg,valor+juros-desconto),0);recebido;valorpg;date()-areceber;idempresa
+GC 0;0;0;0;valor;desconto;juros;valor+juros-desconto;iif(flag,iif(valorpg&gt;valor+juros-desconto,valorpg,valor+juros-desconto),0);0;valorpg;0;0
+--CQ areceber
+--SM areceber
+--RE NAO
+ST SIM
+LP 113
+--WH MONTH(ARECEBER) &gt; 3</code></pre></div><br>
+<br>
+My rpt reader analise the code below, open tables and using part of Rep32.prg, TxtPreview e Tprinter class print the results.<br>
+<br>
+The code is here, for all:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+#include "report.ch"
+#include "label.ch"
+#include "nfw.ch"
+
+STATIC oReport, nLinMax
+
+/*
+ **** **** **** **** **** **** **** **** **** **** **** **** **** **** ****
+ * Relatorio: Imprime relatorios baseados em scripts
+ **** **** **** **** **** **** **** **** **** **** **** **** **** **** ****
+ */
+FUNCTION nfwrpt( cFile, cTextFile, lNoRel )
+  //
+  // -&gt; Inicializar as varialveis principais      
+  LOCAL oPrn,;
+        aDC := {}
+        aTA := {}
+        aNX := {}
+        aDT := {}
+        aGC := {}
+        cCQ := ''
+        cSM := ''
+        cRE := ''
+        cST := ''
+        cLP := ''
+        aHT := {}
+        cWH := ''
+        cTI := ''
+  /*
+   **** **** **** **** **** **** **** **** **** **** **** **** **** **** ****
+   * Le o arquivo de configuracao do relatorio, monta a chamada a funcao MyRPT
+   **** **** **** **** **** **** **** **** **** **** **** **** **** **** ****
+   */
+  SET CENTURY OFF
+  cEditFile := MemoRead(cFile)
+  ntam_memo := MLCOUNT( cEditFile, 200 )
+  nli_nha   := 1
+  for I = 1 to ntam_memo
+      cTexto1 := MemoLine( cEditFile, 200, I )
+      cTag    := Substr( cTexto1, 1, 2 )
+      cTexto2 := alltrim( Substr( cTexto1, 3, 197 ) )
+      if cTag = 'DC'
+         cTexto3 := ''
+         for II = 1 to len(cTexto2)
+             if (substr(cTexto2,II,1)=';' .or. len(cTexto2) = II)
+                if len(cTexto2) = II
+                   cTexto3 := cTexto3 + substr( cTexto2, II, 1 )
+                endif
+                AADD( aDC, alltrim(cTexto3) )
+                cTexto3 := ''
+             else
+                cTexto3 := cTexto3 + substr( cTexto2, II, 1 )
+             endif
+         next
+      endif
+      if cTag = 'TA'
+         cTexto3 := ''
+         for II = 1 to len(cTexto2)
+             if (substr(cTexto2,II,1)=';' .or. len(cTexto2) = II)
+                if len(cTexto2) = II
+                   cTexto3 := cTexto3 + substr( cTexto2, II, 1 )
+                endif
+                AADD( aTA, alltrim(cTexto3) )
+                cTexto3 := ''
+             else
+                cTexto3 := cTexto3 + substr( cTexto2, II, 1 )
+             endif
+         next
+      endif
+      if cTag = 'NX'
+         cTexto3 := ''
+         for II = 1 to len(cTexto2)
+             if (substr(cTexto2,II,1)=';' .or. len(cTexto2) = II)
+                if len(cTexto2) = II
+                   cTexto3 := cTexto3 + substr( cTexto2, II, 1 )
+                endif
+                AADD( aNX, alltrim(cTexto3) )
+                cTexto3 := ''
+             else
+                cTexto3 := cTexto3 + substr( cTexto2, II, 1 )
+             endif
+         next
+      endif
+      if cTag = 'GC'
+         cTexto3 := ''
+         for II = 1 to len(cTexto2)
+             if (substr(cTexto2,II,1)=';' .or. len(cTexto2) = II)
+                if len(cTexto2) = II
+                   cTexto3 := cTexto3 + substr( cTexto2, II, 1 )
+                endif
+                AADD( aGC, alltrim(cTexto3) )
+                cTexto3 := ''
+             else
+                cTexto3 := cTexto3 + substr( cTexto2, II, 1 )
+             endif
+         next
+      endif
+      if cTag = 'DT'
+         cTexto3 := ''
+         for II = 1 to len(cTexto2)
+             if (substr(cTexto2,II,1)=' ' .or. len(cTexto2) = II)
+                nTira := 1
+                if len(cTexto2) = II
+                   nTira   := 0
+                   cTexto3 := cTexto3 + substr( cTexto2, II, 1 )
+                endif
+                AADD( aDT, { (II-len(alltrim(cTexto3)))-nTira, alltrim(cTexto3) } )
+                cTexto3 := ''
+             else
+                cTexto3 := cTexto3 + substr( cTexto2, II, 1 )
+             endif
+         next
+      endif
+      if cTag = 'WH' ;       cWH := alltrim(cTexto2)      ;    endif
+      if cTag = 'CQ' ;       cCQ := alltrim(cTexto2)      ;    endif
+      if cTag = 'SM' ;       cSM := alltrim(cTexto2)      ;    endif
+      if cTag = 'RE' ;       cRE := alltrim(cTexto2)      ;    endif
+      if cTag = 'ST' ;       cST := alltrim(cTexto2)      ;    endif
+      if cTag = 'LP' ;       cLP := alltrim(cTexto2)      ;    endif
+      if cTag = 'HT' ;       AADD( aHT, alltrim(cTexto2) );    endif
+      if cTag = 'TI' ;       cTI := alltrim(cTexto2)      ;    endif
+  next
+  oMeter := NIL
+  oText  := NIL
+  oDlg   := NIL
+  lEnd   := NIL
+  //MsgMeter( { |oMeter,oText,oDlg,lEnd|;
+  MyRPT(        aTA , ; // Tabelas
+                aNX , ; // Indices
+                aDT , ; // Linha de impressao
+                aDC , ; // Campos
+                aGC , ; // Campos somados
+                cCQ , ; // Campo Quebra
+                cSM , ; // Sumarizar    Sim/Nao
+                cRE , ; // Resumir      Sim,Nao
+                cST , ; // SubTotalizar Sim,Nao
+                cLP , ; // Largura da Pagina
+                aHT , ; // Cabecalhos
+                cWH , ;
+                cTI , ;
+                cTextFile,;
+         oMeter,oText,oDlg,lEnd,lNoRel ) //;  // Expressao WHERE de avaliacao
+         //},"Gerando arquivo..." )
+   return .t.
+
+FUNCTION MyRPT( aTA , ; // Tabelas
+                aNX , ; // Indices
+                aDT , ; // Linha de impressao
+                aDC , ; // Campos
+                aGC , ; // Campos somados
+                cCQ , ; // Campo Quebra
+                cSM , ; // Sumarizar    Sim/Nao
+                cRE , ; // Resumir      Sim,Nao
+                cST , ; // SubTotalizar Sim,Nao
+                cLP , ; // Largura da Pagina
+                aHT , ; // Cabecalhos
+                cWH , ;
+                cTI , ;
+                cTextFile, ;
+                oMeter,oText,oDlg,lEnd,lNoRel )   // Expressao WHERE de avaliacao
+
+   local oPrn, cPorta, cFile
+   local nLin, nPag, cTmp, nItens
+   public TOT_000[15], TO1_000[15], SUM_000[15]
+   cTextFile := "TXT"+substr(strtran(time(),":",""),4,3)+".PRN"
+   FOR I = 1 TO LEN(aTA)
+       USE (aTA[I]) NEW 
+       IF LEN(aTA) &gt; 0
+          dbSetIndex( (aTA[I]) )
+       ENDIF
+   NEXT
+   SELECT(aTA[1])
+   OrdSetFocus( (aNX[1]) )
+   //SET ORDER TO 1
+   GOTO TOP
+   NUM_RELATORIO := 1
+   M-&gt;TIPO_PRN   := "I"
+   cCQ := iif( EMPTY(cCQ), 'NONE', cCQ )
+   cRE := iif( EMPTY(cRE), 'NAO' , cRE )
+   cSM := iif( EMPTY(cSM), 'NAO' , iif( cRE='NAO', 'NAO' , cSM ) )
+   cST := iif( EMPTY(cST), 'NAO' , cST )
+   cLP := iif( EMPTY(cLP), 80    , cLP )
+   cWH := iif( EMPTY(cWH), 'NONE', cWH )
+   M-&gt;LI_NHA=1
+   M-&gt;PAG=1
+   IF cCQ &lt;&gt; 'NONE'
+      M-&gt;QUEBRA_1 = &amp;cCQ
+   ENDIF
+   IF LEN(aGC) &lt;&gt; 0
+      M-&gt;TOT_000[ 1]=0
+      M-&gt;TOT_000[ 2]=0
+      M-&gt;TOT_000[ 3]=0
+      M-&gt;TOT_000[ 4]=0
+      M-&gt;TOT_000[ 5]=0
+      M-&gt;TOT_000[ 6]=0
+      M-&gt;TOT_000[ 7]=0
+      M-&gt;TOT_000[ 8]=0
+      M-&gt;TOT_000[ 9]=0
+      M-&gt;TOT_000[10]=0
+      M-&gt;TOT_000[11]=0
+      M-&gt;TOT_000[12]=0
+      M-&gt;TOT_000[13]=0
+      M-&gt;TOT_000[14]=0
+      M-&gt;TOT_000[15]=0
+      IF cST = 'SIM'
+         M-&gt;TO1_000[ 1]=0
+         M-&gt;TO1_000[ 2]=0
+         M-&gt;TO1_000[ 3]=0
+         M-&gt;TO1_000[ 4]=0
+         M-&gt;TO1_000[ 5]=0
+         M-&gt;TO1_000[ 6]=0
+         M-&gt;TO1_000[ 7]=0
+         M-&gt;TO1_000[ 8]=0
+         M-&gt;TO1_000[ 9]=0
+         M-&gt;TO1_000[10]=0
+         M-&gt;TO1_000[11]=0
+         M-&gt;TO1_000[12]=0
+         M-&gt;TO1_000[13]=0
+         M-&gt;TO1_000[14]=0
+         M-&gt;TO1_000[15]=0
+      ENDIF         
+   ENDIF
+   M-&gt;SAI_DA="S"
+   cEmpresa:= "**** FatAll eVolution - TXTPreview ****"
+   cPorta  := "LPT1"
+   cFile   := "TXT"+substr(strtran(time(),":",""),4,3)+".PRN" 
+   nLin    := 0
+   nPag    := 0
+   nLinMax := 56 // Padrao A4
+   nItens  := nTotal := 0
+   oPrn    := TDosPrn():New( cTextfile )
+oPrn:StartPage()
+//if !file( "logo.bmp" )
+//   oPrn:SayImage(0,0,"logo.bmp",300,400,0)
+//endif
+DO WHILE .NOT. EOF()
+   IF cWH &lt;&gt; 'NONE'
+      IF ! &amp;(cWH)
+         SKIP
+         LOOP
+      ENDIF
+   ENDIF
+   IF M-&gt;LI_NHA=1
+      nPag++
+      nLin++
+      oPrn:Command( oPrn:cNormal )
+      oPrn:Say( M-&gt;LI_NHA, 00, PadC( "**** "+alltrim(cTI)+" ****", 79 ) )
+      iif( val(cLP)&gt;80,oPrn:Command( oPrn:cCompress),)
+      oPrn:Say( M-&gt;LI_NHA+1, 00, "Pagina: "+strzero(nPag,3) )
+      oPrn:Say( M-&gt;LI_NHA+1, iif( EMPTY(cLP), 80, VAL(cLP) ) -14, "Data: "+DTOC(DATE()))
+      oPrn:Say( M-&gt;LI_NHA+2, 00, REPL("-",iif( EMPTY(cLP), 80, VAL(cLP) ) ))
+      oPrn:Say( M-&gt;LI_NHA+3, 00, aHT[3]) 
+      oPrn:Say( M-&gt;LI_NHA+4, 00, aHT[4])
+      M-&gt;LI_NHA=6
+   ENDIF
+   IF cCQ &lt;&gt; 'NONE'
+      M-&gt;QUEBRA_1 = &amp;cCQ
+   ENDIF
+   IF cRE = 'SIM'
+      M-&gt;SUM_000[ 1]=0
+      M-&gt;SUM_000[ 2]=0
+      M-&gt;SUM_000[ 3]=0
+      M-&gt;SUM_000[ 4]=0
+      M-&gt;SUM_000[ 5]=0
+      M-&gt;SUM_000[ 6]=0
+      M-&gt;SUM_000[ 7]=0
+      M-&gt;SUM_000[ 8]=0
+      M-&gt;SUM_000[ 9]=0
+      M-&gt;SUM_000[10]=0
+      M-&gt;SUM_000[11]=0
+      M-&gt;SUM_000[12]=0
+      M-&gt;SUM_000[13]=0
+      M-&gt;SUM_000[14]=0
+      M-&gt;SUM_000[15]=0
+      DO WHILE M-&gt;QUEBRA_1 = &amp;cCQ
+         M-&gt;SUM_000[ 1]=M-&gt;SUM_000[ 1]+IIF(LEN(aGC)&gt;= 1, &amp;(aGC[ 1]), 0 )
+         M-&gt;SUM_000[ 2]=M-&gt;SUM_000[ 2]+IIF(LEN(aGC)&gt;= 2, &amp;(aGC[ 2]), 0 )
+         M-&gt;SUM_000[ 3]=M-&gt;SUM_000[ 3]+IIF(LEN(aGC)&gt;= 3, &amp;(aGC[ 3]), 0 )
+         M-&gt;SUM_000[ 4]=M-&gt;SUM_000[ 4]+IIF(LEN(aGC)&gt;= 4, &amp;(aGC[ 4]), 0 )
+         M-&gt;SUM_000[ 5]=M-&gt;SUM_000[ 5]+IIF(LEN(aGC)&gt;= 5, &amp;(aGC[ 5]), 0 )
+         M-&gt;SUM_000[ 6]=M-&gt;SUM_000[ 6]+IIF(LEN(aGC)&gt;= 6, &amp;(aGC[ 6]), 0 )
+         M-&gt;SUM_000[ 7]=M-&gt;SUM_000[ 7]+IIF(LEN(aGC)&gt;= 7, &amp;(aGC[ 7]), 0 )
+         M-&gt;SUM_000[ 8]=M-&gt;SUM_000[ 8]+IIF(LEN(aGC)&gt;= 8, &amp;(aGC[ 8]), 0 )
+         M-&gt;SUM_000[ 9]=M-&gt;SUM_000[ 9]+IIF(LEN(aGC)&gt;= 9, &amp;(aGC[ 9]), 0 )
+         M-&gt;SUM_000[10]=M-&gt;SUM_000[10]+IIF(LEN(aGC)&gt;=10, &amp;(aGC[10]), 0 )
+         M-&gt;SUM_000[11]=M-&gt;SUM_000[11]+IIF(LEN(aGC)&gt;=11, &amp;(aGC[11]), 0 )
+         M-&gt;SUM_000[12]=M-&gt;SUM_000[12]+IIF(LEN(aGC)&gt;=12, &amp;(aGC[12]), 0 )
+         M-&gt;SUM_000[13]=M-&gt;SUM_000[13]+IIF(LEN(aGC)&gt;=13, &amp;(aGC[13]), 0 )
+         M-&gt;SUM_000[14]=M-&gt;SUM_000[14]+IIF(LEN(aGC)&gt;=14, &amp;(aGC[14]), 0 )
+         M-&gt;SUM_000[15]=M-&gt;SUM_000[15]+IIF(LEN(aGC)&gt;=15, &amp;(aGC[15]), 0 )
+         SKIP
+      ENDDO
+      SKIP -1
+   ELSE
+      M-&gt;SUM_000[ 1]=IIF(LEN(aGC)&gt;= 1, &amp;(aGC[ 1]), 0 )
+      M-&gt;SUM_000[ 2]=IIF(LEN(aGC)&gt;= 2, &amp;(aGC[ 2]), 0 )
+      M-&gt;SUM_000[ 3]=IIF(LEN(aGC)&gt;= 3, &amp;(aGC[ 3]), 0 )
+      M-&gt;SUM_000[ 4]=IIF(LEN(aGC)&gt;= 4, &amp;(aGC[ 4]), 0 )
+      M-&gt;SUM_000[ 5]=IIF(LEN(aGC)&gt;= 5, &amp;(aGC[ 5]), 0 )
+      M-&gt;SUM_000[ 6]=IIF(LEN(aGC)&gt;= 6, &amp;(aGC[ 6]), 0 )
+      M-&gt;SUM_000[ 7]=IIF(LEN(aGC)&gt;= 7, &amp;(aGC[ 7]), 0 )
+      M-&gt;SUM_000[ 8]=IIF(LEN(aGC)&gt;= 8, &amp;(aGC[ 8]), 0 )
+      M-&gt;SUM_000[ 9]=IIF(LEN(aGC)&gt;= 9, &amp;(aGC[ 9]), 0 )
+      M-&gt;SUM_000[10]=IIF(LEN(aGC)&gt;=10, &amp;(aGC[10]), 0 )
+      M-&gt;SUM_000[11]=IIF(LEN(aGC)&gt;=11, &amp;(aGC[11]), 0 )
+      M-&gt;SUM_000[12]=IIF(LEN(aGC)&gt;=12, &amp;(aGC[12]), 0 )
+      M-&gt;SUM_000[13]=IIF(LEN(aGC)&gt;=13, &amp;(aGC[13]), 0 )
+      M-&gt;SUM_000[14]=IIF(LEN(aGC)&gt;=14, &amp;(aGC[14]), 0 )
+      M-&gt;SUM_000[15]=IIF(LEN(aGC)&gt;=15, &amp;(aGC[15]), 0 )
+   ENDIF
+   //
+   FOR I = 1 to LEN(aDC)
+       cCampo := &amp;(aDC[i])
+       //if cSM = 'NAO'
+       IF cSM = 'SIM'
+          IF I=1; oPrn:Say( M-&gt;LI_NHA, aDT[i,1], Transform( cCampo, aDT[i,2] ) ); ENDIF
+       ELSE
+          oPrn:Say( M-&gt;LI_NHA, aDT[i,1], Transform( cCampo, aDT[i,2] ) )
+       ENDIF
+       //   oPrn:Say( M-&gt;LI_NHA, aDT[i,1], iif(cSM='NAO',cCampo,Transform( M-&gt;SUM_000[i], aDT[i,2] ) ) )
+       //else
+       //   cSomar := aDC[i]
+       //   if cSomar = aGC[i]
+       //      IF LEN(aGC)&gt;=1; oPrn:Say( M-&gt;LI_NHA, aDT[i,1], Transform( M-&gt;SUM_000[i], aDT[i,2] ) ) ; ENDIF
+       //   else
+       //      oPrn:Say( M-&gt;LI_NHA, aDT[i,1], cCampo )
+       //   endif
+       //endif
+   NEXT
+   IF (LEN(aGC)&lt;&gt;0 .OR. cST = 'SIM') // SE SOMA OU RESUMO
+      M-&gt;TOT_000[ 1]=M-&gt;TOT_000[ 1]+M-&gt;SUM_000[ 1]
+      M-&gt;TOT_000[ 2]=M-&gt;TOT_000[ 2]+M-&gt;SUM_000[ 2]
+      M-&gt;TOT_000[ 3]=M-&gt;TOT_000[ 3]+M-&gt;SUM_000[ 3]
+      M-&gt;TOT_000[ 4]=M-&gt;TOT_000[ 4]+M-&gt;SUM_000[ 4]
+      M-&gt;TOT_000[ 5]=M-&gt;TOT_000[ 5]+M-&gt;SUM_000[ 5]
+      M-&gt;TOT_000[ 6]=M-&gt;TOT_000[ 6]+M-&gt;SUM_000[ 6]
+      M-&gt;TOT_000[ 7]=M-&gt;TOT_000[ 7]+M-&gt;SUM_000[ 7]
+      M-&gt;TOT_000[ 8]=M-&gt;TOT_000[ 8]+M-&gt;SUM_000[ 8]
+      M-&gt;TOT_000[ 9]=M-&gt;TOT_000[ 9]+M-&gt;SUM_000[ 9]
+      M-&gt;TOT_000[10]=M-&gt;TOT_000[10]+M-&gt;SUM_000[10]
+      M-&gt;TOT_000[11]=M-&gt;TOT_000[11]+M-&gt;SUM_000[11]
+      M-&gt;TOT_000[12]=M-&gt;TOT_000[12]+M-&gt;SUM_000[12]
+      M-&gt;TOT_000[13]=M-&gt;TOT_000[13]+M-&gt;SUM_000[13]
+      M-&gt;TOT_000[14]=M-&gt;TOT_000[14]+M-&gt;SUM_000[14]
+      M-&gt;TOT_000[15]=M-&gt;TOT_000[15]+M-&gt;SUM_000[15]
+      IF cST = 'SIM' // .or. cSM = 'SIM'
+         M-&gt;TO1_000[ 1]=M-&gt;TO1_000[ 1]+M-&gt;SUM_000[ 1]
+         M-&gt;TO1_000[ 2]=M-&gt;TO1_000[ 2]+M-&gt;SUM_000[ 2]
+         M-&gt;TO1_000[ 3]=M-&gt;TO1_000[ 3]+M-&gt;SUM_000[ 3]
+         M-&gt;TO1_000[ 4]=M-&gt;TO1_000[ 4]+M-&gt;SUM_000[ 4]
+         M-&gt;TO1_000[ 5]=M-&gt;TO1_000[ 5]+M-&gt;SUM_000[ 5]
+         M-&gt;TO1_000[ 6]=M-&gt;TO1_000[ 6]+M-&gt;SUM_000[ 6]
+         M-&gt;TO1_000[ 7]=M-&gt;TO1_000[ 7]+M-&gt;SUM_000[ 7]
+         M-&gt;TO1_000[ 8]=M-&gt;TO1_000[ 8]+M-&gt;SUM_000[ 8]
+         M-&gt;TO1_000[ 9]=M-&gt;TO1_000[ 9]+M-&gt;SUM_000[ 9]
+         M-&gt;TO1_000[10]=M-&gt;TO1_000[10]+M-&gt;SUM_000[10]
+         M-&gt;TO1_000[11]=M-&gt;TO1_000[11]+M-&gt;SUM_000[11]
+         M-&gt;TO1_000[12]=M-&gt;TO1_000[12]+M-&gt;SUM_000[12]
+         M-&gt;TO1_000[13]=M-&gt;TO1_000[13]+M-&gt;SUM_000[13]
+         M-&gt;TO1_000[14]=M-&gt;TO1_000[14]+M-&gt;SUM_000[14]
+         M-&gt;TO1_000[15]=M-&gt;TO1_000[15]+M-&gt;SUM_000[15]
+      ENDIF
+   ENDIF
+   IF cSM = 'SIM'
+   ELSE
+      M-&gt;LI_NHA=M-&gt;LI_NHA+1
+   ENDIF
+   SKIP
+   IF cCQ &lt;&gt; 'NONE'
+      IF M-&gt;QUEBRA_1 &lt;&gt; &amp;cCQ
+         IF cST = 'SIM'
+            IF cSM = 'SIM'
+            ELSE
+               oPrn:Say( M-&gt;LI_NHA,000, REPL("-",LEN(aHT[3])) )
+               M-&gt;LI_NHA=M-&gt;LI_NHA+1
+               oPrn:Say( M-&gt;LI_NHA, 000, "SUBTOTAL" )
+            ENDIF
+            FOR I = 1 to LEN(aDC)
+                cSomar := aDC[i]
+                if cSomar = aGC[i]
+                   IF LEN(aGC)&gt;=1; oPrn:Say( M-&gt;LI_NHA, aDT[i,1], Transform( M-&gt;TO1_000[i], aDT[i,2] ) ) ; ENDIF
+                endif
+            NEXT
+            IF cSM = 'SIM'
+            ELSE
+               M-&gt;LI_NHA=M-&gt;LI_NHA+2
+            ENDIF
+            M-&gt;TO1_000[ 1]=0
+            M-&gt;TO1_000[ 2]=0
+            M-&gt;TO1_000[ 3]=0
+            M-&gt;TO1_000[ 4]=0
+            M-&gt;TO1_000[ 5]=0
+            M-&gt;TO1_000[ 6]=0
+            M-&gt;TO1_000[ 7]=0
+            M-&gt;TO1_000[ 8]=0
+            M-&gt;TO1_000[ 9]=0
+            M-&gt;TO1_000[10]=0
+            M-&gt;TO1_000[11]=0
+            M-&gt;TO1_000[12]=0
+            M-&gt;TO1_000[13]=0
+            M-&gt;TO1_000[14]=0
+            M-&gt;TO1_000[15]=0
+         ENDIF
+         M-&gt;QUEBRA_1 = &amp;cCQ
+         M-&gt;LI_NHA   = M-&gt;LI_NHA+1
+      ENDIF
+   ENDIF
+   IF LEN(aGC) &lt;&gt; 0 // Se SOMA campos
+      IF M-&gt;LI_NHA&gt;nLinMax
+         MyTOT_01(oPrn, 1, aDC, aDT, aHT, aGC )
+         M-&gt;LI_NHA:=1
+      ENDIF
+   ELSE
+      IF M-&gt;LI_NHA&gt;nLinMax+2
+         oPrn:Say( M-&gt;LI_NHA+0, 00, REPL("-",iif( EMPTY(cLP), 80, VAL(cLP) ) ))
+         oPrn:Say( M-&gt;LI_NHA+1, 00, "5Volution Legacy" )
+         oPrn:Say( M-&gt;LI_NHA+1, iif(EMPTY(cLP),80,VAL(cLP))-len("Av. Itaberaba 1016, sala 9"), "Telefone: 3902-7354" )
+         //oPrn:Command( oPrn:cCompress )
+         M-&gt;LI_NHA:=1
+      ENDIF
+   ENDIF
+ENDDO
+IF LEN(aGC) &lt;&gt; 0 // Se SOMA campos
+   MyTOT_01(oPrn, 2, aDC, aDT, aHT, aGC )
+ELSE
+   M-&gt;LI_NHA := nLinMax+2
+   oPrn:Say( M-&gt;LI_NHA+0, 00, REPL("-",iif( EMPTY(cLP), 80, VAL(cLP) ) ))
+   oPrn:Say( M-&gt;LI_NHA+1, 00, "SoftClever Informatica Comercio Ltda" )
+   oPrn:Say( M-&gt;LI_NHA+1, iif(EMPTY(cLP),80,VAL(cLP))-len("Av. Itaberaba 1016, sala 9"), "Av. Itaberaba 1016, sala 9" )
+ENDIF
+oPrn:EndPage()
+oPrn:End()
+if lNoRel &lt;&gt; NIL
+   TxtPreview( cTextfile, "Teste", .t.,,, oPrn )
+else
+   CLOSE DATABASES
+   TxtPreview( cTextfile, "Teste", .f.,,, oPrn )
+endif
+//if cTextfile &lt;&gt; NIL
+//   //Rep23( cTextfile, iif( EMPTY(cLP), 80, 132 ) )
+//   fRename( '\clever\fatall\clever\NFWSPOOL.TXT', '\clever\fatall\clever\SPOOL.SPL' )
+//endif
+
+FUNCTION MyTOT_01( oPrn, PAR1, aDC, aDT, aHT, aGC )
+IF PAR1=2
+//   M-&gt;LI_NHA=nLinMax // 59
+ENDIF
+oPrn:Say( M-&gt;LI_NHA, 000, REPL("-",LEN(aHT[3])) )
+M-&gt;LI_NHA=M-&gt;LI_NHA+1
+IF PAR1=2
+   oPrn:Say( M-&gt;LI_NHA, 000, "TOTAL" )
+ELSE
+   oPrn:Say( M-&gt;LI_NHA, 000, "SUBTOTAL" )
+ENDIF
+FOR I = 1 to LEN(aDC)
+    cSomar := aDC[i]
+    if cSomar = aGC[i]
+       IF LEN(aGC)&gt;=1; oPrn:Say( M-&gt;LI_NHA, aDT[i,1], Transform( M-&gt;TOT_000[i], aDT[i,2] ) ) ; ENDIF
+    endif
+NEXT
+M-&gt;LI_NHA=M-&gt;LI_NHA+1
+oPrn:Say( M-&gt;LI_NHA, 000, REPL("-",LEN(aHT[3])) )
+M-&gt;LI_NHA=M-&gt;LI_NHA+1
+oPrn:Say( M-&gt;LI_NHA, 000, " " )
+M-&gt;LI_NHA=M-&gt;LI_NHA+1
+RETURN .T.
+
+Function Rep23(cTextfile,cLargura)  // To make this a reusable module, we pass
+                           // the name of the text file to this function,
+                           // so it can be re-used for many different files
+                           // with the same margin and font settings.
+
+     LOCAL nRecno, oFont
+     IF cTextfile = NIL .OR. UPPER(cTextfile) = "LPT1"
+        RETURN .T.
+     ENDIF
+     DEFINE FONT oFont NAME "COURIER" SIZE 0,-6
+            // Font sizes for PRINTING are given in "points" not pixels.
+            // (Pixels are used for font width and height for SCREENS only.)
+            // By using a "0" for width and a "-" in front of the "height" #
+            // we tell FiveWin that we're using points instead of pixels.
+
+            // Thus -12 means "12 point," which is used for "10 pitch"
+            // non-proportionally spaced Courier type that prints at
+            // 6 lines/inch.
+
+            // -10 means a 10 point font printing at 7 lines/inch.
+
+            // Use -9 for a "12 pitch" equal-spaced Courier font printing
+            // at 8 lines per inch.
+
+
+            // Note that in creating the report object, we are leaving out
+            // any mention of title or header specs. because those are
+            // already included in our .TXT file.
+     REPORT oReport ;
+          FONT oFont ;
+          CAPTION "Relatorio em tela" ;
+          PREVIEW
+//          TO PRINTER
+     COLUMN DATA " " SIZE cLargura // * Trick "Data" - we're fooling Mother 
+                              // Nature here. The memo will go into the " ". *
+     END REPORT
+             // All title lines, page numbers and headings already exist in
+             // our text file, so the next two code statements make sure that
+             // FiveWin won't add its own title lines.
+     oReport:nTitleUpLine := RPT_NOLINE
+     oReport:nTitleDnLine := RPT_NOLINE
+     oReport:Margin(.01,RPT_LEFT  ,RPT_INCHES)   // .15
+     oReport:Margin(.01,RPT_TOP   ,RPT_INCHES)    // .25
+     oReport:Margin(.01,RPT_BOTTOM,RPT_INCHES) // .25
+     // I know the top/bottom margins shown here should mathematically cause
+     // more than the desired 60 lines per page to print. However, in actual 
+     // practice with my Panasonic KXP 4450 laser printer emulating the 
+     // HP LaserJet Plus, this is what I had to use to get 60 lines.  Why?
+     // Inscrutible printer driver!  Maybe your printer driver functions in
+     // a more mathematically logical fashion.  If so, adjust accordingly.
+     // The left margin is set so small here because a margin is already
+     // built into the text file itself (in this particular case).
+
+     ACTIVATE REPORT oReport ;
+          ON INIT SayMemo2(cTextfile,cLargura)
+
+     oFont:End()
+   RETURN NIL
+
+STATIC Function SayMemo2(cTextfile,cLargura)
+     LOCAL cText, cLine
+     LOCAL nFor, nLines, nPageln
+     cText := MEMOREAD( (cTextfile) )
+     nLines := MlCount(cText,cLargura) // Original text has up to 76 chars. per line.
+     nPageln := 0
+     *oReport:BackLine(1)     // Not needed here. If used, will cause printing
+                              // of subsequent pages to get out of synch by
+                              // pushing the start of printing down 1 line
+                              // per page.
+     FOR nFor := 1 TO nLines
+          cLine := MemoLine(cText, cLargura, nFor)
+          oReport:StartLine()
+          oReport:Say(1,cLine)
+          oReport:EndLine()
+             // The following section checks to see if we've reached the
+             // bottom of the page (60 lines). If so, it then calls
+             // GetTop() to eliminate empty spaces in the text file between
+             // the bottom of the outgoing page and the top line of the
+             // next page.  The intent of this code is to get rid of the
+             // empty lines that most report generators insert between pages
+             // when output is to a text file -- otherwise our page printing
+             // would get out of synch with the formating of the original
+             // report. This approach only works where printing (including the
+             // page number and other page heading data) is supposed to appear
+             // at the same place at the top of every page.  
+          nPageln := nPageln + 1
+          IF nPageln = 60
+             nFor := GetTop(cText,nFor,nLines,cLargura)
+             nPageln := 0
+          ENDIF
+     NEXT
+     *oReport:Newline()  // Only activate this line if you need to have the
+                         // program eject another page upon completing printing.
+   RETURN NIL
+
+STATIC FUNCTION GetTop(cText,nFor,nLines,cLargura)
+   LOCAL Test := .T.,cLine
+   DO WHILE Test = .T. .AND. nFor &lt;= nLines
+      nFor := nFor + 1
+      cLine := MemoLine(cText, cLargura, nFor)
+      TEST := EMPTY(cLine)
+   ENDDO
+   nFor := nFor - 1
+   SysRefresh()   // Inserted to allow Windows to catch up with housekeeping
+                  // that was held up during the "DO WHILE."
+   RETURN nFor</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p25658">
+    <div class="poster">
+      <div class="name" style="color:#105289">Roger Seiler</div>
+      <div class="rank">Posts: 223</div>
+      <img class="avatar avatar-img" src="avatars/335.jpg" alt="" loading="lazy">
+      Joined: Thu Dec 01, 2005 03:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Fri Jan 26, 2007 01:26 PM
+      </div>
+      <div class="content"><p>I originally wrote Rep23, upon which Rochinha based some of his programming. Since then, I have greatly improved it and converted it to OOP.  Improvements include capabilities for assigning a different font to each field of data and the use of graphics - lines, boxes, shadows and bitmaps.</p>
+<p>Anyone who would like a copy of the current version (and its companion .PRGs) can get it by downloading from...</p>
+<!-- m -->
+<p><a class="postlink" href="http://www.leadersoft.com/software/TstRpt23.zip">http://www.leadersoft.com/software/TstRpt23.zip</a></p>
+<p>Together with TReport, it provides the basic report output engine. What it needs is a good graphical front end for designing reports. (I still use R&amp;R and the R&amp;R Clipper Code Generator for designing reports, and then convert the generated code so it can work with TRept23.) This approach enables providing reports completely within your main app .exe with complete control, instead of having to depend on someone else's runtime module (i.e. Crystal Reports).</p>
+<p>One of the included PRGs - PrintAdj.prg - automatically determines which printer is the default for a workstation and then automatically enters printing adjustment factors into a "MyApp.ini" file so that printing with TRept23 will be properly aligned on that printer.</p>
+<p>Feel free to use it. If you decide to use TRept23, please share any improvements that you make on this forum.</p>
+<ul>
+<li>Roger</li>
+</ul>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p25695">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">GX Reports</span><br>
+        Posted: Fri Jan 26, 2007 11:38 PM
+      </div>
+      <div class="content"><p>Reinaldo,</p>
+<p>I worked closely with Rene testing the GX Reports and then his follow up project which still exists.  I think its safe to say he was burned out with some unpleasant experiences "marketing" GX and so he moved on to the Visual Studio crowd hoping for a better audience for his products.  I found GX to be stable and encouraged him to bring the same features to 32 bit.</p>
+<p>I think its fair to say he was frustrated with the same type of line I often see on this forum which is "we need something for free."  I'm not against Open Source projects, but I am amazed at how often people assume they should get professional products without paying.  Most of us know we can't live in a home, eat a good diet, and care for our families without an income.  Sometimes the idea that "it should be free" is quickly translated to "its ok to pass it around and not pay the programmer."  When that happens, the 3rd party vendors finally walk away.</p>
+<p>Over the years ( and I've seen many ... I've been writing programs since CP/M ) I've seen a lot of excellent 3rd party products be terminated because the developers could not earn enough to continue with their work.  </p>
+<p>I like the idea of a report generator that my clients can use.  However, I do all of the reports in my software in my editor and they work fine.   After all, reports are really data, not publications, so they are not hard to design using the tPrinter class.</p>
+<!-- s:D -->
+<p><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p40139">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ollie</div>
+      <div class="rank">Posts: 233</div>
+      <div class="avatar"></div>
+      Joined: Sat Dec 30, 2006 06:10 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Tue Oct 23, 2007 02:53 PM
+      </div>
+      <div class="content"><p>I found FAST REPORT which I thought may be interesting to this thread.</p>
+<p>Their site is : <!-- m --><a class="postlink" href="http://fast-report.com/en/">http://fast-report.com/en/</a><!-- m --></p>
+<p>They have a working XBase++ Demo, so I'm sure it can be used with FWH. See: <!-- m --><a class="postlink" href="http://www.hotsoft.ru/ALASKA/frax_eng.htm">http://www.hotsoft.ru/ALASKA/frax_eng.htm</a><!-- m --></p>
+<p>Thanks to Angel Canudas, you can see a working demo at: <!-- m --><a class="postlink" href="http://www.canudas.com/xbase">http://www.canudas.com/xbase</a><!-- m --> </p>
+<p>There is a FREE Report Generator as well.</p>
+<!-- m -->
+<p><a class="postlink" href="http://fast-report.com/en/products/free-report-generator-for-delphi.html">http://fast-report.com/en/products/free ... elphi.html</a></p>
+<p>Another topic in this forum: <!-- m --><a class="postlink" href="http://fivetechsoft.com/forums/viewtopic.php?t=8503&amp;highlight=fast+report">http://fivetechsoft.com/forums/viewtopi ... ast+report</a><!-- m --></p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p40178">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Tue Oct 23, 2007 09:33 PM
+      </div>
+      <div class="content">Dear All,<br>
+<br>
+I develop my program with R&amp;R V.5 for DOS since 1997.  All my program use R&amp;R.  I've no hardcode printing because all my client need to change some in all forms.  While we use R&amp;R and now R&amp;R is version 12 with support SQL.  I can import all form since DOS Version to Windows Version and I can distribute my Report Format to any client without any change in my program.  I just send only setup screen image and report format file (.RRW).  R&amp;R can export to many format but not quite good in some format.  <br>
+<br>
+Anyway, The R&amp;R support is very good and helpful.  <br>
+<br>
+This is the screen in my program.<br>
+<a href="http://img88.imageshack.us/my.php?image=rptproppj5.jpg" rel="noopener"><img src="http://img88.imageshack.us/img88/3861/rptproppj5.th.jpg" alt="" loading="lazy"></a><br>
+This is my Report Properties (my code) you can use Query in program or send Query from setup screen to override in R&amp;R.<br>
+<a href="http://img88.imageshack.us/my.php?image=rptseteq4.jpg" rel="noopener"><img src="http://img88.imageshack.us/img88/1638/rptseteq4.th.jpg" alt="" loading="lazy"></a><br>
+This is the R&amp;R Designer call from source code.<br>
+<a href="http://img88.imageshack.us/my.php?image=callrnrzs2.jpg" rel="noopener"><img src="http://img88.imageshack.us/img88/6424/callrnrzs2.th.jpg" alt="" loading="lazy"></a><br>
+This is user define prompt from setup screen.<br>
+<a href="http://img86.imageshack.us/my.php?image=userpromptov6.jpg" rel="noopener"><img src="http://img86.imageshack.us/img86/4645/userpromptov6.th.jpg" alt="" loading="lazy"></a><br>
+<br>
+Best regards,<br>
+Dutch</div>
+    </div>
+  </div>
+  <div class="post" id="p40227">
+    <div class="poster">
+      <div class="name" style="color:#105289">Patrick Mast</div>
+      <div class="rank">Posts: 246</div>
+      <div class="avatar"></div>
+      Joined: Sat Mar 03, 2007 08:42 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: GX Reports</span><br>
+        Posted: Wed Oct 24, 2007 11:34 AM
+      </div>
+      <div class="content"><blockquote><cite>TimStone wrote:</cite>I think its fair to say he was frustrated with the same type of line I often see on this forum which is "we need something for free."  I'm not against Open Source projects, but I am amazed at how often people assume they should get professional products without paying.  Most of us know we can't live in a home, eat a good diet, and care for our families without an income.  Sometimes the idea that "it should be free" is quickly translated to "its ok to pass it around and not pay the programmer."  When that happens, the 3rd party vendors finally walk away.</blockquote><br>
+<br>
+FINALLY someone who understands.. <br>
+<br>
+Patrick</div>
+    </div>
+  </div>
+  <div class="post" id="p40242">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Understanding</span><br>
+        Posted: Wed Oct 24, 2007 03:26 PM
+      </div>
+      <div class="content"><p>Patrick,</p>
+<p>Its not just programmers and their tools.  I have hundreds of clients who have used the DOS version of my program for 10, 15, 20 years and still think I should support it for Free.  Since it works, they don't want to pay to upgrade to windows.  I hear every excuse in the book, like "Bob didn't treat me right so you owe me."  Of course, Bob hasn't been with the company for about 19 years.</p>
+<p>THe problem is that I have to base my purchase decisions on being able to sell product which, when slow, means I can't afford to invest in new or updated tools.  Its a delicate balancing act.  Making improvements may satisfy my current client base, but means nothing to buyers of upgrades or new clients.  Thats why I appreciate reasonable pricing for updates offered by many companies.</p>
+<p>Tim</p></div>
+    </div>
+  </div>
+  <div class="post" id="p40253">
+    <div class="poster">
+      <div class="name" style="color:#105289">Kleyber</div>
+      <div class="rank">Posts: 581</div>
+      <img class="avatar avatar-img" src="avatars/103.png" alt="" loading="lazy">
+      Joined: Tue Oct 11, 2005 11:28 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Wed Oct 24, 2007 07:00 PM
+      </div>
+      <div class="content">Tim,<br>
+<br>
+<blockquote>Its not just programmers and their tools. I have hundreds of clients who have used the DOS version of my program for 10, 15, 20 years and still think I should support it for Free. Since it works, they don't want to pay to upgrade to windows. I hear every excuse in the book, like "Bob didn't treat me right so you owe me." Of course, Bob hasn't been with the company for about 19 years. <br>
+<br>
+THe problem is that I have to base my purchase decisions on being able to sell product which, when slow, means I can't afford to invest in new or updated tools. Its a delicate balancing act. Making improvements may satisfy my current client base, but means nothing to buyers of upgrades or new clients. Thats why I appreciate reasonable pricing for updates offered by many companies.</blockquote><br>
+<br>
+I have the same situation here in Brazil and I entirely agree with you.<br>
+<br>
+Best regards,</div>
+    </div>
+  </div>
+  <div class="post" id="p40268">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Thu Oct 25, 2007 02:04 AM
+      </div>
+      <div class="content"><p>I absolutely agree with you Tim.  My client thought we don't do anything only keep the system stable (support).  They do not get anything new, why they have to pay for help&amp;support.  I say, how can we serve (alive) you without pay (forever).  It has nothing for free, you have to pay in some way (money or labor).</p>
+<p>Regards,<br>
+Dutch</p></div>
+    </div>
+  </div>
+  <div class="post" id="p40344">
+    <div class="poster">
+      <div class="name" style="color:#105289">Randal</div>
+      <div class="rank">Posts: 284</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 24, 2005 08:04 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Thu Oct 25, 2007 07:26 PM
+      </div>
+      <div class="content">Dutch,<br>
+<br>
+Your customers are willing to pay for the R&amp;R report designer?<br>
+<br>
+Regards,<br>
+Randal<br>
+<br>
+<blockquote><cite>dutch wrote:</cite>Dear All,<br>
+<br>
+I develop my program with R&amp;R V.5 for DOS since 1997.  All my program use R&amp;R.  I've no hardcode printing because all my client need to change some in all forms.  While we use R&amp;R and now R&amp;R is version 12 with support SQL.  I can import all form since DOS Version to Windows Version and I can distribute my Report Format to any client without any change in my program.  I just send only setup screen image and report format file (.RRW).  R&amp;R can export to many format but not quite good in some format.  <br>
+<br>
+Anyway, The R&amp;R support is very good and helpful.  <br>
+<br>
+This is the screen in my program.<br>
+<a href="http://img88.imageshack.us/my.php?image=rptproppj5.jpg" rel="noopener"><img src="http://img88.imageshack.us/img88/3861/rptproppj5.th.jpg" alt="" loading="lazy"></a><br>
+This is my Report Properties (my code) you can use Query in program or send Query from setup screen to override in R&amp;R.<br>
+<a href="http://img88.imageshack.us/my.php?image=rptseteq4.jpg" rel="noopener"><img src="http://img88.imageshack.us/img88/1638/rptseteq4.th.jpg" alt="" loading="lazy"></a><br>
+This is the R&amp;R Designer call from source code.<br>
+<a href="http://img88.imageshack.us/my.php?image=callrnrzs2.jpg" rel="noopener"><img src="http://img88.imageshack.us/img88/6424/callrnrzs2.th.jpg" alt="" loading="lazy"></a><br>
+This is user define prompt from setup screen.<br>
+<a href="http://img86.imageshack.us/my.php?image=userpromptov6.jpg" rel="noopener"><img src="http://img86.imageshack.us/img86/4645/userpromptov6.th.jpg" alt="" loading="lazy"></a><br>
+<br>
+Best regards,<br>
+Dutch</blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p40363">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Fri Oct 26, 2007 02:51 AM
+      </div>
+      <div class="content"><p>Dear Randal,</p>
+<p>I give them only runtime, the designer is in my laptop.  The customer site can only change the query and user prompt only.  If they need to change just ask me to do it.  </p>
+<p>Regards,<br>
+Dutch</p></div>
+    </div>
+  </div>
+  <div class="post" id="p40390">
+    <div class="poster">
+      <div class="name" style="color:#105289">Randal</div>
+      <div class="rank">Posts: 284</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 24, 2005 08:04 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Fri Oct 26, 2007 01:00 PM
+      </div>
+      <div class="content">Dutch,<br>
+<br>
+I see.  I've used R&amp;R for a long time.  One of my major gripes about it is you cannot create a report with a custom page size on one computer and have that report work on another computer.  We have a lot of customers that use dot matrix printers with forms other than 11" in length.  If I create a report with a page size other than 11" it will not work on their computer (unless they have the report designer).  The way Windows handles page sizes changed in NT and above and R&amp;R - well aware of this problem - will not update their program to fix this.  Too bad.<br>
+<br>
+Thanks,<br>
+Randal <br>
+<br>
+<blockquote><cite>dutch wrote:</cite>Dear Randal,<br>
+<br>
+I give them only runtime, the designer is in my laptop.  The customer site can only change the query and user prompt only.  If they need to change just ask me to do it.  <br>
+<br>
+Regards,<br>
+Dutch</blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p40403">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Fri Oct 26, 2007 04:09 PM
+      </div>
+      <div class="content"><p>I got it.  It has other problem such as <br>
+- xBase edition report form save the database location in form.  The problem is you cannot copy form one folder to another folder (two set of database)<br>
+- Export to Excel cannot to do all line (can only one selected line)</p>
+<p>But it still have many good features and easy to distribute to customer.</p>
+<p>I love it.</p>
+<p>Regards,<br>
+Dutch</p></div>
+    </div>
+  </div>
+  <div class="post" id="p66813">
+    <div class="poster">
+      <div class="name" style="color:#105289">Roger Seiler</div>
+      <div class="rank">Posts: 223</div>
+      <img class="avatar avatar-img" src="avatars/335.jpg" alt="" loading="lazy">
+      Joined: Thu Dec 01, 2005 03:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Mon Oct 13, 2008 02:25 PM
+      </div>
+      <div class="content"><p>Dutch and Randall,</p>
+<p>A year ago you mentioned having used R&amp;R to design reports, with pros and cons.  Also mentioned distributing the R&amp;R runtime to the customer to run the reports.</p>
+<p>I also use R&amp;R (last DOS version) to design reports.  Then I use the R&amp;R Clipper code generator, which converts the R&amp;R report file into clipper code. I then make a few custom modifications to the Clipper code (where the page length problem Randall mentioned can be corrected).  This Clipper code prg version of the report doesn't require distribution of the R&amp;R runtime, and the report's prg module compiles as an xHarbour/FWH prg (with a few standard mods that I make to each report prg to make it work in xHb/FWH).  The report created by running this prg module is passed as either a mem variable or a text file to TRept23.prg (my updated version of my original Rep23.prg) for preview and printing.  I like this approach because I have complete control over it - no reliance on someone else's runtime engine - and I can change the inner workings of the report any way I want. Works great! </p>
+<p>If you want to try this approach and don't have the R&amp;R Clipper code generator, I think you can still get it from R&amp;R at a very reasonable cost. </p>
+<ul>
+<li>Roger</li>
+</ul></div>
+    </div>
+  </div>
+  <div class="post" id="p66817">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Report generator</span><br>
+        Posted: Mon Oct 13, 2008 03:34 PM
+      </div>
+      <div class="content"><p>I use Easy Report, which is written in FIVEWIN.<br>
+I don’t understand why not more of you use this product.</p>
+<p>Is there a reason I don’t know about.<br>
+Regards,<br>
+Otto</p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-5674.html">1</a> <a href="topic-5674-page-2.html">2</a> <a href="topic-5674-page-3.html">3</a> <strong>4</strong> <a href="topic-5674-page-5.html">5</a> (68 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

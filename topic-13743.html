@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>HOWTO. ADO, SQL Server, Procedimientos Almacenados - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-13743">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> HOWTO. ADO, SQL Server, Procedimientos Almacenados</div>
+  <div class="post" id="p70536">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">HOWTO. ADO, SQL Server, Procedimientos Almacenados</span><br>
+        Posted: Thu Nov 27, 2008 04:10 PM
+      </div>
+      <div class="content"><strong>      ADO, SQL Server, Procedimientos Almacenados y otras historias....</strong><br>
+<br>
+En un traspaso de datos desde DBF a SQL Server, quizás nos veamos en la necesidad<br>
+de llamar a un procedimiento almacenado, donde necesitamos enviar parámetros y<br>
+además necesitamos obtener datos que se modifican dentro del procedimiento almacenado.<br>
+<br>
+Para ello, me he creado un par de clases, partiendo de las de Jose Luis Capel,<br>
+que nos permitirá llamar a un procedimiento almacenado, pasando valores y<br>
+obteniendo valores.<br>
+<br>
+Por ejemplo algo como esto en el procedimiento almacenado ;<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">ALTER PROCEDURE [dbo].[SP_CREAR_EJEMPO]
+  @pCODIGO            VARCHAR(3),
+  @pPRECIO            INT,
+  @pDESCRIPCION       VARCHAR(40),
+  @pID                INT output</code></pre></div><br>
+<br>
+<br>
+El ejemplo para llamar a un procedimiento es el siguiente;<br>
+<br>
+Creamos el procedimiento almacenado llamado SP_CREAR_EJEMPO a traves de la  clase TAdoStoreProc.<br>
+Nota: oConnection es la clase TAdConnect de Jose Luis Capel.<br>
+<br>
+   o<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Cmd := TAdoStoreProc():New( "SP_CREAR_EJEMPO", oConnection )
+   oAdoCmd := oCmd:GetADOCommand() // Obtemos el objeto ADO Command.</code></pre></div><br>
+<br>
+A partir de este momento, solamente vamos a alimentar a nuestras variables<br>
+del procedimiento almacenado;<br>
+<br>
+  o<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">ADOCmd:Parameters:Item('@CODIGO'):Value  := '001'
+  oADOCmd:Parameters:Item('@pPRECIO'):Value :=  100.56
+  oADOCmd:Parameters:Item('@pDESCRIPCION'):Value := 'Producto varios'
+
+  oAdoCmd:Execute()</code></pre></div><br>
+Ahora imaginemos que en el procedimiento Almacenado tenemos una variable<br>
+llamada por ejemlo @pID, que no es más que un Identity del último INSERT, que<br>
+nos servirá para hacer SELECT hacia otra tablas relacionadas, que nos a creado<br>
+el SP( Store Procedure ), por poner un ejemplo;<br>
+<br>
+n<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">ID := oADOCmd:Parameters:Item('@pID'):Value // Obtenemos el ID insertado
+
+cSql := [ SELECT * FROM TABLA WHERE ID_MASTER = ] + str( nID )</code></pre></div><br>
+Este es un simple ejemplo de lo que podría suceder.*( Basado en hechos reales  )<br>
+<br>
+Bueno, ahora pondré el código fuente<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#define adCmdStoredProc 4
+---------------------------------------------------------------------
+//---------------------------------------------------------------------
+CLASS tAdoCommand
+    DATA oCmd          //Objeto ADO Command
+    DATA oParameters
+    DATA oError
+
+    METHOD New( oConnection ) CONSTRUCTOR
+    METHOD Type( nType ) INLINE ::oCmd:CommandType := nType
+    METHOD Text( cText ) INLINE ::oCmd:CommandText := cText
+    METHOD GetADOCommand()  INLINE ::oCmd
+END CLASS
+
+METHOD New( oConnection ) CLASS tAdoCommand
+
+       LOCAL oHErr
+
+       ::oError := TAdoError():New()
+
+       TRY
+          ::oCmd := CreateObject("ADODB.Command")
+       CATCH oHErr
+          ::oError:Connection( oConnection )
+          Throw( oHErr )
+       END
+
+       ::oCmd:ActiveConnection := oConnection:oConnection
+
+RETURN Self
+
+
+
+//---------------------------------------------------------------------
+CLASS TAdoStoreProc FROM TAdoCommand
+      METHOD New( cText, oConnection ) CONSTRUCTOR
+      METHOD Execute()
+END CLASS
+
+METHOD New( cText, oConnection ) CLASS tAdoStoreProc
+  Local oHErr
+
+  try
+    Super:New( oConnection )
+    ::Type( adCmdStoredProc )
+    ::Text( cText )
+    ::oCmd:Parameters:Refresh()
+  catch oHErr
+    ::oError:Connection( oConnection )
+    Throw( oHErr )
+   end
+
+RETURN Self
+
+METHOD Execute( ) CLASS tAdoStoreProc
+       LOCAL oError, cError, oErr
+       LOCAL lResult
+
+       lResult := .T.
+
+       TRY
+         ::oCmd:Execute()
+       CATCH oErr
+          ::oError:Connection( ::oConnection )
+          lResult := .F.
+          Throw( oErr )
+       END
+
+RETURN lResult
+ 
+//---------------------------------------------------------------------
+CLASS TAdoError
+      DATA aErrors
+      DATA oErrorDB
+      METHOD New()
+      METHOD Clean() INLINE ::aErrors := {}
+      METHOD Connection( oConnection )
+      METHOD ShowErrors()
+END CLASS
+
+METHOD New( lCreateError ) CLASS TAdoError
+
+   ::aErrors := {}
+   /* TODO: Pendiente de I+D
+   if lCreateError
+      ::oErrorDB := CreateObject( "ADODB.Error")
+   endif
+   */
+RETURN Self
+
+METHOD Connection( oConnection ) CLASS TAdoError
+
+    Local oError, cError := ""
+
+    ::Clean()
+
+    For Each oError In oConnection:Errors
+        cError := "Error #" + cValtoChar( oError:Number ) + CRLF +;
+                  "   "  + oError:Description + CRLF +;
+                  "   (Source: " + oError:Source + ")" + CRLF +;
+                  "   (SQL State: " + oError:SQLState + ")" + CRLF +;
+                  "   (NativeError: " + cValToChar( oError:NativeError ) + ")"
+        AADD( ::aErrors, cError )
+    Next
+
+RETURN NIL
+
+METHOD ShowErrors( ) CLASS TAdoError
+    Local cError := ""
+
+    For Each cError In ::aErrors
+        MsgStop( cError )
+    next
+
+RETURN NIL</code></pre></div><br>
+<br>
+Bueno, yo controlo los 'posibles' errores desde el nivel más alto, con try /catch.<br>
+<br>
+Las clases si os fijais hacen  Throw( oErr ), por si fuera un error de Harbour, despues discrimino si el error es de ADO o de Harbour, no vaya a ser que sume un numerico + "ALAAA" y le estemos echando la culpa a ADO <br>
+cuando realmente no tiene la culpa. <br>
+<br>
+Por ejemplo;<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">try 
+  oConnection:BeginTrans()
+  Cmd := TAdoStoreProc():New( "SP_CREAR_EJEMPO", oConnection )
+  oAdoCmd := oCmd:GetADOCommand() // Obtemos el objeto ADO Command.
+  oADOCmd:Parameters:Item('@pHASTA'):Value := DTOC(  oDbMPrecios:Hasta )
+
+ oCmd:Execute()
+catch oError
+  oConnection:RollBackTrans()
+  ? "ERROR. Se ha realizado ROLLBACK." + CRLF  )
+  lResult := .F.
+  if !ShowError( oError, oConnection )
+     ? "Falla el procedimiento / Sentencia SQL"
+  endif
+end
+#define NTRIM(n)    ( LTrim( Str( n ) ) )
+
+Function ShowError( oError, oConnection )
+   Local cErrorLog := "", n, aStack := {}
+   Local lError := .F.
+
+   if Empty( oConnection:oError:aErrors ) // No son errores de ADO
+     lError := .T.
+     cErrorLog += "Operation: "+ oError:Operation + CRLF
+     cErrorLog += "Error description: "+ oError:Description + CRLF
+     if ValType( oError:Args ) == "A"
+        cErrorLog += "   Args:" + CRLF
+         for n := 1 to Len( oError:Args )
+             cErrorLog += "     [" + Str( n, 4 ) + "] = " + ValType( oError:Args[ n ] ) + ;
+                          "   " + cValToChar( oError:Args[ n ] ) + CRLF
+         next
+     endif
+     cErrorLog += CRLF + "Stack Calls" + CRLF
+     n := 1
+     while ( n &lt; 5 ) // Las ultimas 5
+          if ! Empty(ProcName( n ) )
+             AAdd( aStack, "   Called from: " + ProcFile( n ) + " =&gt; " + Trim( ProcName( n ) ) + ;
+                           "(" + NTRIM( ProcLine( n ) ) + ")" )
+             cErrorLog += ATail( aStack ) + CRLF
+          endif
+          n++
+     end
+     MsgStop( cErrorLog , "Error Harbour" )
+   endif
+
+   oConnection:oError:ShowErrors() // Enseña algo, si tienes que enseñar
+
+return lError</code></pre></div><br>
+<br>
+También existe otra forma, CreateParameter(), pero no he profundizado en ello, os lo dejo como ejercicio.<br>
+<br>
+Bueno, dar las gracias a J.Capel por compartir su clases de ADO, esto es un complemento a ese trabajo.<br>
+<br>
+<br>
+Saludos<br>
+Rafa Carmona</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

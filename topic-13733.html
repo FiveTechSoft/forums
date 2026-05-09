@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>ftp client program. this to see sample code. - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-13733">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-11.html">FiveLinux / FiveDroid (Android)</a> ftp client program. this to see sample code.</div>
+  <div class="post" id="p70502">
+    <div class="poster">
+      <div class="name" style="color:#105289">yunbg1</div>
+      <div class="rank">Posts: 109</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 13, 2005 12:40 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">ftp client program. this to see sample code.</span><br>
+        Posted: Thu Nov 27, 2008 09:21 AM
+      </div>
+      <div class="content">This is sample code of ftp client.<br>
+<br>
+push button counter----<br>
+1. so := ftp_open() -&gt; test ok<br>
+2. ftp_login()         -&gt;test ok<br>
+3. ftp_command() -&gt; test ok<br>
+<br>
+Problem solving.............<br>
+Apply and use.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveLinux.ch" 
+
+FUNC Main() 
+
+publ oWnd, oBrw, oGet, aGet, so
+
+aGet := ""
+
+DEFINE WINDOW oWnd TITLE "Testing Socket" SIZE 822, 317 
+
+   @  2,  0 GET oGet VAR aGet MEMO OF oWnd SIZE 820, 250
+
+   @ 28,  2 BUTTON "_Exit" OF oWnd ACTION oWnd:End() 
+   @ 28, 10 BUTTON "ftp_Open" OF oWnd ACTION so := ftp_open()
+   @ 28, 18 BUTTON "ftp_Close" OF oWnd ACTION socketclose(so) 
+   @ 28, 26 BUTTON "ftp_login" OF oWnd ACTION ftp_login(so, "test", "test1234")
+   @ 28, 34 BUTTON "command" OF oWnd ACTION ftp_command(so, "dir")
+ACTIVATE WINDOW oWnd 
+RETU NIL 
+//-----------------------------------------------------
+FUNC C_CALL(hSm, lPa)
+
+if lPa != 0
+   aGet += tran(lPa, "999") + " " + hSm + chr(13) + chr(10) //+ cToken
+   else
+   aGet += hSm + chr(13) + chr(10) //+ cToken
+endif
+oGet:SetText(aGet)
+RETU NIL
+
+/*
+Command
+1. PWD : dir display =&gt; PWD
+2. CWD : dir change =&gt; CWD change dir name
+3. ls : current dir file list =&gt; ls
+4. get : file download =&gt; get download file name
+5. put : file upload =&gt; put upload filename
+6. bye : quit =&gt; bye
+*/
+
+/*----------------------------------------*/ 
+#pragma BEGINDUMP 
+
+#include &lt;hbapi.h&gt; 
+#include &lt;gtk/gtk.h&gt; 
+#include &lt;hbvm.h&gt; 
+
+#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;sys/time.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/socket.h&gt;
+#include &lt;sys/un.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/ioctl.h&gt;
+
+#include &lt;net/if.h&gt;
+#include &lt;netinet/in.h&gt;
+
+#define _LINUX_NETDEVICE_H   // glibc2 
+#include &lt;linux/if_arp.h&gt;
+#include &lt;arpa/inet.h&gt;
+
+#include &lt;limits.h&gt;
+#include &lt;malloc.h&gt;
+#include &lt;math.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;ctype.h&gt;
+
+/*connect FTP Sever port*/
+#define FTP_PORT 21
+
+void* send_data_thread(void* sockfd);
+void* recv_ctrl_thread(void* sockfd);
+void* recv_data_thread(void* sockfd);
+void get_remote_port(char * message);
+void parse_filename(char * temp_buff, char * buff);
+
+struct sockaddr_in ftp_send_addr;
+struct sockaddr_in ftp_recv_data_addr;
+
+int ftp_send_sockfd;
+
+/*index : ls-1, put-2, get-3*/
+int command_index;
+
+/*download, upload filename*/
+char file_name[1024];
+
+HB_FUNC( FTP_OPEN ) 
+{
+    char cmd_ctrl_buff[1024] = {0};
+    char temp_buff[1024] = {0};
+    char mess[255];
+    int len;
+
+    /*FTP Server ip, port*/
+    ftp_send_addr.sin_family = AF_INET;
+    ftp_send_addr.sin_port = htons(FTP_PORT);
+    ftp_send_addr.sin_addr.s_addr = inet_addr("192.168.1.51");
+    memset(&amp;(ftp_send_addr.sin_zero), 0, 8);
+
+    ftp_send_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    connect(ftp_send_sockfd, (struct sockaddr *) &amp;ftp_send_addr, sizeof(struct sockaddr_in));
+
+    memset(temp_buff, '\0', sizeof(temp_buff));
+    len = read(ftp_send_sockfd, temp_buff, sizeof(temp_buff));
+
+    memset(mess, 0x00, sizeof(mess));
+    sprintf(mess, "%s\n", temp_buff); 
+
+    hb_vmPushSymbol( hb_dynsymSymbol( hb_dynsymFindName( "C_CALL" ) ) );
+    hb_vmPushNil();
+    hb_vmPushString( mess, strlen(mess) );
+    hb_vmPushLong(0);
+    hb_vmFunction( 2 );
+
+    hb_retni(ftp_send_sockfd);
+}
+
+HB_FUNC( FTP_LOGIN ) 
+{
+    char cmd_ctrl_buff[1024] = {0};
+    char temp_buff[1024] = {0};
+    char mess[255];
+    int len;
+
+    /*FTPServer login try 3 server connect close*/
+     while(1) {
+
+       /*FTP Command : USER name*/
+       memset(temp_buff, '\0', sizeof(temp_buff));
+       sprintf(cmd_ctrl_buff,"USER %s\n", hb_parc(2)); //USER ID
+       write(hb_parni(1), cmd_ctrl_buff, strlen(cmd_ctrl_buff));
+
+       memset(temp_buff, '\0', sizeof(temp_buff));
+       len = read(hb_parni(1), temp_buff, sizeof(temp_buff));
+
+       memset(mess, 0x00, sizeof(mess));
+       sprintf(mess, "%s\n", temp_buff); 
+
+       hb_vmPushSymbol( hb_dynsymSymbol( hb_dynsymFindName( "C_CALL" ) ) );
+       hb_vmPushNil();
+       hb_vmPushString( mess, strlen(mess) );
+       hb_vmPushLong(len);
+       hb_vmFunction( 2 );
+
+       memset(temp_buff, '\0', sizeof(temp_buff));
+
+       /*FTP Command : PASS password*/
+       memset(cmd_ctrl_buff, '\0', sizeof(cmd_ctrl_buff));
+       sprintf(cmd_ctrl_buff,"PASS %s\n", hb_parc(3)); //USER pass
+       write(hb_parni(1), cmd_ctrl_buff, strlen(cmd_ctrl_buff));
+
+       memset(temp_buff, '\0', sizeof(temp_buff));
+       len = read(hb_parni(1), temp_buff, sizeof(temp_buff));
+
+       memset(mess, 0x00, sizeof(mess));
+       sprintf(mess, "%s\n", temp_buff); 
+
+       hb_vmPushSymbol( hb_dynsymSymbol( hb_dynsymFindName( "C_CALL" ) ) );
+       hb_vmPushNil();
+       hb_vmPushString( mess, strlen(mess) );
+       hb_vmPushLong(len);
+       hb_vmFunction( 2 );
+
+       if (strncmp(temp_buff, "530", 3) == 0)
+          continue;
+        else
+          break;
+     }
+    hb_retni(0);
+}
+
+HB_FUNC( SOCKETCLOSE ) 
+{ 
+    close(hb_parni(1));
+    hb_retni(0);
+}
+
+HB_FUNC( FTP_COMMAND ) 
+{
+    pthread_t recv_thread;
+
+    char cmd_ctrl_buff[1024] = {0};
+    char temp_buff[1024] = {0};
+    char mess[255];
+    int len;
+
+    pthread_create(&amp;recv_thread, NULL, recv_ctrl_thread, (void*) hb_parni(1));
+
+    while(1) {
+
+       memset(temp_buff, '\0', sizeof(temp_buff));
+       memset(cmd_ctrl_buff, '\0',sizeof(cmd_ctrl_buff));
+
+       sprintf(temp_buff, "%s\n", hb_parc(2));
+
+       /*ls command process create*/ 
+       if (strncmp(temp_buff, "ls", 2) == 0 || strncmp(temp_buff, "dir", 3) == 0) {  
+           memset(temp_buff, '\0', sizeof(temp_buff));
+
+           /*passive mode*/
+           sprintf(temp_buff, "pasv\n");
+           write(hb_parni(1), temp_buff, strlen(temp_buff)); 
+
+           command_index = 1;
+           memset(temp_buff, '\0', sizeof(temp_buff));
+
+           /*dir, file list recv*/
+           sprintf(temp_buff, "list -a\n");
+           write(hb_parni(1), temp_buff, strlen(temp_buff));
+           sleep(1); 
+
+          } else if(strncmp(temp_buff, "put", 3) == 0) {
+
+            /*put : data upload filename*/
+            temp_buff[strlen(temp_buff)-1] = '\0';
+            memset(cmd_ctrl_buff, '\0', sizeof(cmd_ctrl_buff));
+            parse_filename(temp_buff, cmd_ctrl_buff);
+            memset(file_name, '\0', sizeof(file_name));
+            sprintf(file_name, "%s", cmd_ctrl_buff);
+
+            memset(cmd_ctrl_buff, '\0', sizeof(cmd_ctrl_buff));
+            command_index = 2;
+
+            /*passive mode*/
+            sprintf(cmd_ctrl_buff, "pasv\n");
+            write(ftp_send_sockfd, cmd_ctrl_buff, strlen(cmd_ctrl_buff));
+            sleep(1); 
+
+          } else if(strncmp(temp_buff, "get", 3) == 0) {
+
+            /*get : data*/
+            temp_buff[strlen(temp_buff)-1] = '\0';
+            memset(cmd_ctrl_buff, '\0', sizeof(cmd_ctrl_buff));
+
+            /*passive mode*/
+            sprintf(cmd_ctrl_buff, "pasv\n");
+            write(ftp_send_sockfd, cmd_ctrl_buff, strlen(cmd_ctrl_buff));
+            command_index = 3;
+
+            /*download filename*/
+            memset(cmd_ctrl_buff, '\0', sizeof(cmd_ctrl_buff));
+            parse_filename(temp_buff, cmd_ctrl_buff);
+
+            memset(file_name, '\0', sizeof(file_name));
+            sprintf(file_name, "%s", cmd_ctrl_buff);
+
+            memset(temp_buff, '\0', sizeof(temp_buff));
+            /*server -&gt; retr download filename*/
+
+            sprintf(temp_buff, "retr %s\n", cmd_ctrl_buff);
+            write(ftp_send_sockfd, temp_buff, strlen(temp_buff));
+            sleep(1); 
+
+         }  else if (strncmp(temp_buff, "bye", 3) == 0) {
+
+            memset(temp_buff, '\0', sizeof(temp_buff));
+            sprintf(temp_buff, "quit\n");
+            write(ftp_send_sockfd, temp_buff, strlen(temp_buff));
+            exit(0);
+
+         }  else {
+
+            /* PWD, CWD*/
+            write(ftp_send_sockfd, temp_buff, strlen(temp_buff));
+            sleep(1);
+         }
+     }
+    hb_retni(1);
+}
+
+void parse_filename( char *temp_buff, char *buff)
+{
+     int index = 3;
+     int count = 0;
+
+     for (; index &lt; strlen( (char *)temp_buff); index++) {
+         if (temp_buff == ' ') {
+            continue;
+
+          } else {
+
+            buff[count] = temp_buff;
+            count++;
+            }
+       }
+}
+
+void * send_data_thread(void* sockfd)
+{
+     int fd;
+     char data_buff[4096] = {0};
+
+     int data_size;
+
+     fd = open(file_name, O_RDONLY);
+
+     if (fd == -1) {
+        //printf("**&gt;no exist file\n");
+
+      } else {
+
+        sprintf(data_buff, "stor %s\n", file_name);
+        write((int)sockfd, data_buff, strlen(data_buff));
+
+        while(1) {
+           memset(data_buff, '\0', sizeof(data_buff));
+           data_size = read(fd, data_buff, sizeof(data_buff));
+           if (data_size == 0)
+              break;
+            else
+              write((int)sockfd, data_buff, data_size);
+           }
+       }
+     close((int)sockfd);
+     close(fd);
+}
+
+void * recv_data_thread(void* sockfd)
+{
+     int fd;
+     int data_size;
+     char data_buff[4096] = {0};
+
+     if (command_index == 3)
+        fd = open(file_name, O_WRONLY|O_CREAT,0644);
+
+     while(1) { 
+        memset(data_buff, '\0', sizeof(data_buff));
+        data_size = read((int)sockfd, data_buff, sizeof(data_buff));
+
+        if (data_size == 0) {
+           break;
+
+         } else {
+
+           if (command_index == 1) {
+
+              //memset(mess, 0x00, sizeof(mess));
+              //sprintf(mess, "%s\n", data_buff); 
+
+              //hb_vmPushSymbol( hb_dynsymSymbol( hb_dynsymFindName( "C_CALL" ) ) );
+              //hb_vmPushNil();
+              //hb_vmPushString( mess, strlen(mess) );
+              //hb_vmPushLong(0);
+              //hb_vmFunction( 2 );
+
+              printf("**&gt;%s\n", data_buff); 
+
+            } else if (command_index == 3) {
+              write(fd, data_buff, data_size);
+              }
+           }
+      }
+    close((int)sockfd);
+
+    if (command_index == 3)
+       close(fd);
+}
+
+void * recv_ctrl_thread(void* sockfd)
+{
+     char ctrl_buff[1024] = {0};
+     int msg_size;
+     int temp_port;
+
+     while(1) {
+       memset(ctrl_buff, '\0', sizeof(ctrl_buff));
+       msg_size = read((int)sockfd, ctrl_buff, sizeof(ctrl_buff));
+
+       if (msg_size &lt;= 0)
+          continue;
+
+       if (strncmp(ctrl_buff, "227", 3) == 0) {
+          //printf("**&gt;%s\n", ctrl_buff);
+          get_remote_port(ctrl_buff); 
+
+        } else if (strncmp(ctrl_buff, "550", 3) == 0 &amp;&amp; command_index == 3) {
+
+          //printf("**&gt;%s\n", ctrl_buff);
+
+          memset(ctrl_buff, '\0', sizeof(ctrl_buff));
+          sprintf(ctrl_buff, "rm -f %s", file_name);
+          system(ctrl_buff);
+
+        } else {
+
+          //printf("**&gt;%s\n", ctrl_buff);
+         }
+      }
+      close((int)sockfd);
+      exit(0);
+}
+
+void get_remote_port(char * message)
+{
+
+     pthread_t t;
+     int index;
+     int parse_start = 0;
+
+     char ip_buff[512] = {0};
+     char port_buff1[10] = {0};
+     char port_buff2[10] = {0};
+     char cport_number[2];
+     int iport_number;
+
+     char * ref_number;
+
+     int comma_count = 0;
+     int buff_count = 0;
+
+     struct sockaddr_in connect_addr;
+     int connect_fd; 
+     int connect_result;
+
+     for (index = 0; index &lt; strlen(message); index++) {
+       if (message[index] == '(') {
+          parse_start = 1;
+          continue;
+
+        } else if (message[index] == ')')
+
+          break;
+
+       /*addr process*/
+       if (parse_start == 1) {
+          if (message[index] == ',') {
+             comma_count++;
+             if (comma_count == 4) {
+                buff_count = 0;
+                parse_start = 2;
+                continue;
+              } else {
+                ip_buff[buff_count] = '.';
+                buff_count++;
+                 }
+           } else {
+             ip_buff[buff_count] = message[index]; 
+             buff_count++;
+             } 
+         }
+
+       /*port process*/
+       if (parse_start == 2) {
+          if (message[index] == ',') {
+             comma_count++;
+             buff_count = 0;
+           } else {
+             if (comma_count == 5) {
+                port_buff2[buff_count] = message[index];
+                buff_count++;
+              } else {
+                port_buff1[buff_count] = message[index];
+                buff_count++;
+                 }
+             }
+         }
+      }
+
+    ref_number = (char*)&amp;iport_number;
+
+    ref_number[0] = (char)atoi(port_buff2);
+    ref_number[1] = (char)atoi(port_buff1);
+
+    connect_addr.sin_family = AF_INET;
+    connect_addr.sin_port = htons(iport_number);
+    connect_addr.sin_addr.s_addr = inet_addr(ip_buff);
+    memset(&amp;(connect_addr.sin_zero), 0, 8);
+
+    connect_fd = socket(AF_INET, SOCK_STREAM, 0);
+
+    connect_result = connect(connect_fd, (struct sockaddr*)&amp;connect_addr, sizeof(connect_addr));
+
+    if (command_index == 1 || command_index == 3)
+       pthread_create(&amp;t, NULL,recv_data_thread, (void*)connect_fd); 
+     else if (command_index == 2)
+       pthread_create(&amp;t, NULL,send_data_thread, (void*)connect_fd);
+
+}
+
+#pragma ENDDUMP</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

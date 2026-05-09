@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Seleccionar y Obtener el Thumbprint de un Certificado Digital - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-45864">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Seleccionar y Obtener el Thumbprint de un Certificado Digital</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-45864-page-2.html">2</a> (17 posts)</div>  <div class="post" id="p281014">
+    <div class="poster">
+      <div class="name" style="color:#105289">BielSys</div>
+      <div class="rank">Posts: 14</div>
+      <div class="avatar"></div>
+      Joined: Fri Aug 01, 2025 08:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Wed Aug 13, 2025 12:52 PM
+      </div>
+      <div class="content"><r>Hola  a todos,<br/><br>
+este ejemplo permite seleccionar un certificado digital válido de los instalados en el sistema Windows y obtener su thumbprint (huella digital).<br/><br>
+Es una primera aproximación funcional que comparto, y también me gustaría que comentarais si disponéis de una forma mejor/alternativa de conseguir el Thumbprint de un certificado de la lista de instalados en el sistema.<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;/*
+© 2025 Biel Maimó
+*/
+FUNCTION SelCert()
+   LOCAL oDlg, oBrw, aCerts, cThumb := "",nOpc, aSel:={},i,cFileCsv
+   cFileCsv:='liscer.csv'
+   FErase(cFileCsv)
+   Cert2Csv(cFileCsv)
+   aCerts := CsvToArrayOfHashes( cFileCsv, ";" )
+   IF Empty( aCerts )
+      MsgInfo( "CSV vacío o no encontrado" )
+      RETURN NIL
+   ENDIF
+
+   FOR i:=1 TO Len(aCerts)
+      AAdd(aSel,aCerts[i]["FriendlyName"])
+   NEXT
+   nOpc:=MsgList(aSel, 'Certificados',,,,,'&amp;Seleccionar',,.T.,'&amp;Cancelar')
+   IF nOpc!=0
+      ?aCerts[nOpc]["FriendlyName"],aCerts[nOpc]["Thumbprint"]
+      cThumb:=aCerts[nOpc]["Thumbprint"]
+   ENDIF
+RETURN cThumb
+//------------------------------------------------------------------------------
+FUNCTION Cert2Csv(cFileCsv)
+   LOCAL cPsExe,cScript,cCmd,cOut:='',cErr:='',nRc
+   cPSExe  :=FindPS()
+   CrtPS1() //Crea cmd.ps1
+   cScript := "cmd.ps1"
+   cCmd    := '"' + cPSExe + '" -NoProfile -ExecutionPolicy Bypass -File "' + cScript + '" -Path "'+cFileCsv+'"'
+   nRC     := hb_processRun( cCmd, , @cOut, @cErr ) //hb_processRun( &lt;cCommand&gt;, [&lt;cStdIn&gt;], [&lt;@cStdOut&gt;], [&lt;@cStdErr&gt;], [&lt;lDetach&gt;] ) -&gt; nResult
+   IF nRc!=0    //Error
+      ? "RC:", nRC, "STDOUT &gt;&gt;&gt;", cOut, "STDERR &gt;&gt;&gt;", cErr
+   ELSE
+      FErase(cScript)
+   ENDIF
+RETURN NIL
+//-----------------------------------------------------------------------------
+STATIC FUNCTION CsvToArrayOfHashes( cFile, cSep )
+   LOCAL c,aLines,aHeaders:={},aData:={},i, aTok, hRow
+   c := hb_MemoRead( cFile )
+   aLines := hb_ATokens( c, hb_eol() )
+
+   IF Empty( aLines )
+      RETURN {}
+   ENDIF
+   // Cabeceras
+   aTok := CsvSplit( aLines[1], cSep )
+   FOR i := 1 TO Len( aTok )
+      AAdd( aHeaders, AllTrim( StripQuotes( aTok[i] ) ) )
+   NEXT
+   // Filas
+   FOR i := 2 TO Len( aLines )
+      IF Empty( AllTrim( aLines[i] ) )
+         LOOP
+      ENDIF
+      aTok := CsvSplit( aLines[i], cSep )
+      hRow := {=&gt;}
+      AEval( aHeaders, {|h, k| hRow[ h ] := iif( k &lt;= Len( aTok ), StripQuotes( aTok[k] ), "" ) } )
+      AAdd( aData, hRow )
+   NEXT
+RETURN aData
+//------------------------------------------------------------------------------
+STATIC FUNCTION CsvSplit( cLine, cSep )
+   LOCAL a := {}, cBuf := "", lInQ := .F., i, ch, q := '"'
+   FOR i := 1 TO Len( cLine )
+      ch := SubStr( cLine, i, 1 )
+      DO CASE
+      CASE ch == q
+         // (doble comilla dentro de campo: "" -&gt; ")
+         IF lInQ .AND. i &lt; Len( cLine ) .AND. SubStr( cLine, i+1, 1 ) == q
+            cBuf += q
+            i++
+         ELSE
+            lInQ := ! lInQ
+         ENDIF
+      CASE ch == cSep .AND. ! lInQ
+         AAdd( a, cBuf )
+         cBuf := ""
+      OTHERWISE
+         cBuf += ch
+      ENDCASE
+   NEXT
+   AAdd( a, cBuf )
+RETURN a
+//-----------------------------------------------------------------------------
+STATIC FUNCTION StripQuotes( c )
+   c := AllTrim( c )
+   IF !Empty( c ) .AND. Left( c,1 ) == '"' .AND. Right( c,1 ) == '"'
+      c := SubStr( c,2, Len( c )-2 )
+   ENDIF
+RETURN c
+//------------------------------------------------------------------------------
+FUNCTION FindPS()
+   LOCAL cWin,aTry,c
+   cWin := GetEnv( "WINDIR" )
+   aTry := { ;
+      cWin + "\Sysnative\WindowsPowerShell\v1.0\powershell.exe", ; // 32-bit app en OS 64-bit
+      cWin + "\System32\WindowsPowerShell\v1.0\powershell.exe", ;
+      cWin + "\SysWOW64\WindowsPowerShell\v1.0\powershell.exe", ;
+      "powershell.exe", ; // por si está en PATH
+      "pwsh.exe" }        // PowerShell 7
+
+   FOR EACH c IN aTry
+      IF hb_FileExists( c )
+         RETURN c
+      ENDIF
+   NEXT
+RETURN ""
+//------------------------------------------------------------------------------
+STATIC FUNCTION CrtPS1()
+   LOCAL cSrc
+   cSrc:='# © 2025 Biel Maimó'+hb_eol()
+   cSrc+='param('+ hb_eol()
+   cSrc+='[string]$Path = "Certs.csv" # valor por defecto si no se pasa parámetro'+ hb_eol()
+   cSrc+=')'+ hb_eol()
+   cSrc+='# Fecha actual'+ hb_eol()
+   cSrc+='$now = Get-Date'+ hb_eol()
+   cSrc+=''+ hb_eol()
+   cSrc+='Get-ChildItem Cert:\CurrentUser\My |'+ hb_eol()
+   cSrc+='    Where-Object {'+ hb_eol()
+   cSrc+='        # Debe tener clave privada'+ hb_eol()
+   cSrc+='        $_.HasPrivateKey -eq $true -and'+ hb_eol()
+   cSrc+='        # Estar dentro de fechas de validez'+ hb_eol()
+   cSrc+='        $_.NotBefore -le $now -and $_.NotAfter -ge $now -and'+ hb_eol()
+   cSrc+='        # EKU debe contener Firma digital o Code Signing o equivalente AEAT'+ hb_eol()
+   cSrc+='        ($_.EnhancedKeyUsageList |'+ hb_eol()
+   cSrc+='            Where-Object {'+ hb_eol()
+   cSrc+='                $_.Oid.Value -eq "1.3.6.1.5.5.7.3.3" -or # Code Signing'+ hb_eol()
+   cSrc+='                $_.Oid.Value -eq "1.3.6.1.4.1.5734.1.1" -or # AEAT sello'+ hb_eol()
+   cSrc+='                $_.FriendlyName -match "Firma" -or $_.FriendlyName -match "Digital Signature"'+ hb_eol()
+   cSrc+='            }'+ hb_eol()
+   cSrc+='        )'+ hb_eol()
+   cSrc+='    } |'+ hb_eol()
+   cSrc+='    Select-Object `'+ hb_eol()
+   cSrc+='        @{Name="Store";Expression={"CurrentUser\My"}},'+ hb_eol()
+   cSrc+='        Subject,'+ hb_eol()
+   cSrc+='        Issuer,'+ hb_eol()
+   cSrc+='        FriendlyName,'+ hb_eol()
+   cSrc+='        Thumbprint,'+ hb_eol()
+   cSrc+='        HasPrivateKey,'+ hb_eol()
+   cSrc+='        @{Name="NotBefore";Expression={ Get-Date $_.NotBefore -Format "yyyy-MM-dd HH:mm:ss" }},'+ hb_eol()
+   cSrc+='        @{Name="NotAfter";Expression={ Get-Date $_.NotAfter -Format "yyyy-MM-dd HH:mm:ss" }},'+ hb_eol()
+   cSrc+='        @{Name="EKUs";Expression={ ($_.EnhancedKeyUsageList | ForEach-Object { $_.Oid.Value }) -join "," }} |'+ hb_eol()
+   cSrc+="    Export-Csv -Path $path -NoTypeInformation -Encoding UTF8 -Delimiter ';'"+ hb_eol()
+   cSrc+=''+ hb_eol()
+   cSrc+='Write-Host "$path"'+ hb_eol()
+   hb_memowrit("cmd.ps1",cSrc)
+RETURN NIL
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<B><s><strong></s>¿Qué hace la función?<e></strong></e></B><br>
+<LIST><s><ul></s><LI>Usa PowerShell para buscar certificados digitales en el almacén de Windows (CurrentUser\My) que sean válidos, tengan clave privada y sean aptos para firma digital o code signing.</LI><br>
+<e></ul></e></LIST><br>
+<LIST><s><ul></s><LI>Guarda la información de los certificados en un archivo CSV (liscer.csv).</LI><e></ul></e></LIST><br>
+<LIST><s><ul></s><LI>Lee el archivo CSV y muestra una lista con los nombres descriptivos de los certificados en un cuadro de diálogo.</LI><e></ul></e></LIST><br>
+<LIST><s><ul></s><LI>El usuario selecciona un certificado de la lista.</LI><e></ul></e></LIST><br>
+<LIST><s><ul></s><LI>Devuelve el thumbprint del certificado elegido.</LI><e></ul></e></LIST><br>
+Como siempre, espero que pueda seros de utilidad.<br/><br>
+Cualquier mejora, duda o sugerencia es bienvenida.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281017">
+    <div class="poster">
+      <div class="name" style="color:#105289">paquitohm</div>
+      <div class="rank">Posts: 318</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 14, 2022 08:37 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Wed Aug 13, 2025 03:19 PM
+      </div>
+      <div class="content"><p><r>Hola Biel,<br/><br>
+<br/><br>
+En mi caso uso dos formas que quizás no son las más homologables pero son eficaces: Uso el certificado en formato .pfx (más contraseña) o en formato .pem (menos seguro)<br/><br>
+<br/><br>
+Tb. en este post se habló del tema: <URL url="https://forums.fivetechsupport.com/viewtopic.php?t=44888"><LINK_TEXT text="viewtopic.php?t=44888">https://forums.fivetechsupport.com/viewtopic.php?t=44888</LINK_TEXT></URL><br/><br>
+Y en este tb. <URL url="https://fivetechsupport.com/forums/viewtopic.php?p=272451#p272451"><LINK_TEXT text="https://fivetechsupport.com/forums/view ... 51#p272451">https://fivetechsupport.com/forums/viewtopic.php?p=272451#p272451</LINK_TEXT></URL><br/><br>
+<br/><br>
+Salu2</r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281025">
+    <div class="poster">
+      <div class="name" style="color:#105289">BielSys</div>
+      <div class="rank">Posts: 14</div>
+      <div class="avatar"></div>
+      Joined: Fri Aug 01, 2025 08:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Thu Aug 14, 2025 06:20 AM
+      </div>
+      <div class="content"><p><r>Gracias por contestar y por incluir los enlaces del foro, ambos posts muy interesantes.<br/><br>
+<br/><br>
+Respecto a las formas que usas, lo importante como dices es que sean eficaces y se adapten al entorno de trabajo. ¿En tu caso, cuando trabajas con el .pfx o .pem usas OpenSSL para firmar, o tiras directamente de alguna librería de Harbour/FiveWin que lo haga internamente?<br/><br>
+<br/><br>
+Por lo que he podido ir leyendo en el foro, veo que eres de los que lleva tiempo metido con Veri*Factu, así que seguro que en algún momento te consulto alguna duda sobre la integración <EMOJI seq="1f604" tseq="1f604">&#128516;</EMOJI>.<br/><br>
+<br/><br>
+Un saludo,</r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281027">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Thu Aug 14, 2025 08:53 AM
+      </div>
+      <div class="content"><p><t>Bielsys,<br/><br>
+<br/><br>
+Gracias por las gracias. En este foro creo que se dan pocas veces: Es tremendo que piden ayuda como si les faltara el aire y cuando se la das ya se olvidan de ti.<br/><br>
+<br/><br>
+Algunos hemos pasado de tirar del carro porque aqui hay mucho que va a rebufo y jamás comparte una funcion. <br/><br>
+Es deprimente porque nada más importante programáticamente en muchos años que el Verifactu y en este foro el Verifactu está como si no existiera lo cual personalmente me parece vergonzoso.<br/><br>
+<br/><br>
+Una comunidad que si comparte y que te recomiendo es clubdelphi.com<br/><br>
+<br/><br>
+Los archivos de firma los utilizo con el autofirmacommandline.exe y con curl.exe<br/><br>
+<br/><br>
+Por supuesto que puedes contar con mi ayuda en todo lo que necesites.<br/><br>
+<br/><br>
+Un cordial saludo</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281050">
+    <div class="poster">
+      <div class="name" style="color:#105289">FiveWiDi</div>
+      <div class="rank">Posts: 1444</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 02:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Sat Aug 16, 2025 04:24 PM
+      </div>
+      <div class="content"><r><QUOTE author="paquitohm" post_id="281017" time="1755098360" user_id="4594"><s>[quote=paquitohm post_id=281017 time=1755098360 user_id=4594]</s><br>
+Hola Biel,<br/><br>
+<br/><br>
+En mi caso uso dos formas que quizás no son las más homologables pero son eficaces: Uso el certificado en formato .pfx (más contraseña) o en formato .pem (menos seguro)<br/><br>
+<br/><br>
+Tb. en este post se habló del tema: <URL url="https://forums.fivetechsupport.com/viewtopic.php?t=44888"><LINK_TEXT text="viewtopic.php?t=44888">https://forums.fivetechsupport.com/viewtopic.php?t=44888</LINK_TEXT></URL><br/><br>
+Y en este tb. <URL url="https://fivetechsupport.com/forums/viewtopic.php?p=272451#p272451"><LINK_TEXT text="https://fivetechsupport.com/forums/view ... 51#p272451">https://fivetechsupport.com/forums/viewtopic.php?p=272451#p272451</LINK_TEXT></URL><br/><br>
+<br/><br>
+Salu2<br>
+<e></blockquote></e></QUOTE><br>
+Hola a todos,<br/><br>
+<br/><br>
+Muchas gracias a ambos.<br/><br>
+<br/><br>
+Biel tomo nota de tu función, me irá bien.<br/><br>
+Entiendo que esta función debe ser para la configuración de Veri*factu, previo a su uso habitual.<br/><br>
+No la he mirado con detalle, pero examina la fecha de expiración? Si es así, que indique si se selecciona un certificado expirado.<br/><br>
+Hoy en día no lo se, pero hace meses al usar Veri*factu con una certificado expirado no se obtenía una respuesta ESTÁNDAR Veri*factu (a tener en cuenta).<br/><br>
+<br/><br>
+Paquito, no recordaba estos links, ya hace meses que los leí.<br/><br>
+Por otro lado, ¿Cómo haces para usar el formato .pfx? Yo uso el .pem, pero me irá bien tener alternativas.<br/><br>
+<br/><br>
+Seguimos,</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281056">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Sun Aug 17, 2025 08:40 AM
+      </div>
+      <div class="content"><r>Hola Carlos,<br/><br>
+<br/><br>
+Utilizo pfx con contraseña en autofirmacommandline.exe. En curl.exe creo que sólo lo tengo con .pem. No será dificil encontrar un ejemplo en la ia.<br/><br>
+Te pongo como lo hago con pfx con contraseña:<br/><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;cComando:= '"'+ cFullAutoFirmaExe+ '"'+ Space(1)+;
+           ;
+           ; // Comando firmar
+           "sign"+          Space(1)+;
+           ;
+           ; // Opciones
+           "-store pkcs12:"+       ::cCerFile+      Space(1)+;
+           "-password"     + Space(1)+ TAG_OCULTA_PASS+ Space(1)+;
+           "-alias"        + Space(1)+ cCerAliasTmp+     Space(1)+;
+           "-i"            + Space(1)+ cIn+             Space(1)+;
+           "-o"            + Space(1)+ cOut
+
+IF ::lFormatoFacturaE
+   // Formato: Factura Electronica
+   cComando+= Space(1)+ "-format"       + Space(1)+ "facturae"
+ELSE
+   // Formato: Xades / Ticket Bai
+   cComando+= Space(1)+ "-format"       + Space(1)+ "xades"
+   cComando+= Space(1)+ "-xml"
+   *
+   // Politica de firma para Guipuzcoa / Gipuzkoa
+   cConfigPolitica:=;
+      '-config "format=XAdES Enveloped '+;
+      '\npolicyIdentifier=https://www.batuz.eus/fitxategiak/batuz/ticketbai/sinadura_elektronikoaren_zehaztapenak_especificaciones_de_la_firma_electronica_v1_0.pdf '+;
+      '\npolicyIdentifierHash=%HASH_POLITICA% '+;
+      '\npolicyIdentifierHashAlgorithm=http://www.w3.org/2001/04/xmlenc#sha256 '+;
+      '\npolicyQualifier=https://www.batuz.eus/fitxategiak/batuz/ticketbai/sinadura_elektronikoaren_zehaztapenak_especificaciones_de_la_firma_electronica_v1_0.pdf"'
+
+
+   cHashPolitica:= "Quzn98x3PMbSHwbUzaj5f5KOpiH0u8bvmwbbbNkO9Es="
+
+   cConfigPolitica:= StrTran(cConfigPolitica, "%HASH_POLITICA%", cHashPolitica)
+   *
+   cComando+= Space(1)+ cConfigPolitica
+ENDIF
+
+IF File(cOut)
+   DELETE FILE (cOut)
+ENDIF
+
+*
+#define SW_HIDE 0
+cComandoRun:= StrTran(cComando, TAG_OCULTA_PASS, ::cCerPass)  // Para que no se grabe
+*
+*
+WaitRun(cComandoRun, SW_HIDE)&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Salu2</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281061">
+    <div class="poster">
+      <div class="name" style="color:#105289">BielSys</div>
+      <div class="rank">Posts: 14</div>
+      <div class="avatar"></div>
+      Joined: Fri Aug 01, 2025 08:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Sun Aug 17, 2025 10:56 AM
+      </div>
+      <div class="content"><r>Hola Carlos !!!, y resto de lectores.<br/><br>
+Al recuperar la lista de certificados, salvo error u omisión, solo incluye los certificados válidos para firmar, entre las comprobaciones que realiza una es que este en vigor.<br/><br>
+<br/><br>
+La función todavía no se muy bien donde irá, posiblemente si forme parte de la configuración inicial y guarde el Thumb, y se ira usando automáticamente. <br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt; $_.NotBefore -le $now -and $_.NotAfter -ge $now &lt;e&gt;</code></pre></div></e></CODE><br>
+Quizas la modifique, y recupere el Thumb de un NIF determinado. Tengo clientes con múltiples NIF, he de decidir como lo gestiono. <br/><br>
+Pero más adelante, llevo un poco de retraso con todo el tema de VeriFactu y voy desarrollando , generar XML, seleccionar certificado, firmar , ...<br/><br>
+y así paso a paso.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281064">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Sun Aug 17, 2025 11:17 AM
+      </div>
+      <div class="content"><r><QUOTE author="BielSys" post_id="281061" time="1755428203" user_id="6134"><s>[quote=BielSys post_id=281061 time=1755428203 user_id=6134]</s><br>
+Pero más adelante, llevo un poco de retraso con todo el tema de VeriFactu y voy desarrollando , generar XML, seleccionar certificado,<B><s><strong></s> firmar<e></strong></e></B> , ...<br/><br>
+y así paso a paso.<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+No es necesario firmar, al menos en modo (Si) Verifactu</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281065">
+    <div class="poster">
+      <div class="name" style="color:#105289">FiveWiDi</div>
+      <div class="rank">Posts: 1444</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 02:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Sun Aug 17, 2025 11:27 AM
+      </div>
+      <div class="content"><r><QUOTE author="BielSys" post_id="281061" time="1755428203" user_id="6134"><s>[quote=BielSys post_id=281061 time=1755428203 user_id=6134]</s><br>
+Al recuperar la lista de certificados, salvo error u omisión, solo incluye los certificados válidos para firmar, entre las comprobaciones que realiza una es que este en vigor.<e></blockquote></e></QUOTE><br>
+<br>
+Yo mostraría los que tenga; por una razón muy sencilla, los usuarios son propensos a entrar en pánico inmediatamente; si no ven el certificado que sabían que ya estaba instalado te llamarán asustados (porque Veri*factu asusta, nadie quiere problemas con Hacienda) y tu no sabrás con certeza que está pasando, si lo ven y se les dice que está 'Expirado' ya sabrás que responder.<br/><br>
+<br/><br>
+Se me acaba de ocurrir que una vez a la semana (los lunes a primera hora es un buen momento por que todo el mundo va a ralentí), se verifique la caducidad/expiración del certificado digital habitual, y en base a ello realizar acciones, avisos, etc.<br/><br>
+<br/><br>
+Seguimos,</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281066">
+    <div class="poster">
+      <div class="name" style="color:#105289">FiveWiDi</div>
+      <div class="rank">Posts: 1444</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 02:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Sun Aug 17, 2025 11:36 AM
+      </div>
+      <div class="content"><r><QUOTE author="hmpaquito" post_id="281056" time="1755420038" user_id="1535"><s>[quote=hmpaquito post_id=281056 time=1755420038 user_id=1535]</s><br>
+Hola Carlos,<br/><br>
+<br/><br>
+Utilizo pfx con contraseña en autofirmacommandline.exe. En curl.exe creo que sólo lo tengo con .pem. No será dificil encontrar un ejemplo en la ia.<br/><br>
+Te pongo como lo hago con pfx con contraseña:<br/><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;cComando:= '"'+ cFullAutoFirmaExe+ '"'+ Space(1)+;
+           ;
+           ; // Comando firmar
+           "sign"+          Space(1)+;
+           ;
+           ; // Opciones
+           "-store pkcs12:"+       ::cCerFile+      Space(1)+;
+           "-password"     + Space(1)+ TAG_OCULTA_PASS+ Space(1)+;
+           "-alias"        + Space(1)+ cCerAliasTmp+     Space(1)+;
+           "-i"            + Space(1)+ cIn+             Space(1)+;
+           "-o"            + Space(1)+ cOut
+
+IF ::lFormatoFacturaE
+   // Formato: Factura Electronica
+   cComando+= Space(1)+ "-format"       + Space(1)+ "facturae"
+ELSE
+   // Formato: Xades / Ticket Bai
+   cComando+= Space(1)+ "-format"       + Space(1)+ "xades"
+   cComando+= Space(1)+ "-xml"
+   *
+   // Politica de firma para Guipuzcoa / Gipuzkoa
+   cConfigPolitica:=;
+      '-config "format=XAdES Enveloped '+;
+      '\npolicyIdentifier=https://www.batuz.eus/fitxategiak/batuz/ticketbai/sinadura_elektronikoaren_zehaztapenak_especificaciones_de_la_firma_electronica_v1_0.pdf '+;
+      '\npolicyIdentifierHash=%HASH_POLITICA% '+;
+      '\npolicyIdentifierHashAlgorithm=http://www.w3.org/2001/04/xmlenc#sha256 '+;
+      '\npolicyQualifier=https://www.batuz.eus/fitxategiak/batuz/ticketbai/sinadura_elektronikoaren_zehaztapenak_especificaciones_de_la_firma_electronica_v1_0.pdf"'
+
+
+   cHashPolitica:= "Quzn98x3PMbSHwbUzaj5f5KOpiH0u8bvmwbbbNkO9Es="
+
+   cConfigPolitica:= StrTran(cConfigPolitica, "%HASH_POLITICA%", cHashPolitica)
+   *
+   cComando+= Space(1)+ cConfigPolitica
+ENDIF
+
+IF File(cOut)
+   DELETE FILE (cOut)
+ENDIF
+
+*
+#define SW_HIDE 0
+cComandoRun:= StrTran(cComando, TAG_OCULTA_PASS, ::cCerPass)  // Para que no se grabe
+*
+*
+WaitRun(cComandoRun, SW_HIDE)&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Salu2<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+Muchas gracias Paquito,<br/><br>
+<br/><br>
+Entiendo que esto es para firmar las facturas (ya me llegará), perfecto.<br/><br>
+<br/><br>
+Yo también contemplaba hacerlo con Autofirma después de leer información que colgó Quim entre otros.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281072">
+    <div class="poster">
+      <div class="name" style="color:#105289">BielSys</div>
+      <div class="rank">Posts: 14</div>
+      <div class="avatar"></div>
+      Joined: Fri Aug 01, 2025 08:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Mon Aug 18, 2025 11:58 AM
+      </div>
+      <div class="content"><r><QUOTE author="hmpaquito" post_id="281064" time="1755429439" user_id="1535"><s>[quote=hmpaquito post_id=281064 time=1755429439 user_id=1535]</s><br>
+<QUOTE author="BielSys" post_id="281061" time="1755428203" user_id="6134"><s>[quote=BielSys post_id=281061 time=1755428203 user_id=6134]</s><br>
+Pero más adelante, llevo un poco de retraso con todo el tema de VeriFactu y voy desarrollando , generar XML, seleccionar certificado,<B><s><strong></s> firmar<e></strong></e></B> , ...<br/><br>
+y así paso a paso.<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+No es necesario firmar, al menos en modo (Si) Verifactu<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+Cierto, en un primer momento pensaba que si, pero luego pude leer que no. Gracias por avisar, al final creo que implmentare las dos alternativas, veri factu y no verifactu.<br/><br>
+Mi idea inicial era no hacer nada  <E>:(</E> , y quien quiera que se pase voluntariamente a SII, que ya tenia operativo.<br/><br>
+<br/><br>
+Por cierto, muchisima buena información en clubdelphi.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281073">
+    <div class="poster">
+      <div class="name" style="color:#105289">BielSys</div>
+      <div class="rank">Posts: 14</div>
+      <div class="avatar"></div>
+      Joined: Fri Aug 01, 2025 08:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Mon Aug 18, 2025 12:00 PM
+      </div>
+      <div class="content"><r><QUOTE author="FiveWiDi" post_id="281065" time="1755430052" user_id="92"><s>[quote=FiveWiDi post_id=281065 time=1755430052 user_id=92]</s><br>
+<QUOTE author="BielSys" post_id="281061" time="1755428203" user_id="6134"><s>[quote=BielSys post_id=281061 time=1755428203 user_id=6134]</s><br>
+Al recuperar la lista de certificados, salvo error u omisión, solo incluye los certificados válidos para firmar, entre las comprobaciones que realiza una es que este en vigor.<e></blockquote></e></QUOTE><br>
+<br>
+Yo mostraría los que tenga; por una razón muy sencilla, los usuarios son propensos a entrar en pánico inmediatamente; si no ven el certificado que sabían que ya estaba instalado te llamarán asustados (porque Veri*factu asusta, nadie quiere problemas con Hacienda) y tu no sabrás con certeza que está pasando, si lo ven y se les dice que está 'Expirado' ya sabrás que responder.<br/><br>
+<br/><br>
+Se me acaba de ocurrir que una vez a la semana (los lunes a primera hora es un buen momento por que todo el mundo va a ralentí), se verifique la caducidad/expiración del certificado digital habitual, y en base a ello realizar acciones, avisos, etc.<br/><br>
+<br/><br>
+Seguimos,<br>
+<e></blockquote></e></QUOTE><br>
+No es mala idea, quizas ir avisando unos días antes de que caduque, algo de FeedBack para el usuario.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281074">
+    <div class="poster">
+      <div class="name" style="color:#105289">BielSys</div>
+      <div class="rank">Posts: 14</div>
+      <div class="avatar"></div>
+      Joined: Fri Aug 01, 2025 08:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Mon Aug 18, 2025 12:05 PM
+      </div>
+      <div class="content"><p><t>Carlos, Paco:<br/><br>
+<br/><br>
+yo firmo usando comandos de Power Shell, no era mi idea inicial, pero funciona. Llegue condicionado porque empecé usando thumb y el camino me llevo a ello, visto ahora con perspectiva, creo que era más sencillo usar pfx, pero bueno.<br/><br>
+<br/><br>
+Están a vuestra disposición si lo necesitáis.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281075">
+    <div class="poster">
+      <div class="name" style="color:#105289">FiveWiDi</div>
+      <div class="rank">Posts: 1444</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 02:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Mon Aug 18, 2025 01:07 PM
+      </div>
+      <div class="content"><r><QUOTE author="BielSys" post_id="281074" time="1755518729" user_id="6134"><s>[quote=BielSys post_id=281074 time=1755518729 user_id=6134]</s><br>
+Carlos, Paco:<br/><br>
+<br/><br>
+yo firmo usando comandos de Power Shell, no era mi idea inicial, pero funciona. Llegue condicionado porque empecé usando thumb y el camino me llevo a ello, visto ahora con perspectiva, creo que era más sencillo usar pfx, pero bueno.<br/><br>
+<br/><br>
+Están a vuestra disposición si lo necesitáis.<br>
+<e></blockquote></e></QUOTE><br>
+Gracias Biel,<br/><br>
+<br/><br>
+Siemprea va bien tener alternativas.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p281077">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Seleccionar y Obtener el Thumbprint de un Certificado Digital</span><br>
+        Posted: Mon Aug 18, 2025 03:52 PM
+      </div>
+      <div class="content"><r><QUOTE author="BielSys" post_id="281072" time="1755518302" user_id="6134"><s>[quote=BielSys post_id=281072 time=1755518302 user_id=6134]</s><br>
+<QUOTE author="hmpaquito" post_id="281064" time="1755429439" user_id="1535"><s>[quote=hmpaquito post_id=281064 time=1755429439 user_id=1535]</s><br>
+<QUOTE author="BielSys" post_id="281061" time="1755428203" user_id="6134"><s>[quote=BielSys post_id=281061 time=1755428203 user_id=6134]</s><br>
+Pero más adelante, llevo un poco de retraso con todo el tema de VeriFactu y voy desarrollando , generar XML, seleccionar certificado,<B><s><strong></s> firmar<e></strong></e></B> , ...<br/><br>
+y así paso a paso.<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+No es necesario firmar, al menos en modo (Si) Verifactu<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+Cierto, en un primer momento pensaba que si, pero luego pude leer que no. Gracias por avisar, al final creo que implmentare las dos alternativas, veri factu y no verifactu.<br/><br>
+Mi idea inicial era no hacer nada  <E>:(</E> , y quien quiera que se pase voluntariamente a SII, que ya tenia operativo.<br/><br>
+<br/><br>
+Por cierto, muchisima buena información en clubdelphi.<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+<br/><br>
+<br/><br>
+Con respeto: Para que no pierdas el tiempo en tu desarrollo, quizás esto te alerte sobre algo, y para no hacerte perder el tiempo te voy a hablar claro y directo:<br/><br>
+<br/><br>
+IMHO,<br/><br>
+<br/><br>
+1 - No creo que sea buena idea desarrollar No Verifactu. Pocos lo han hecho. Los OT No Verifactu "serán mirados especialmente" (Agencia dixit)<br/><br>
+2 - Vf no es enviar un xml y recibir respuesta: Es mucho más: LAF de 2021:  Integridad, conservación, accesibilidad, legibilidad, trazabilidad e inalterabilidad<br/><br>
+3 - LAF-Vf es una p. para las empresas desarrolladoras: Multones de &lt;150k. Algunos han renunciado incluso después de tener el desarrollo completado.<br/><br>
+<br/><br>
+De todo esto y de mucho mas no ha habido tiempo ni lugar alguno en este foro para hablar<br/><br>
+<br/><br>
+Saludos</r></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-45864-page-2.html">2</a> (17 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

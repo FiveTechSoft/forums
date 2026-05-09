@@ -1,0 +1,979 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Could SQL-as-a-service be a viable approach for Harbour/FiveWin today? - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46245">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Could SQL-as-a-service be a viable approach for Harbour/FiveWin today?</div>
+  <div class="post" id="p283255">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Could SQL-as-a-service be a viable approach for Harbour/FiveWin today?</span><br>
+        Posted: Mon Jan 05, 2026 07:46 AM
+      </div>
+      <div class="content"><p><r><p>Hello friends,</p></p>
+<H2 slug="is-anyone-already-using-harbour-fivewin-this-way-with-sql-moved-behind-a-microservice"><s>## </s><STRONG><s>**</s>Is anyone already using Harbour/FiveWin this way — with SQL moved behind a microservice?<e>**</e></STRONG></H2>
+
+<p>From what I can see, this approach seems to <STRONG><s>**</s>simplify the client side significantly<e>**</e></STRONG> by removing SQL client DLLs, network/TLS handling, and tight database coupling from the UI process.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="a-short-note-on-performance-before-architecture"><s>## </s>A short note on performance (before architecture)</H2>
+
+<p>When the UI, the service, and the SQL database run on the <STRONG><s>**</s>same machine<e>**</e></STRONG>, local IPC (socket / JSON / HTTP over localhost) is very fast.</p>
+
+<p>Based on practical measurements and typical setups, the service layer usually adds:</p>
+
+<p><LIST><LI><s><em> </s><STRONG><s></em><em></s><SUB><s>~</s>1–2</SUB> ms per request<e></em>*</e></STRONG> for JSON encode/decode and local IPC</LI></LIST></p>
+<p>A simple SQL query itself typically takes:</p>
+
+<p><LIST><LI><s><em> </s><STRONG><s></em><em></s><SUB><s>~</s>1–10</SUB> ms<e></em>*</e></STRONG> (often more, depending on indexes and data size)</LI></LIST></p>
+<p>In other words:</p>
+
+<p><QUOTE><i>&gt; </i><p><STRONG><s><strong></s>The service layer usually adds less than 10–20% of the total request time.<e></strong></e></STRONG><br/><br>
+<i>&gt; </i>The SQL query itself remains the dominant cost.</p></QUOTE></p>
+<p>In practice, the performance impact is often negligible,<br/>
+while the gain in stability and isolation is very noticeable.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="why-this-matters"><s>## </s>Why this matters</H2>
+
+<p>In the past, embedding SQL directly into the Harbour application was often unavoidable:</p>
+
+<p><LIST><LI><s>* </s>no permanently running web servers</LI></p>
+<LI><s>* </s>no lightweight local services</LI>
+<LI><s>* </s>no clean separation between UI, business logic, and data access</LI>
+<p></LIST></p>
+<p>In short, the client process itself effectively <STRONG><s>**</s>had to be the server<e>**</e></STRONG>.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="what-has-changed"><s>## </s>What has changed</H2>
+
+<p>Today the situation looks very different:</p>
+
+<p><LIST><LI><s>* </s>services and web servers run continuously</LI></p>
+<LI><s>* </s>local IPC is cheap and reliable</LI>
+<LI><s>* </s>SQL servers already run in their own processes</LI>
+<LI><s>* </s>expectations for stability and fault isolation are much higher</LI>
+<p></LIST></p>
+<p>This opens a new option:</p>
+
+<p><QUOTE><i>&gt; </i><p><STRONG><s><strong></s>Use SQL without embedding SQL clients into the UI process.<e></strong></e></STRONG></p></QUOTE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="the-idea-in-one-sentence"><s>## </s>The idea in one sentence</H2>
+
+<p><QUOTE><i>&gt; </i><p>The client talks JSON to a service.<br/><br>
+<i>&gt; </i>The service talks SQL to the database.</p></QUOTE></p>
+<p>As a result:</p>
+
+<p><LIST><LI><s>* </s>the client loads no SQL DLLs</LI></p>
+<LI><s>* </s>the client does not know table schemas</LI>
+<LI><s>* </s>SQL connectivity is no longer part of the UI runtime</LI>
+<p></LIST></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="from-dbf-thinking-to-service-thinking"><s>## </s>From DBF thinking to service thinking</H2>
+
+<H3 slug="classic-dbf-style-access"><s>### </s>Classic DBF-style access</H3>
+
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;USE kunden
+GO TOP
+DO WHILE !EOF()
+   ? name, ort
+   SKIP
+ENDDO&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<H3 slug="service-based-access"><s>### </s>Service-based access</H3>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>hRes := ServiceCall( "kunden_list", { "limit" =&gt; 10 } )</p>
+<p>FOR EACH hRow IN hRes["rows"]<br>
+   ? hRow["name"], hRow["ort"]<br>
+NEXT<i><br>
+</i><e>```</e></CODE></p>
+<p>Same usage pattern.<br/>
+Different responsibility.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="minimal-client-side-code"><s>## </s>Minimal client-side code</H2>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>FUNCTION ServiceCall( cAction, hData )<br>
+   LOCAL hReq := { ;<br>
+      "action" =&gt; cAction, ;<br>
+      "data"   =&gt; hData ;<br>
+   }</p>
+<p>RETURN hb_jsonDecode( SendToService( hb_jsonEncode( hReq ) ) )<i><br>
+</i><e>```</e></CODE></p>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;FUNCTION SendToService( cJson )
+   LOCAL oSock := hb_socketOpen()
+   hb_socketConnect( oSock, "127.0.0.1", 9001 )
+   hb_socketSend( oSock, cJson + hb_eol() )
+   LOCAL cRes := hb_socketRecv( oSock, 8192 )
+   hb_socketClose( oSock )
+RETURN cRes&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p>This is the <STRONG><s>**</s>entire client-side SQL interface<e>**</e></STRONG>.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="what-runs-where"><s>## </s>What runs where</H2>
+
+<H3 slug="client-harbour-fivewin"><s>### </s>Client (Harbour / FiveWin)</H3>
+
+<p><LIST><LI><s>* </s>UI</LI></p>
+<LI><s>* </s>business orchestration</LI>
+<LI><s>* </s>JSON in / JSON out</LI>
+<p></LIST></p>
+<H3 slug="service"><s>### </s>Service</H3>
+
+<p><LIST><LI><s>* </s>SQL execution</LI></p>
+<LI><s>* </s>prepared statements</LI>
+<LI><s>* </s>transactions</LI>
+<LI><s>* </s>error handling</LI>
+<p></LIST></p>
+<H3 slug="database"><s>### </s>Database</H3>
+
+<p><LIST><LI><s>* </s>SQLite / PostgreSQL / MySQL</LI></LIST></p>
+<p>SQL lives <STRONG><s>**</s>behind the service boundary<e>**</e></STRONG>.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="what-disappears-from-the-client-process"><s>## </s>What disappears from the client process</H2>
+
+<p>With a service-based approach, the following <STRONG><s>**</s>no longer need to be loaded into the UI process<e>**</e></STRONG>:</p>
+
+<H3 slug="database-client-dlls"><s>### </s>Database client DLLs</H3>
+
+<p><LIST><LI><s>* </s><C><s><code>&lt;/s&gt;libmysql.dll&lt;e&gt;</code></e></C> / <C><s><code>&lt;/s&gt;libmysqlclient.dll&lt;e&gt;</code></e></C></LI></p>
+<LI><s>* </s>MariaDB client libraries</LI>
+<LI><s>* </s><C><s>`</s>libpq.dll<e>`</e></C> (PostgreSQL)</LI>
+<LI><s>* </s>ODBC drivers (<C><s>`</s>odbc32.dll<e>`</e></C> and vendor-specific drivers)</LI>
+<p></LIST></p>
+<H3 slug="crypto-tls-libraries"><s>### </s>Crypto / TLS libraries</H3>
+
+<p><LIST><LI><s>* </s><C><s><code>&lt;/s&gt;libssl*.dll&lt;e&gt;</code></e></C></LI></p>
+<LI><s>* </s><C><s>`</s>libcrypto*.dll<e>`</e></C></LI>
+<LI><s>* </s>parts of <C><s>`</s>schannel.dll<e>`</e></C> / <C><s>`</s>bcrypt.dll<e>`</e></C> (DB-related)</LI>
+<p></LIST></p>
+<H3 slug="runtime-and-abi-dependencies"><s>### </s>Runtime and ABI dependencies</H3>
+
+<p><LIST><LI><s>* </s>additional <C><s><code>&lt;/s&gt;vcruntime*.dll&lt;e&gt;</code></e></C> required by DB clients</LI></p>
+<LI><s>* </s>extra C/C++ runtime layers pulled in by SQL libraries</LI>
+<p></LIST></p>
+<H3 slug="helper-libraries"><s>### </s>Helper libraries</H3>
+
+<p><LIST><LI><s>* </s><C><s><code>&lt;/s&gt;zlib1.dll&lt;e&gt;</code></e></C></LI></p>
+<LI><s>* </s>character set / ICU libraries (depending on the DB client)</LI>
+<p></LIST></p>
+<p>What remains in the client:</p>
+
+<p><LIST><LI><s>* </s>Harbour runtime</LI></p>
+<LI><s>* </s>FiveWin UI</LI>
+<LI><s>* </s>minimal socket/HTTP code</LI>
+<LI><s>* </s>JSON handling</LI>
+<p></LIST></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="why-this-is-not-overengineering"><s>## </s>Why this is not overengineering</H2>
+
+<p><LIST><LI><s>* </s>no SQL DLLs in the client</LI></p>
+<LI><s>* </s>no OpenSSL, ODBC, or DB runtimes in the UI process</LI>
+<LI><s>* </s>fewer ABI and runtime conflicts</LI>
+<LI><s>* </s>crashes are isolated by process boundaries</LI>
+<p></LIST></p>
+<p>This does not add complexity —<br/>
+it <STRONG><s>**</s>moves complexity out of the wrong place<e>**</e></STRONG>.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="why-this-fits-harbour-well"><s>## </s>Why this fits Harbour well</H2>
+
+<p><LIST><LI><s>* </s>Harbour works naturally with hashes and JSON</LI></p>
+<LI><s>* </s>DBF-style access maps well to service calls</LI>
+<LI><s>* </s>SQLite feels similar to DBF (single file, easy backup)</LI>
+<LI><s>* </s>migration can be done step by step</LI>
+<p></LIST></p>
+<p>For example:</p>
+
+<p><CODE><s><code>&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;USE kunden  →  ServiceCall( "kunden_list" )&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="about-the-classic-all-in-one-client-approach"><s>## </s>About the classic all-in-one client approach</H2>
+
+<p>The classic all-in-one client approach solved SQL at a time when the client effectively had to be the server and service-based isolation was hard or unavailable.</p>
+
+<p>That constraint is largely gone today.</p>
+
+<p>What remains is an opportunity to separate concerns more clearly:</p>
+
+<p><LIST><LI><s>* </s>UI and orchestration in the client</LI></p>
+<LI><s>* </s>SQL and connectivity in a service</LI>
+<p></LIST></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="one-sentence-summary"><s>## </s>One-sentence summary</H2>
+
+<p><QUOTE><i>&gt; </i><p><STRONG><s><strong></s>The all-in-one approach already solves SQL —<br/><br>
+<i>&gt; </i>but today we finally have the option to solve it somewhere else.<e></strong></e></STRONG></p></QUOTE></p>
+<p>That option simply did not exist when these integrations were originally designed.</p>
+
+<HR>
+<p>---</HR></p>
+<H3 slug="question-to-the-community"><s>### </s>Question to the community</H3>
+
+<p>Is anyone already using Harbour/FiveWin this way in production?<br/>
+If so, I’d be very interested in hearing about real-world experiences — both positive and negative.</p>
+
+<p>Best regards,<br/>
+<STRONG><s>**</s>Otto<e>**</e></STRONG></p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283256">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Could SQL-as-a-service be a viable approach for Harbour/FiveWin today?</span><br>
+        Posted: Mon Jan 05, 2026 08:09 AM
+      </div>
+      <div class="content"><p><r><H3 slug="before-classic-all-in-one-client"><s>### </s><STRONG><s><strong></s>Before: classic all-in-one client<e></strong></e></STRONG></H3></p>
+<p><CODE><s><code>&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;+------------------------------+
+| Harbour / FiveWin UI         |
+|------------------------------|
+| UI + Business Logic          |
+| SQL Client                   |
+|  - libmysql / ODBC           |
+|  - OpenSSL / TLS             |
+|  - DB protocol &amp;amp; cursors     |
+|  - memory &amp;amp; ABI handling    |
++------------------------------+
+               |
+               |  SQL / TCP / TLS
+               v
++------------------------------+
+| SQL Server                   |
++------------------------------+&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>Characteristics:<e>**</e></STRONG></p>
+
+<p><LIST><LI><s>* </s>SQL runs inside the UI process</LI></p>
+<LI><s>* </s>many native DLLs loaded into the client</LI>
+<LI><s>* </s>network, TLS and SQL share the same address space</LI>
+<LI><s>* </s>one crash = whole application stops</LI>
+<p></LIST></p>
+<HR>
+<p>---</HR></p>
+<H3 slug="after-sql-behind-a-service-boundary"><s>### </s><STRONG><s>**</s>After: SQL behind a service boundary<e>**</e></STRONG></H3>
+
+<p><CODE><s><code>&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;+------------------------------+
+| Harbour / FiveWin UI         |
+|------------------------------|
+| UI + Business Orchestration  |
+| JSON in / JSON out           |
++------------------------------+
+               |
+               |  local IPC (socket / HTTP)
+               v
++------------------------------+
+| Service (SQL Gateway)        |
+|------------------------------|
+| SQL Client                   |
+|  - prepared statements       |
+|  - transactions              |
+|  - error handling            |
++------------------------------+
+               |
+               |  SQL (local or remote)
+               v
++------------------------------+
+| SQL Server                   |
++------------------------------+&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>Characteristics:<e>**</e></STRONG></p>
+
+<p><LIST><LI><s>* </s>UI process no longer contains SQL logic</LI></p>
+<LI><s>* </s>no SQL client DLLs in the client</LI>
+<LI><s>* </s>crashes are isolated to the service</LI>
+<LI><s>* </s>SQL, TLS and DB protocols live where they belong</LI>
+<p></LIST></p>
+<HR>
+<p>---</HR></p>
+<H3 slug="what-disappears-from-the-client"><s>### </s><STRONG><s>**</s>What disappears from the client<e>**</e></STRONG></H3>
+
+<p><CODE><s><code>&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;❌ libmysql / libpq / ODBC
+❌ OpenSSL / TLS stacks
+❌ DB protocol parsers
+❌ DB-specific memory layouts&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<H3 slug="what-remains-in-the-client"><s>### </s><STRONG><s>**</s>What remains in the client<e>**</e></STRONG></H3>
+
+<p><CODE><s><code>&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;✔ Harbour runtime
+✔ FiveWin UI
+✔ socket or HTTP
+✔ JSON encode / decode&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<HR>
+<p>---</HR></p>
+<H3 slug="one-line-summary"><s>### </s><STRONG><s>**</s>One-line summary<e>**</e></STRONG></H3>
+
+<p><QUOTE><i>&gt; </i><p><STRONG><s><strong></s>Before:<e></strong></e></STRONG> the UI process <EM><s><em></s>is<e></em></e></EM> the database client<br/><br>
+<i>&gt; </i><STRONG><s><strong></s>After:<e></strong></e></STRONG> the UI process talks to a service — and nothing else</p></QUOTE></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283260">
+    <div class="poster">
+      <div class="name" style="color:#105289">Eroni</div>
+      <div class="rank">Posts: 114</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 21, 2006 07:15 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Could SQL-as-a-service be a viable approach for Harbour/FiveWin today?</span><br>
+        Posted: Mon Jan 05, 2026 02:24 PM
+      </div>
+      <div class="content"><p><t><p>Dear Otto<br/><br>
+I've been following your brilliant work in building Mod Harbour, I've even tried to implement it on my systems, but I've never been able to configure the cloud service to work effectively.<br/><br>
+I'm going to give a brief account of what works for me, since around 2003, when I decided it was time to abandon the DBF architecture.<br/><br>
+As soon as the first DLLs that allowed Harbor/xHb access to SQL databases appeared, I dedicated a lot of time to re-writing/revising all my programming code, regarding data manipulation.<br/><br>
+As I wanted my code to become unique for any database, I rewrote everything so that it was just the commands:<br/><br>
+Insert...<br/><br>
+Update...<br/><br>
+Select...<br/><br>
+In addition to the standard DDL commands in the ANSI SQL language, supported by all types of SQL databases.<br/><br>
+In pure form, using standard SQL, without variations used for each specific manufacturer. To do this, I had to create some classes that would help me manipulate large records, processes, etc. Nowadays, my code no longer has any "use","seek", "do while","replace","append", etc. There is only pure standard SQL. Here in Brazil we have an expression that I don't know if it can be understood internationally: "You left the DBF but the DBF didn't leave you". I still see colleagues working with SQL but using xBase-type commands. I have systems running in the cloud for many years, without worrying about which operating system the database is on (Linux, Windows, etc.), Harbour just makes the access and all processing is done on the server. Each customer has the freedom to choose how they want to maintain their database, their provider, host, etc. I believe your approach to this topic is very important, I just wanted to share my experience.</p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283270">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Could SQL-as-a-service be a viable approach for Harbour/FiveWin today?</span><br>
+        Posted: Tue Jan 06, 2026 02:01 AM
+      </div>
+      <div class="content"><r><p>Dear Eroni,</p><br>
+<br>
+<p>thank you very much for sharing your experience — I really appreciate your post.</p><br>
+<br>
+<p>What you described resonates strongly with my own journey.<br/><br>
+Especially this sentence hit the nail on the head:</p><br>
+<br>
+<QUOTE><i>&gt; </i><p><EM><s>*</s>“You left the DBF but the DBF didn’t leave you.”<e>*</e></EM></p></QUOTE><br>
+<br>
+<p>I still see the same pattern today: people using SQL, but thinking and coding as if they were still working with DBFs.</p><br>
+<br>
+<p>Your approach — rewriting everything around pure <C><s>`</s>SELECT / INSERT / UPDATE<e>`</e></C>, standard SQL and leaving the database choice open — is exactly the right direction. And you’re absolutely right: this already solved many problems long ago.</p><br>
+<br>
+<p>After working through this topic in depth, I think I’ve arrived at a solution that follows the <STRONG><s>**</s>same philosophy<e>**</e></STRONG>, but adapts it to today’s runtime environment.</p><br>
+<br>
+<HR>---</HR><br>
+<br>
+<H3 slug="where-i-ended-up"><s>### </s>Where I ended up</H3><br>
+<br>
+<p>Conceptually, I fully agree with you:<br/><br>
+Harbour should not care about the database vendor, operating system or hosting provider.<br/><br>
+It should simply <EM><s>*</s>consume data<e>*</e></EM> and apply business logic.</p><br>
+<br>
+<p>The main difference is <STRONG><s>**</s>where SQL connectivity lives<e>**</e></STRONG>.</p><br>
+<br>
+<p>Instead of embedding SQL client libraries and C code directly into the Harbour process, I decided to move SQL access behind a small service layer (Node.js in my case), using JSON as the contract.</p><br>
+<br>
+<p>So on the Harbour side, the interface becomes as simple as:</p><br>
+<br>
+<CODE lang="harbour"><s>```harbour</s><i><br>
+</i>FUNCTION HttpPostJson( cUrl, cJson )<i><br>
+</i><e>```</e></CODE><br>
+<br>
+<p>Harbour sends JSON, receives JSON — nothing more.</p><br>
+<br>
+<p>The Node.js service then:</p><br>
+<br>
+<LIST><LI><s>* </s>talks to MySQL / MariaDB / PostgreSQL</LI><br>
+<LI><s>* </s>handles drivers, TLS, pooling and concurrency</LI><br>
+<LI><s>* </s>returns clean JSON back to Harbour</LI></LIST><br>
+<br>
+<HR>---</HR><br>
+<br>
+<H3 slug="why-i-believe-this-fits-today-better"><s>### </s>Why I believe this fits today better</H3><br>
+<br>
+<p>This is not about rejecting SQL inside Harbour —<br/><br>
+it’s about moving it to a place that did not exist in a practical way 15–20 years ago.</p><br>
+<br>
+<p>Back then:</p><br>
+<br>
+<LIST><LI><s>* </s>Harbour often <EM><s>*</s>had<e>*</e></EM> to be the server</LI><br>
+<LI><s>* </s>external services were hard to deploy</LI><br>
+<LI><s>* </s>process isolation was expensive</LI></LIST><br>
+<br>
+<p>Today:</p><br>
+<br>
+<LIST><LI><s>* </s>services run permanently</LI><br>
+<LI><s>* </s>local HTTP/JSON calls cost <SUB><s>~</s>1</SUB> ms or less</LI><br>
+<LI><s>* </s>SQL servers already run in separate processes</LI><br>
+<LI><s>* </s>Node.js is very good at exactly this kind of I/O work</LI></LIST><br>
+<br>
+<p>The overhead of one extra JSON hop is negligible compared to:</p><br>
+<br>
+<LIST><LI><s>* </s>SQL execution time</LI><br>
+<LI><s>* </s>disk I/O</LI><br>
+<LI><s>* </s>UI rendering</LI><br>
+<LI><s>* </s>human interaction latency</LI></LIST><br>
+<br>
+<p>What <EM><s>*</s>is<e>*</e></EM> reduced significantly is:</p><br>
+<br>
+<LIST><LI><s>* </s>native DLL complexity inside Harbour</LI><br>
+<LI><s>* </s>ABI and compiler coupling</LI><br>
+<LI><s>* </s>crash impact (SQL crashes no longer kill the UI process)</LI></LIST><br>
+<br>
+<HR>---</HR><br>
+<br>
+<H3 slug="how-this-relates-to-your-experience"><s>### </s>How this relates to your experience</H3><br>
+<br>
+<p>I see this as a natural continuation of what you already described:</p><br>
+<br>
+<LIST><LI><s>* </s>you removed DBF thinking from application logic</LI><br>
+<LI><s>* </s>you embraced pure SQL</LI><br>
+<LI><s>* </s>you made the database backend replaceable</LI></LIST><br>
+<br>
+<p>The service-based approach simply <STRONG><s>**</s>moves SQL connectivity to the right boundary<e>**</e></STRONG>.</p><br>
+<br>
+<p>Harbour remains:</p><br>
+<br>
+<LIST><LI><s>* </s>business logic</LI><br>
+<LI><s>* </s>legacy rules</LI><br>
+<LI><s>* </s>orchestration</LI></LIST><br>
+<br>
+<p>The service handles:</p><br>
+<br>
+<LIST><LI><s>* </s>SQL</LI><br>
+<LI><s>* </s>networking</LI><br>
+<LI><s>* </s>infrastructure</LI></LIST><br>
+<br>
+<p>From my perspective, this preserves everything that works well in your approach — while simplifying the Harbour side even further.</p><br>
+<br>
+<p>Thanks again for sharing your experience.<br/><br>
+It helped confirm that this direction makes sense — just with today’s tools.</p><br>
+<br>
+<p>Best regards,<br/><br>
+Otto</p><br>
+<br>
+<p>UI (Browser / FiveWin)<br/><br>
+   ↓  HTTP + JSON<br/><br>
+Proxy (PHP oder direkt)<br/><br>
+   ↓  HTTP + JSON<br/><br>
+Harbour Microservice<br/><br>
+   ↓  HTTP + JSON<br/><br>
+Node.js SQL Service<br/><br>
+   ↓  SQL<br/><br>
+MariaDB</p><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;FUNCTION ReadKunden()
+
+   LOCAL cReq := hb_jsonEncode( { ;
+      "sql"    =&gt; "SELECT id, name, ort FROM kunden LIMIT ?", ;
+      "params" =&gt; { 10 } ;
+   } )
+
+   LOCAL cResp := HttpPostJson( ;
+      "http://127.0.0.1:8081/sql", ;
+      cReq ;
+   )
+
+   RETURN cResp
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;FUNCTION HttpPostJson( cUrl, cJson )
+   LOCAL oSock
+   LOCAL cHost := "127.0.0.1"
+   LOCAL nPort := 8081
+   LOCAL cPath := "/sql"
+   LOCAL cReq, cResp := ""
+   LOCAL cBuf := Space(4096)
+   LOCAL nRead
+
+   // 1) Socket öffnen
+   oSock := hb_socketOpen()
+   IF oSock == NIL
+      RETURN '{"success":false,"error":"socket_open_failed"}'
+   ENDIF
+
+   // 2) Verbinden
+   IF hb_socketConnect( oSock, cHost, nPort ) != 0
+      hb_socketClose( oSock )
+      RETURN '{"success":false,"error":"connect_failed"}'
+   ENDIF
+
+   // 3) HTTP-Request bauen
+   cReq := ;
+      "POST " + cPath + " HTTP/1.1" + CRLF + ;
+      "Host: " + cHost + CRLF + ;
+      "Content-Type: application/json" + CRLF + ;
+      "Content-Length: " + LTrim(Str(Len(cJson))) + CRLF + ;
+      "Connection: close" + CRLF + CRLF + ;
+      cJson
+
+   // 4) Senden
+   hb_socketSend( oSock, cReq )
+
+   // 5) Antwort lesen
+   DO WHILE ( nRead := hb_socketRecv( oSock, @cBuf, Len(cBuf) ) ) &gt; 0
+      cResp += Left( cBuf, nRead )
+   ENDDO
+
+   hb_socketClose( oSock )
+
+   // 6) HTTP-Header abschneiden
+   IF CRLF + CRLF $ cResp
+      cResp := SubStr( cResp, At( CRLF + CRLF, cResp ) + 4 )
+   ENDIF
+
+RETURN cResp
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<br>
+<br>
+<QUOTE><s><blockquote></s><p>// sql-service.js<br/><br>
+const express = require("express");<br/><br>
+const mysql   = require("mysql2/promise");</p><br>
+<br>
+<p>const app = express();<br/><br>
+app.use(express.json());</p><br>
+<br>
+<p>const pool = mysql.createPool({<br/><br>
+  host: "127.0.0.1",<br/><br>
+  user: "msvc",<br/><br>
+  password: "test123",<br/><br>
+  database: "testdb"<br/><br>
+});</p><br>
+<br>
+<p>app.post("/sql", async (req, res) =&gt; {<br/><br>
+  const { sql, params } = req.body;</p><br>
+<br>
+  <p>try {<br/><br>
+    const [rows] = await pool.execute(sql, params || []);<br/><br>
+    res.json({ success: true, rows });<br/><br>
+  } catch (e) {<br/><br>
+    res.json({ success: false, error: e.message });<br/><br>
+  }<br/><br>
+});</p><br>
+<br>
+<p>app.listen(8081);</p><br>
+<br>
+<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p283271">
+    <div class="poster">
+      <div class="name" style="color:#105289">Mulyadi</div>
+      <div class="rank">Posts: 85</div>
+      <img class="avatar avatar-img" src="avatars/2137.jpeg" alt="" loading="lazy">
+      Joined: Mon Apr 18, 2011 02:32 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Could SQL-as-a-service be a viable approach for Harbour/FiveWin today?</span><br>
+        Posted: Tue Jan 06, 2026 02:33 AM
+      </div>
+      <div class="content"><p><t><p>I have been using it for fingerprint cases for a long time.<br/><br>
+Reading data directly from the fingerprint machine using JSON and managing it from a microservice, as well as recording data into an Oracle database.</p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283273">
+    <div class="poster">
+      <div class="name" style="color:#105289">richard-service</div>
+      <div class="rank">Posts: 866</div>
+      <img class="avatar avatar-img" src="avatars/1193.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 16, 2007 08:57 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Could SQL-as-a-service be a viable approach for Harbour/FiveWin today?</span><br>
+        Posted: Tue Jan 06, 2026 08:39 AM
+      </div>
+      <div class="content"><r><QUOTE author="Eroni" post_id="283260" time="1767623094" user_id="689"><s>[quote=Eroni post_id=283260 time=1767623094 user_id=689]</s><br>
+<p>Dear Otto<br/><br>
+I've been following your brilliant work in building Mod Harbour, I've even tried to implement it on my systems, but I've never been able to configure the cloud service to work effectively.<br/><br>
+I'm going to give a brief account of what works for me, since around 2003, when I decided it was time to abandon the DBF architecture.<br/><br>
+As soon as the first DLLs that allowed Harbor/xHb access to SQL databases appeared, I dedicated a lot of time to re-writing/revising all my programming code, regarding data manipulation.<br/><br>
+As I wanted my code to become unique for any database, I rewrote everything so that it was just the commands:<br/><br>
+Insert...<br/><br>
+Update...<br/><br>
+Select...<br/><br>
+In addition to the standard DDL commands in the ANSI SQL language, supported by all types of SQL databases.<br/><br>
+In pure form, using standard SQL, without variations used for each specific manufacturer. To do this, I had to create some classes that would help me manipulate large records, processes, etc. Nowadays, my code no longer has any "use","seek", "do while","replace","append", etc. There is only pure standard SQL. Here in Brazil we have an expression that I don't know if it can be understood internationally: "You left the DBF but the DBF didn't leave you". I still see colleagues working with SQL but using xBase-type commands. I have systems running in the cloud for many years, without worrying about which operating system the database is on (Linux, Windows, etc.), Harbour just makes the access and all processing is done on the server. Each customer has the freedom to choose how they want to maintain their database, their provider, host, etc. I believe your approach to this topic is very important, I just wanted to share my experience.</p><br>
+<e></blockquote></e></QUOTE><br>
+<br>
+<p>Dear Eroni,</p><br>
+<br>
+<p>Same as you</p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p283286">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Could SQL-as-a-service be a viable approach for Harbour/FiveWin today?</span><br>
+        Posted: Tue Jan 06, 2026 07:29 PM
+      </div>
+      <div class="content"><p><r><H1 slug="why-websocket-between-harbour-and-node-js-an-architectural-decision"><s># </s><STRONG><s><strong></s>Why WebSocket Between Harbour and Node.js – An Architectural Decision<e></strong></e></STRONG></H1></p>
+<H2 slug="1-background"><s>## </s>1. Background</H2>
+
+<p>In recent weeks, while working on a proof of concept, I repeatedly came back to the same question:</p>
+
+<p><STRONG><s>**</s>How can Harbour communicate with SQL in a clean, future-proof and maintainable way,<br/>
+without breaking existing business logic or introducing heavy new dependencies?<e>**</e></STRONG></p>
+
+<p>The goal was <STRONG><s>**</s>not<e>**</e></STRONG> to replace existing systems,<br/>
+but to <STRONG><s>**</s>extend them in a controlled and understandable way<e>**</e></STRONG>.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="2-initial-situation"><s>## </s>2. Initial Situation</H2>
+
+<p>The existing environment looks like this:</p>
+
+<p><LIST><LI><s><em> </s>Stable <STRONG><s></em><em></s>Harbour applications<e></em>*</e></STRONG> with long-running business logic</LI></p>
+<LI><s>* </s>A mix of <STRONG><s>**</s>DBF-based data<e>**</e></STRONG> and <STRONG><s>**</s>SQL databases<e>**</e></STRONG> (for new features or integrations)</LI>
+<LI><s>* </s>A clear wish to <STRONG><s>**</s>avoid SQL drivers inside the Harbour process<e>**</e></STRONG></LI>
+<LI><s>* </s>No intention to turn Harbour into a web server</LI>
+<LI><s>* </s>No desire to depend on complex socket libraries or platform-specific DLLs</LI>
+<p></LIST></p>
+<p>In short:</p>
+
+<p><STRONG><s>**</s>Harbour works well as it is.<br/>
+The question was how to connect it to SQL without damaging that stability.<e>**</e></STRONG></p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="3-key-observations"><s>## </s>3. Key Observations</H2>
+
+<H3 slug="3-1-sql-does-not-belong-inside-the-harbour-process"><s>### </s>3.1 SQL does not belong inside the Harbour process</H3>
+
+<p>This is not a philosophical decision, but a practical one:</p>
+
+<p><LIST><LI><s>* </s>SQL drivers change</LI></p>
+<LI><s>* </s>Database versions change</LI>
+<LI><s>* </s>Security updates are frequent</LI>
+<LI><s>* </s>Debugging SQL problems is easier outside Harbour</LI>
+<p></LIST></p>
+<p><STRONG><s>**</s>SQL behaves like a service, not like embedded logic.<e>**</e></STRONG></p>
+
+<HR>
+<p>---</HR></p>
+<H3 slug="3-2-harbour-should-not-become-a-web-server"><s>### </s>3.2 Harbour should not become a web server</H3>
+
+<p>Harbour is very good at:</p>
+
+<p><LIST><LI><s>* </s>Business logic</LI></p>
+<LI><s>* </s>Data orchestration</LI>
+<LI><s>* </s>Process control</LI>
+<p></LIST></p>
+<p>But it should <STRONG><s>**</s>not<e>**</e></STRONG> be responsible for:</p>
+
+<p><LIST><LI><s>* </s>HTTP routing</LI></p>
+<LI><s>* </s>REST APIs</LI>
+<LI><s>* </s>Web frameworks</LI>
+<p></LIST></p>
+<p>Keeping Harbour focused increases long-term stability.</p>
+
+<HR>
+<p>---</HR></p>
+<H3 slug="3-3-node-js-fits-well-as-an-sql-service"><s>### </s>3.3 Node.js fits well as an SQL service</H3>
+
+<p>Node.js provides:</p>
+
+<p><LIST><LI><s>* </s>Mature SQL drivers</LI></p>
+<LI><s>* </s>Connection pooling</LI>
+<LI><s>* </s>Clear error reporting</LI>
+<LI><s>* </s>Fast development cycles</LI>
+<p></LIST></p>
+<p>At the same time:</p>
+
+<p><STRONG><s>**</s>Node.js should not contain business logic.<e>**</e></STRONG><br/>
+Its role is purely technical: access to SQL.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="4-why-not-http-rest"><s>## </s>4. Why not HTTP / REST?</H2>
+
+<p>HTTP and REST were considered carefully.</p>
+
+<p>They work well for:</p>
+
+<p><LIST><LI><s>* </s>Web applications</LI></p>
+<LI><s>* </s>Public APIs</LI>
+<LI><s>* </s>Stateless request/response scenarios</LI>
+<p></LIST></p>
+<p>However, SQL communication is different:</p>
+
+<p><LIST><LI><s>* </s>Many small commands</LI></p>
+<LI><s>* </s>Repeated calls</LI>
+<LI><s>* </s>Long-running processes</LI>
+<LI><s>* </s>A natural need for a persistent connection</LI>
+<p></LIST></p>
+<p>Using HTTP here would introduce unnecessary overhead and complexity.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="5-why-websocket"><s>## </s>5. Why WebSocket?</H2>
+
+<p>WebSocket matches the problem much better:</p>
+
+<p><LIST><LI><s>* </s>Persistent connection</LI></p>
+<LI><s>* </s>Bidirectional communication</LI>
+<LI><s>* </s>Low overhead</LI>
+<LI><s>* </s>Command-oriented, not page-oriented</LI>
+<LI><s>* </s>Easy to debug with plain JSON messages</LI>
+<p></LIST></p>
+<p><STRONG><s>**</s>SQL commands are commands, not web pages.<e>**</e></STRONG></p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="6-the-final-decision"><s>## </s>6. The Final Decision</H2>
+
+<p>The resulting architecture is simple and clear:</p>
+
+<p><LIST><LI><s><em> </s><p><STRONG><s></em><em></s>Harbour<e></em>*</e></STRONG></p></p>
+<p><LIST><LI><s>* </s>remains the owner of business logic</LI><br>
+<br>
+<LI><s>* </s>acts as a WebSocket client</LI></p>
+<p></LIST></LI></p>
+<LI><s>* </s><p><STRONG><s>**</s>Node.js<e>**</e></STRONG></p>
+
+  <LIST><LI><s>* </s><p>acts as a WebSocket server</p></LI>
+  <LI><s>* </s><p>encapsulates all SQL access</p></LI></LIST></LI>
+<LI><s>* </s><p><STRONG><s>**</s>Communication<e>**</e></STRONG></p>
+
+  <LIST><LI><s>* </s><p>WebSocket</p></LI>
+  <LI><s>* </s><p>JSON messages</p></LI>
+  <LI><s>* </s><p>clearly defined commands</p></LI>
+  <LI><s>* </s><p>no free SQL from the client side</p></LI></LIST></LI>
+<p></LIST></p>
+<p>Each component does what it does best.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="7-what-this-approach-deliberately-avoids"><s>## </s>7. What this approach deliberately avoids</H2>
+
+<p><LIST><LI><s>* </s>No ORM</LI></p>
+<LI><s>* </s>No free SQL execution</LI>
+<LI><s>* </s>No SQL logic inside Harbour</LI>
+<LI><s>* </s>No REST layer</LI>
+<LI><s>* </s>No rewrite of existing applications</LI>
+<p></LIST></p>
+<p>This is an <STRONG><s>**</s>extension<e>**</e></STRONG>, not a replacement.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="8-conclusion"><s>## </s>8. Conclusion</H2>
+
+<p><STRONG><s>**</s>The choice of WebSocket is not a trend decision.<br/>
+It is the result of separating responsibilities clearly.<e>**</e></STRONG></p>
+
+<p><LIST><LI><s>* </s>Harbour stays focused on business logic</LI></p>
+<LI><s>* </s>SQL becomes a dedicated service</LI>
+<LI><s>* </s>Node.js handles database complexity</LI>
+<LI><s>* </s>The connection remains simple and controlled</LI>
+<p></LIST></p>
+<p>This approach allows Harbour systems to grow<br/>
+<STRONG><s>**</s>without losing their original strengths<e>**</e></STRONG>.</p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p283298">
+    <div class="poster">
+      <div class="name" style="color:#105289">Eroni</div>
+      <div class="rank">Posts: 114</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 21, 2006 07:15 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Could SQL-as-a-service be a viable approach for Harbour/FiveWin today?</span><br>
+        Posted: Wed Jan 07, 2026 12:49 PM
+      </div>
+      <div class="content"><p><t><p>Dear Otto.<br/><br>
+It seems that their approach will be the next natural step, involving security and modernity.<br/><br>
+Regards.</p></t></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

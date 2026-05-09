@@ -1,0 +1,1502 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Incrustar CALCULADORA en FWH - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-13357">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Incrustar CALCULADORA en FWH</div>
+  <div class="post" id="p68402">
+    <div class="poster">
+      <div class="name" style="color:#105289">wmormar</div>
+      <div class="rank">Posts: 1076</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Incrustar CALCULADORA en FWH</span><br>
+        Posted: Fri Oct 31, 2008 08:52 AM
+      </div>
+      <div class="content">Bueno, pos eso<br>
+<br>
+Aquí una clase para tal efecto.<br>
+<br>
+Aunque hay unos detalles, como el borrado de la imagen de la calculadora al minimizar o maximizar el recurso.<br>
+<br>
+aquí el código y esperemos haya alguien que haga las pruebas y entre todos vemos si logramos detallarla y hacerla funcionar al 100%<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+   Tomado: Recursos visualbasic
+   Fecha:  31 . octubre . 2008
+   Hora:   02.48
+
+   INCOS, wmormar
+*/
+
+#include "fivewin.ch"
+#include "CStruct.ch"
+#include "wintypes.ch"
+
+   // Constante para la llamada dinámica del API
+#define DC_CALL_STD            0x0020
+
+#define SHOWMAXIMIZED_eSW      3
+   // Constante para usar con el Api DeleteMenu
+#define MF_BYPOSITION          0x400
+#define MF_REMOVE              0x1000
+
+   // Constante para usar con el Api SendMessage para cerrar
+   // la aplicación ( en este caso La calculadora )
+#define SC_CLOSE              61536
+#define WM_SYSCOMMAND         274
+
+   // Constante para usar con GetWindowLong y SetWindowLong
+#define GWL_STYLE             -16
+
+   // Constantes para SetWindowPos
+#define SWP_FRAMECHANGED      0x0020
+#define SWP_NOMOVE            0x0002
+#define SWP_NOSIZE            0x0001
+#define SWP_NOZORDER          0x0004
+#define HWND_TOP              0
+
+CLASS TCalculator
+   // Mantiene el Handle del programa
+   DATA hwnd
+   DATA hwndcalc
+   DATA cTitlecalculator     AS CHARACTER  INIT  "Calculadora"
+   DATA ocontainer           AS OBJECT
+   DATA nTime                AS NUMERIC    INIT 25000
+
+   METHOD normal()
+   METHOD barra_titulo( lErase )
+   METHOD Eliminar_Menu( hwnd )
+   METHOD Cerrar_Programa( hwnd )
+   METHOD Cerrar_Programa( hwnd )
+   METHOD incrustar_calculadora( ocontainer )
+   METHOD Incrustar( hwnd )
+   METHOD liberar_programa( hwnd )
+   METHOD GetMenu( hwnd )
+   METHOD DeleteMenu( hmenu, nposition, wflags )
+   METHOD GetMenuItemCount( hmenu )
+   METHOD DrawMenuBar( hwnd )
+   METHOD GetWindowLong( hwnd, nindex )
+   METHOD SetWindowLong( hwnd, nindex, dwnewlong )
+   METHOD SetWindowPos( hwnd, hwndinsertafter, x, y, cx, cy, wflags )
+
+ENDCLASS
+
+/*******************************************************************/
+// Cargando calculadora normal de windows
+METHOD normal()
+   ShellExecute( ::hwnd,,"calc.exe",,, )
+
+   RETURN NIL
+
+/*******************************************************************/
+// Elimina y reestablece la barra de título de una ventana
+METHOD barra_titulo( hwnd, lErase )
+   LOCAL nStyle
+
+   // Almacena en la variable el estilo actual
+   nStyle := ::GetWindowLong( hwnd, GWL_STYLE )
+
+   IF !lErase
+      nStyle := nor( nStyle, WS_CAPTION )
+   ELSE
+      nStyle += nor( WS_CAPTION )
+   ENDIF
+
+   // Aplica el nuevo estilo
+   ::SetWindowLong( hwnd, GWL_STYLE, nStyle )
+
+   // Mueve de posición la calculadora
+   ::SetWindowPos( ::hwndcalc, HWND_TOP, 0, 0, 0, 0, ;
+                   nor( SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER ) )
+
+   RETURN NIL
+
+/*******************************************************************/
+//Elimina el menú de una ventana específica
+METHOD Eliminar_Menu( hwnd )
+   LOCAL hmenu
+   LOCAL nmenu
+   LOCAL i
+
+   // Recuper el hwnd del menu del programa
+   hmenu := ::GetMenu( hwnd )
+   IF hmenu &lt;&gt; 0
+      // cantidad de menúes
+      nmenu := ::GetMenuItemCount( hmenu )
+      IF nmenu &gt; 0
+         // Recorre todos los menú y los elimina
+         FOR i := 1 To nmenu
+            ::DeleteMenu( hmenu, 0, nor(MF_BYPOSITION, MF_REMOVE) )
+         NEXT
+
+         // Repinta la barra de menú
+         ::DrawMenuBar( hwnd )
+      ENDIF
+   ENDIF
+
+   RETURN NIL
+
+/*******************************************************************/
+// Cierra
+METHOD Cerrar_Programa( hwnd )
+   DEFAULT hwnd := ::hwndcalc
+
+   // Cierra el programa abierto, en este caso la calculadora
+   SendMessage( hwnd, WM_SYSCOMMAND, SC_CLOSE, 0&amp; )
+
+   RETURN .t.
+
+/*******************************************************************/
+// mete la ventana en el contenedor
+METHOD incrustar_calculadora( ocontainer )
+   LOCAL aRect := {}
+   LOCAL nLoop := 0
+
+   ::ocontainer := ocontainer
+
+   // Handle de la aplicación
+   ::hwndcalc := FindWindow( 0, ::cTitlecalculator )
+   IF ::hwndcalc &gt; 0
+      ::Cerrar_Programa( ::hwndcalc )
+      ::hwndcalc := NIL
+   ENDIF
+
+   // Abre el programa
+   MSGRUN( "Ejecutando calculadora...",, ;
+           {|| ShellExecute( ,,"calc.exe",,, )} )
+
+   WHILE nLoop &lt;= ::nTime
+      // Handle de la aplicación
+      ::hwndcalc := FindWindow( 0, ::cTitlecalculator )
+      IF ::hwndcalc &lt;&gt; 0
+         EXIT
+      ENDIF
+      SYSREFRESH()
+      nLoop += 1
+   ENDDO
+
+   // Ocultando la calculadora
+   ShowWindow( ::hwndcalc, 0 )
+
+   // Recupera el ancho y alto del área cliente
+   aRect := GetClientRect( ::hwndcalc )
+
+   // Redimensiona el picturebox al ancho y alto del programa
+   ::ocontainer:nWidth  := ( aRect[4] - aRect[2] ) + 25
+   ::ocontainer:nHeight := ( aRect[3] - aRect[1] ) + 55
+
+   // Elimina la barra de título, los menúes y lo incrusta
+   ::Eliminar_Menu( ::hwndcalc )
+   ::Barra_Titulo( ::hwndcalc, .t. )
+   ::Incrustar( ::hwndcalc )
+   ::ocontainer:refresh()
+
+   RETURN NIL
+
+/*******************************************************************/
+METHOD Incrustar( hwnd )
+   LOCAL nret
+
+   // Lo metemos dentro del ocontainer
+   SetParent( hwnd, ::ocontainer:hwnd )
+
+   // Maximizamos la ventana incrustada dentro del contenedor, mediante el _
+   // Api showWindow, pasándole la constante SHOWMAXIMIZED_eSW
+   nret := ShowWindow( hwnd, SHOWMAXIMIZED_eSW )
+
+   RETURN .t.
+
+/*******************************************************************/
+// Libera la ventana pasándole en el segundo
+// parámetro el valor 0 y la cierra
+METHOD liberar_programa( hwnd )
+   // Libera el programa
+   SetParent( hwnd, 0 )
+
+   // Lo cierra
+   ::Cerrar_Programa( hwnd )
+
+   hwnd := 0
+
+   RETURN NIL
+
+/*******************************************************************/
+// Recupera el Hwnd de un menú
+METHOD GetMenu( hwnd )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;      // external DLL
+                    DC_CALL_STD    , ;      // calling convention
+                    "GetMenu" )             // external function
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Elimina el menú de una aplicación
+METHOD DeleteMenu( hmenu, nposition, wflags )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "DeleteMenu" )
+
+   nRet := DllExecuteCall( pCallTemplate, hmenu, nposition, wflags )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Recupera la cantidad de Item de menúes para saber cuantos hay que eliminar
+METHOD GetMenuItemCount( hmenu )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "GetMenuItemCount" )
+
+   nRet := DllExecuteCall( pCallTemplate, hmenu )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Redibuja - repinta la barra de menú luego de eliminarlo
+METHOD DrawMenuBar( hwnd )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "DrawMenuBar" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Estas tres funciones es para eliminar la barra de título
+// del programa que se va a incrustar
+METHOD GetWindowLong( hwnd, nindex )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "GetWindowLongA" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd, nindex )
+
+   RETURN nRet
+
+/*******************************************************************/
+METHOD SetWindowLong( hwnd, nindex, dwnewlong )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "SetWindowLongA" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd, nindex, dwnewlong )
+
+   RETURN nRet
+
+/*******************************************************************/
+METHOD SetWindowPos( hwnd, hwndinsertafter, x, y, cx, cy, wflags )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "SetWindowPos" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd, hwndinsertafter, x, y, cx, cy, wflags )
+
+   RETURN nRet
+
+/*******************************************************************/</code></pre></div><br>
+<br>
+Espero ayuda y ojalá sea de ayuda para otros compañeros</div>
+    </div>
+  </div>
+  <div class="post" id="p68403">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Incrustar CALCULADORA en FWH</span><br>
+        Posted: Fri Oct 31, 2008 08:55 AM
+      </div>
+      <div class="content"><p>William,</p>
+<p>Gracias! <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p68405">
+    <div class="poster">
+      <div class="name" style="color:#105289">wmormar</div>
+      <div class="rank">Posts: 1076</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Incrustar CALCULADORA en FWH</span><br>
+        Posted: Fri Oct 31, 2008 08:58 AM
+      </div>
+      <div class="content">Se me olvidaba,<br>
+<br>
+En mi caso hice un dialogo con un bitmap.<br>
+<br>
+aqui el código de la prueba.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+  - Autor: INCOS, wmormar
+  - Fecha: 31 . octubre . 2008
+  - Hora: 02.57
+*/
+
+#include "fivewin.ch"
+
+FUNCTION main()
+   LOCAL oBmp
+   LOCAL tCalc32
+   LOCAL this   := Self
+   LOCAL lSalir := .f.
+
+   IF ::oCalculator:classname() == "TDIALOG"
+      ::oCalculator:restore()
+      ::oCalculator:setfocus()
+      RETURN NIL
+   ENDIF
+
+   tCalc32 := TCalculator()
+   DEFINE DIALOG ::oCalculator RESOURCE "CALCULADORA" TITLE ".:: Calculadora ::." COLOR CLR_BLUE,CLR_WHITE
+      REDEFINE BITMAP oBmp ID 401 OF ::oCalculator TRANSPARENT
+      ::oCalculator:bLDblClick := {|| tCalc32:cerrar_programa(), lSalir := .t., ::oCalculator:END(), ::oCalculator := NIL}
+      ::oCalculator:bRClicked  := {|| tCalc32:incrustar_calculadora( oBmp )}
+   ACTIVATE DIALOG ::oCalculator ON INIT equis(this:oCalculator:hWnd) ;
+            VALID lSalir
+
+RETURN NIL</code></pre></div><br>
+<br>
+esperemos sus pruebas y comentarios; y desde luego la ayuda para detallar la clase.</div>
+    </div>
+  </div>
+  <div class="post" id="p68409">
+    <div class="poster">
+      <div class="name" style="color:#105289">MGA</div>
+      <div class="rank">Posts: 1286</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 25, 2008 02:54 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Incrustar CALCULADORA en FWH</span><br>
+        Posted: Fri Oct 31, 2008 10:22 AM
+      </div>
+      <div class="content"><p>UNRESOLVED EXTERNAL EQUIS  ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p68445">
+    <div class="poster">
+      <div class="name" style="color:#105289">joseluisysturiz</div>
+      <div class="rank">Posts: 2064</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 06, 2006 09:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Incrustar CALCULADORA en FWH</span><br>
+        Posted: Fri Oct 31, 2008 01:39 PM
+      </div>
+      <div class="content"><p>Willian, a lo que se refiera a prueba, estoy a la rden, descargo, creo y empiezo a probarl...y te aviso los detalles...si salen...saludos... <!-- s:shock: --><img src="{SMILIES_PATH}/icon_eek.gif" alt=":shock:" title="Shocked" /><!-- s:shock: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p68483">
+    <div class="poster">
+      <div class="name" style="color:#105289">wmormar</div>
+      <div class="rank">Posts: 1076</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Incrustar CALCULADORA en FWH</span><br>
+        Posted: Fri Oct 31, 2008 07:39 PM
+      </div>
+      <div class="content"><blockquote><cite>SGS wrote:</cite>UNRESOLVED EXTERNAL EQUIS  ?</blockquote><br>
+<br>
+elimina esa llamada a la función.<br>
+<br>
+saludos</div>
+    </div>
+  </div>
+  <div class="post" id="p68495">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Daniel Garcia-Gil</div>
+      <div class="rank">Posts: 2365</div>
+      <img class="avatar avatar-img" src="avatars/249.gif" alt="" loading="lazy">
+      Joined: Wed Nov 02, 2005 11:46 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Incrustar CALCULADORA en FWH</span><br>
+        Posted: Fri Oct 31, 2008 09:28 PM
+      </div>
+      <div class="content">Es un buen trabajo, lo probe y seguro lo uso, me encontre con estos inconvenientes, es seguro que esperas comentarios y experiencias con el uso de la misma....<br>
+<br>
+la idea es que trabaje con cualquier calculadora, en espaniol - ingles u otro idioma, lo malo es que solo funciona para cuando la calculadora esta en espaniol por la data:<br>
+DATA cTitlecalculator     AS CHARACTER  INIT  "Calculadora"<br>
+le agrege una nueva data<br>
+DATA ClassCal AS CHARACTER  INIT  "SciCalc"<br>
+esa es la misma clase para todas las calculadoras, lo probe con windows vista, xp, 98 en epaniol e ingles, todas funcionaron por el nombre de la clase, ya que me consegui con titulos como "CALCULATOR PLUS", "CALCULATOR", "CALCULADORA", "CALC", pero todos tenian en comun "SciCalc"<br>
+hice una modificaciones al metodo incrustar_calculadora<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   ::hwndcalc := FindWindow( 0, ::cTitlecalculator )
+   IF ::hwndcalc == 0
+   		::hwndcalc := FindWindow( ::ClassCal, 0 ) // para que busque por el nombre de la clase
+   ENDIF
+
+//unas lineas mas abajo
+
+   WHILE nLoop &lt;= ::nTime
+      // Handle de la aplicación
+      ::hwndcalc := FindWindow( 0, ::cTitlecalculator )
+      IF ::hwndcalc &lt;&gt; 0
+         EXIT
+      ELSE
+      	::hwndcalc := FindWindow( ::ClassCal, 0 )
+      ENDIF
+      SYSREFRESH()
+      nLoop += 1
+   ENDDO</code></pre></div><br>
+<br>
+elimine del style en el metodo barra_titulo, SWP_NOMOVE porque nunca me quedaba en el tope<br>
+<img src="http://i485.photobucket.com/albums/rr217/danielgarciagil/calc1.jpg" alt="" loading="lazy"><br>
+<br>
+realmente no se si es la forma correcta pero me imagino que esto es lo que esperas de nosotros...</div>
+    </div>
+  </div>
+  <div class="post" id="p68511">
+    <div class="poster">
+      <div class="name" style="color:#105289">wmormar</div>
+      <div class="rank">Posts: 1076</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Incrustar CALCULADORA en FWH</span><br>
+        Posted: Sat Nov 01, 2008 02:58 AM
+      </div>
+      <div class="content">mcfox,<br>
+<br>
+gracias por hacer tus pruebas.<br>
+<br>
+creo que la mopdificación iría en el test:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   tCalc32 := TCalculator()
+   tCalc32:cTitleCalculator := "SciCalC"
+   DEFINE DIALOG ::oCalculator RESOURCE "CALCULADORA" TITLE ".:: Calculadora ::." COLOR CLR_BLUE,CLR_WHITE
+      REDEFINE BITMAP oBmp ID 401 OF ::oCalculator TRANSPARENT
+      REDEFINE BUTTON oBtn ID 301 ACTION (oBtn:disable(), tCalc32:incrustar_calculadora( oBmp ) )
+      REDEFINE BUTTON ID 302 ACTION (tCalc32:cerrar_programa(), lSalir := .t., ;
+                                     ::oCalculator:END(), ::oCalculator := NIL)
+      REDEFINE BUTTON ID 303 ACTION (UpdateWindow( tCalc32:hwndcalc ), oBmp:refresh())
+   ACTIVATE DIALOG ::oCalculator NOWAIT ON INIT equis( this:oCalculator:hWnd ) ;
+            VALID lSalir</code></pre></div><br>
+<br>
+Ahi no modificariamos la clase y se usaría cualquier calculadora.<br>
+<br>
+en el caso de la clase también he modificado la clase quedando de la siguiente manera.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+   Tomado: Recursos visualbasic
+   Fecha:  31 . octubre . 2008
+   Hora:   02.48
+
+   INCOS, wmormar
+*/
+
+#include "fivewin.ch"
+
+   // Constante para la llamada dinámica del API
+#define DC_CALL_STD            0x0020
+
+#define SHOWMAXIMIZED_eSW      3
+   // Constante para usar con el Api DeleteMenu
+#define MF_BYPOSITION          0x400
+#define MF_REMOVE              0x1000
+
+   // Constante para usar con el Api SendMessage para cerrar
+   // la aplicación ( en este caso La calculadora )
+#define SC_CLOSE              61536
+#define WM_SYSCOMMAND         274
+
+   // Constante para usar con GetWindowLong y SetWindowLong
+#define GWL_STYLE             -16
+
+   // Constantes para SetWindowPos
+#define SWP_FRAMECHANGED      0x0020
+#define SWP_NOMOVE            0x0002
+#define SWP_NOSIZE            0x0001
+#define SWP_NOZORDER          0x0004
+#define HWND_TOP              0
+
+CLASS TCalculator
+   // Mantiene el Handle del programa
+   DATA hwnd
+   DATA hwndcalc
+   DATA cTitlecalculator     AS CHARACTER  INIT  "Calculadora"
+   DATA ocontainer           AS OBJECT
+   DATA nTime                AS NUMERIC    INIT 25000
+
+   METHOD normal()
+   METHOD barra_titulo( lErase )
+   METHOD Eliminar_Menu( hwnd )
+   METHOD Cerrar_Programa( hwnd )
+   METHOD Cerrar_Programa( hwnd )
+   METHOD incrustar_calculadora( ocontainer )
+   METHOD Incrustar( hwnd )
+   METHOD liberar_programa( hwnd )
+   METHOD GetMenu( hwnd )
+   METHOD DeleteMenu( hmenu, nposition, wflags )
+   METHOD GetMenuItemCount( hmenu )
+   METHOD DrawMenuBar( hwnd )
+   METHOD GetWindowLong( hwnd, nindex )
+   METHOD SetWindowLong( hwnd, nindex, dwnewlong )
+   METHOD SetWindowPos( hwnd, hwndinsertafter, x, y, cx, cy, wflags )
+   METHOD setfocus( hwnd )
+
+ENDCLASS
+
+/*******************************************************************/
+// Cargando calculadora normal de windows
+METHOD normal()
+   ShellExecute( ::hwnd,,"calc.exe",,, )
+
+   RETURN NIL
+
+/*******************************************************************/
+// Elimina y reestablece la barra de título de una ventana
+METHOD barra_titulo( hwnd, lErase )
+   LOCAL nStyle
+
+   // Almacena en la variable el estilo actual
+   nStyle := ::GetWindowLong( hwnd, GWL_STYLE )
+
+   IF !lErase
+      nStyle := nor( nStyle, WS_CAPTION )
+   ELSE
+      nStyle += nor( WS_CAPTION )
+   ENDIF
+
+   // Aplica el nuevo estilo
+   ::SetWindowLong( hwnd, GWL_STYLE, nStyle )
+
+   // Mueve de posición la calculadora
+   ::SetWindowPos( ::hwndcalc, HWND_TOP, 0, 0, 0, 0 )
+
+   RETURN NIL
+
+/*******************************************************************/
+//Elimina el menú de una ventana específica
+METHOD Eliminar_Menu( hwnd )
+   LOCAL hmenu
+   LOCAL nmenu
+   LOCAL i
+
+   // Recuper el hwnd del menu del programa
+   hmenu := ::GetMenu( hwnd )
+   IF hmenu &lt;&gt; 0
+      // cantidad de menúes
+      nmenu := ::GetMenuItemCount( hmenu )
+      IF nmenu &gt; 0
+         // Recorre todos los menú y los elimina
+         FOR i := 1 To nmenu
+            ::DeleteMenu( hmenu, 0, nor(MF_BYPOSITION, MF_REMOVE) )
+         NEXT
+
+         // Repinta la barra de menú
+         ::DrawMenuBar( hwnd )
+      ENDIF
+   ENDIF
+
+   RETURN NIL
+
+/*******************************************************************/
+// Cierra
+METHOD Cerrar_Programa( hwnd )
+   DEFAULT hwnd := ::hwndcalc
+
+   // Cierra el programa abierto, en este caso la calculadora
+   SendMessage( hwnd, WM_SYSCOMMAND, SC_CLOSE, 0&amp; )
+
+   RETURN .t.
+
+/*******************************************************************/
+// mete la ventana en el contenedor
+METHOD incrustar_calculadora( ocontainer )
+   LOCAL aRect := {}
+   LOCAL nLoop := 0
+
+   ::ocontainer := ocontainer
+
+   // Handle de la aplicación
+   ::hwndcalc := FindWindow( 0, ::cTitlecalculator )
+   IF ::hwndcalc &gt; 0
+      ::Cerrar_Programa( ::hwndcalc )
+      ::hwndcalc := NIL
+   ENDIF
+
+   // Abre el programa
+   MSGRUN( "Ejecutando calculadora...",, ;
+           {|| ShellExecute( ,,"calc.exe",,, )} )
+
+   WHILE nLoop &lt;= ::nTime
+      // Handle de la aplicación
+      ::hwndcalc := FindWindow( 0, ::cTitlecalculator )
+      IF ::hwndcalc &lt;&gt; 0
+         EXIT
+      ENDIF
+      SYSREFRESH()
+      nLoop += 1
+   ENDDO
+
+   // Ocultando la calculadora
+   ShowWindow( ::hwndcalc, 0 )
+
+   // Recupera el ancho y alto del área cliente
+   aRect := GetClientRect( ::hwndcalc )
+
+   // Redimensiona el picturebox al ancho y alto del programa
+   ::ocontainer:nWidth  := ( aRect[4] - aRect[2] ) // + 25
+   ::ocontainer:nHeight := ( aRect[3] - aRect[1] ) // + 55
+
+   // Elimina la barra de título, los menúes y lo incrusta
+   ::Eliminar_Menu( ::hwndcalc )
+   ::Barra_Titulo( ::hwndcalc, .t. )
+   ::Incrustar( ::hwndcalc )
+   UpdateWindow( ::hwndcalc )
+   ::ocontainer:refresh()
+   ::setfocus( ::hwndcalc )
+
+   RETURN NIL
+
+/*******************************************************************/
+METHOD Incrustar( hwnd )
+   LOCAL nret
+
+   // Lo metemos dentro del ocontainer
+   SetParent( hwnd, ::ocontainer:hwnd )
+
+   // Maximizamos la ventana incrustada dentro del contenedor, mediante el _
+   // Api showWindow, pasándole la constante SHOWMAXIMIZED_eSW
+   nret := ShowWindow( hwnd, SHOWMAXIMIZED_eSW )
+
+   RETURN .t.
+
+/*******************************************************************/
+// Libera la ventana pasándole en el segundo
+// parámetro el valor 0 y la cierra
+METHOD liberar_programa( hwnd )
+   // Libera el programa
+   SetParent( hwnd, 0 )
+
+   // Lo cierra
+   ::Cerrar_Programa( hwnd )
+
+   hwnd := 0
+
+   RETURN NIL
+
+/*******************************************************************/
+// Recupera el Hwnd de un menú
+METHOD GetMenu( hwnd )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;      // external DLL
+                    DC_CALL_STD    , ;      // calling convention
+                    "GetMenu" )             // external function
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Elimina el menú de una aplicación
+METHOD DeleteMenu( hmenu, nposition, wflags )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "DeleteMenu" )
+
+   nRet := DllExecuteCall( pCallTemplate, hmenu, nposition, wflags )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Recupera la cantidad de Item de menúes para saber cuantos hay que eliminar
+METHOD GetMenuItemCount( hmenu )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "GetMenuItemCount" )
+
+   nRet := DllExecuteCall( pCallTemplate, hmenu )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Redibuja - repinta la barra de menú luego de eliminarlo
+METHOD DrawMenuBar( hwnd )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "DrawMenuBar" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Estas tres funciones es para eliminar la barra de título
+// del programa que se va a incrustar
+METHOD GetWindowLong( hwnd, nindex )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "GetWindowLongA" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd, nindex )
+
+   RETURN nRet
+
+/*******************************************************************/
+METHOD SetWindowLong( hwnd, nindex, dwnewlong )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "SetWindowLongA" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd, nindex, dwnewlong )
+
+   RETURN nRet
+
+/*******************************************************************/
+METHOD SetWindowPos( hwnd, hwndinsertafter, x, y, cx, cy, wflags )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "SetWindowPos" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd, hwndinsertafter, x, y, cx, cy, wflags )
+
+   RETURN nRet
+
+/*******************************************************************/
+METHOD setfocus( hwnd )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "SetFocus" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd )
+
+   RETURN nRet
+
+/*******************************************************************/</code></pre></div><br>
+<br>
+espero sus comentarios</div>
+    </div>
+  </div>
+  <div class="post" id="p68529">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Daniel Garcia-Gil</div>
+      <div class="rank">Posts: 2365</div>
+      <img class="avatar avatar-img" src="avatars/249.gif" alt="" loading="lazy">
+      Joined: Wed Nov 02, 2005 11:46 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Incrustar CALCULADORA en FWH</span><br>
+        Posted: Sat Nov 01, 2008 11:14 AM
+      </div>
+      <div class="content"><p>Me sigue generando el mismo error cuando ejecuto el programa en diferentes SO y/o idiomas.<br>
+La funcion FindWindow trabaja con 2 parametros:<br>
+FindWindow( Classname, WindowsName ), estas usando solo el  2do parametro (WindowsName) que es el que cambia, el 1er parametro siempre es el mismo (ClassName), por eso agrege una nueva data:<br>
+DATA ClassCal AS CHARACTER INIT "SciCalc"<br>
+y la busqueda de la calculadora la hice de las 2 formas, buscando primero por el titulo si no lo consigue por la clase ( personalmente la buscaria por la clase ):<br>
+::hwndcalc := FindWindow( 0, ::cTitlecalculator )<br>
+::hwndcalc := FindWindow( ::ClassCal, 0 )</p></div>
+    </div>
+  </div>
+  <div class="post" id="p68550">
+    <div class="poster">
+      <div class="name" style="color:#105289">AIDA</div>
+      <div class="rank">Posts: 880</div>
+      <div class="avatar"></div>
+      Joined: Fri Jan 12, 2007 08:35 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">HOLA</span><br>
+        Posted: Sat Nov 01, 2008 06:23 PM
+      </div>
+      <div class="content"><p>Hola Willian</p>
+<p>a mi me salen muchos  - Warning W0001  Ambiguous reference: 'SELF'</p>
+<p>Que podra ser <!-- s:? --><img src="{SMILIES_PATH}/icon_confused.gif" alt=":?" title="Confused" /><!-- s:? --> </p>
+<p>Saluditos</p>
+<p>Aida <!-- s:wink: --><img src="{SMILIES_PATH}/icon_wink.gif" alt=":wink:" title="Wink" /><!-- s:wink: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p68552">
+    <div class="poster">
+      <div class="name" style="color:#105289">wmormar</div>
+      <div class="rank">Posts: 1076</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Incrustar CALCULADORA en FWH</span><br>
+        Posted: Sat Nov 01, 2008 07:18 PM
+      </div>
+      <div class="content">mcfox,<br>
+<br>
+las modificaciones serían de esta manera.<br>
+<br>
+Agregar la data a la clase<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">...
+...
+   DATA cClassName           AS CHARACTER  INIT  "SciCalc"
+...
+...</code></pre></div><br>
+<br>
+En el metodo incrustar_calculadora( ...  )<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD incrustar_calculadora( ocontainer )
+   LOCAL aRect := {}
+   LOCAL nLoop := 0
+
+   ::ocontainer := ocontainer
+
+   // Handle de la aplicación
+   ::hwndcalc := FindWindow( 0, ::cTitlecalculator )
+   IF ::hwndcalc &gt; 0
+      ::Cerrar_Programa( ::hwndcalc )
+      ::hwndcalc := NIL
+   ENDIF
+
+   // Abre el programa
+   MSGRUN( "Ejecutando calculadora...",, ;
+           {|| ShellExecute( ,,"calc.exe",,, )} )
+
+   WHILE nLoop &lt;= ::nTime
+      // Handle de la aplicación
+      ::hwndcalc := FindWindow( 0, ::cTitlecalculator )
+      IF ::hwndcalc &lt;&gt; 0
+         EXIT
+      ENDIF
+      ::hwndcalc := FindWindow( ::cClassName, 0 )
+      IF ::hwndcalc &lt;&gt; 0
+         EXIT
+      ENDIF
+      SYSREFRESH()
+      nLoop += 1
+   ENDDO
+
+   // Ocultando la calculadora
+   ShowWindow( ::hwndcalc, 0 )
+
+   // Recupera el ancho y alto del área cliente
+   aRect := GetClientRect( ::hwndcalc )
+
+   // Redimensiona el picturebox al ancho y alto del programa
+   ::ocontainer:nWidth  := ( aRect[4] - aRect[2] ) // + 25
+   ::ocontainer:nHeight := ( aRect[3] - aRect[1] ) // + 55
+
+   // Elimina la barra de título, los menúes y lo incrusta
+   ::Eliminar_Menu( ::hwndcalc )
+   ::Barra_Titulo( ::hwndcalc, .t. )
+   ::Incrustar( ::hwndcalc )
+   UpdateWindow( ::hwndcalc )
+   ::ocontainer:refresh()
+   ::setfocus( ::hwndcalc )
+
+   RETURN NIL
+
+/*******************************************************************/</code></pre></div><br>
+<br>
+Esperemos ahora si funcione, espero tus comentarios</div>
+    </div>
+  </div>
+  <div class="post" id="p68565">
+    <div class="poster">
+      <div class="name" style="color:#105289">wmormar</div>
+      <div class="rank">Posts: 1076</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Incrustar CALCULADORA en FWH</span><br>
+        Posted: Sun Nov 02, 2008 12:46 AM
+      </div>
+      <div class="content">Amigos,<br>
+<br>
+una actualización de la clase, pero ahora pudiendo incrustar cualquier aplicación de windows, coloco el ejemplo del TEST y la modificación de la propia clase.<br>
+<br>
+espero sus comentarios, aquí los códigos correspondientes.<br>
+<br>
+Primero el test.<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+FUNCTION main()
+   LOCAL oBmp
+   LOCAL tWExec32
+   LOCAL lSalir := .f.
+   LOCAL oBtn
+   LOCAL oTest
+
+   tWExec32 := TWExecute()
+   tWExec32:cNameApplication  := "NOTEPAD.EXE"
+   tWExec32:cTitleApplication := "Sin título - Bloc de notas"
+   DEFINE DIALOG oDlg RESOURCE "RECURSOEXEC" TITLE ".:: Execute application ::." COLOR CLR_BLUE,CLR_WHITE
+      REDEFINE BITMAP oBmp ID 401 OF oDlg TRANSPARENT
+      REDEFINE BUTTON oBtn ID 301 ACTION (oBtn:disable(), tWExec32:incrustar( oBmp ) )
+      REDEFINE BUTTON ID 302 ACTION (tWExec32:cerrar(), lSalir := .t., ;
+                                     oDlg:END())
+      REDEFINE BUTTON ID 303 ACTION (UpdateWindow( tWExec32:hwndexec ), oBmp:refresh())
+   ACTIVATE DIALOG oDlg VALID lSalir
+
+   RETURN NIL</code></pre></div><br>
+<br>
+Aquí la clase modificada.<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+   Tomado: Recursos visualbasic
+   Fecha:  31 . octubre . 2008
+   Hora:   02.48
+
+   INCOS, wmormar
+*/
+
+#include "fivewin.ch"
+
+   // Constante para la llamada dinámica del API
+#define DC_CALL_STD            0x0020
+
+#define SHOWMAXIMIZED_eSW      3
+   // Constante para usar con el Api DeleteMenu
+#define MF_BYPOSITION          0x400
+#define MF_REMOVE              0x1000
+
+   // Constante para usar con el Api SendMessage para cerrar
+   // la aplicación ( en este caso La calculadora )
+#define SC_CLOSE              61536
+#define WM_SYSCOMMAND         274
+
+   // Constante para usar con GetWindowLong y SetWindowLong
+#define GWL_STYLE             -16
+
+   // Constantes para SetWindowPos
+#define SWP_FRAMECHANGED      0x0020
+#define SWP_NOMOVE            0x0002
+#define SWP_NOSIZE            0x0001
+#define SWP_NOZORDER          0x0004
+#define HWND_TOP              0
+
+CLASS TWExecute
+   // Mantiene el Handle del programa
+   DATA hwnd                 AS NUMERIC    INIT NIL
+   DATA hwndexec             AS NUMERIC    INIT NIL
+   DATA cNameApplication     AS CHARACTER  INIT  "calc.exe"
+   DATA cTitleApplication    AS CHARACTER  INIT  "Calculadora"
+   DATA cClassName           AS CHARACTER  INIT  "SciCalc"
+   DATA ocontainer           AS OBJECT     INIT NIL
+   DATA nTime                AS NUMERIC    INIT 25000
+
+   METHOD normal()
+   METHOD barra_titulo( lErase )
+   METHOD Eliminar_Menu( hwnd )
+   METHOD Cerrar( hwnd )
+   METHOD incrustar( ocontainer )
+   METHOD Incrustar_Application( hwnd )
+   METHOD GetMenu( hwnd )
+   METHOD DeleteMenu( hmenu, nposition, wflags )
+   METHOD GetMenuItemCount( hmenu )
+   METHOD DrawMenuBar( hwnd )
+   METHOD GetWindowLong( hwnd, nindex )
+   METHOD SetWindowLong( hwnd, nindex, dwnewlong )
+   METHOD SetWindowPos( hwnd, hwndinsertafter, x, y, cx, cy, wflags )
+   METHOD setfocus( hwnd )
+
+ENDCLASS
+
+/*******************************************************************/
+// Cargando calculadora normal de windows
+METHOD normal()
+   ShellExecute( ::hwnd,,"calc.exe",,, )
+
+   RETURN NIL
+
+/*******************************************************************/
+// Elimina y reestablece la barra de título de una ventana
+METHOD barra_titulo( hwnd, lErase )
+   LOCAL nStyle
+
+   // Almacena en la variable el estilo actual
+   nStyle := ::GetWindowLong( hwnd, GWL_STYLE )
+
+   IF !lErase
+      nStyle := nor( nStyle, WS_CAPTION )
+   ELSE
+      nStyle += nor( WS_CAPTION )
+   ENDIF
+
+   // Aplica el nuevo estilo
+   ::SetWindowLong( hwnd, GWL_STYLE, nStyle )
+
+   // Mueve de posición la calculadora
+   ::SetWindowPos( ::hwndexec, HWND_TOP, 0, 0, 0, 0 )
+
+   RETURN NIL
+
+/*******************************************************************/
+//Elimina el menú de una ventana específica
+METHOD Eliminar_Menu( hwnd )
+   LOCAL hmenu
+   LOCAL nmenu
+   LOCAL i
+
+   // Recuper el hwnd del menu del programa
+   hmenu := ::GetMenu( hwnd )
+   IF hmenu &lt;&gt; 0
+      // cantidad de menúes
+      nmenu := ::GetMenuItemCount( hmenu )
+      IF nmenu &gt; 0
+         // Recorre todos los menú y los elimina
+         FOR i := 1 To nmenu
+            ::DeleteMenu( hmenu, 0, nor(MF_BYPOSITION, MF_REMOVE) )
+         NEXT
+
+         // Repinta la barra de menú
+         ::DrawMenuBar( hwnd )
+      ENDIF
+   ENDIF
+
+   RETURN NIL
+
+/*******************************************************************/
+// Cierra
+METHOD Cerrar( hwnd )
+   DEFAULT hwnd := ::hwndexec
+
+   // Libera el programa
+   SetParent( hwnd, 0 )
+
+   // Cierra el programa abierto, en este caso la calculadora
+   SendMessage( hwnd, WM_SYSCOMMAND, SC_CLOSE, 0&amp; )
+
+   // Coloca los Handle a NIL
+   hwnd := NIL
+
+   RETURN .t.
+
+/*******************************************************************/
+// mete la ventana en el contenedor
+METHOD incrustar( ocontainer )
+   LOCAL aRect := {}
+   LOCAL nLoop := 0
+
+   ::ocontainer := ocontainer
+
+   // Handle de la aplicación
+   ::hwndexec := FindWindow( 0, ::cTitleApplication )
+   IF ::hwndexec &gt; 0
+      ::Cerrar( ::hwndexec )
+      ::hwndexec := NIL
+   ENDIF
+
+   // Abre el programa
+   MSGRUN( "Ejecutando aplicación...",, ;
+           {|| ShellExecute( ,,::cNameApplication,,, )} )
+
+   WHILE nLoop &lt;= ::nTime
+      // Handle de la aplicación
+      ::hwndexec := FindWindow( 0, ::cTitleApplication )
+      IF ::hwndexec &lt;&gt; 0
+         EXIT
+      ENDIF
+      ::hwndexec := FindWindow( ::cClassName, 0 )
+      IF ::hwndexec &lt;&gt; 0
+         EXIT
+      ENDIF
+      SYSREFRESH()
+      nLoop += 1
+   ENDDO
+
+   // Ocultando la calculadora
+   ShowWindow( ::hwndexec, 0 )
+
+   // Recupera el ancho y alto del área cliente
+   aRect := GetClientRect( ::hwndexec )
+
+   // Redimensiona el picturebox al ancho y alto del programa
+   ::ocontainer:nWidth  := ( aRect[4] - aRect[2] )
+   ::ocontainer:nHeight := ( aRect[3] - aRect[1] )
+
+   // Elimina la barra de título, los menúes y lo incrusta
+   ::Eliminar_Menu( ::hwndexec )
+   ::Barra_Titulo( ::hwndexec, .t. )
+   ::Incrustar_Application( ::hwndexec )
+   UpdateWindow( ::hwndexec )
+   ::ocontainer:refresh()
+   ::setfocus( ::hwndexec )
+
+   RETURN NIL
+
+/*******************************************************************/
+METHOD Incrustar_Application( hwnd )
+   LOCAL nret
+
+   // Lo metemos dentro del ocontainer
+   SetParent( hwnd, ::ocontainer:hwnd )
+
+   // Maximizamos la ventana incrustada dentro del contenedor, mediante el _
+   // Api showWindow, pasándole la constante SHOWMAXIMIZED_eSW
+   nret := ShowWindow( hwnd, SHOWMAXIMIZED_eSW )
+
+   RETURN .t.
+
+/*******************************************************************/
+// Recupera el Hwnd de un menú
+METHOD GetMenu( hwnd )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;      // external DLL
+                    DC_CALL_STD    , ;      // calling convention
+                    "GetMenu" )             // external function
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Elimina el menú de una aplicación
+METHOD DeleteMenu( hmenu, nposition, wflags )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "DeleteMenu" )
+
+   nRet := DllExecuteCall( pCallTemplate, hmenu, nposition, wflags )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Recupera la cantidad de Item de menúes para saber cuantos hay que eliminar
+METHOD GetMenuItemCount( hmenu )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "GetMenuItemCount" )
+
+   nRet := DllExecuteCall( pCallTemplate, hmenu )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Redibuja - repinta la barra de menú luego de eliminarlo
+METHOD DrawMenuBar( hwnd )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "DrawMenuBar" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd )
+
+   RETURN nRet
+
+/*******************************************************************/
+// Estas tres funciones es para eliminar la barra de título
+// del programa que se va a incrustar
+METHOD GetWindowLong( hwnd, nindex )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "GetWindowLongA" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd, nindex )
+
+   RETURN nRet
+
+/*******************************************************************/
+METHOD SetWindowLong( hwnd, nindex, dwnewlong )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "SetWindowLongA" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd, nindex, dwnewlong )
+
+   RETURN nRet
+
+/*******************************************************************/
+METHOD SetWindowPos( hwnd, hwndinsertafter, x, y, cx, cy, wflags )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "SetWindowPos" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd, hwndinsertafter, x, y, cx, cy, wflags )
+
+   RETURN nRet
+
+/*******************************************************************/
+METHOD setfocus( hwnd )
+   LOCAL pCallTemplate
+   LOCAL nRet
+
+   // create call template on first call
+   pCallTemplate := DllPrepareCall(  ;
+                    "user32.dll"   , ;
+                    DC_CALL_STD    , ;
+                    "SetFocus" )
+
+   nRet := DllExecuteCall( pCallTemplate, hwnd )
+
+   RETURN nRet
+
+/*******************************************************************/</code></pre></div><br>
+<br>
+Bueno, espero comentarios.</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

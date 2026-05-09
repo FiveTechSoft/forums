@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>ADO RecordSet: Working locally without connecting to Server - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-26907">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> ADO RecordSet: Working locally without connecting to Server</div>
+  <div class="post" id="p149354">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">ADO RecordSet: Working locally without connecting to Server</span><br>
+        Posted: Sun Aug 04, 2013 08:10 AM
+      </div>
+      <div class="content">Please see the post of Mr James Bott here<br>
+<!-- l --><a class="postlink-local" href="http://forums.fivetechsupport.com/viewtopic.php?f=3&amp;t=26787&amp;p=149225&amp;hilit=persisting+data#p149225">viewtopic.php?f=3&amp;t=26787&amp;p=149225&amp;hilit=persisting+data#p149225</a><!-- l --><br>
+<br>
+Please also see MSDN Article about Persisting recordsets on local disk<br>
+<a href="http://msdn.microsoft.com/en-us/library/windows/desktop/ms675273(v=vs.85).aspx" rel="noopener">http&#58;//msdn&#46;microsoft&#46;com/en-us/library/windows/desktop/ms675273(v=vs&#46;85)&#46;aspx</a><br>
+<br>
+We can read recordset(s) from a remote server, save them locally and disconnect from the server. We can continue to work with the saved recordset(s) and if we make any modifications we can upload the modifications to the Server, when we next connect to server.<br>
+This feature is useful in remote locations where connectivity to main server is not reliable and need for update data is minimal.<br>
+<br>
+This example shows how to use this feature. Experts in ADO who are wellversed with this feature need to read no further. This post is intended for starters of ADO and those who are not familiar with this feature.<br>
+<br>
+This example does not use the FW_ ADO functions and users without these functions also can test this example.<br>
+(This example uses only FW_CreateMDB function. If you do not have that function, you may use an alternative or use an exsisting MDB)<br>
+<br>
+This example<br>
+1. Creates a new MDB with a Table<br>
+2. Connects to MDB, Opens the table in a recordset and displays in browse<br>
+3. Saves the recordset locally. closes connection and renakes MDB as MDD. This is to sumulate non-availability of the server.<br>
+4.and 5:  Uses the local recordset to edit and add records locally<br>
+6. Renaems MDD to MDB, Connects to Database and attaches the connection object to our local recordset Then all changes in the local recordset are UPLOADED to the Server.<br>
+7. View the table on the server to confirm uploading all changes.<br>
+<br>
+Please compile the program as it is and un in any folder you like.<br>
+For each step the program explains the stage of the program. It is better you keep the source code open and watch the same along with each step executed by the program.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+*
+*  AdoSave.prg
+*  Aug 02-2013 12:12 AM
+*
+*/
+
+#include "FiveWin.Ch"
+#include "adodef.ch"
+#include "xbrowse.ch"
+#include "hbcompat.ch"
+
+static cPath, cMdb, cBak, cDat, cStr
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oCn, oRs
+
+   SET DATE ITALIAN
+   SET CENTURY ON
+   XbrNumFormat( 'A', .t. )
+   SetGetColorFocus()
+   //
+   cPath    := cFilePath( ExeName() )
+   cMdb     := "tutor02.mdb"
+   cBak     := cFileSetExt( cMdb, "mdd" )
+   cDat     := cFileSetExt( cMdb, "dat" )
+   cStr     := "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" + cPath + cMdb + ";"
+
+//----------------------------------------------------------------------------//
+// STEP-1: Create New Database TUTOR02.MDB and create a table DLYCLN
+//----------------------------------------------------------------------------//
+
+   MsgInfo( "Step-1" + CRLF + "Create new mdb database: " + cMdb )
+   CreateNewDatabase()
+   MsgInfo( "Data base '" + cMdb + "' and table 'DLYCLN' created." )
+
+//----------------------------------------------------------------------------//
+// STEP-2: OPEN TABLE "DLYCLN" in the database and show contents
+//----------------------------------------------------------------------------//
+
+   MsgInfo( "Step-2" + CRLF + "Opening recordset of DLYCLN table" )
+   oRs      := CreateObject( "ADODB.RecordSet" )
+   oRs:CursorLocation   := adUseClient
+   oRs:Open( "DLYCLN", cStr, adOpenStatic, adLockBatchOptimistic, adCmdTable )
+   xbrowser oRs TITLE cMdb + ":DLYCLN"
+
+//----------------------------------------------------------------------------//
+// STEP-3: SAVE RECORDSET TO LOCAL DISK, CLOSE RECORDSET AND CONNECTION TO DATABASE
+//         RENAME THE MDB AS MDD, SO THAT WE CAN NOT CONNECT TO THE DATABASE
+//         THIS IS TO SIMULATE NON-AVAILABILITY OF SERVER
+//----------------------------------------------------------------------------//
+
+   MsgInfo( "Step-3: Saving RecordSet Locally as " + cDat + CRLF + "Syntax: oRs:Save( cDat, 0 )" )
+   if File( cDat ); FErase( cDat ); endif
+   oRs:Save( cDat, 0 )
+   MsgInfo( "Record Set saved as: " + cDat )
+   MsgInfo( "Closing Connection" )
+   oRs:Close()
+   oRs := nil
+   MsgInfo( "Renaming " + cMdb + " as " + cBak + CRLF + ;
+      "This is equivalent to not having connection with Server" )
+   ? FRename( cMdb, cBak )
+   MsgInfo( "Now we can not connect to Database " + cMdb )
+
+//----------------------------------------------------------------------------//
+// STEP-4: OPEN LOCALLY SAVED FILE AS RECORDSET WITHOUT CONNECTING TO ANY DATABASE
+//         AND EDIT THE TABLE IN XBROWSE AND SAVE CHANGES LOCALLY
+//----------------------------------------------------------------------------//
+
+   MsgInfo( "Step-4" + CRLF + "Now we open locally saved RecSet without any connection" + CRLF + ;
+            "You may edit any data inline" )
+   oRs      := CreateObject( "ADODB.RecordSet" )
+   oRs:CursorLocation   := adUseClient
+#ifdef __XHARBOUR__
+   oRs:Open( cDat, OleDefaultArg(), adOpenStatic, adLockBatchOptimistic, adCmdFile )
+#else
+   oRs:Source     := cDat
+   oRs:LockType   := adLockBatchOptimistic
+   oRs:Open()
+#endif
+
+   xbrowser oRs TITLE "localcopy:DLYCLN (fastedit mode)" FASTEDIT  SETUP ;
+      ( oBrw:bSaveData := { || .t. } )
+   oRs:Save()
+   oRs:Close()
+
+//----------------------------------------------------------------------------//
+// STEP-5: RE-OPEN LOCALLY SAVED FILE AS RECORDSET WITHOUT CONNECTING TO ANY DATABASE
+//         ADD TWO NEW ROWS
+//         AND EDIT THE TABLE IN XBROWSE AND SAVE CHANGES LOCALLY
+//----------------------------------------------------------------------------//
+
+   MsgInfo( "Step-5: Saved and closed. Reopening Again" )
+
+   oRs      := CreateObject( "ADODB.RecordSet" )
+   oRs:CursorLocation   := adUseClient
+#ifdef __XHARBOUR__
+   oRs:Open( cDat, OleDefaultArg(), adOpenStatic, adLockBatchOptimistic, adCmdFile )
+#else
+   oRs:Source     := cDat
+   oRs:LockType   := adLockBatchOptimistic
+   oRs:Open()
+#endif
+   MsgInfo( "Adding two new rows to the local copy" )
+
+   oRs:AddNew( { "WDAY", "COLN" }, { "FriDay", 800 } )
+   oRs:AddNew( { "WDAY", "COLN" }, { "SaturDay", 800 } )
+
+   xbrowser oRs TITLE "localcopy:DLYCLN (fastedit mode)"  FASTEDIT  SETUP ;
+      ( oBrw:bSaveData := { || .t. } )
+   oRs:Save()
+
+//----------------------------------------------------------------------------//
+// STEP-6: NOW WE RENAME THE MDD AS MDB. THE DATABASE IS AVAILABLE TO CONNECT
+//         WE CONNECT TO THE DATABASE AND ATTACH OUR LOCAL RECSET TO THE CONNECTION
+//         UPLOAD LOCAL CHANGES TO THE DATABASE, DELETE LOCAL FILE
+//----------------------------------------------------------------------------//
+
+   MsgInfo( "Step-6" + CRLF + "Now we rename " + cBak + " to " + cMdb + CRLF + ;
+      "Connect to Database and Upload local changes to Main DataBase" )
+
+   ? FRename( cBak, cMdb )
+   MsgInfo( cMdb + " now available. Connecting" )
+   oCn   := CreateObject( "ADODB.Connection" )
+   oCn:CursorLocation   := adUseClient
+   oCn:Open( cStr )
+   MsgInfo( "Connected to Database. Connecting Local RecSet to Database" + CRLF + ;
+            "Syntax: oRs:ActiveConnection := oCn" )
+   oRs:ActiveConnection := oCn
+   MsgInfo( "Now our recordset is connected to database" + CRLF + ;
+            "We shall upload changes. Syntax: oRs:UpdateBatch()" )
+   oRs:UpdateBatch()
+   MsgInfo( "Uploaded. Now we close RecSet &amp; Connection" )
+
+   oRs:Close()
+   oCn:Close()
+   oRs := oCn := nil
+   ? FErase( cDat )
+
+//----------------------------------------------------------------------------//
+// STEP-7: NOW WE CONNECT TO DATABASE NORMALLY, OPEN TABLE IN THE DATABASE
+//         TO CONFIRM THAT ALL CHANGES ARE PRESENT IN THE DATABASE
+//----------------------------------------------------------------------------//
+
+   MsgInfo( "Step-7: Now we open the table in the database and" + CRLF + "verify if all changes are uploaded" )
+
+   oRs   := CreateObject( "ADODB.RecordSet" )
+   oRs:CursorLocation   := adUseClient
+   oRs:Open( "DLYCLN", cStr, adOpenStatic, adLockBatchOptimistic, adCmdTable )
+   xbrowser oRs
+
+   MsgInfo( "All Done." + CRLF +  "Cleaning Up" )
+   oRs:Close()
+   oRs   := nil
+
+return (0)
+
+//----------------------------------------------------------------------------//
+
+static function CreateNewDatabase()
+
+   local cSql, oCn, n
+   local aData := { { "MonDay", 40 }, { "TuesDay", 50 }, { "WednesDay", 60 } }
+
+   if File( cMdb )
+      FErase( cMdb )
+   endif
+   if File( cBak )
+      FErase( cBak )
+   endif
+   FW_CreateMDB( cMdb )
+
+   TEXT INTO cSql
+   CREATE TABLE DLYCLN (
+   ID AUTOINCREMENT PRIMARY KEY,
+   WDAY VARCHAR(20),
+   COLN MONEY
+   )
+   ENDTEXT
+
+   oCn   := CreateObject( "ADODB.Connection" )
+   oCn:CursorLocation   := adUseClient
+   oCn:Open( cStr )
+   oCn:Execute( cSql )
+
+   for n := 1 to Len( aData )
+      cSql  := "INSERT INTO DLYCLN ( WDAY, COLN ) VALUES ( '" + ;
+               aData[ n, 1 ] + "'," + cValToChar( aData[ n, 2 ] ) + " )"
+      oCn:Execute( cSql )
+   next n
+   oCn:Close()
+   oCn   := nil
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p149366">
+    <div class="poster">
+      <div class="name" style="color:#105289">Armando</div>
+      <div class="rank">Posts: 3354</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 08:20 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: ADO RecordSet: Working locally without connecting to Server</span><br>
+        Posted: Sun Aug 04, 2013 03:22 PM
+      </div>
+      <div class="content"><p>Mr. Rao:</p>
+<p>Thanks a lot for your aportation, with the RecordSet's GetRows() method can you get the same result?</p>
+<p>Regards</p></div>
+    </div>
+  </div>
+  <div class="post" id="p149367">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: ADO RecordSet: Working locally without connecting to Server</span><br>
+        Posted: Sun Aug 04, 2013 03:29 PM
+      </div>
+      <div class="content"><blockquote><cite>Armando wrote:</cite>Mr. Rao:<br>
+<br>
+Thanks a lot for your aportation, with the RecordSet's GetRows() method can you get the same result?<br>
+<br>
+Regards</blockquote><br>
+With GetRows() method you can read the recordset into an array.<br>
+Agreed that you can do anything with the array locally.<br>
+You can make modifications too.<br>
+<br>
+When you reconnect, how do you upload the changes?<br>
+You need to develop your own logic to identify (1) new rows inserted, (2) rows deleted and (3) rows modified and the columns in the rows that are modified.<br>
+Then you need to develop your own logic to add those new lines, delete those rows and update the specific modified columns of the modified rows.<br>
+<br>
+Is all the trouble worth it? And even you do it, can you do it optimally and without errrors at all?<br>
+<br>
+With the persistent recordset, you need to do only two operations:<br>
+oRs:ActiveConnection := &lt;justopened connection object&gt;<br>
+oRs:UpdateBatch()<br>
+<br>
+Ofcourse you need to use TRY..CATCH for all ADO methods.<br>
+<br>
+You may say that you do not want to modify the data but only want for reference. The why not GetRows() enough?<br>
+Yes but only for that session.<br>
+When the user closes the application and reopens, the information in the array is lost.  Till you connect to the Server you can not get the info.<br>
+<br>
+In the case of persistent recordset what we do is :<br>
+<br>
+When the user starts the program<br>
+Check if connection to server is available.<br>
+     (i) If avaliable Synchronize local recordset with Server ( Push and Pull )<br>
+     (ii) If not, continue with the local recordset</div>
+    </div>
+  </div>
+  <div class="post" id="p149376">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: ADO RecordSet: Working locally without connecting to Server</span><br>
+        Posted: Sun Aug 04, 2013 05:52 PM
+      </div>
+      <div class="content"><p>Let me add. Handling recordsets is more cumbersome than RDD and TData(Base)</p></div>
+    </div>
+  </div>
+  <div class="post" id="p149379">
+    <div class="poster">
+      <div class="name" style="color:#105289">Armando</div>
+      <div class="rank">Posts: 3354</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 08:20 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: ADO RecordSet: Working locally without connecting to Server</span><br>
+        Posted: Sun Aug 04, 2013 07:15 PM
+      </div>
+      <div class="content"><p>Mr. Rao:</p>
+<p>Thank for your comments.</p>
+<p>Regards</p></div>
+    </div>
+  </div>
+  <div class="post" id="p149736">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurizio</div>
+      <div class="rank">Posts: 842</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: ADO RecordSet: Working locally without connecting to Server</span><br>
+        Posted: Mon Aug 12, 2013 05:04 PM
+      </div>
+      <div class="content"><p>Mr. Rao:</p>
+<p>Thanks for your works, </p>
+<p>I have a problem with  </p>
+<p>MsgInfo( &quot;Renaming &quot; + cMdb + &quot; as &quot; + cBak + CRLF + ;<br>
+     &quot;This is equivalent to not having connection with Server&quot; )</p>
+<p>?  FRename(  cMdb, cBak ) </p>
+<p>frename  returns -1 , this is because  cMdb is still open </p>
+<p>Regards <br>
+Maurizio</p></div>
+    </div>
+  </div>
+  <div class="post" id="p149737">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: ADO RecordSet: Working locally without connecting to Server</span><br>
+        Posted: Mon Aug 12, 2013 05:09 PM
+      </div>
+      <div class="content"><blockquote>? FRename( cMdb, cBak ) <br>
+<br>
+frename returns -1 , this is because cMdb is still open <br>
+</blockquote><br>
+If it returns -1, then renaming was not successful for whatever reason and one of such reasons could be that the mdb is not fully closed and released.<br>
+<br>
+If you execute the code I posted without any changes, the connection should be closed and the renaming should be successful.<br>
+<br>
+Though I made this sample with access for easy testing, this principle can be tested on networks or over internet by disconnecting the net connection.</div>
+    </div>
+  </div>
+  <div class="post" id="p149762">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurizio</div>
+      <div class="rank">Posts: 842</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: ADO RecordSet: Working locally without connecting to Server</span><br>
+        Posted: Tue Aug 13, 2013 06:44 AM
+      </div>
+      <div class="content"><p>Mr. Rao </p>
+<p>with the FWH 13.07 revised build  it works </p>
+<p>Thanks <br>
+Maurizio</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

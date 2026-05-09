@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Need an Advice about Memo fields usage in MariaDB. - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-38793">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Need an Advice about Memo fields usage in MariaDB.</div>
+  <div class="post" id="p231332">
+    <div class="poster">
+      <div class="name" style="color:#105289">Horizon</div>
+      <div class="rank">Posts: 1387</div>
+      <div class="avatar"></div>
+      Joined: Fri May 23, 2008 01:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Need an Advice about Memo fields usage in MariaDB.</span><br>
+        Posted: Sun Apr 12, 2020 09:18 PM
+      </div>
+      <div class="content">Hi,<br>
+<br>
+I am try to convert my application Dbf to MariaDB. I was using external MEMO.dbf because of corruption of memo field in dbf.<br>
+<br>
+My customers enters huge of data in my app. There is about 6 memo fields in my record. When I converting MariaDB, I need an advice.<br>
+<br>
+Should I transfer my data again memo fields in my record or should I change DBFMEMO.prg to use MariaDB?<br>
+<br>
+Thanks in advance.<br>
+<br>
+DBFMEMO.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+*+--------------------------------------------------------------------
+*+
+*+    Source Module =&gt; DBFMEMO.PRG
+*+
+*+    Functions: Function TESTMEMO()
+*+               Function B_DBFMEMO()
+*+               Static Function B_ADDREC()
+*+               Static Function B_DELREC()
+*+               Static Function B_DEL_REC()
+*+
+*+       Tables: use memo alias memo shared
+*+
+*+      Indexes: index on TYPE + CODE + SEQUENCE to memo
+*+
+*+    Reformatted by Click! 1.08 on Jun-18-1997 at 11:59 pm
+*+
+*+--------------------------------------------------------------------
+
+/***
+    DBFMEMO.PRG - allows the storage of "memo" fields in standard DBF files.
+    You can use a SINGLE memo file to service multiple DBF files.
+
+    * Store memotext in only one memofile (+1 indexfile).
+    * Every database uses the same memofile (less file handles).
+    * No memofields needed in DBF file.
+    * Automatic recycling of unused space =&gt; no memofile bloat!
+    * Every database record can have several memofields.
+    * Even memotext not related to a database, can also stored.
+    * 100% clipper code.
+
+  Uploaded by: &lt;!-- e --&gt;&lt;a href="mailto:cautere@innet.be"&gt;cautere@innet.be&lt;/a&gt;&lt;!-- e --&gt; (Jos Cautereels)
+
+  Comments:
+
+    Requires a DBF file with the following structure:
+      NAME        TYPE LEN DEC
+      ----------- ---- --- ---
+      TYPE        C      2
+      CODE        C     10
+      SEQUENCE    C      1
+      TEXTLINE    C     64
+    ...and an index on TYPE+CODE+SEQUENCE
+
+    The files have to be open for the function to work (duh!)
+
+       This function currently supports memos up to 256 64-byte lines long
+       (16 kb).  This limitation can be overcome by simply increasing the size
+       of SEQUENCE to 2 bytes and modifying the corresponding code to use
+       I2BIN() and BIN2I() to store the line counter.
+       Another way to increase the maximum memo size would be to increase
+       TEXTLINE.  You can optimize the memos any way you want like this.
+
+       The cType parameter to B_DBFMEMO() allows you to segregate memos from
+       different files, fields, etc..  This way you can use a SINGLE memo file
+       to service multiple DBF files.  For example suppose file A contains 3
+       memo fields and file B contains 2, you could Type them like this:
+          "A1", "A2", "A3", "B1", "B2"
+
+          To store a memo in file A for memo field 2 for record ID "000123":
+             lSuccess:=B_DBFMEMO( MEMOSAVE, "A2", "000123", "THIS IS A MEMO" )
+
+          To retrieve the same memo:
+             cMemo:=B_DBFMEMO( MEMOGRAB, "A2", "000123" )
+
+          To delete the same memo:
+             lSuccess:=B_DBFMEMO( MEMODELETE, "A2", "000123" )
+
+       If you have a file that does NOT contain a unique key field, you will
+       probably have to use some sort of memo-id scheme.  Go to bottom of memo
+       file, increment last memo-&gt;code used or maintain a last_memo field in a
+       configuration file and increment it whenever a memo is added.  Either
+       way you will probably want to write a function for adding memos that
+       does this work for you.
+
+       Please note, if your application allows the user to change the key field,
+       the corresponding memo-&gt;code field will also have to be changed for all
+       memo records associated with that key field.
+*/
+
+#include "common.ch"
+#translate B_RLOCK()  =&gt; rlock()  // use your own record-lock function
+                                  //  with error message.
+
+// DBF-MEMO DEFINES - Place these in an application-wide header file
+#define MEMOSAVE    1
+#define MEMODELETE  2
+#define MEMOGRAB    3
+#define MEMOSIL   4
+#define MEMOALIAS   memo
+
+#ifdef TEST
+
+*+--------------------------------------------------------------------
+*+
+*+    Function TESTMEMO()
+*+
+*+--------------------------------------------------------------------
+*+
+function TESTMEMO
+
+field TYPE
+field CODE
+field SEQUENCE
+field TEXTLINE
+local cMemo
+local lSuccess
+
+altd()
+use memo alias memo shared
+index on TYPE + CODE + SEQUENCE to memo
+
+//  To store a memo in file A for memo field 2 for record ID "000123":
+lSuccess := B_DBFMEMO( MEMOSAVE, "A2", "000123", replic( "THIS IS A MEMO. ", 50 ) )
+? lSuccess
+
+//  To retrieve the same memo:
+cMemo := B_DBFMEMO( MEMOGRAB, "A2", "000123" )
+? cMemo
+
+//  To delete the same memo:
+lSuccess := B_DBFMEMO( MEMODELETE, "A2", "000123" )
+
+// Test if slot is empty
+cMemo := "xxx"
+cMemo := B_DBFMEMO( MEMOGRAB, "A2", "000123" )
+? empty( cMemo )    // .T.
+
+// Empty space reused
+lSuccess := B_DBFMEMO( MEMOSAVE, "A5", "000123", replic( "Recycling !!! ", 25 ) )
+
+return nil
+#endif
+
+*+--------------------------------------------------------------------
+*+
+*+    Function B_DBFMEMO()
+*+
+*+    Called from ( dbfmemo.prg  )   5 - function testmemo()
+*+
+*+--------------------------------------------------------------------
+*+
+function B_DBFMEMO( nMode, cType, cCode, cText, lYENI )
+
+/* B_DBFMEMO(nMode,cType,cCode,[cText]) --&gt; ?
+   nMode is MEMOSAVE, MEMODELETE, MEMOGRAB
+   cType is a 2 char attribute that allows you to seperate types of memos
+   cCode is a 10 char attribute that points to the individual memo
+
+   Returns: if MEMOSAVE or MEMODELETE lSuccess
+            if MEMOGRAB cMemoText
+*/
+local xReturn
+local lOk       := .T.
+local nSequence := 1
+local nDelRecNo
+local nNextRec
+
+IF VALTYPE(lYENI) = "U"
+    lYENI := .F.
+ENDIF
+
+// ? cCode, lYENI, MEMOSAVE, cText
+
+    //? LYENI
+    //WAIT "İÇERDE"
+
+cType := padr( cType, 2 )
+cCode := padr( cCode, 10 )
+//? cType, cCode, nMode
+do case
+case nMode == MEMOSAVE
+   if ( cText &lt;&gt; NIL )
+      // Find first record of existing memo and replace as long as
+      // slots exist for this type and code
+//      ? cText, cCode, cType + cCode + Mydectohex( 1, 3), "YAZMAYA GELDİM"
+            IF lYENI
+          MEMOALIAS-&gt;( dbseek( cType + cCode + Mydectohex( 1, 3) ) )
+            ELSE
+          MEMOALIAS-&gt;( dbseek( cType + cCode + chr( 1 ) ) )
+        ENDIF
+      while MEMOALIAS-&gt;type == cType .and. ;
+            MEMOALIAS-&gt;code == cCode .and. ;
+            MEMOALIAS-&gt;( !eof() ) .and. ;
+            !empty( cText ) .and. lOk
+
+         if ( lOk := MEMOALIAS-&gt;( B_RLOCK() ) )
+                        IF lYENI
+                     MEMOALIAS-&gt;sequence := Mydectohex( nSequence, 3)
+                        ELSE
+                   MEMOALIAS-&gt;sequence := chr( nSequence )
+                        ENDIF
+                MEMOALIAS-&gt;textline := substr( cText, 1, 64 )
+                        IF lYENI
+                    lOk                 := ( ++ nSequence &lt;= 4095 )
+                        ELSE
+                    lOk                 := ( ++ nSequence &lt;= 254 )
+                        ENDIF
+              cText                 := substr( cText, 65 )
+              MEMOALIAS-&gt;( dbunlock() )
+                        MEMOALIAS-&gt;( dbskip() )
+         end
+      enddo
+
+
+      // We are either going to add new slots or delete existing
+      // unused slots.
+      IF !empty( cText ) .and. lOk
+         // Add new slots for this type and code
+         while !empty( cText ) .and. lOk
+            if ( lOk := MEMOALIAS-&gt;( B_ADDREC() ) )
+              MEMOALIAS-&gt;type     := cType
+                MEMOALIAS-&gt;code     := cCode
+                            IF lYENI
+                MEMOALIAS-&gt;sequence := Mydectohex( nSequence, 3 )
+                            ELSE
+                MEMOALIAS-&gt;sequence := chr( nSequence )
+                            ENDIF
+                  MEMOALIAS-&gt;textline := substr( cText, 1, 64 )
+                            IF lYENI
+                lOk                 := ( ++ nSequence &lt;= 4095 )
+                            ELSE
+                    lOk                 := ( ++ nSequence &lt;= 254 )
+                            ENDIF
+              cText               := substr( cText, 65 )
+                MEMOALIAS-&gt;( dbunlock() )
+            end
+         enddo
+      else
+         // Delete old unused slots for this type and code
+         do while MEMOALIAS-&gt;type + MEMOALIAS-&gt;code == cType + cCode .and. ;
+                 MEMOALIAS-&gt;( !eof() )
+            nDelRecNo := MEMOALIAS-&gt;( recno() )
+            MEMOALIAS-&gt;( dbskip() )
+            nNextRec := MEMOALIAS-&gt;( recno() )
+            MEMOALIAS-&gt;( dbgoto( nDelRecNo ) )
+            MEMOALIAS-&gt;( B_DEL_REC() )
+            MEMOALIAS-&gt;( dbgoto( nNextRec ) )
+         enddo
+         lOk := .t.
+      end
+
+   else
+      lOk := .F.
+   endif
+   xReturn := lOk
+
+case nMode == MEMODELETE
+   xReturn := B_DELREC( cType + cCode )
+   dbunlock()
+
+case nMode == MEMOSIL
+   xReturn := B_DELSREC( cType + cCode )
+   dbunlock()
+
+case nMode == MEMOGRAB
+//? "BURDAYIM", cType, cCode
+   xReturn := ""
+   MEMOALIAS-&gt;( dbseek( cType + cCode ) )
+//? FOUND()
+   while MEMOALIAS-&gt;type == cType .and. ;
+         MEMOALIAS-&gt;code == cCode .and. ;
+         !MEMOALIAS-&gt;( eof() )
+//? "GİRDİM"
+      xReturn += MEMOALIAS-&gt;textline
+      MEMOALIAS-&gt;( dbskip() )
+   enddo
+    IF LEN(xReturn) &gt; 32000
+        xReturn := LEFT(xReturn, 32000)
+    ENDIF
+
+//? "BİTTİ",xReturn
+endcase
+
+return xReturn
+
+*+--------------------------------------------------------------------
+*+
+*+    Static Function B_ADDREC()
+*+
+*+    Called from ( dbfmemo.prg  )   1 - function b_dbfmemo()
+*+
+*+--------------------------------------------------------------------
+*+
+static function B_ADDREC()              // search empty record or make a new
+
+if !dbseek( space( len( MEMOALIAS-&gt;type + MEMOALIAS-&gt;Code ) ), .f. )
+   dbappend()
+endif
+
+return B_RLOCK()
+
+*+--------------------------------------------------------------------
+*+
+*+    Static Function B_DELREC()
+*+
+*+    Called from ( dbfmemo.prg  )   1 - function b_dbfmemo()
+*+
+*+--------------------------------------------------------------------
+*+
+static function B_DELREC( cDelete )     // delete whole memo
+
+do while dbseek( cDelete, .f. )
+   B_DEL_REC()
+enddo
+
+return .t.
+
+static function B_DELSREC( cDelete )     // delete whole memo
+
+do while MEMOALIAS-&gt;(dbseek( cDelete, .f. ))
+    if MEMOALIAS-&gt;(RLOCK())
+    MEMOALIAS-&gt;(DBDELETE())
+    endif
+enddo
+
+return .t.
+
+
+*+--------------------------------------------------------------------
+*+
+*+    Static Function B_DEL_REC()
+*+
+*+    Called from ( dbfmemo.prg  )   1 - function b_dbfmemo()
+*+                                   1 - static function b_delrec()
+*+
+*+--------------------------------------------------------------------
+*+
+static function B_DEL_REC()             // delete (=make empty) single record
+
+if B_RLOCK()
+   MEMOALIAS-&gt;Type     := ""
+   MEMOALIAS-&gt;Code     := ""
+   MEMOALIAS-&gt;sequence := ""
+   MEMOALIAS-&gt;textline := ""
+endif
+
+return nil
+/*
+function nHex( cHex )
+
+   local n, nChar, nResult := 0
+   local nLen := Len( cHex )
+
+   for n = 1 to nLen
+      nChar = Asc( Upper( SubStr( cHex, n, 1 ) ) )
+      nResult += ( ( nChar - If( nChar &lt;= 57, 48, 55 ) ) * ( 16 ^ ( nLen - n ) ) )
+   next
+
+return nResult
+*/
+//----------------------------------------------------------------------------//
+
+function MyDecToHex( nValue, nLen )
+
+   local nMod, cDec := ""
+
+   while nValue &gt; 15
+      nMod   = nValue % 16
+      nValue = Int( nValue / 16)
+      cDec   = HexVal( nMod ) + cDec
+   end
+
+   cDec = HexVal( nValue ) + cDec
+
+    IF LEN(cDec) &lt; nLen
+        cDec := STRZERO(0,nLen-LEN(cDec),0)+cDec
+    ENDIF
+
+return cDec
+
+//----------------------------------------------------------------------------//
+
+static function HexVal( nValue )
+
+   LOCAL cValue
+
+   if nValue &lt; 10
+      cValue := Str( nValue, 1 )
+   else
+      cValue := Chr( 55 + nValue )
+   endif
+
+return cValue
+
+//----------------------------------
+
+
+*+ EOF: DBFMEMO.PRG</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p231410">
+    <div class="poster">
+      <div class="name" style="color:#105289">Adolfo</div>
+      <div class="rank">Posts: 883</div>
+      <img class="avatar avatar-img" src="avatars/105.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 11, 2005 11:57 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Need an Advice about Memo fields usage in MariaDB.</span><br>
+        Posted: Wed Apr 15, 2020 03:46 PM
+      </div>
+      <div class="content"><p>Hi<br>
+I don´t quite understand your problem, but if your migrating from DBF to MARIADB I support you 100%<br>
+I had 2 DBF's with memo fields, create them as TEXT fields in MARIADB, never ever had a problem, even though as you said, clients enter huge amount of data in them.</p>
+<p>Some of my clients db's are more than 25 GB, including memo fields and blob fields with images inside. </p>
+<p>Use Mariadb.</p>
+<p>Greetings, from Chile<br>
+Adolfo</p></div>
+    </div>
+  </div>
+  <div class="post" id="p231414">
+    <div class="poster">
+      <div class="name" style="color:#105289">Horizon</div>
+      <div class="rank">Posts: 1387</div>
+      <div class="avatar"></div>
+      Joined: Fri May 23, 2008 01:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Need an Advice about Memo fields usage in MariaDB.</span><br>
+        Posted: Wed Apr 15, 2020 05:21 PM
+      </div>
+      <div class="content"><blockquote><cite>Adolfo wrote:</cite>Hi<br>
+I don´t quite understand your problem, but if your migrating from DBF to MARIADB I support you 100%<br>
+I had 2 DBF's with memo fields, create them as TEXT fields in MARIADB, never ever had a problem, even though as you said, clients enter huge amount of data in them.<br>
+<br>
+Some of my clients db's are more than 25 GB, including memo fields and blob fields with images inside. <br>
+<br>
+Use Mariadb.<br>
+<br>
+Greetings, from Chile<br>
+Adolfo</blockquote><br>
+<br>
+Thank you Adolfo. I got the answer to the question I asked.</div>
+    </div>
+  </div>
+  <div class="post" id="p231426">
+    <div class="poster">
+      <div class="name" style="color:#105289">Antonio Mart.</div>
+      <div class="rank">Posts: 174</div>
+      <div class="avatar"></div>
+      Joined: Sat Feb 23, 2013 10:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Need an Advice about Memo fields usage in MariaDB.</span><br>
+        Posted: Wed Apr 15, 2020 09:30 PM
+      </div>
+      <div class="content"><blockquote><cite>Adolfo wrote:</cite>Hi<br>
+I don´t quite understand your problem, but if your migrating from DBF to MARIADB I support you 100%<br>
+I had 2 DBF's with memo fields, create them as TEXT fields in MARIADB, never ever had a problem, even though as you said, clients enter huge amount of data in them.<br>
+<br>
+Some of my clients db's are more than 25 GB, including memo fields and blob fields with images inside. <br>
+<br>
+Use Mariadb.<br>
+<br>
+Greetings, from Chile<br>
+Adolfo</blockquote><br>
+<br>
+IMHO, images records on maria db slowing db access. Best option is record images on external files.</div>
+    </div>
+  </div>
+  <div class="post" id="p231433">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Need an Advice about Memo fields usage in MariaDB.</span><br>
+        Posted: Thu Apr 16, 2020 12:41 AM
+      </div>
+      <div class="content"><p>You can safely store large memos also in LONGTEXT fields. In case of binary data you can store in LONGBLOB fields.</p>
+<p>Regarding the speed of retrieval, it is a good practice to exclude these fields in the SQL reading the data and access these fields only when needed.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p231452">
+    <div class="poster">
+      <div class="name" style="color:#105289">Adolfo</div>
+      <div class="rank">Posts: 883</div>
+      <img class="avatar avatar-img" src="avatars/105.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 11, 2005 11:57 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Need an Advice about Memo fields usage in MariaDB.</span><br>
+        Posted: Thu Apr 16, 2020 04:44 PM
+      </div>
+      <div class="content"><blockquote><cite>Antonio Mart. wrote:</cite><blockquote><cite>Adolfo wrote:</cite>Hi<br>
+I don´t quite understand your problem, but if your migrating from DBF to MARIADB I support you 100%<br>
+I had 2 DBF's with memo fields, create them as TEXT fields in MARIADB, never ever had a problem, even though as you said, clients enter huge amount of data in them.<br>
+<br>
+Some of my clients db's are more than 25 GB, including memo fields and blob fields with images inside. <br>
+<br>
+Use Mariadb.<br>
+<br>
+Greetings, from Chile<br>
+Adolfo</blockquote><br>
+<br>
+IMHO, images records on maria db slowing db access. Best option is record images on external files.</blockquote><br>
+<br>
+Antonio<br>
+<br>
+I never put an image field in any query, If I need it I load it, so I do no have slow access to any of the queries I do.<br>
+In mi db design, I have some tables with 2 fields, CODE,IMAGE, so is very efficient and fast to find and load the image if I need it.<br>
+On the other hand, I have remote access to my DB, from different cities, there's no way I can have images in external files on a file server, I tried in public servers, SAMBA servers and the retrieval i slower than loading them from the MariaDb table <br>
+<br>
+Just to clear it up.<br>
+<br>
+Greetings, From Chile<br>
+Adolfo</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

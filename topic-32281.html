@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Interesting WinRT code - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-32281">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-19.html">Off Topic / Otros temas</a> Interesting WinRT code</div>
+  <div class="post" id="p189293">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Interesting WinRT code</span><br>
+        Posted: Sat Apr 16, 2016 08:24 AM
+      </div>
+      <div class="content">I place a copy of this here as I don't want to loose it:<br>
+<br>
+<a href="http://codetter.com/?p=1091" rel="noopener">http&#58;//codetter&#46;com/?p=1091</a><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "user32.as"
+#include "kernel32.as"
+#include "shell32.as"
+// HString
+#module mHString
+#uselib "msvcrt"
+#func calloc "calloc" int, int
+#func free "free" int
+#uselib "api-ms-win-core-winrt-string-l1-1-0.dll"
+#func WindowsCreateString "WindowsCreateString" wptr, int, sptr
+#func WindowsDeleteString "WindowsDeleteString" wptr
+// 文字列の長さ
+#func WindowsGetStringLen "WindowsGetStringLen" sptr
+// HSTRING_HEADERが返ってくるバージョンみたい？
+#func WindowsCreateStringReference "WindowsCreateStringReference" wptr, int, sptr, sptr
+#func WindowsGetStringRawBuffer "WindowsGetStringRawBuffer" sptr, sptr
+#defcfunc Unicode2HString str as
+/*
+    sdim ws, strlen(as)*2 + 2
+    cnvstow ws, as
+//*/
+    _as=as
+    ws=""
+    MultiByteToWideChar 0x00,0,varptr(_as),strlen(_as),varptr(ws),0:len=stat
+    sdim ws,len*2
+    MultiByteToWideChar 0x00,0,varptr(_as),strlen(_as),varptr(ws),len
+    hString = 0
+    WindowsCreateString varptr(ws), len, varptr(hString)
+return hString
+// 未使用のため
+#defcfunc Unicode2HStringEx str as, var HSTRING_HEADER
+    sdim ws, strlen(as)*2 + 2
+    cnvstow ws, as
+    hString = 0
+    dim HSTRING_HEADER, 6
+    WindowsCreateStringReference varptr(ws), strlen(as), varptr(HSTRING_HEADER), varptr(hString)
+return hString
+#deffunc DeleteHString int _hString
+    WindowsDeleteString _hString
+return stat
+#defcfunc GetHStringLength int _hString
+    WindowsGetStringLen _hString
+return stat
+#defcfunc HString2Unicode int _hString
+    if _hString == 0 : return ""
+    size = GetHStringLength(_hString) * 2
+    if size &lt;= 0 : return ""
+    WindowsGetStringRawBuffer _hString, varptr(size)
+    dupptr buf, stat, GetHStringLength(_hString) * 2, 2
+return cnvwtos(buf)
+#global
+#module mCOMOBJMACRO
+#define global ctype SUCCEEDED(%1) ((%1) &gt;= 0)
+#define global SafeRelease(%1) if ((varuse(%1)) &amp;&amp; (vartype(%1) == 6)){ \
+    delcom %1: \
+    %1 = 0 \
+}
+#global
+// ショートカット作成
+#module mSHORTCUT
+#uselib "Propsys"
+#func InitPropVariantFromStringVector "InitPropVariantFromStringVector" wptr, int, sptr
+#uselib "Ole32"
+#func PropVariantClear "PropVariantClear" sptr
+#define CLSID_ShellLink "{00021401-0000-0000-C000-000000000046}"
+#define IID_IShellLink "{000214EE-0000-0000-C000-000000000046}"
+#usecom IShellLink IID_IShellLink CLSID_ShellLink
+#comfunc IShellLink_SetArguments 11 str
+#comfunc IShellLink_SetIconLocation 17 str, int
+#comfunc IShellLink_SetPath 20 str
+#define IID_IPersistFile "{0000010b-0000-0000-C000-000000000046}"
+#usecom IPersistFile IID_IPersistFile
+#comfunc IPersistFile_Save 6 wstr, int
+#define IID_IPropertyStore "{886d8eeb-8cf2-4446-8d02-cdba1dbdcf99}"
+#define CLSID_PropertyStore "{e4796550-df61-448b-9193-13fc1341b163}"
+#usecom IPropertyStore IID_IPropertyStore CLSID_PropertyStore
+#comfunc IPropertyStore_SetValue 6 sptr, sptr
+#comfunc IPropertyStore_Commit 7
+#deffunc CreateShortcut str file_path, str arg, str icon_path, int icon_idx, str AppUserModelID, str out_path, \
+    local pShellLink, \
+    local pPropStore, \
+    local wstring, \
+    local wstrings, \
+    local ppropvar, \
+    local PKEY_AppUserModel_ID, \
+    local hr
+ 
+    hr = 0
+    pShellLink = 0
+    pPropStore = 0
+ 
+    newcom pShellLink, IShellLink
+    if varuse(pShellLink) == 0 : return -1
+ 
+    IShellLink_SetPath pShellLink, file_path : hr = stat
+    if SUCCEEDED(hr){
+        IShellLink_SetArguments pShellLink, arg : hr = stat
+        if SUCCEEDED(hr){
+            IShellLink_SetIconLocation pShellLink, icon_path, icon_idx : hr = stat
+            if SUCCEEDED(hr){
+                querycom pPropStore, pShellLink, IPropertyStore
+                if varuse(pPropStore){
+                    // Unicodeに変換
+                    sdim wstring, strlen(AppUserModelID) * 2 + 2
+                    cnvstow wstring, AppUserModelID
+                    // 配列なので(今回は1つしかないけど)
+                    wstrings = varptr(wstring)
+                    // PROPVARIANT 構造体
+                    dim ppropvar, 4
+                    // Unicode文字列→PROPVARIANT に変換
+                    InitPropVariantFromStringVector varptr(wstrings), 1/*今回は１つだけなので*/, varptr(ppropvar) : hr = stat
+                    if SUCCEEDED(hr){
+                        PKEY_AppUserModel_ID = 0x9F4C2855, 0x4B399F79, 0xD4E1D0A8, 0xF3D5E12D, 5
+                        IPropertyStore_SetValue pPropStore, varptr(PKEY_AppUserModel_ID), varptr(ppropvar) : hr = stat
+                        if SUCCEEDED(hr){
+                            IPropertyStore_Commit pPropStore : hr = stat
+                            if SUCCEEDED(hr){
+                                IPersistFile_Save pShellLink, out_path, 1 : hr = stat
+                            }
+                        }
+                        PropVariantClear varptr(ppropvar)
+                    }
+                }
+            }
+        }
+    }
+    // SafeRelease
+    SafeRelease pPropStore
+    SafeRelease pShellLink
+return hr
+#global
+// AppUserModel_IDを設定(任意のタイミングで変更可能)
+#module mAPPIDS
+#uselib "shell32"
+#func SHGetPropertyStoreForWindow "SHGetPropertyStoreForWindow" sptr, sptr, sptr
+#func GetCurrentProcessExplicitAppUserModelID "GetCurrentProcessExplicitAppUserModelID" wptr
+#func SetCurrentProcessExplicitAppUserModelID "SetCurrentProcessExplicitAppUserModelID" wstr
+#uselib "Propsys"
+#func InitPropVariantFromString "InitPropVariantFromString" wstr, sptr
+#func InitPropVariantFromStringVector "InitPropVariantFromStringVector" wptr, int, sptr
+#func PropVariantToStringAlloc "PropVariantToStringAlloc" sptr, wptr
+#uselib "Ole32"
+#func PropVariantClear "PropVariantClear" sptr
+#define IID_IPropertyStore "{886d8eeb-8cf2-4446-8d02-cdba1dbdcf99}"
+#define CLSID_PropertyStore "{e4796550-df61-448b-9193-13fc1341b163}"
+#usecom IPropertyStore IID_IPropertyStore CLSID_PropertyStore
+#comfunc IPropertyStore_SetValue 6 sptr, sptr
+#comfunc IPropertyStore_Commit 7
+#deffunc SetAppUserModelID int _hwnd, str AppUserModelID, \
+    local propStorePtr, \
+    local IID_IPropertyStore_Array, \
+    local pPropStore, \
+    local wstring, \
+    local wstrings, \
+    local ppropvar, \
+    local hr
+ 
+    hr = 0
+    pPropStore = 0
+    propStorePtr = 0
+    IID_IPropertyStore_Array = 0x886d8eeb, 0x44468cf2, 0xbacd028d, 0x99cfbd1d
+    PKEY_AppUserModel_ID = 0x9F4C2855, 0x4B399F79, 0xD4E1D0A8, 0xF3D5E12D, 5
+ 
+    SHGetPropertyStoreForWindow _hwnd, varptr(IID_IPropertyStore_Array), varptr(propStorePtr)
+    if stat == 0 &amp;&amp; propStorePtr != 0{
+        newcom pPropStore, IPropertyStore, -1, propStorePtr
+        if varuse(pPropStore){
+            // Win7 では廃止されているらしい
+            // propsys.dll 7.0
+            /*
+            mes varptr(InitPropVariantFromString)
+            InitPropVariantFromString "net.hinekure.test.hsp3", varptr(ppropvar)
+            */
+ 
+            // Unicodeに変換
+            sdim wstring, strlen(AppUserModelID) * 2 + 2
+            cnvstow wstring, AppUserModelID
+            // 配列なので(今回は1つしかないけど)
+            wstrings = varptr(wstring)
+ 
+            // PROPVARIANT 構造体
+            dim ppropvar, 4
+            // Unicode文字列→PROPVARIANT に変換
+            InitPropVariantFromStringVector varptr(wstrings), 1, varptr(ppropvar) : hr = stat
+            if SUCCEEDED(hr){
+                IPropertyStore_SetValue pPropStore, varptr(PKEY_AppUserModel_ID), varptr(ppropvar) : hr = stat
+                if SUCCEEDED(hr){
+                    IPropertyStore_Commit pPropStore : hr = stat
+                }
+                PropVariantClear varptr(ppropvar)
+            }
+        }
+    }
+ 
+    // SafeRelease
+    SafeRelease pPropStore
+ 
+return hr
+#global
+#module mToast
+#uselib "Combase.dll"
+#func RoGetActivationFactory "RoGetActivationFactory" sptr, sptr, sptr
+#func RoActivateInstance "RoActivateInstance" sptr, sptr
+#func RoInitialize "RoInitialize" int
+#func RoUninitialize "RoUninitialize"
+ 
+#define IID_IToastNotificationManagerStatics "{50ac103f-d235-4598-bbef-98fe4d1a3ad4}"
+#define CLSID_ToastNotificationManagerStatics "{6db7cd52-e3b7-4ecc-bb1f-388aeef6bb50}"
+#usecom IToastNotificationManagerStatics IID_IToastNotificationManagerStatics CLSID_ToastNotificationManagerStatics
+// WinRT は0～5まで使ってる
+#comfunc IToastNotificationManagerStatics_CreateToastNotifier 6 sptr
+#comfunc IToastNotificationManagerStatics_CreateToastNotifierWithId 7 sptr, sptr
+#comfunc IToastNotificationManagerStatics_GetTemplateContent 8 int, sptr
+ 
+;#define CLSID_XMLDocument "{CFC399AF-D876-11d0-9C10-00C04FC99C8E}"
+;#define IID_IXMLDocument "{F52E2B61-18A1-11d1-B105-00805F49916B}"
+#define CLSID_XMLDocument "{AF75D6AD-E307-4052-8CB1-BF2052E734F0}"
+#define IID_IXMLDocument "{F7F3A506-1E87-42D6-BCFB-B8C809FA5494}"
+#usecom IXMLDocument IID_IXMLDocument CLSID_XMLDocument
+// WinRT は0～5まで使ってる
+#comfunc IXMLDocument_CreateTextNode 11 sptr, sptr
+#comfunc IXMLDocument_GetElementsByTagName 16 sptr, sptr
+ 
+#define CLSID_XmlNodeList "{AF75D6AD-E307-4052-8CB1-BF2052E734F0}"
+#define IID_IXmlNodeList "{8C60AD77-83A4-4EC1-9C54-7BA429E13DA6}"
+#usecom IXmlNodeList IID_IXmlNodeList CLSID_XmlNodeList
+// WinRT は0～5まで使ってる
+#comfunc IXmlNodeList_get_Length 6 sptr
+#comfunc IXmlNodeList_Item 7 int, sptr
+ 
+#define CLSID_XmlNode "{AF75D6AD-E307-4052-8CB1-BF2052E734F0}"
+#define IID_IXmlNode "{1C741D59-2122-47D5-A856-83F3D4214875}"
+#usecom IXmlNode IID_IXmlNode CLSID_XmlNode
+#comfunc IXmlNode_get_NodeValue 6 sptr
+#comfunc IXmlNode_get_NodeType 8 sptr
+#comfunc IXmlNode_AppendChild 22 sptr, sptr
+ 
+#define CLSID_XmlText "{AF75D6AD-E307-4052-8CB1-BF2052E734F0}"
+#define IID_IXmlText "{F931A4CB-308D-4760-A1D5-43B67450AC7E}"
+#usecom IXmlText IID_IXmlText CLSID_XmlText
+#comfunc IXmlText_QueryInterface 0 sptr, sptr
+ 
+// IToastNotificationManager のことらしい
+#define IID_IToastNotifier "{75927B93-03F3-41EC-91D3-6E5BAC1B38E7}"
+#define CLSID_ToastNotifier "{6db7cd52-e3b7-4ecc-bb1f-388aeef6bb50}"
+#usecom IToastNotifier IID_IToastNotifier CLSID_ToastNotifier
+#comfunc IToastNotifier_Show 6 sptr
+#comfunc IToastNotifier_Hide 7 sptr
+ 
+#define IID_IToastNotificationFactory "{04124B20-82C6-4229-B109-FD9ED4662B53}"
+#define CLSID_ToastNotificationFactory "{6db7cd52-e3b7-4ecc-bb1f-388aeef6bb50}"
+#usecom IToastNotificationFactory IID_IToastNotificationFactory CLSID_ToastNotificationFactory
+#comfunc IToastNotificationFactory_CreateToastNotification 6 sptr, sptr
+ 
+#define IID_IToastNotification "{997E2675-059E-4E60-8B06-1760917C8B80}"
+#define CLSID_ToastNotification "{6db7cd52-e3b7-4ecc-bb1f-388aeef6bb50}"
+#usecom IToastNotification IID_IToastNotification CLSID_ToastNotification
+ 
+#define IID_IXmlNodeSerializer "{5CC5B382-E6DD-4991-ABEF-06D8D2E7BD0C}"
+#define CLSID_XmlNodeSerializer "{AF75D6AD-E307-4052-8CB1-BF2052E734F0}"
+#usecom IXmlNodeSerializer IID_IXmlNodeSerializer CLSID_XmlNodeSerializer
+#comfunc IXmlNodeSerializer_GetXml 6 sptr
+#comfunc IXmlNodeSerializer_get_InnerText 7 sptr
+#comfunc IXmlNodeSerializer_put_InnerText 8 sptr
+ 
+#deffunc WinRTAPIInit
+    RoInitialize 1
+return stat
+#deffunc WinRTAPIUnInit
+    RoUninitialize
+return stat
+#deffunc CreateToastXml var _pTnms_, int _Template, var _pXml_, \
+    local inputXmlPtr, \
+    local _pTnms, \
+    local hr
+ 
+    _pXml = _pXml_
+    _pTnms = _pTnms_
+    inputXmlPtr = 0
+    // ToastTemplateType_ToastText01 = 4
+    IToastNotificationManagerStatics_GetTemplateContent _pTnms, _Template/*4*/, varptr(inputXmlPtr) : hr = stat
+    if SUCCEEDED(hr){
+        newcom _pXml, IXMLDocument, -1, inputXmlPtr
+        if varuse(_pXml){
+            hr = 0
+        }else{
+            hr = -1
+        }
+        _pXml_ = _pXml
+    }
+    /*
+    querycom pXns, _pXml_, IXmlNodeSerializer
+    hString_test = 0
+    IXmlNodeSerializer_GetXml pXns, varptr(hString_test)
+    dialog strf("0x%08x, %d", stat, stat)
+    dialog HString2Unicode(hString_test)
+    */
+return hr
+#deffunc SetImageSrc str _ImagePath, var _pXml2_
+    if _ImagePath == "" : return 0
+return
+#deffunc SetTextValues array Text, var _pXml_, \
+    local num, \
+    local nodeListPtr, \
+    local hString2, \
+    local pNodeList, \
+    local nodeListLength, \
+    local hString3, \
+    local textNodePtr, \
+    local pTextNode, \
+    local pInputText, \
+    local AppendedChildPtr, \
+    local inputTextPtr, \
+    local pTmp, \
+    local hr
+ 
+    pNodeList = 0
+    nodeListPtr = 0
+    hString2 = Unicode2HString("text")
+ 
+    IXMLDocument_GetElementsByTagName _pXml_, hString2, varptr(nodeListPtr) : hr = stat
+    if SUCCEEDED(hr){
+        newcom pNodeList, IXmlNodeList, -1, nodeListPtr
+        if varuse(pNodeList){
+            nodeListLength = 0
+            IXmlNodeList_get_Length pNodeList, varptr(nodeListLength) : hr = stat
+            if SUCCEEDED(hr){
+                // 短いほうを選ぶ
+                if nodeListLength &lt; length(Text){
+                    num = nodeListLength
+                }else{
+                    num = length(Text)
+                }
+                repeat limit(num, 1, 3)
+                    hString3 = Unicode2HString(Text(cnt))
+                    ;dialog HString2Unicode(hString3)
+                    textNodePtr = 0
+                    IXmlNodeList_Item pNodeList, cnt, varptr(textNodePtr) : hr = stat
+                    if SUCCEEDED(hr){
+                        newcom pTextNode, IXmlNode, -1, textNodePtr
+                        if varuse(pTextNode){
+                            inputTextPtr = 0
+                            IXMLDocument_CreateTextNode _pXml_, hString3, varptr(inputTextPtr) : hr = stat
+                            if SUCCEEDED(hr){
+                                newcom pInputText, IXmlText, -1, inputTextPtr
+                                if varuse(pInputText){
+                                    AppendedChildPtr = 0
+                                    // varptrじゃなくてlpeekでcomポインタ取得 → やめた
+                                    IXmlNode_AppendChild pTextNode, inputTextPtr/*lpeek(pInputText, 0)*/, varptr(AppendedChildPtr) : hr = stat
+                                    if SUCCEEDED(hr){
+                                        newcom pTmp, IXmlNode, -1, AppendedChildPtr
+ 
+                                        ;querycom pXns2, pTmp, IXmlNodeSerializer
+ 
+                                        // innerTextで日本語が挿入できない
+                                        ;hString6 = Unicode2HString("test") // ←これはOK
+                                        ;hString6 = Unicode2HString("testだよ！")
+                                        ;IXmlNodeSerializer_put_InnerText pXns2, hString6
+                                        ;dialog strf("0x%08x, %d", stat, stat)
+ 
+                                        // 挿入したのを見てみる
+                                        ;hString_test = 0
+                                        ;IXmlNodeSerializer_get_InnerText pXns2, varptr(hString_test)
+                                        ;dialog strf("0x%08x, %d", stat, stat)
+                                        ;dialog "Debug:"+HString2Unicode(hString_test)
+ 
+                                        SafeRelease pTmp
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    SafeRelease pInputText
+                    SafeRelease pTextNode
+                    DeleteHString hString3
+                loop
+            }
+        }
+    }
+ 
+    //
+    SafeRelease pNodeList
+    DeleteHString hString2
+ 
+    // みてみる？
+    /*
+    querycom pXns, _pXml_, IXmlNodeSerializer
+    hString_test = 0
+    IXmlNodeSerializer_GetXml pXns, varptr(hString_test)
+    dialog strf("0x%08x, %d,\n %s", stat, stat, HString2Unicode(hString_test))
+    */
+ 
+return hr
+#deffunc ShowToast array _Text, str _ImagePath, int Template, str AppUserModelID, \
+    local pTnms, \
+    local hString, \
+    local hString4, \
+    local guid, \
+    local toastStaticsPtr, \
+    local hString_APPsID, \
+    local pXml, \
+    local notifierPtr, \
+    local pNotifier, \
+    local factoryPtr, \
+    local pFactory, \
+    local toastPtr, \
+    local pToast, \
+    local hr
+ 
+    pTnms = 0
+    pXml = 0
+    pNotifier = 0
+    pFactory = 0
+    pToast = 0
+ 
+    // Unicode文字列からHStringに変換するみたいよ
+    hString = Unicode2HString("Windows.UI.Notifications.ToastNotificationManager")
+    hString4 = Unicode2HString("Windows.UI.Notifications.ToastNotification")
+    hString_APPsID = Unicode2HString(AppUserModelID)
+ 
+    // IToastNotificationManagerStatics
+    guid = 0x50ac103f, 0x4598d235, 0xfe98efbb, 0xd43a1a4d
+    toastStaticsPtr = 0
+    RoGetActivationFactory hString, varptr(guid), varptr(toastStaticsPtr) : hr = stat
+    ;dialog HString2Unicode(hString)
+    if hr == 0 &amp;&amp; toastStaticsPtr != 0{
+        newcom pTnms, IToastNotificationManagerStatics, -1, toastStaticsPtr
+        CreateToastXml pTnms, Template, pXml : hr = stat
+        if SUCCEEDED(hr){
+            SetTextValues _Text, pXml : hr = stat
+            if SUCCEEDED(hr){
+                // 未実装
+                SetImageSrc _ImagePath, pXml : hr = stat
+                if SUCCEEDED(hr){
+                    notifierPtr = 0
+                    IToastNotificationManagerStatics_CreateToastNotifierWithId pTnms, hString_APPsID, varptr(notifierPtr) : hr = stat
+                    if SUCCEEDED(hr){
+                        newcom pNotifier, IToastNotifier, -1, notifierPtr
+                        if varuse(pNotifier){
+                            factoryPtr = 0
+                            // IToastNotificationFactory
+                            guid = 0x04124B20, 0x422982C6, 0x9EFD09B1, 0x532B66D4
+                            RoGetActivationFactory hString4, varptr(guid), varptr(factoryPtr) : hr = stat
+                            if hr == 0 &amp;&amp; factoryPtr != 0{
+                                newcom pFactory, IToastNotificationFactory, -1, factoryPtr
+                                if varuse(pFactory){
+                                    toastPtr = 0
+                                    IToastNotificationFactory_CreateToastNotification pFactory, lpeek(pXml, 0), varptr(toastPtr) : hr = stat
+                                    if SUCCEEDED(hr){
+                                        newcom pToast, IToastNotification, -1, toastPtr
+                                        if varuse(pToast){
+                                            IToastNotifier_Show pNotifier, toastPtr
+                                            if SUCCEEDED(hr){
+ 
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+ 
+    SafeRelease pToast
+    SafeRelease pFactory
+    SafeRelease pNotifier
+    SafeRelease pXml
+    SafeRelease pTnms
+ 
+    DeleteHString hString_APPsID
+    DeleteHString hString4
+    DeleteHString hString
+return hr
+#global
+#enum ToastTemplateType_ToastImageAndText01 = 0
+#enum ToastTemplateType_ToastImageAndText02
+#enum ToastTemplateType_ToastImageAndText03
+#enum ToastTemplateType_ToastImageAndText04
+#enum ToastTemplateType_ToastText01
+#enum ToastTemplateType_ToastText02
+#enum ToastTemplateType_ToastText03
+#enum ToastTemplateType_ToastText04
+ 
+    // Win8 のトースト通知を使用するには、アプリ一覧に
+    // AppUserModelIDを設定したショートカットを配置する必要がある
+ 
+    // 初期化するのん
+    WinRTAPIInit
+ 
+    // 適当なAppUserModelIDを指定する
+    // CompanyName.ProductName.SubProduct.VersionInformation な形式が良い
+    // &lt;!-- m --&gt;&lt;a class="postlink" href="http://msdn.microsoft.com/ja-jp/library/windows/apps/dd378459.aspx"&gt;http://msdn.microsoft.com/ja-jp/library ... 78459.aspx&lt;/a&gt;&lt;!-- m --&gt;
+    AppUserModelID = "net.hinekure.hsp.test"
+ 
+    // 現在の実行ファイルのパス名
+    sdim exepath, 1024 + 1
+    GetModuleFileNameA 0, varptr(exepath), 1024
+ 
+    // ショートカット作成先のパス名(?:\Users\xxx\AppData\Roaming\)
+    lnkpath = dirinfo($1001A) + "\\Microsoft\\Windows\\Start Menu\\Programs\\"+"HSP3Test.lnk"
+ 
+    // ショートカット作成(アプリ一覧に)
+    CreateShortcut exepath, "", exepath, 0, AppUserModelID, lnkpath
+    mes stat
+ 
+    // 現在のウィンドウに 指定したAppUserModelID を設定する
+    SetAppUserModelID hwnd, AppUserModelID
+    mes stat
+ 
+    text = "日本語の", "通知", "試験!!!!"
+ 
+    // トースト通知してみる
+ 
+    // 第１引数は、表示したい文字列を最大３つまでの配列変数で指定
+    // 3つ使えるのは、
+    // ToastTemplateType_ToastImageAndText04
+    // ToastTemplateType_ToastText04
+    // です。
+    // 第２引数は、画像パスを指定（ただし未実装）
+    // 第３引数は、テンプレートIDを指定
+    // 第４引数は、AppUserModelIDを指定
+    ShowToast text, "", ToastTemplateType_ToastText04, AppUserModelID
+    mes strf("0x%08x, %d", stat, stat)
+ 
+    // 終了時にでも実行
+    WinRTAPIUnInit</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

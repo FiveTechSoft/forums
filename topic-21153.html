@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>xBrowse : Arraysort and arrayseek (again) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-21153">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> xBrowse : Arraysort and arrayseek (again)</div>
+  <div class="post" id="p112437">
+    <div class="poster">
+      <div class="name" style="color:#105289">Frank Demont</div>
+      <div class="rank">Posts: 142</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 10:59 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">xBrowse : Arraysort and arrayseek (again)</span><br>
+        Posted: Sun Mar 20, 2011 11:49 AM
+      </div>
+      <div class="content">Browsing a array make it possible to have each column as seek column , a dbf only the columns with a index.<br>
+<br>
+A index can be very complicated, see in the example column3 , numbers are omitted from the ordering (and seek)<br>
+<br>
+In many cases i try to use a array instead from a dbf. To have the same results from the dbf ordering and seek must be the same as in the dbf.<br>
+<br>
+In this example i use CUSTUMER.DBF as example. In the arrayseek i have as ordering (and seek) for the columns<br>
+<br>
+FIRST (1) : FIRST + LAST (secundary key) <br>
+LAST (2) : LAST + FIRST <br>
+STREET (3) : Numbers and spaces are omitted<br>
+<br>
+These columns have also an index , dbfseek must give the same results<br>
+<br>
+To show the possibility's from the arrayseek (and sort) i added :<br>
+<br>
+CITY (4) : CITY + STREET(numbers and spaces omitted)<br>
+STATE(5) : STATE + CITY<br>
+<br>
+NOTES (11) : Only numbers are concidered. Ordering (and seek) on recordnumber !!!<br>
+<br>
+Only few changes are needed in xbrowse , the example is complete<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+#include "xbrowse.ch"
+#include "InKey.ch"
+# include "common.ch"
+# define bORDER1       {|a|IIF(pCount()==0 , a := {FIELD-&gt;First,FIELD-&gt;Last},) , PAD(UPPER(TRIM(a[1])+TRIM(a[2])),20)}
+# define bORDER2       {|a|IIF(pCount()==0 , a := {FIELD-&gt;Last,FIELD-&gt;First},) , PAD(UPPER(TRIM(a[2])+TRIM(a[1])),20)}
+# define bORDER3       {|a|PAD(CharOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZ",UPPER(TRIM(IIF(PCOUNT()==0,FIELD-&gt;Street,a[3])))),20)}
+static oWnd
+//----------------------------------------------------------------------------//
+function Main()
+***************
+    SET _3DLOOK ON
+    SET(_SET_AUTOPEN, .F. )                            // Auto open cdx-file
+   REQUEST DBFCDX
+   rddsetdefault( "DBFCDX" )
+     IF File("Cust.cdx")
+        fErase("Cust.cdx")
+     end
+     USE CUSTOMER NEW SHARED
+     SET INDEX TO
+     INDEX ON EVAL(bORDER1) TAG First TO Cust     // EVAL(bORDER1) is executed without parameter
+     //INDEX ON PAD(UPPER(TRIM(First))+UPPER(TRIM(Last)),20) TAG First TO Cust
+     INDEX ON EVAL(bORDER2) TAG Last TO Cust      // EVAL(bORDER2) is executed without parameter
+     //INDEX ON PAD(UPPER(TRIM(Last))+UPPER(TRIM(First)),20) TAG Last TO Cust
+     INDEX ON EVAL(bORDER3) TAG STREET TO Cust    // EVAL(bORDER3) is executed without parameter
+     //INDEX ON PAD(CharOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZ",UPPER(TRIM(Street))),20) TAG STREET TO Cust
+     SET INDEX TO CUST
+   DEFINE WINDOW oWnd FROM 2, 2 TO 20, 70 ;
+      TITLE "Autosort and seek in Array with Secondary key(s)" ;
+      MENU BuildMenu()
+   ACTIVATE WINDOW oWnd MAXIMIZED
+     CLOSE ALL
+return nil
+//----------------------------------------------------------------------------//
+function BuildMenu(oWnd)
+   local oMenu, oItem
+MENU oMenu
+    MENUITEM "Autorder and seek in Array";
+    ACTION  ArraySortSeek()
+    MENUITEM "Autorder and seek in DBF (Index)";
+    ACTION  DbfSortSeek()
+ENDMENU
+return oMenu
+//----------------------------------------------------------------------------//
+STATIC FUNCTION ArraySortSeek()
+*******************************
+   local oBrw, oCol
+     local Arr[0] , i , oSay
+     DEFINE DIALOG oDlg TITLE "Autosort and seek in Array" SIZE 1200,800 PIXEL//MDICHILD OF oWnd
+     DBEVAL({||AADD(Arr,ReadRec())})
+     GO BOTTOM
+     @ 0, 0 XBROWSE oBrw OF oDlg ARRAY Arr AUTOCOLS AUTOSORT SIZE 600,350 PIXEL
+   oBrw:CreateFromCode()
+     FOR EACH oCol IN oBrw:aCols
+        i := Hb_EnumIndex()
+        oCol:cHeader := FieldName(i)
+     NEXT
+     oBrw:aCols[1]:bOrder := bORDER1 // EVAL(bORDER1) will be executed with parameter array oBrw:aRow
+     //oBrw:aCols[1]:bOrder := {|x|UPPER(TRIM(x[1])+TRIM(x[2]))}
+     oBrw:aCols[2]:bOrder := bORDER2 // EVAL(bORDER2) will be executed with parameter array oBrw:aRow
+     //oBrw:aCols[2]:bOrder := {|x|UPPER(TRIM(x[2])+TRIM(x[1]))}
+     oBrw:aCols[3]:bOrder := bORDER3 // EVAL(bORDER3) will be executed with parameter array oBrw:aRow
+     oBrw:aCols[4]:bOrder := {|x|UPPER(TRIM(x[4]))+EVAL(bORDER3,x)}   // In DBF no Index , here on CITY + STREET (Alfabetic , no numbers or space)
+     oBrw:aCols[5]:bOrder := {|x|UPPER(TRIM(x[5])+TRIM(x[4]))}        // In DBF no Index , here on STATE + CITY
+     oBrw:aCols[11]:bOrder := {|x|VAL(CharOnly("1234567890",TRIM(x[11])))}        // In DBF no Index , here on NOTES , only numbers , record number !
+     @ 360 , 100 SAY oBrw:oSeek PROMPT oBrw:cSeek OF oDlg PIXEL BORDER SIZE 100,12//SHADED
+   oBrw:bSeek := { | c | MySeekOnArray( oBrw, oBrw:aArrayData, c ) }
+     ACTIVATE DIALOG oDlg ON INIT (oBrw:aCols[1]:cOrder:="D",oBrw:aCols[1]:SortArrayData() , oBrw:SetFocus())
+RETURN NIL
+********************************************************************************************
+STATIC FUNCTION DbfSortSeek()
+******************************
+   local oBrw, oCol
+     local Arr[0] , i , oSay
+     OrdSetFocus("First")
+     DEFINE DIALOG oDlg TITLE "Auto Sort and seek in DBF" SIZE 1200,800 PIXEL//MDICHILD OF oWnd
+     GO BOTTOM
+     @ 0, 0 XBROWSE oBrw OF oDlg ALIAS "Customer" AUTOCOLS AUTOSORT SIZE 600,350 PIXEL
+   oBrw:CreateFromCode()
+     @ 360 , 100 SAY oBrw:oSeek PROMPT oBrw:cSeek OF oDlg PIXEL BORDER SIZE 100,12  // SIZE MUST BE SPECIFIED , LEN(oBrw:cSeek) = 0 , oSay isn't showed without size
+   oBrw:bSeek := { | c | DbSeek(UPPER(c)) }   // needed to upperseek (FWH 8.10) !
+     ACTIVATE DIALOG oDlg ON INIT ( oBrw:SetFocus())
+
+RETURN NIL
+*********************************************************************************************
+FUNCTION READREC()
+******************
+LOCAL aField[fCount()]
+LOCAL i
+FOR i := 1 TO fCount()
+    aField[i] := FieldGet(i)
+NEXT
+RETURN aField
+***********************************************************************************************
+INIT PROC InitXbrow()
+     OVERRIDE METHOD SortArrayData IN CLASS TXBrwColumn WITH MySortArray // ClasTSCom7
+     EXTEND CLASS TXBrwColumn WITH DATA bOrder
+RETURN
+*****************************************************************
+FUNCTION MySortArray()//  CLASS TXBrwColumn
+**********************
+ LOCAL Self := HB_QSelf()
+  local aCols
+   local cOrder
+   local nAt, nFor, nLen
+   local uSave, cType
+     # ifdef FRANKDEMONT
+     local bOrder
+     # endif
+   aCols  := ::oBrw:aCols
+   cOrder := ::cOrder
+   nLen   := Len( aCols )
+   nAt    := If( ValType( ::cSortOrder ) == 'N', ::cSortOrder, ::nArrayCol )
+   if Len( ::oBrw:aArrayData ) &gt; 0
+      cType       := ValType( ::oBrw:aArrayData[ 1 ] )
+      if cType == 'A'
+         if ValType( nAt ) == 'N' .and. nAt &gt; 0 .and. nAt &lt;= nLen
+            for nFor := 1 to nLen
+               if aCols[ nFor ]:nArrayCol != ::nArrayCol
+                  aCols[ nFor ]:cOrder := ""
+               endif
+            next
+            uSave    := ::oBrw:aArrayData[ ::oBrw:nArrayAt ][ ::nArrayCol ]
+                        # ifdef FRANKDEMONT
+                        uSave := IIF(Isnil(::bOrder) , ::oBrw:aArrayData[ ::oBrw:nArrayAt ][ ::nArrayCol ] , ;
+                                                EVAL(::bOrder, ::oBrw:aArrayData[::oBrw:nArrayAt] ) )
+if cOrder == 'A'
+                            IF ::bOrder = nil
+                                bOrder := {|x,y| x[ nAt ] &gt; y[ nAt ] }
+                            ELSE
+                                bOrder := {|x,y| EVAL(::bOrder,x) &gt; EVAL(::bOrder,y) }
+                            ENDIF
+               ::cOrder     := 'D'
+            else
+                            IF ::bOrder = nil
+                                bOrder := {|x,y| x[ nAt ] &lt; y[ nAt ] }
+                            ELSE
+                                bOrder := {|x,y| EVAL(::bOrder,x) &lt; EVAL(::bOrder,y) }
+                            ENDIF
+               ::cOrder     := 'A'
+            endif
+                        ::oBrw:aArrayData := Asort( ::oBrw:aArrayData,,, bOrder  )
+                        IF ::bOrder = nil
+                           ::oBrw:nArrayAt   := AScan( ::oBrw:aArrayData, { |a| a[ ::nArrayCol ] == uSave } )
+                       ELSE
+                            ::oBrw:nArrayAt   := AScan( ::oBrw:aArrayData, { |a| EVAL(::bOrder,a) == uSave } )
+    END
+# else
+                        if cOrder == 'A'
+               ::oBrw:aArrayData := Asort( ::oBrw:aArrayData,,, {|x,y| x[ nAt ] &gt; y[ nAt ] } )
+               ::cOrder     := 'D'
+            else
+               ::oBrw:aArrayData := Asort( ::oBrw:aArrayData,,, {|x,y| x[ nAt ] &lt; y[ nAt ] } )
+               ::cOrder     := 'A'
+            endif
+            ::oBrw:nArrayAt   := AScan( ::oBrw:aArrayData, { |a| a[ ::nArrayCol ] == uSave } )
+                        # endif
+              ::oBrw:Refresh()
+             endif
+      elseif cType $ 'CDLN'
+         if ! Empty( cOrder )
+            uSave    := ::oBrw:aArrayData[ ::oBrw:nArrayAt ]
+            if cOrder == 'A'
+               ::oBrw:aArrayData := ASort( ::oBrw:aArrayData,,,{|x,y| cValToChar( x ) &gt; cValToChar( y ) } )
+               ::cOrder := 'D'
+            else
+               ::oBrw:aArrayData := ASort( ::oBrw:aArrayData,,,{|x,y| cValToChar( x ) &lt; cValToChar( y ) } )
+               ::cOrder := 'A'
+            endif
+            ::oBrw:nArrayAt      := AScan( ::oBrw:aArrayData, uSave )
+            ::oBrw:Refresh()
+         endif
+      endif
+   endif
+return self
+//----------------------------------------------------------------------------//
+FUNCTION MySeekOnArray( Self, aData, cSeek )
+*******************************************
+   local aCols
+   local nAt, nFor, nLen
+   local lExact
+   aCols  := ::aCols
+   nLen   := len( aCols )
+   cSeek  := Upper( cSeek )
+   for nFor := 1 to nLen
+      if !( aCols[ nFor ]:cOrder == "" )
+         lExact := Set( _SET_EXACT, .f. )
+                 # ifdef FRANKDEMONT
+                 IF IsBlock(aCols[ nFor ]:bOrder )
+            nAt    := Ascan( aData, {|v| cValToChar(EVAL( aCols[ nFor ]:bOrder  , v  ))  = cSeek } )
+                 ELSE
+            nAt    := Ascan( aData, {|v| Upper( cValToChar( v[ aCols[ nFor ]:nCreationOrder  ] ) ) = cSeek } )
+                 END
+                 # else
+         nAt    := Ascan( aData, {|v| Upper( cValToChar( v[ nFor ] ) ) = cSeek } )
+         # endif
+                 Set( _SET_EXACT, lExact )
+         if nAt &gt; 0
+            ::nArrayAt := nAt
+            return .t.
+         endif
+      endif
+   next
+return .f.</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p112652">
+    <div class="poster">
+      <div class="name" style="color:#105289">Frank Demont</div>
+      <div class="rank">Posts: 142</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 10:59 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Example with column recno</span><br>
+        Posted: Sun Mar 27, 2011 08:49 AM
+      </div>
+      <div class="content">Column 2 and column 8 are made unique .<br>
+<br>
+Clicking column 8 or 2 (several times) may NOT change the record !!!!<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+#include "xbrowse.ch"
+#include "InKey.ch"
+# include "common.ch"
+# define bORDER1             {|a|IIF(pCount()==0 , a := {FIELD-&gt;First,FIELD-&gt;Last},) , PAD(UPPER(TRIM(a[1])+TRIM(a[2])),20)}
+# define bORDER2             {|a|IIF(pCount()==0 , a := {FIELD-&gt;Last,FIELD-&gt;First,RECNO()},) , PAD(UPPER(TRIM(a[2])+TRIM(a[1])),20)+STR(ATAIL(a))}
+# define bORDER3             {|a|PAD(CharOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZ",UPPER(TRIM(IIF(PCOUNT()==0,FIELD-&gt;Street,a[3])))),20)}
+# define FRANKDEMONT
+
+static oWnd
+//----------------------------------------------------------------------------//
+function Main()
+***************
+    SET _3DLOOK ON
+    SET(_SET_AUTOPEN, .F. )                                                      // Auto open cdx-file
+     REQUEST DBFCDX
+     rddsetdefault( "DBFCDX" )
+     IF File("Cust.cdx")
+        fErase("Cust.cdx")
+     end
+     USE CUSTOMER NEW SHARED
+     SET INDEX TO
+     INDEX ON EVAL(bORDER1) TAG First TO Cust           // EVAL(bORDER1) is executed without parameter
+     //INDEX ON PAD(UPPER(TRIM(First))+UPPER(TRIM(Last)),20) TAG First TO Cust
+     INDEX ON EVAL(bORDER2) TAG Last TO Cust            // EVAL(bORDER2) is executed without parameter
+     //INDEX ON PAD(UPPER(TRIM(Last))+UPPER(TRIM(First)),20) TAG Last TO Cust
+     INDEX ON EVAL(bORDER3) TAG STREET TO Cust      // EVAL(bORDER3) is executed without parameter
+     //INDEX ON PAD(CharOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZ",UPPER(TRIM(Street))),20) TAG STREET TO Cust
+     SET INDEX TO CUST
+     DEFINE WINDOW oWnd FROM 2, 2 TO 20, 70 ;
+            TITLE "Autosort and seek in Array with Secondary key(s)" ;
+            MENU BuildMenu()
+     ACTIVATE WINDOW oWnd MAXIMIZED
+     CLOSE ALL
+return nil
+//----------------------------------------------------------------------------//
+function BuildMenu(oWnd)
+     local oMenu, oItem
+MENU oMenu
+    MENUITEM "Autorder and seek in Array";
+    ACTION  ArraySortSeek()
+    MENUITEM "Autorder and seek in DBF (Index)";
+    ACTION  DbfSortSeek()
+ENDMENU
+return oMenu
+//----------------------------------------------------------------------------//
+STATIC FUNCTION ArraySortSeek()
+*******************************
+     local oBrw, oCol
+     local Arr[0] , i , oSay
+     DEFINE DIALOG oDlg TITLE "Autosort and seek in Array" SIZE 1200,800 PIXEL//MDICHILD OF oWnd
+     DBEVAL({||AADD(Arr,ReadRec())})
+     GO BOTTOM
+     @ 0, 0 XBROWSE oBrw OF oDlg ARRAY Arr AUTOCOLS AUTOSORT SIZE 600,350 PIXEL
+     oBrw:CreateFromCode()
+     FOR EACH oCol IN oBrw:aCols
+        i := Hb_EnumIndex()
+        oCol:cHeader := FieldName(i)
+     NEXT
+     oBrw:aCols[1]:bOrder := bORDER1 // EVAL(bORDER1) will be executed with parameter array oBrw:aRow
+     //oBrw:aCols[1]:bOrder := {|x|UPPER(TRIM(x[1])+TRIM(x[2]))}
+     oBrw:aCols[2]:bOrder := bORDER2 // EVAL(bORDER2) will be executed with parameter array oBrw:aRow
+     //oBrw:aCols[2]:bOrder := {|x|UPPER(TRIM(x[2])+TRIM(x[1]))}
+     oBrw:aCols[3]:bOrder := bORDER3 // EVAL(bORDER3) will be executed with parameter array oBrw:aRow
+     oBrw:aCols[4]:bOrder := {|x|UPPER(TRIM(x[4]))+EVAL(bORDER3,x)}     // In DBF no Index , here on CITY + STREET (Alfabetic , no numbers or space)
+     oBrw:aCols[5]:bOrder := {|x|UPPER(TRIM(x[5])+TRIM(x[4]))}              // In DBF no Index , here on STATE + CITY
+     oBrw:aCols[8]:bOrder := {|x|cValToChar( x[8]) +STR(ATAIL(x)) }     // Recno added to make unique
+     oBrw:aCols[11]:bOrder := {|x|VAL(CharOnly("1234567890",TRIM(x[11])))}              // In DBF no Index , here on NOTES , only numbers , record number !
+     @ 360 , 100 SAY oBrw:oSeek PROMPT oBrw:cSeek OF oDlg PIXEL BORDER SIZE 100,12//SHADED
+     oBrw:bSeek := { | c | MySeekOnArray( oBrw, oBrw:aArrayData, c ) }
+     ACTIVATE DIALOG oDlg ON INIT (oBrw:aCols[1]:cOrder:="D",oBrw:aCols[1]:SortArrayData() , oBrw:SetFocus())
+RETURN NIL
+********************************************************************************************
+STATIC FUNCTION DbfSortSeek()
+******************************
+     local oBrw, oCol
+     local Arr[0] , i , oSay
+     OrdSetFocus("First")
+     DEFINE DIALOG oDlg TITLE "Auto Sort and seek in DBF" SIZE 1200,800 PIXEL//MDICHILD OF oWnd
+     GO BOTTOM
+     @ 0, 0 XBROWSE oBrw OF oDlg ALIAS "Customer" AUTOCOLS AUTOSORT SIZE 600,350 PIXEL
+     oBrw:CreateFromCode()
+     @ 360 , 100 SAY oBrw:oSeek PROMPT oBrw:cSeek OF oDlg PIXEL BORDER SIZE 100,12  // SIZE MUST BE SPECIFIED , LEN(oBrw:cSeek) = 0 , oSay isn't showed without size
+     oBrw:bSeek := { | c | DbSeek(UPPER(c)) }       // needed to upperseek (FWH 8.10) !
+     ACTIVATE DIALOG oDlg ON INIT ( oBrw:SetFocus())
+
+RETURN NIL
+*********************************************************************************************
+FUNCTION READREC()
+******************
+LOCAL aField[fCount()]
+LOCAL i
+FOR i := 1 TO fCount()
+    aField[i] := FieldGet(i)
+NEXT
+AADD(aField,Recno())
+RETURN aField
+***********************************************************************************************
+INIT PROC InitXbrow()
+     OVERRIDE METHOD SortArrayData IN CLASS TXBrwColumn WITH MySortArray // ClasTSCom7
+     EXTEND CLASS TXBrwColumn WITH DATA bOrder
+RETURN
+*****************************************************************
+FUNCTION MySortArray()//    CLASS TXBrwColumn
+**********************
+ LOCAL Self := HB_QSelf()
+    local aCols
+     local cOrder
+     local nAt, nFor, nLen
+     local uSave, cType
+     # ifdef FRANKDEMONT
+     local bOrder
+     # endif
+     aCols  := ::oBrw:aCols
+     cOrder := ::cOrder
+     nLen       := Len( aCols )
+     nAt        := If( ValType( ::cSortOrder ) == 'N', ::cSortOrder, ::nArrayCol )
+     if Len( ::oBrw:aArrayData ) &gt; 0
+            cType               := ValType( ::oBrw:aArrayData[ 1 ] )
+            if cType == 'A'
+                 if ValType( nAt ) == 'N' .and. nAt &gt; 0 .and. nAt &lt;= nLen
+                        for nFor := 1 to nLen
+                             if aCols[ nFor ]:nArrayCol != ::nArrayCol
+                                    aCols[ nFor ]:cOrder := ""
+                             endif
+                        next
+                        # ifdef FRANKDEMONT
+                        uSave := IIF(Isnil(::bOrder) , ::oBrw:aArrayData[ ::oBrw:nArrayAt ][ ::nArrayCol ] , ;
+                                                                                     EVAL(::bOrder, ::oBrw:aArrayData[::oBrw:nArrayAt] ) )
+                        if cOrder == 'A'
+                            IF ::bOrder = nil
+                                bOrder := {|x,y| x[ nAt ] &gt; y[ nAt ] }
+                            ELSE
+                                bOrder := {|x,y| EVAL(::bOrder,x) &gt; EVAL(::bOrder,y) }
+                            ENDIF
+                             ::cOrder           := 'D'
+                        else
+                            IF ::bOrder = nil
+                                bOrder := {|x,y| x[ nAt ] &lt; y[ nAt ] }
+                            ELSE
+                                bOrder := {|x,y| EVAL(::bOrder,x) &lt; EVAL(::bOrder,y) }
+                            ENDIF
+                             ::cOrder           := 'A'
+                        endif
+                        //uSave      :=  //::aArrayData[ ::nArrayAt ][ ::nArrayCol ]
+                        ::oBrw:aArrayData := Asort( ::oBrw:aArrayData,,, bOrder)
+                        IF ::bOrder = nil
+                            ::oBrw:nArrayAt     := AScan( ::oBrw:aArrayData, { |a| a[ ::nArrayCol ] == uSave } )
+                        ELSE
+                            ::oBrw:nArrayAt     := AScan( ::oBrw:aArrayData, { |a| EVAL(::bOrder,a) == uSave } )
+                        END
+                        # else
+                        uSave        := ::oBrw:aArrayData[ ::oBrw:nArrayAt ][ ::nArrayCol ]
+                        if cOrder == 'A'
+                             ::oBrw:aArrayData := Asort( ::oBrw:aArrayData,,, {|x,y| x[ nAt ] &gt; y[ nAt ] } )
+                             ::cOrder           := 'D'
+                        else
+                             ::oBrw:aArrayData := Asort( ::oBrw:aArrayData,,, {|x,y| x[ nAt ] &lt; y[ nAt ] } )
+                             ::cOrder           := 'A'
+                        endif
+                        ::oBrw:nArrayAt     := AScan( ::oBrw:aArrayData, { |a| a[ ::nArrayCol ] == uSave } )
+                        # endif
+                        ::oBrw:Refresh()
+                     endif
+            elseif cType $ 'CDLN'
+                 if ! Empty( cOrder )
+                        uSave        := ::oBrw:aArrayData[ ::oBrw:nArrayAt ]
+                        if cOrder == 'A'
+                             ::oBrw:aArrayData := ASort( ::oBrw:aArrayData,,,{|x,y| cValToChar( x ) &gt; cValToChar( y ) } )
+                             ::cOrder := 'D'
+                        else
+                             ::oBrw:aArrayData := ASort( ::oBrw:aArrayData,,,{|x,y| cValToChar( x ) &lt; cValToChar( y ) } )
+                             ::cOrder := 'A'
+                        endif
+                        ::oBrw:nArrayAt          := AScan( ::oBrw:aArrayData, uSave )
+                        ::oBrw:Refresh()
+                 endif
+            endif
+     endif
+return self
+//----------------------------------------------------------------------------//
+FUNCTION MySeekOnArray( Self, aData, cSeek )
+*******************************************
+     local aCols
+     local nAt, nFor, nLen
+     local lExact
+     aCols  := ::aCols
+     nLen       := len( aCols )
+     cSeek  := Upper( cSeek )
+     for nFor := 1 to nLen
+            if !( aCols[ nFor ]:cOrder == "" )
+                 lExact := Set( _SET_EXACT, .f. )
+                 # ifdef FRANKDEMONT
+                 IF IsBlock(aCols[ nFor ]:bOrder )
+                    nAt      := Ascan( aData, {|v| cValToChar(EVAL( aCols[ nFor ]:bOrder    , v  ))  = cSeek } )
+                 ELSE
+                    nAt      := Ascan( aData, {|v| Upper( cValToChar( v[ aCols[ nFor ]:nCreationOrder    ] ) ) = cSeek } )
+                 END
+                 # else
+                 nAt        := Ascan( aData, {|v| Upper( cValToChar( v[ nFor ] ) ) = cSeek } )
+                 # endif
+                 Set( _SET_EXACT, lExact )
+                 if nAt &gt; 0
+                        ::nArrayAt := nAt
+                        return .t.
+                 endif
+            endif
+     next
+return .f.</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

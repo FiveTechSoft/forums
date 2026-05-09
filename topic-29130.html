@@ -1,0 +1,1001 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>En tiempo de compilacion... - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-29130">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> En tiempo de compilacion...</div>
+  <div class="post" id="p164233">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">En tiempo de compilacion...</span><br>
+        Posted: Tue Aug 26, 2014 12:08 AM
+      </div>
+      <div class="content"><p>Hay alguna manera que el preprocesador de (x)Harbour convierta una cadena en mayusculas.<br>
+Ojo, repito en tiempo de compilación. A nivel de CH, no la función upper() que eso lo haría en tiempo de ejecución.</p>
+<p>Antonio?  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p164242">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: En tiempo de compilacion...</span><br>
+        Posted: Tue Aug 26, 2014 07:44 AM
+      </div>
+      <div class="content">Manu,<br>
+<br>
+Parece que no. Aqui está la documentación del preprocesador escrita por Przemek:<br>
+<br>
+<blockquote>PP description<br>
+==============<br>
+By Przemyslaw Czerpak (druzus/at/priv.onet.pl)<br>
+<br>
+Hi All,<br>
+<br>
+I collected this text from notes I created when I was analyzing<br>
+Clipper PP and then I was updating it in few places. Sorry but<br>
+I do not have enough energy to check it and update. It's much<br>
+shorter then I planed and it does not contain many important<br>
+things I encoded in new PP code. Sorry you will have to look at<br>
+new code because now I do not want to think about PP any more.<br>
+After last days I hate PP and I'd be very happy if I could forget<br>
+about it for at least few days. I spend much more time on it then<br>
+I planed and I'm really frustrated with the brain off job I was<br>
+making in last days.<br>
+<br>
+-----------------------------------------------------------------------------<br>
+<br>
+1. Clipper's PP is a lexer which divides source code into tokens<br>
+   and then operates on these tokens and not on text data. This is the<br>
+   main reason why current [x]Harbour PP cannot be Clipper compatible.<br>
+   Tokenization is the fundamental condition which implicates a lot of<br>
+   Clipper PP behavior and as long as we do not replicate it then we<br>
+   will never be able to be Clipper compatible them.<br>
+   Even such simple code cannot be well preprocessed and compiler by<br>
+   current [x]Harbour PP:<br>
+      #define a   -1<br>
+      ? 1-a<br>
+   and it cannot be fixed with current code without breaking some<br>
+   other things, f.e. match markers which depends on number of spaces<br>
+   between tokens. So at start we have to forget about updating current PP.<br>
+   It will never be Clipper compatible and cannot be because it's not a<br>
+   lexer.<br>
+<br>
+2. During dividing input data to tokens and later in finding match patterns<br>
+   Clipper PP always try to allocate the biggest possible set of input data<br>
+   as a given type even if it can break some possible other method of<br>
+   input data serialization. This can be seen in wild match marker &lt;*marker*&gt;<br>
+   behavior or optional clause in match pattern, operator tokenization, etc.<br>
+   It greatly simplify the code though introduce some limitations,<br>
+   f.e.:<br>
+      #xcommand CMD [FROM] FROM &lt;*x*&gt; =&gt; ? #&lt;x&gt;<br>
+   or:<br>
+      #xcommand CMD &lt;x,...&gt; , &lt;id&gt;  =&gt; ? #&lt;x&gt;<br>
+   or:<br>
+      #xcommand CMD &lt;*x*&gt; END =&gt; ? #&lt;x&gt;<br>
+   are accepted by Clipper PP but they cannot match any line.<br>
+<br>
+3. Preprocessor should extract all quoted strings and create separated<br>
+   tokens from them. The string tokens contents cannot be modified later<br>
+   by any rules. Quoting by [] create string tokens when it's not just<br>
+   after keyword, macro or one of closing brackets: ) } ]<br>
+   We will have to change it to keep working already existing extensions<br>
+   like accessing string characters with [] operator so I suggest to change<br>
+   this condition and not create string token when it follows also constant<br>
+   value of any type - not only strings. It will be usable for scalar<br>
+   classes and overloading [] operator, f.e. someone can create LOGICAL<br>
+   class where:<br>
+      .T.[1] =&gt; &quot;.T.&quot;, .T.[2] =&gt; &quot;TRUE&quot;, .T.[3] =&gt; &quot;YES&quot;<br>
+<br>
+   The opening square bracket '[' has to be closed with ']' in the same line.<br>
+   Such quoting has very high priority like normal string quoting. f.e:<br>
+      ? [ ; // /* ]<br>
+   should generate:<br>
+      QOut( &quot; ; // /* &quot; )<br>
+   This implicates one important thing: PP has to read whole physical<br>
+   line from file, then convert it to tokens and if necessary (';' is the<br>
+   last token after preprocessing) read next line(s).<br>
+   There is also one exception to the above. When Clipper PP finds '['<br>
+   character and previous token is keyword or macro then it always checks<br>
+   for closing bracket and if in scanned text it will find odd numbers<br>
+   of other text delimiters ('&quot;) then ignore the type of previous token<br>
+   and always creates strings. This behavior breaks some valid code. F.e.<br>
+   Clipper cannot compile code like:<br>
+      x := a[ f(&quot;]&quot;) ] $ &quot;test&quot;<br>
+   or:<br>
+      x := a[ f( &quot;'&quot; ) ] $ &quot;test&quot;<br>
+   If it find closing ']' without odd number of other text delimiters<br>
+   then it creates differ token then for other opening square brackets '['<br>
+   open_array_index which has differ meaning in later preprocessing<br>
+   and allow to convert group of tokens inside to string by compiler.<br>
+   If something is not recognized by preprocessor as string token or<br>
+   open_array_index then it should never become string token. It doesn't<br>
+   matter how it will be preprocessed later, f.e.:<br>
+      #define O1 [<br>
+      #define O2 ]<br>
+      ? O1 b O2<br>
+   should generate:<br>
+      QOut( [ b ] )<br>
+   not:<br>
+      QOut( &quot; b &quot; )<br>
+   but:<br>
+      #command A &lt;x&gt; =&gt; ? &lt;x&gt;<br>
+      A [ b ]<br>
+   generate also:<br>
+      QOut( [ b ] )<br>
+   and in this case Clipper compiler makes conversion to string.<br>
+   It means that only at initial line preprocessing preprocessor decides<br>
+   what can or cannot be string token. I think that we do not have to<br>
+   exactly replicate this behavior and we should allow string conversion<br>
+   also when '[' is not marked as open_array_index in final preprocessor<br>
+   pass which will create string token from the group of tokens inside '['<br>
+   and ']' tokens using the initial stringify condition which checks type<br>
+   of token before.<br>
+   In fact with new PP such operation will be done by still existing<br>
+   lexer after preprocessing and converting the preprocessed token to string<br>
+   which is then once again divided into tokens by FLEX or SIMPLEX. It's<br>
+   redundant and because neither FLEX nor SIMPLEX are MT safe and both<br>
+   have limitations like maximum line size we will not be able to fully<br>
+   benefit from the new code (read below about it).<br>
+<br>
+4. # directives tokenization.<br>
+   In #define directive strings in result pattern cannot be quoted by [].<br>
+   They always will be used as array index or (in #[x]command<br>
+   and #[x]translate) as optional expression (when not quoted by '\').<br>
+   Characters like [] are not allowed in #define match pattern.<br>
+   Quoting by [] in #[x]command and #[x]translate match pattern<br>
+   produce optional clause. The left square bracket can be quoted by \ to<br>
+   disable this special meaning and in such case Clipper PP<br>
+   generates array tokens but they are not marked as open_array_index<br>
+   when in the code they are. It causes that in code like<br>
+      #command A B\[C] =&gt; QOut(&quot;A B[C]&quot;)<br>
+      A B[C]<br>
+   A B[C] is not preprocessed because in #command match pattern '[' is<br>
+   not open_array_index and PP cannot find matching tokens.<br>
+   Anyhow it's possible to create passing match pattern which will use [].<br>
+   It's enough to create matching pattern for the code which have [] not<br>
+   translated to string and not bound<br>
+   with keyword. As I wrote above it will be possible when '[' is after<br>
+   one of the closing brackets: ')', '}' or ']', f.e.:<br>
+      #command A }\[C] =&gt; QOut(&quot;A }[C]&quot;)<br>
+      A }[C]<br>
+   Will be perfectly translated. For me it seems to be limitation of<br>
+   Clipper PP implementation (probably it's a side effect of some internal<br>
+   solutions) or a bug. Not something intentionally designed. It's highly<br>
+   possible it's a hack to pass to compiler some additional information<br>
+   about preprocessed tokens because in Clipper PP seems to be also the<br>
+   compiler lexer. I do not think that we should try to keep strict<br>
+   compatibility in PP translation and also introduce the array ID tokens<br>
+   before preprocessing. Such operation can be done after preprocessing<br>
+   but this is differ subject.<br>
+   The important conclusion is that #directives should be preprocessed<br>
+   in differ way then normal lines. In general # as first line token disable<br>
+   using [] as string delimiters.<br>
+<br>
+5. Clipper allow to quote strings using also back apostrophe (`) as<br>
+   string begin marker and normal apostrophe as string end marker, f.e:<br>
+      ? `Hello World'<br>
+   works perfectly.<br>
+<br>
+6. String tokens can be part of match pattern as any other tokens, they<br>
+   are not case sensitive during preprocessing so it's important to early<br>
+   detect and convert data inside [] to string token.<br>
+<br>
+7. NIL is preprocessed rather as keyword then constant value. At least it<br>
+   behaves like a keyword and I cannot find anything what can suggest<br>
+   something differ.<br>
+<br>
+8. Numbers are not converted and stored as other tokens in literal<br>
+   form. It's important to not change the numbers representation or<br>
+   compiler will have problems with calculating declared size and<br>
+   decimal places. The number tokens can be in the following form:<br>
+   [0-9]*[\.[0-9]+]. Token is ended on first character which does not<br>
+   pass the above expression and this is the first character of next<br>
+   token. This behavior will interact with Harbour extensions for<br>
+   hexadecimal numbers 0x[0-9A-Z] and date constants 0d[0-9] and we<br>
+   will have to generate separated tokens for them. For strict compatibility<br>
+   we can disable it and create final tokens after preprocessing but I do<br>
+   not think we have to be such strictly compatible.<br>
+<br>
+9. Logical value is a single token, .N. is translated to .F. and<br>
+   .Y. to .T.<br>
+<br>
+10. Multi character operators are parsed as single token. It's important<br>
+   to keep the list of such operators and properly pars them at beginning<br>
+   or later we will have problems.<br>
+<br>
+11. Clipper PP allow to use only characters in ASCII range from 32 to 125<br>
+   and some control codes with special meaning.<br>
+   '\n' is line terminator<br>
+   '\t' when not inside quoted string is converted to 4 spaces<br>
+   '\r' is always stripped, also from quoted strings<br>
+   '\0' stop line processing, like '\n' but the rest of line is ignored<br>
+   ^z   (Chr(26)) works _exactly_ like '\n'<br>
+   All other characters are illegal<br>
+<br>
+12. All characters which are not keyword, string, numbers and know<br>
+   operators are used as some pseudo binary operator tokens. We allow to<br>
+   use characters with ASCII code greater then 125 then I suggest to define<br>
+   for these characters new token called TEXT so they will not be pseudo<br>
+   operators and still will could use them.<br>
+<br>
+13. Clipper have special macro token which marks all input data in the<br>
+   following form: [&amp;&lt;keyword&gt;[.[&lt;nextidchars&gt;]]]+[&amp;]<br>
+   It's a single token which has special meaning in preprocessing and<br>
+   we have to replicate it.<br>
+<br>
+14. The expression is a list of keywords, macros and constant values<br>
+   separated by one or more of other tokens. If the other token is<br>
+   one of binary operators which is marked that need valid expression<br>
+   in some internal PP table then PP check if next token is keyword,<br>
+   number, string or operator marked as left unary followed by non operator<br>
+   token and if it's not then end the expression.<br>
+   AFAIK only -, --, ++, &amp; operators are marked as left unary operators<br>
+   and +, !, @ don't what can break some expressions.<br>
+   Also the above behavior causes that '-' cannot be repeated many times<br>
+   as left unary operator (multiple negation) what can break some valid<br>
+   expressions too. The following tokens are marked as binary operators<br>
+   which needs valid expression as next token: +, -, *, /, %, ^<br>
+<br>
+   The expression can be groped in (), {}, or [] and in such case<br>
+   PP looks for corresponding closing bracket but it does not respect<br>
+   other type of brackets and not update nested other bracket counters<br>
+   only for the currently processed pair. As long as the expression is not<br>
+   part of some other preprocessor rule which will change number<br>
+   of different brackets then it seems to be safe because at this level<br>
+   all strings should be separated tokens and each valid Clipper expression<br>
+   correctly closes brackets. User should only be careful with using []<br>
+   for strings quoting - see above conversion to strings. '[' works like<br>
+   a group operator only if it's not the first token. See below operators<br>
+   which cannot much regular match marker.<br>
+<br>
+   The groped expression list is also ended when end of line is reach or ';'<br>
+   token. The ',' and closing brackets ), ], } tokens end the expression when<br>
+   bracket counter is 0.<br>
+   Some operators like :=, +=, -=, /=, *=, %=, ^=, **=, =, ==, and [ if<br>
+   is not marked as open_array_index cannot match regular match marker as<br>
+   first token, seems that they are marked as needing left side expression.<br>
+   Of course closing tokens ',', ';', ')', '}', ']' also cannot match<br>
+   regular match marker as first token.<br>
+   Tokens are equal only if after preprocessing they have the same type and<br>
+   the same value. It means that &quot;!=&quot; is equal to &quot;&lt;&gt;&quot; but not equal with &quot;#&quot;<br>
+   There is exception to this rule in restricted match marker and macro token<br>
+<br>
+15. Match markers.<br>
+<br>
+   &lt;idMarker&gt; regular match marker, matches non empty expression, cannot<br>
+              match single closing parenthesis and some operators, see above.<br>
+   &lt;idMarker,...&gt; list match marker, matches maximal number of comma separated<br>
+                  regular match markers, if the last token in parsed expression<br>
+                  is operator which need right valid expression and next token<br>
+                  is not such valid expression then it stops checking for<br>
+                  farther expressions even if the next token is comma,<br>
+                  it accepts empty separated regular expressions but cannot be<br>
+                  empty itself. It cannot also much anything starting with<br>
+                  closing bracket or some operators, see above, it's the same<br>
+                  behavior as in regular much marker.<br>
+   &lt;idMarker:...&gt; restricted match marker, checks if next token(s) is/are<br>
+                  exactly the same as one of the word in pattern. Words are<br>
+                  comma separated expressions. Word can be empty but as both<br>
+                  markers above it cannot match anything starting with closing<br>
+                  bracket or some chosen operators (see above). If the last<br>
+                  token in one of restricted expression in the marker is '&amp;'<br>
+                  then it has special meaning. It will match any macro tokens.<br>
+                  But only in such case. If it's not the last token in one<br>
+                  of comma separated expressions then it will work like any<br>
+                  other ones.<br>
+<br>
+   &lt;*idMarker*&gt; wild match marker, matches all tokens to the end of input<br>
+                line, the expression should not be stopped by ; token<br>
+                or any other ones. It's the only one marker which will match<br>
+                expressions starting with closing brackets and operators which<br>
+                need left side expression.<br>
+   &lt;(idMarker)&gt; extended expression match marker matches any number of tokens<br>
+                which do not have leading spaces until end of token list,<br>
+                comma (,) and or (;). Empty expressions are not allowed.<br>
+                It cannot match closing bracket: ')' and ']' but can match '}'<br>
+                and some operators. It cannot match expressions<br>
+                starting with '[' token and if the expressions start with<br>
+                '(' token then it drops the rule which check spaces but<br>
+                maps the same tokens as regular match marker.<br>
+<br>
+   When the expression is created from tokens and match marker is followed<br>
+   by non optional token(s) then the expression is immediately finished when<br>
+   the first token following match marker is found and parentheses<br>
+   counter is 0. This additional stop condition does not work for wild<br>
+   match markers: &lt;*idMarker*&gt; which can be used only as the last part<br>
+   of match pattern or the pattern will never much anything. We can add<br>
+   here some extension to allow defining stop condition for wild match<br>
+   markers in the future. It will not interact with Clipper compatibility<br>
+   because rules which have some additional tokens in match pattern after<br>
+   wild marker do not work with Clipper PP at all.<br>
+   The non optional token which can stop the expression is passed as<br>
+   stop condition also to all nested optional match expressions which<br>
+   are just before it and this token is used instead of other stop tokens<br>
+   which can exist inside nested optional match pattern. This code<br>
+   illustrates it. Clipper does not preprocess the TR2.<br>
+        #xtranslate TR1 [&lt;x,...&gt; D]     =&gt; ! [#&lt;x&gt;] !<br>
+        #xtranslate TR2 [&lt;x,...&gt; D]  C  =&gt; ! [#&lt;x&gt;] !<br>
+        #xcommand CMD &lt;*x*&gt; =&gt; QOut( #&lt;x&gt; )<br>
+        proc main()<br>
+        CMD $ TR1 a + b + c + d c<br>
+        CMD $ TR2 a + b + c + d c<br>
+        return<br>
+<br>
+   There is also a hidden aspects of match markers defined by result<br>
+   pattern. Each match marker can have one of four possible states:<br>
+      1. ignore matched expression - when it's not part of result pattern<br>
+         We do not need any special case to implement this - it will be<br>
+         enough to not define result holder for such markers<br>
+      2. accept only one matched expression and refuse accepting any other<br>
+         - when it's used at least once inside non optional part of result<br>
+         pattern<br>
+      3. accept multiple matched expression - when it's used only in optional<br>
+         part of result pattern<br>
+      4. accept first matched expression and ignore others - in such way<br>
+         works repeated markers in #define directive with pseudo function.<br>
+         Harbour PP does not allow to repeat the same much marker in #define<br>
+         pseudo function generating error so such situation never happens.<br>
+         In new PP we can keep current behavior or simply not define result<br>
+         holder for repeated markers just like in point 1 above.<br>
+   PP tries to allocate as much expressions for each match marker as possible<br>
+   and finally checks if point 2 above was not broken and if it does then<br>
+   refuse to accept whole rule even if it was possible to find a valid match<br>
+   in differ way.<br>
+<br>
+16. Result markers.<br>
+   &lt;idMarker&gt; Regular result marker - inserts matched result as is<br>
+              without any modifications. The first token inherits<br>
+              number of leading spaces from the result pattern.<br>
+   #&lt;idMarker&gt; Dumb stringify result marker - converts all matched<br>
+               tokens to single string token even if they are comma<br>
+               separated expressions. Clear number of leading spaces<br>
+               for the first token before creating string. If there<br>
+               are no matching tokens then create empty string token.<br>
+               Finally copy number of leading spaces from result<br>
+               pattern to the new string token and insert it.<br>
+   &lt;&quot;idMarker&quot;&gt; Normal stringify result marker - converts each comma<br>
+                separated expression in matched result into string tokens<br>
+                using the same rules as for dump stringify with the exception<br>
+                to macro tokens expressions starting with '&amp;' followed by '('.<br>
+                The macro tokens are stringify in differ way. If macro<br>
+                does not have any internal '&amp;' characters and has at most<br>
+                one '.' as last character then as result non quited keyword<br>
+                is generated. Otherwise it generate strings with stripped first<br>
+                '&amp;' character.<br>
+                If expression starts with '&amp;' token followed by single<br>
+                '(' then '&amp;' token is stripped and the rest of tokens copied<br>
+                as is.<br>
+   &lt;(idMarker)&gt; Smart stringify result marker - converts each comma separated<br>
+                expression in matched result into string tokens using the same<br>
+                rules as for normal stringify with the exception to expressions<br>
+                which start with string or '(' token. In Such case it does not<br>
+                make any conversions to string and copy expression as is.<br>
+   &lt;{idMarker}&gt; Blockify result marker - converts each comma separated<br>
+                expression  in matched result into codeblock token by simple<br>
+                adding &quot;{||&quot; prefix and &quot;}&quot; suffix. The expression is not<br>
+                modified at all. Leading spaces in first '{' token are<br>
+                inherited from result pattern. If the expression starts with<br>
+                '{' token followed by '|' then Clipper PP recognize it as<br>
+                codeblock and does not add prefix and suffix.<br>
+   &lt;.idMarker.&gt; Logify result marker - unlike Clipper documentation says<br>
+                it only checks if match pattern passed the test and not<br>
+                is not empty and then insert logical token .T. otherwise .F.<br>
+                Leading spaces in new token are inherited from result pattern.<br>
+<br>
+   The Dumb stringify result marker format is a little bit differ then all<br>
+   others. It needs a special token '#' before '&lt;'. Clipper PP strips all<br>
+   '#' tokens which are before result marker token '&lt;' and if the result<br>
+   marker was the regular one then it's converted to stringify dump otherwise<br>
+   the marker type is unchanged.<br>
+   When substitution is done then optional parts are repeated as many times<br>
+   as the biggest number of accepted multiple matched expressions in the match<br>
+   markers which are in the processed optional part. After each repeating<br>
+   tokens are shifted but only if marker accepted more then one value.<br>
+   This is the only one condition. The type or state of marker is unimportant.<br>
+<br>
+   The above shows that there is no correlation between type of match<br>
+   marker and type of result marker. The type of conversion depends only<br>
+   on contents of marked expression(s) and type of result marker.<br>
+<br>
+   Clipper does not support nested optional result patterns. I can add such<br>
+   support but I do not know if it's necessary. To keep the base rules used<br>
+   by Clipper PP the external optional pattern should be repeated as many<br>
+   times as maximum number of repeating in one of its nested optional<br>
+   patterns. It can be usable in some seldom cases for someone who knows<br>
+   what will happen but IMHO in most cases it will create problems so probably<br>
+   refusing such expressions is the best choice.<br>
+   In optional clauses you can observe one Clipper bug I do not want to<br>
+   replicate. When Clipper PP finds '[' then it will take all other tokens<br>
+   until first unquoted ']'. If it finds it then preprocess tokens inside<br>
+   as new result pattern but sets flag that other nested clauses are<br>
+   forbidden. But when it extracts tokens for new optional result pattern<br>
+   then it strips quote characters so when optional pattern is preprocessed<br>
+   then all '[' tokens even properly quoted in source code will cause C2073<br>
+   error. Clipper also does not respect the context of preprocessed tokens<br>
+   when it looks for optional pattern so it will break restricted match<br>
+   markers which contains ']' token. For me it's nothing more then to pure<br>
+   implementation which should be fixed.<br>
+<br>
+   Some dipper tests shows also other bugs in Clipper PP when matched tokens<br>
+   ends with ','.<br>
+   In such case the blockify result marker does not create empty codeblock<br>
+   for the last token when for all empty expressions before they does.<br>
+   The same is with normal and smart stringify result markers but here it's<br>
+   also yet another problem when there is more commas at the end. The last<br>
+   one is converted to the string token with comma inside &quot;,&quot; <br>
+   I do not think we should replicate such behaviors though it seems to<br>
+   be quite easy because they look like simple bugs which can appear in<br>
+   the most trivial implementation of some conditions.<br>
+   In general I think that many of Clipper PP behaviors even the documented<br>
+   ones was not intentionally designed. Just simply someone in the past<br>
+   created preprocessor and then the same person or probably someone else<br>
+   documented - more or less precisely - some side effects and even bugs<br>
+   of this implementation as expected behavior.<br>
+<br>
+17. Storing real expression strings for later stringify operation in PP<br>
+    output and stringify result patterns.<br>
+<br>
+   * Tabs are replaced by 4 spaces.<br>
+   * Only one leading space is left from the lines concatenated with ;<br>
+   * Each token should have counter with number of leading spaces<br>
+   * When result pattern is created all repeated spaces are replaced by<br>
+     a single one.<br>
+     In #define pseudo functions there is small difference to the above.<br>
+     In result pattern number of spaces before parameter(s) and token before<br>
+     is significant and stored with pattern definition. The maximum number of<br>
+     spaces between keywords is not 1 but 2.<br>
+   * During result markers substitution the original number of leading<br>
+     spaces in match marker token should overwrite number of leading<br>
+     spaces in first substituted token<br>
+<br>
+18. TEXT [TO [PRINTER | FILE &lt;(fileName)&gt;]] / ENDTEXT<br>
+   It enables in Clipper PP special stream output. It work in differ way<br>
+   then our implementation. Clipper PP preprocess whole lines. When it<br>
+   finds:<br>
+      TEXT &lt;keyword&gt;,&lt;keyword&gt;<br>
+   command then he set special mode for next lines so they will not be<br>
+   divided to tokens in standard way but whole lines will<br>
+   be converted to string toke until special marker (ENDTEXT at the beginning<br>
+   of line) will not be found. But if the line with TEXT token has some other<br>
+   commands after ; then they are preprocessed in normal way. The new mode<br>
+   will effect _ONLY_ the next lines which will be read from file not<br>
+   currently preprocessed one. So we are not Clipper compatible here and I<br>
+   will change it. The above means that Clipper PP already supports the<br>
+   starting function Ryszard implemented in #pragma __text. Just simply<br>
+   it's enough to add it TEXT &lt;keyword&gt;,&lt;keyword&gt; after ';' token.<br>
+<br>
+19. The optional match patterns can be nested and each nested submatch<br>
+   pattern is fully functional match pattern and only operates on the<br>
+   same markers as parent pattern. If optional match pattern is followed<br>
+   by another ones then they can match expressions which are any<br>
+   combination of these patterns which will pass aggressive allocation<br>
+   (see point 2 above) with one exception. Clipper PP tries to detect<br>
+   optional match patterns which contain only match markers and always<br>
+   gives them the lowest priority and if it detect more then one of<br>
+   such patterns in the series of not separated optional patterns generate<br>
+   an error.<br>
+   The optional match patterns are one of the weakest point of current PP.<br>
+   Even such simple code:<br>
+        #xcommand CMD &lt;x&gt; [IN [GET] [PUT]] =&gt; ? #&lt;x&gt;<br>
+        CMD sth IN PUT GET<br>
+   Is not well preprocessed.<br>
+<br>
+20. rule have to begin with non empty token or the rule will never be used.<br>
+   Generate warning for such rules? or maybe add support for such rules<br>
+   to implement some language extensions, f.e. clasfunc{p1,p2,p3}<br>
+<br>
+21. translation algorithm used by Clipper PP<br>
+<br>
+   Initiate token list<br>
+<br>
+   Do<br>
+      get line stripping comments and dividing line to tokens<br>
+   While last token in list is ;<br>
+<br>
+<br>
+   Do While not empty token list<br>
+<br>
+      Do<br>
+<br>
+         If the first token is # then<br>
+            parse # directive and remove all line tokens<br>
+            break<br>
+         EndIf<br>
+<br>
+         Do<br>
+            Do<br>
+               For each keyword token check if it match:<br>
+                  #define<br>
+                     If token(s) can be substituted then substitute<br>
+               Next<br>
+            While anything substituted<br>
+<br>
+            Do<br>
+               For each token check if it match:<br>
+                  #[x]translate<br>
+                     If token(s) can be substituted then substitute<br>
+               Next<br>
+            While anything substituted<br>
+            If anything substituted<br>
+               continue<br>
+<br>
+            Do While 1-st token match some #[x]command pattern<br>
+               substitute<br>
+            EndDo<br>
+<br>
+         While anything substituted<br>
+<br>
+         Output processed token until the last one or ; token<br>
+<br>
+         If 1-st token is '#'<br>
+            continue<br>
+<br>
+         Remove all tokens in the list until the last one or ; token<br>
+         break<br>
+<br>
+      While True<br>
+<br>
+   EndDo<br>
+<br>
+   Output EOL<br>
+<br>
+   The above algorithm is differ then the one used by [x]Harbour and this is<br>
+   the next reason why we are not Clipper compatible in substitution precedence.<br>
+   This code illustrate the problem:<br>
+<br>
+      #define    RULE( p )    ? &quot;define value&quot;, p<br>
+      #translate RULE(&lt;p&gt;) =&gt; ? &quot;translate value&quot;, &lt;p&gt;<br>
+      #command   RULE(&lt;p&gt;) =&gt; ? &quot;command value&quot;, &lt;p&gt;<br>
+<br>
+      #define    DEF( p )     RULE( p )<br>
+      #translate TRS(&lt;p&gt;)  =&gt; RULE(&lt;p&gt;)<br>
+      #command   CMD(&lt;p&gt;)  =&gt; RULE(&lt;p&gt;)<br>
+<br>
+      proc main()<br>
+      DEF(&quot;def&quot;)<br>
+      TRS(&quot;trs&quot;)<br>
+      CMD(&quot;cmd&quot;)<br>
+      return<br>
+<br>
+   Compile it by Clipper and [x]Harbour and compare the results.<br>
+<br>
+   Next important thing is that Clipper preprocess all indirect #directive body.<br>
+   It means that in Clipper is not possible to execute indirect #undef DEFNAME<br>
+   because if DEFNAME is already defined then it will be preprocessed and as<br>
+   result we will have #undef &lt;DEFNAME_value&gt; before PP execute this #<br>
+   directive. We can replicate this behavior but personally I do not like it.<br>
+   for me it's a limitation not a feature and I do not want to replicate it.<br>
+   So as I would like to define additional stop condition for line tokens<br>
+   preprocessing: ';' followed by '#'.<br>
+   I do not want to make all ';' the stop condition like in current [x]Harbour<br>
+   PP because the same stop condition has to be used in wild match marker.<br>
+   In Clipper it matches the text to the end if line. In new PP it will match<br>
+   the text to the end of line or next # directive. I think it will give<br>
+   reasonable compatibility level and the body of indirect # directive will<br>
+   not be preprocessed. Please note that programmer still will be able to<br>
+   force preprocessing of indirect # directive body using additional<br>
+   preprocessor rule(s) and even control the preprocessing level f.e.:<br>
+      #define   PREPROCESS_DIRECTIVE      DO_DIRECTIVE<br>
+      #xcommand HASH_DIRECTIVE [&lt;*x*&gt;] =&gt; PREPROCESS_DIRECTIVE &lt;x&gt;<br>
+      #xcommand DO_DIRECTIVE   [&lt;*x*&gt;] =&gt; \# &lt;x&gt;<br>
+<br>
+      #define NEWCMD    MYCMD<br>
+      #xcommand CREATEDIRECTIVE =&gt; HASH_DIRECTIVE xcommand NEWCMD \&lt;x&gt; =&gt; ;;<br>
+                                   QOut( &quot;INDIRECT # DIRECTIVE&quot;, #\&lt;x&gt; )<br>
+      CREATEDIRECTIVE<br>
+      MYCMD Hello<br>
+<br>
+   The second problem is stop condition in # directive body. When PP finds #<br>
+   as first token then always remove all tokens to the end of line and take<br>
+   them as part of # directive or ignore. It does not respect ';' token as<br>
+   command separator. This also causes pleasure side effects, f.e. it's<br>
+   not possible to insert indirect # directive without breaking commands<br>
+   after it because they will be always used as part of the inserted #<br>
+   directive by PP. Here I strongly prefer to define the following behavior:<br>
+   direct #define, #[x]translate and #[x]command always accept tokens to the<br>
+   end of line ignoring ';'. Just like in Clipper. All other #directive will<br>
+   respect ';' as end of # directive - It will cause that ';' cannot be used<br>
+   in #error and #stdout. If it's a problem then I can define add support for<br>
+   quoting ';' by '\' for this command and be default keep Clipper<br>
+   compatibility for not quoted ';' and end rule for quoted ones or by default<br>
+   use unquoted ';' as end of command and display others. Current Harbour<br>
+   PP always stop #error and #stdout on ; what is not Clipper compatible and<br>
+   so far I haven't seen that people reported it as bug so probably it's not<br>
+   big problem.<br>
+   Indirect #define, #[x]translate and #[x]command will also respect ';'<br>
+   as end of command. If user will need to use multiple commands in result<br>
+   pattern of indirect # directive then it will be enough to define ';' as<br>
+   some other preprocessor rule, .f.e:<br>
+      #define EOC ;;<br>
+<br>
+      #xcommand CREATECMD     =&gt; #xcommand NEWCMD =&gt; QOut(&quot;1&quot;) EOC QOut(&quot;2&quot;)<br>
+      CREATECMD<br>
+      NEWCMD<br>
+<br>
+   This will give programmer full control on preprocessed data when in<br>
+   Clipper the indirect # directive seems to be a hack added later and<br>
+   can be used only in very limited way. F.e. in Class(y) as workaround<br>
+   for Clipper PP behavior #include is used to execute# directive directly<br>
+   from included files.<br>
+<br>
+22. #define exception. I do not understand why Clipper has it.<br>
+   during substitution if substituted token is:<br>
+        '#' 'define' &lt;otherTokens,...&gt;<br>
+   then it replaces all tokens from current position to the end of line.<br>
+   It's quite possible that it's a work around for some side effects with<br>
+   indirect directive in Clipper PP described above. Anyhow it's not<br>
+   complex solution so I will not replicate it.<br>
+<br>
+23. Conditional compilation.<br>
+   a. #if[n]def directive pushes on the conditional statement stack current<br>
+      conditional compilation flag and create new one. If the flag already<br>
+      disabled preprocessing then the new flag have condition which cannot<br>
+      be changed by #else.<br>
+   b. #endif directive pops this value. If conditional statement stack was<br>
+      empty then error is generated: &quot;Error C2069  #endif does not match #endif&quot;.<br>
+   c. #else directive reverts the current conditional statement flag if its<br>
+      status allow modifications by #else<br>
+      If conditional statement stack was empty then error is generated:<br>
+      &quot;Error C2070  #else does not match #ifdef&quot;<br>
+   If the conditional compilation flag is set then Clipper PP ignores all<br>
+   parsed tokens except #if, #endif, #else directive.<br>
+   The conditional compilation flag and stack are global for all included<br>
+   files so one can set the new condition and other change or pop it.<br>
+   In Clipper #if[n]def &lt;define&gt; has to be separate statement in a line<br>
+   additional token or line concatenators (;) are not allowed. #endif<br>
+   and #else have to be the first token in the line all tokens after are<br>
+   ignored to the end of line, command separator ';' is also ignored.<br>
+<br>
+24. NOTE is not an instruction keyword but whole like comments and has<br>
+   to be stripped at beginning. It has higher priority then /* */<br>
+   It does not have its special meaning when is used after ;<br>
+<br>
+25. Suggested extensions:<br>
+   - Higher priority for multi line comments /* */ stripping then in Clipper<br>
+     where line concatenation (;) is interpreted before /* */. Just like now.<br>
+     IMHO we should not replicate exact Clipper behavior here.<br>
+   a. Add #pragma operator directive to define new multi character operators.<br>
+      Such feature will allow to remove from FLEX/SIMPLEX the hack for ::<br>
+      translation to Self and define safely other operators which will be<br>
+      used as single token. Now it's impossible so things like @: matches<br>
+         @ &lt;any_number_of_blank_characters&gt; :<br>
+   b. token concatenation with new PP operator/marker or automatic in some<br>
+      chosen cases, f.e. no spaces between two tokens and both tokens are<br>
+      valid keywords<br>
+   c. Something to stop result pattern definition in # directives and begin<br>
+      new command. ; does not interrupt it but it's included to result pattern.<br>
+      The result pattern works like wild match marker: &lt;*resultPattern*&gt;<br>
+      It should work also for #define. Maybe it should be global token to<br>
+      stop all wild markers. We can add special status for ; token. Such<br>
+      token will have to also break loops with #define and #[x]translate<br>
+      processing or we will never be able to make from #undef SOME_DEFINE<br>
+      indirect PP rule used when SOME_DEFINE exists - just simply SOME_DEFINE<br>
+      will be preprocessed earlier to the defined value.<br>
+      Such special status can be added automatically when ; token is followed<br>
+      by # or ; is quoted by \<br>
+   d. already existing xHarbour extensions:<br>
+         #[x]unTrasnslate, #[x]unCommand<br>
+      but modified to locate match pattern which can cover exactly the same<br>
+      data.<br>
+         #if<br>
+      but working with integer to allow using 64bit ones which are broken<br>
+      due to conversion to double. The semantic for expressions will be<br>
+      similar to C one with the exception to ! (not) operator precedence.<br>
+      I do not think that Clipper/xbase users are familiar with the exact<br>
+      not operator precedence in C which is differ then the one in xbase<br>
+      world.<br>
+   e. modified version of Harbour's<br>
+         #pragma {__text, __stream, __cstream, __endtext}<br>
+   f. other, see in the code.<br>
+<br>
+-----------------------------------------------------------------------------<br>
+<br>
+Other things you can see in the new PP code. I was adding comments or<br>
+using HB_CLP_STRICT macro to mark the most important things. In few places<br>
+I had to break Clipper compatibility to keep FLEX working. Just simply<br>
+I cannot generate preprocessed line in exactly the same form as Clipper<br>
+does because FLEX or SIMPLEX will not be able to decode it.<br>
+<br>
+Update:<br>
+New Harbour lexer is simple translator between PP tokens and Harbour<br>
+grammar terminal symbols so it's not necessary to convert preprocessed<br>
+code to strings to pass them to FLEX or SIMPLEX. It works faster and it's<br>
+fully compatible Clipper behavior what fixes above problem.<br>
+<br>
+best regards,<br>
+Przemek<br>
+2006-11-08<br>
+<br>
+----------------------------------------------------------------------------- </blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p164243">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: En tiempo de compilacion...</span><br>
+        Posted: Tue Aug 26, 2014 07:45 AM
+      </div>
+      <div class="content">Y aqui la documentación del preprocesador cuando se usa desde un EXE:<br>
+<br>
+<blockquote>Przemyslaw Czerpak (druzus/at/priv.onet.pl)<br>
+<br>
+In Harbour preprocessor can be used in PRG code.<br>
+This is list of PRG functions available for programmer.<br>
+<br>
+   REQUEST __PP_STDRULES<br>
+      It forces including standard std.ch rules in static binaries.<br>
+      Dynamic binaries linked with harbour dynamic library always<br>
+      includes standard PP rules.<br>
+<br>
+<br>
+   __PP_INIT( [&lt;cIncludePath&gt;] [, &lt;cStdChFile&gt; ] ) -&gt; &lt;pPP&gt;<br>
+      Initialize new PP context and return pointer to it.<br>
+      when &lt;cStdChFile&gt; is empty string (&quot;&quot;) then no default rules are<br>
+      used and only the dynamically created #defines like __HARBOUR__,<br>
+      __DATE__, __TIME__, __PLATFORM__* are registered.<br>
+      If &lt;cStdChFile&gt; is missing or NIL and standard PP rules from<br>
+      std.ch are included in binaries (REQUEST __PP_STDRULES) then<br>
+      they are used.<br>
+<br>
+   __PP_PATH( &lt;pPP&gt;, &lt;cPath&gt; [, &lt;lClearPrev&gt;] ) -&gt; NIL<br>
+      Add new (or replace previous) include paths.<br>
+<br>
+   __PP_RESET( &lt;pPP&gt; )<br>
+      Reset the PP context (remove all rules added by user or<br>
+      preprocessed code)<br>
+<br>
+   __PP_ADDRULE( &lt;pPP&gt;, &lt;cDirective&gt; )<br>
+      Preprocess and execute new preprocessor directive<br>
+<br>
+   __PP_PROCESS( &lt;pPP&gt;, &lt;cCode&gt; ) -&gt; &lt;cPreprocessedCode&gt;<br>
+      Preprocess given code and return result<br>
+<br>
+User can create more then one PP context and then use each of them<br>
+separately. Any modifications in one context have no effect in other<br>
+so different PP contexts can be used simultaneously in MT programs.<br>
+To free allocated PP context is enough to clear &lt;pPP&gt; variable.<br>
+When last instance of this variable in user code is cleared then<br>
+automatic destructor frees PP context with its all internal data<br>
+so even if variable is not explicitly cleared by assigning NIL but<br>
+is out of scope (e.g. local variable when program leaves the function)<br>
+PP context is freed.<br>
+<br>
+Below is simple test program which preprocess file and executes<br>
+it's lines by macro compiler:<br>
+<br>
+<br>
+   /*** macro.dat ***/<br>
+   #define VALUE 123.45<br>
+   #xcommand INFO &lt;data&gt; =&gt; Alert( &lt;data&gt; )<br>
+   ? &quot;Hello!&quot;<br>
+   WAIT<br>
+   INFO &quot;Let's test simple calculation.&quot;<br>
+   pow := 2<br>
+   ? &quot;value =&quot;, VALUE<br>
+   ? &quot;pow =&quot;, pow<br>
+   ? &quot;value * pow =&quot;, VALUE * pow<br>
+   WAIT<br>
+   ? VALUE2 // generate RTE<br>
+<br>
+<br>
+   /*** testpp.prg ***/<br>
+   REQUEST __PP_STDRULES<br>
+   REQUEST __WAIT<br>
+   PROC Main()<br>
+      local cLine, pPP, oErr<br>
+      pPP := __PP_INIT()<br>
+      BEGIN SEQUENCE WITH {|oErr| BREAK( oErr ) }<br>
+         FOR EACH cLine IN hb_ATokens( StrTran( __PP_Process( pPP, ;<br>
+               hb_MemoRead( &quot;macro.dat&quot; ) ), Chr( 13 ) ), Chr( 10 ) )<br>
+            BEGIN SEQUENCE<br>
+               IF !Empty( cLine )<br>
+                  &amp;cLine<br>
+               ENDIF<br>
+            RECOVER USING oErr<br>
+               ? &quot;MacroCompiler error at line:&quot;, ;<br>
+                 hb_ntos( cLine:__enumIndex() )<br>
+               ? cLine<br>
+               ? ErrMsg( oErr )<br>
+            END SEQUENCE<br>
+         NEXT<br>
+      RECOVER USING oErr<br>
+         ? ErrMsg( oErr )<br>
+      END SEQUENCE<br>
+      ?<br>
+   RETURN<br>
+<br>
+   STATIC FUNCTION ErrMsg( oErr )<br>
+   RETURN &quot;Error &quot; + ;<br>
+          iif( HB_ISSTRING( oErr:subsystem ), ;<br>
+               oErr:subsystem, &quot;???&quot; ) + ;<br>
+          iif( HB_ISNUMERIC( oErr:subCode ), ;<br>
+               &quot;/&quot; + hb_ntos( oErr:subCode ), &quot;/???&quot; ) + ;<br>
+          iif( HB_ISSTRING( oErr:description ), ;<br>
+               &quot; &quot; + oErr:description, &quot;&quot; ) + ;<br>
+          iif( ! Empty( oErr:filename ), ;<br>
+               &quot; &quot; + oErr:filename, ;<br>
+               iif( ! Empty( oErr:operation ), ;<br>
+                    &quot; &quot; + oErr:operation, &quot;&quot; ) ) </blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p164254">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: En tiempo de compilacion...</span><br>
+        Posted: Tue Aug 26, 2014 01:50 PM
+      </div>
+      <div class="content"><p>Es una pena, creo que sería muy facil de implementar...</p>
+<p>Tal vez tú, que tienes &quot;mano&quot;, podrías &quot;darle un toque&quot; para que lo implemente  <!-- s:oops: --><img src="{SMILIES_PATH}/icon_redface.gif" alt=":oops:" title="Embarassed" /><!-- s:oops: --> </p>
+<p>Para mí sería importante, prodrás?  <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

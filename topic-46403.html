@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Manual de Referencia ORM para Harbour (HDBC) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46403">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Manual de Referencia ORM para Harbour (HDBC)</div>
+  <div class="post" id="p284367">
+    <div class="poster">
+      <div class="name" style="color:#105289">xmanuel</div>
+      <div class="rank">Posts: 817</div>
+      <div class="avatar"></div>
+      Joined: Sun Jun 15, 2008 07:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Manual de Referencia ORM para Harbour (HDBC)</span><br>
+        Posted: Sat Mar 14, 2026 12:03 PM
+      </div>
+      <div class="content"><p><r><H1 slug="manual-de-referencia-orm-para-harbour-hdbc"><s># </s>Manual de Referencia ORM para Harbour (HDBC)</H1></p>
+<p>Bienvenido compañero. Este manual detalla el funcionamiento de la capa <STRONG><s>**</s>ORM<e>**</e></STRONG> (Object-Relational Mapping) incluida en el ecosistema HDBC, inspirada en el patrón <EM><s>*</s>Active Record<e>*</e></EM> y en <EM><s>*</s>Query Builders<e>*</e></EM> modernos. Este ORM proporciona una interfaz elegante, orientada a objetos y fluida para interactuar con tus bases de datos, abstrallendo las sentencias SQL puras y permitiendo trabajar con los registros como si fueran objetos nativos en Harbour.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="ndice"><s>## </s>Índice</H2>
+
+<p><LIST type="decimal"><LI><s>1. </s><STRONG><s><strong></s><URL url="#1-configuraci%C3%B3n-y-conceptos-b%C3%A1sicos"><s><a href="#1-configuración-y-conceptos-básicos"></s>Configuración y Conceptos Básicos<e></a></e></URL><e></strong></e></STRONG></LI></p>
+<LI><s>2. </s><STRONG><s>**</s><URL url="#2-thmodel-active-record-y-query-builder"><s>[</s>THModel (Active Record y Query Builder)<e>](#2-thmodel-active-record-y-query-builder)</e></URL><e>**</e></STRONG></LI>
+<LI><s>3. </s><STRONG><s>**</s><URL url="#3-thcollection-colecciones-de-datos"><s>[</s>THCollection (Colecciones de Datos)<e>](#3-thcollection-colecciones-de-datos)</e></URL><e>**</e></STRONG></LI>
+<LI><s>4. </s><STRONG><s>**</s><URL url="#4-schema-builder-creaci%C3%B3n-de-tablas"><s>[</s>Schema Builder (Creación de Tablas)<e>](#4-schema-builder-creación-de-tablas)</e></URL><e>**</e></STRONG></LI>
+<LI><s>5. </s><STRONG><s>**</s><URL url="#5-resoluci%C3%B3n-de-gram%C3%A1ticas-thgrammar"><s>[</s>Resolución de Gramáticas (THGrammar)<e>](#5-resolución-de-gramáticas-thgrammar)</e></URL><e>**</e></STRONG></LI>
+<p></LIST></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="1-configuraci-n-y-conceptos-b-sicos"><s>## </s>1. Configuración y Conceptos Básicos</H2>
+
+<p>Para usar el ORM, debes disponer de una conexión activa originada desde el núcleo en <C><s>`</s>hxdbc<e>`</e></C> (habitualmente un objeto <C><s>`</s>THDBC<e>`</e></C>). El ORM necesita que se defina la conexión por defecto de forma global por hilo (Thread Static) antes de invocar los modelos.</p>
+
+<p><STRONG><s>**</s>Activación Inicial:<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>#include "hdbc.ch"</p>
+<p>// 1. Crear tu conexion C++ habitual<br>
+LOCAL oDb := THDbc():new( HDBC_DRIVER_SQLITE )<br>
+oDb:connect( "database=app.db" )</p>
+<p>// 2. Acoplar globalmente la conexion al nucleo del ORM<br>
+THModel():setConnection( oDb )<i><br>
+</i><e>```</e></CODE></p>
+<p>Al hacer esto, cualquier clase que herede de <C><s>`</s>THModel<e>`</e></C> sabrá hacia dónde lanzar sus instrucciones.</p>
+
+<HR>
+<p>---</HR></p>
+<H2 slug="2-thmodel-active-record-y-query-builder"><s>## </s>2. THModel (Active Record y Query Builder)</H2>
+
+<p>La clase <C><s>`</s>THModel<e>`</e></C> es el corazón del sistema. Implementa tanto las propiedades del modelo (<EM><s>*</s>Active Record<e>*</e></EM>) como los métodos para encadenar instrucciones (<EM><s>*</s>Query Builder<e>*</e></EM>).</p>
+
+<p>Para crear un modelo personalizado, simplemente hereda de <C><s>`</s>THModel<e>`</e></C>:</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>// model_user.prg</p>
+<h1>include "hbclass.ch"</h1>
+<p>CLASS User FROM THModel<br>
+   // Sobreescribir configuración (Opcional, ORM asume convenciones)<br>
+   DATA table_name INIT "users"<br>
+   DATA primary_key INIT "id"<br>
+   DATA timestamps INIT .T.       // Controla automáticamente created_at y updated_at<br>
+   DATA useSoftDeletes INIT .F.   // Usa deleted_at en vez de borrar físicamente<br>
+ENDCLASS<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="2-1-acceso-a-columnas-y-operaciones-crud-active-record"><s>### </s>2.1 Acceso a Columnas y Operaciones CRUD (Active Record)</H3>
+
+<p>Interactúa con un único registro materializando la fila de la base de datos de vuelta al objeto.</p>
+
+<p><STRONG><s>**</s>Mapeo de Atributos como Propiedades OOP<e>**</e></STRONG><br/>
+Las columnas de la tabla se cargan en el diccionario interno del modelo, pudiendo acceder a ellas mediante <C><s>`</s>getAttribute("campo")<e>`</e></C>. Sin embargo, para un código más limpio y tipado de estilo "OOP puro", puedes enlistar tus columnas exactas en la cabecera de la Clase mediante sentencias <C><s>`</s>DATA<e>`</e></C>. Esto indica a Harbour que conecte las propiedades de la clase física directamente con la tupla cargada en memoria permitiendo escritura y lectura fluida por punto/dos puntos:</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>CLASS Category FROM THModel<br>
+   DATA table_name INIT "categorias"</p>
+<p>// Mapeando explícitamente atributos = sintaxis rápida OOP oCat:name<br>
+   DATA id, name, description <br>
+ENDCLASS<i><br>
+</i><e>```</e></CODE></p>
+<p><STRONG><s>**</s>Buscar por ID (<C><s>`</s>find<e>`</e></C>) y Leer Atributos<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>LOCAL oCat := Category():find( 1 )<br>
+IF oCat != nil<br>
+   // Modo tradicional<br>
+   ? "ID:", oCat:getAttribute( "id" )</p>
+<p>// ¡Modo Fluido! (Requiere haber declarado el <code>DATA name</code> arriba)<br>
+   ? "Nombre:", oCat:name<br>
+   ? "Detalle:", oCat:description<br>
+ENDIF<i><br>
+</i><e>```</e></CODE></p>
+<p><STRONG><s>**</s>Creación (<C><s>`</s>create<e>`</e></C> / <C><s>`</s>save<e>`</e></C>)<e>**</e></STRONG><br/>
+Puedes insertar datos asignando manualmente o masivamente (<C><s>`</s>fill()<e>`</e></C>).</p>
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>// Opción A: Asignación masiva (devuelve el objeto guardado)<br>
+LOCAL oUser := User():create( { "name" =&gt; "Manu", "email" =&gt; "manu@test.com" } )</p>
+<p>// Opción B: Instanciar y guardar<br>
+LOCAL oNuevo := User():new()<br>
+oNuevo:setAttribute( "name", "Pepe" )<br>
+oNuevo:save()<i><br>
+</i><e>```</e></CODE></p>
+<p><STRONG><s>**</s>Actualización (<C><s>`</s>update<e>`</e></C> / <C><s>`</s>save<e>`</e></C>)<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;LOCAL oUser := User():find( 5 )
+oUser:setAttribute( "name", "Jose" )
+oUser:save() // Lanza automáticamente el UPDATE&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>Eliminación (<C><s>`</s>delete<e>`</e></C>)<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;LOCAL oUser := User():find( 5 )
+oUser:delete() // Físico o Lógico si useSoftDeletes es .T.&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<H3 slug="2-2-query-builder-consultas-encadenadas"><s>### </s>2.2 Query Builder (Consultas Encadenadas)</H3>
+
+<p>Aprovecha la sintaxis fluida para generar complejas búsquedas sin ensuciar el código prg con sentencias textuales SQL. Devuelven siempre objetos de tipo <C><s>`</s>THCollection<e>`</e></C>.</p>
+
+<p><STRONG><s>**</s>Selección Múltiple (<C><s>`</s>where<e>`</e></C>, <C><s>`</s>whereIn<e>`</e></C>, <C><s>`</s>get<e>`</e></C>)<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>// Todos los usuarios activos<br>
+LOCAL oActivos := User():where( "status", "=", "ACTIVE" ):get()</p>
+<p>// Buscar en array<br>
+LOCAL oVIPS := User():whereIn( "role_id", {1, 2} ):order( "name DESC" ):get()<i><br>
+</i><e>```</e></CODE></p>
+<p><QUOTE><i>&gt; </i><p><STRONG><s><strong></s>Consejo de rendimiento (<C><s><code>&lt;/s&gt;mutable&lt;e&gt;</code></e></C>)<e></strong></e></STRONG>: Por convención, las queries clonan el objeto base preventivamente cada vez que encadenas un cláusula (<C><s><code>&lt;/s&gt;where()&lt;e&gt;</code></e></C>). Si tu cadena es larguísima, aplica el modo mutable:<br/><br>
+<i>&gt; </i><C><s><code>&lt;/s&gt;User():mutable(.T.):where(...):orderBy(...):limit(10):get()&lt;e&gt;</code></e></C></p></QUOTE></p>
+<p><STRONG><s>**</s>Agrupaciones y Limitaciones<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;LOCAL oStats := User():select( "role_id", "COUNT(*) as total" ) ;
+                      :groupBy( "role_id" ) ;
+                      :having( "total", "&amp;gt;", 5 ) ;
+                      :limit( 10 ) ;
+                      :get()&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>Obtener un solo resultado (<C><s>`</s>first<e>`</e></C>)<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;LOCAL oPrime := User():where( "score", "&amp;gt;", 1000 ):first()&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<p><STRONG><s>**</s>Agregadores Numéricos<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;LOCAL nMedia := User():where( "status", "=", 1 ):avg( "edad" )
+LOCAL nTodos := User():count()&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<H3 slug="2-3-utilidades-y-upsert"><s>### </s>2.3 Utilidades y Upsert</H3>
+
+<p><LIST><LI><s><em> </s><STRONG><s></em><em></s><C><s><code>&lt;/s&gt;upsert( hMatch, hValues )&lt;e&gt;</code></e></C><e></em>*</e></STRONG>: Muy útil. Intenta actualizar si los condicionales en <C><s><code>&lt;/s&gt;hMatch&lt;e&gt;</code></e></C> hacen diana, y si la fila no existe la inserta uniendo los dos Hashes internamente.</LI></p>
+<LI><s>* </s><STRONG><s>**</s><C><s>`</s>firstOrCreate( hMatch, hValues )<e>`</e></C><e>**</e></STRONG> y <STRONG><s>**</s><C><s>`</s>firstOrNew( hMatch, hValues )<e>`</e></C><e>**</e></STRONG>: Buscan un registro. Si no está lo devuelven persistido (<C><s>`</s>OrCreate<e>`</e></C>) o como instancia temporal en memoria (<C><s>`</s>OrNew<e>`</e></C>).</LI>
+<LI><s>* </s><STRONG><s>**</s><C><s>`</s>pluck( cCol )<e>`</e></C><e>**</e></STRONG>: Si sólo quieres una matriz elemental nativa <C><s>`</s>{"Pepe", "Manu"}<e>`</e></C> puedes saltarte los objetos:
+<CODE lang="harbour"><s>  ```harbour</s><i>
+</i>  LOCAL aNombres := User():where("age","&gt;",18):pluck("name")<i>
+</i><e>  ```</e></CODE></LI>
+<p></LIST></p>
+<H2 slug="3-relaciones-y-caracter-sticas-avanzadas-del-modelo"><s>## </s>3. Relaciones y Características Avanzadas del Modelo</H2>
+
+<p>El ORM brilla especialmente al manejar el entrelazado de datos (Data Relationships) y gestionar el ciclo de vida de los registros con eventos automáticos.</p>
+
+<H3 slug="3-1-relaciones-relationships"><s>### </s>3.1 Relaciones (Relationships)</H3>
+
+<p>Con el ORM puedes vincular modelos sin necesidad de programar complejos <C><s>`</s>JOIN<e>`</e></C>s manuales. Admite los principales modos de relación (<EM><s>*</s>Has One<e>*</e></EM>, <EM><s>*</s>Has Many<e>*</e></EM>, <EM><s>*</s>Belongs To<e>*</e></EM>, <EM><s>*</s>Belongs To Many<e>*</e></EM>).</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>CLASS User FROM THModel<br>
+   // ...<br>
+   METHOD profile()<br>
+   METHOD posts()<br>
+   METHOD roles()<br>
+ENDCLASS</p>
+<p>// 1 a 1<br>
+METHOD profile() CLASS User ; return ::hasOne( "Profile", "user_id" )</p>
+<p>// 1 a N<br>
+METHOD posts() CLASS User ; return ::hasMany( "Post", "user_id" )</p>
+<p>// N a N (Tabla pivote intermedia)<br>
+METHOD roles() CLASS User ; return ::belongsToMany( "Role", "role_user", "user_id", "role_id" )<i><br>
+</i><e>```</e></CODE></p>
+<p><STRONG><s>**</s>Uso de Relaciones:<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>LOCAL oUser := User():find(5)</p>
+<p>// Lazy Loading (se carga de BBDD al invocarse)<br>
+? "Bio de su perfil:", oUser:profile:first():bio<br>
+? "Tantos posts escritos:", oUser:posts:count()</p>
+<p>// Eager Loading (Precarga óptima para evitar el problema N+1)<br>
+LOCAL oUsers := User():with("posts"):all()<br>
+oUsers:each({|u| ? u:name, u:posts:count() })<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="3-2-accessors-mutadores-de-lectura"><s>### </s>3.2 Accessors (Mutadores de Lectura)</H3>
+
+<p>Puedes modificar cómo se devuelve un dato de la base de datos sin transformar el valor físico almacenado creando métodos <C><s>`</s>get[Columna]Attribute<e>`</e></C>:</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>CLASS User FROM THModel<br>
+   // ...<br>
+   METHOD getNameAttribute( cName )<br>
+ENDCLASS</p>
+<p>METHOD getNameAttribute( cName ) CLASS User <br>
+   return Upper( cName ) + " (Registrado)"<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="3-3-observadores-observers"><s>### </s>3.3 Observadores (Observers)</H3>
+
+<p>Intercepta el ciclo de vida de un modelo encolando disparadores (<EM><s>*</s>Triggers<e>*</e></EM>) de Harbour puros en el backend, por ejemplo <C><s>`</s>saving<e>`</e></C> o <C><s>`</s>saved<e>`</e></C>.</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>// Crea una clase de observador<br>
+CLASS UserObserver<br>
+   METHOD saving( oModel )<br>
+ENDCLASS</p>
+<p>PROCEDURE saving( oModel ) CLASS UserObserver<br>
+   ? "El modelo se va a guardar:", oModel:name<br>
+return</p>
+<p>// Actívalo en cualquier parte:<br>
+User():observe( "UserObserver" )<br>
+LOCAL oU := User():new()<br>
+oU:name := "Test"<br>
+oU:save() // &lt;- Print: El modelo se va a guardar: Test<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="3-4-scopes-mbitos-de-b-squeda-de-reuso"><s>### </s>3.4 Scopes (Ámbitos de Búsqueda de Reuso)</H3>
+
+<p>Si tienes filtros recurrentes (ej: Usuarios que son administradores o que están vivos), aísla esa lógica en tus modelos usando el prefijo <C><s>`</s>scope<e>`</e></C>:</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>CLASS User FROM THModel<br>
+   // ...<br>
+   METHOD scopeActivos( oQuery )<br>
+ENDCLASS</p>
+<p>METHOD scopeActivos( oQuery ) CLASS User ; return oQuery:where( "status", "=", 1 )</p>
+<p>// Uso:<br>
+LOCAL oActives := User():scope( "activos" ):order("id DESC"):get()<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="3-5-paginadores-y-chunking"><s>### </s>3.5 Paginadores y Chunking</H3>
+
+<p>En lugar de lanzar a la memoria una tabla con 50.000 registros de golpe usando <C><s>`</s>get()<e>`</e></C>, puedes paginarla ordenadamente para un datagrid web u optimizar procesos batch.</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>// Paginación tradicional (útil para APIs)<br>
+LOCAL oPager := User():paginate( 50, 1 ) // (CantidadxPagina, Pagina)<br>
+? "Páginas totales:", oPager["total_pages"]<br>
+? "Registros matriz:", Len( oPager["data"] )</p>
+<p>// Chunking para procesado silencioso en memoria baja<br>
+User():chunk( 1000, {|oColeccion_Trozo| ;<br>
+   oColeccion_Trozo:each({|oU| oU:sendEmailLento() }), ;<br>
+   .T. ; // Devuelve .F. para abortar procesamiento del chunk<br>
+})<i><br>
+</i><e>```</e></CODE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="4-thcollection-colecciones-de-datos"><s>## </s>4. THCollection (Colecciones de Datos)</H2>
+
+<p>El resultado masivo de un Query Builder (<C><s>`</s>-&gt;get()<e>`</e></C>) no es un Array pelado, es un objeto envoltorio de la matriz <C><s>`</s>THCollection<e>`</e></C> que facilita la iteración y el pase a formatos como JSON.</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>LOCAL oUsersColl := User():where("status", "=", 1):get()</p>
+<p>? "Registros encontrados:", oUsersColl:count()</p>
+<p>// La clase es compatible con bucles FOR EACH<br>
+LOCAL oUser<br>
+FOR EACH oUser IN oUsersColl<br>
+   ? oUser:getAttribute("email")<br>
+NEXT<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="m-todos-funcionales-incorporados-en-la-colecci-n"><s>### </s>Métodos funcionales incorporados en la Colección</H3>
+<p><LIST><LI><s><em> </s><STRONG><s></em><em></s><C><s><code>&lt;/s&gt;each( bBlock )&lt;e&gt;</code></e></C><e></em>*</e></STRONG>: Aplica el CodeBlock a referenciando la instancia.</LI></p>
+<LI><s>* </s><STRONG><s>**</s><C><s>`</s>map( bBlock )<e>`</e></C><e>**</e></STRONG>: Transforma todo y te devuelve un nuevo <C><s>`</s>THCollection<e>`</e></C>.</LI>
+<LI><s>* </s><STRONG><s>**</s><C><s>`</s>filter( bBlock )<e>`</e></C><e>**</e></STRONG>: Para depurar resultados traidos en memoria evaluando un <C><s>`</s>.T. / .F.<e>`</e></C>.</LI>
+<LI><s>* </s><STRONG><s>**</s><C><s>`</s>isEmpty()<e>`</e></C><e>**</e></STRONG> y <STRONG><s>**</s><C><s>`</s>first()<e>`</e></C><e>**</e></STRONG>.</LI>
+<LI><s>* </s><STRONG><s>**</s><C><s>`</s>toJson()<e>`</e></C><e>**</e></STRONG>: Vital para apis web. Genera un String serializado de la matriz de todas las entidades automáticamente. Exáctamente lo que buscas devolver en un endpoint Rest.</LI>
+<p></LIST></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="4-schema-builder-creaci-n-y-migraci-n-de-tablas"><s>## </s>4. Schema Builder (Creación y Migración de Tablas)</H2>
+
+<p>HDBC brinda abstracción <EM><s>*</s>DDL<e>*</e></EM> a través de <C><s>`</s>THSchema<e>`</e></C>. Te permite programar migraciones y creaciones de base de datos de manera agnóstica sin lidiar de forma nativa con las diferencias sintácticas entre SQLite, MySQL o PostgreSQL.</p>
+
+<p>La creación de tablas se realiza pasando un bloque de código al método <C><s>`</s>create<e>`</e></C>, el cual recibe un objeto "blueprint" (representando la nueva tabla), que usarás para definir las columnas:</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>#include "hdbc.ch"</p>
+<p>// En tu bloque de inicializacion o herramienta migratoria:<br>
+THSchema():create( "users", {| table | ;<br>
+    table:id(), ;                                    // Genera Entero Clave Primaria Autonumerico<br>
+    table:string("email", 120), ;                    // Varchar limitado a 120 caracteres<br>
+    table:string("password", 255), ;                 // Varchar de 255<br>
+    table:boolean("active"), ;                       // Tipos Booleanos<br>
+    table:decimal("saldo", 10, 2), ;                 // Monetarios (Precisión 10, Escala 2)<br>
+    table:text("bio"), ;                             // Texto Largo / Memo<br>
+    table:json("config"), ;                          // Columna especial JSON<br>
+    table:timestamps() ;                             // Inyecta <code>created_at</code> y <code>updated_at</code> (Datetime)<br>
+} )<i><br>
+</i><e>```</e></CODE></p>
+<p>El objeto <C><s>`</s>table<e>`</e></C> recibido en el CodeBlock es en realidad una fábrica <C><s>`</s>THBlueprint<e>`</e></C>/<C><s>`</s>THField<e>`</e></C>. La capa gramatical traducirá transparentemente cada tipo a la versión física idónea según tu base de datos (Ej: <C><s>`</s>boolean<e>`</e></C> pasará a un <C><s>`</s>INTEGER 1/0<e>`</e></C> si tu motor base no engloba tipos booleanos predeterminados, como SQLite).</p>
+
+<H3 slug="creaci-n-de-tablas-de-forma-expl-cita-orientada-a-objetos"><s>### </s>Creación de Tablas de Forma Explícita (Orientada a Objetos)</H3>
+
+<p>Si prefieres no usar el uso de bloques (Closures) o estás construyendo la estructura de forma dinámica durante la ejecución de tu aplicación de forma procedimental, puedes instanciar directamente <C><s>`</s>THSchema<e>`</e></C> y agrupar los campos valiéndote de la factoría <C><s>`</s>THField<e>`</e></C>:</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>// Opcionalmente puedes destruir tablas previas antes de crearlas<br>
+THSchema():new( "productos" ):dropIfExists()</p>
+<p>LOCAL oSchema := THSchema():new( "productos" )<br>
+oSchema:add( THField():id() )<br>
+oSchema:add( THField():string( "nombre", 150 ) )<br>
+oSchema:add( THField():decimal( "precio", 10, 2 ) )<br>
+oSchema:add( THField():boolean( "activo" ) )<br>
+oSchema:add( THField():timestamps() )<br>
+oSchema:create()<i><br>
+</i><e>```</e></CODE></p>
+<H3 slug="tipos-de-columnas-disponibles"><s>### </s>Tipos de Columnas Disponibles</H3>
+
+<p>El <C><s>`</s>Table Blueprint<e>`</e></C> proporciona los siguientes métodos para declarar las tipologías de columnas de tus tablas:</p>
+
+<TABLE><THEAD><TR><i>| </i><TH>Método</TH><i>                  | </i><TH>Descripción del Tipo Resultante</TH><i> |</i></TR></THEAD><i>
+|-------------------------|--------------------------------|</i>
+<TBODY><TR><i>| </i><TD><C><s>`</s>table:id("nombre")<e>`</e></C></TD><i>    | </i><TD>Clave primaria Auto-Incremental. Por defecto el nombre es <C><s>`</s>"id"<e>`</e></C>.</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:string("c", n)<e>`</e></C></TD><i>  | </i><TD>Equivalente a <C><s>`</s>VARCHAR<e>`</e></C>. Acepta un límite de longitud <C><s>`</s>n<e>`</e></C>.</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:integer("c")<e>`</e></C></TD><i>    | </i><TD>Número Entero estándar (<C><s>`</s>INTEGER<e>`</e></C>).</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:float("c")<e>`</e></C></TD><i>      | </i><TD>Número decimal de coma flotante (<C><s>`</s>FLOAT<e>`</e></C>).</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:decimal("c",p,s)<e>`</e></C></TD><i>| </i><TD>Decimal exacto. <C><s>`</s>p<e>`</e></C> recisión total, <C><s>`</s>s<e>`</e></C> cantidad de decimales.</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:boolean("c")<e>`</e></C></TD><i>    | </i><TD>Valores verdadero/falso. Mapeado a enteros seguros 1/0 si el motor lo exige.</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:date("c")<e>`</e></C></TD><i>       | </i><TD>Únicamente fecha (<C><s>`</s>DATE<e>`</e></C>).</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:datetime("c")<e>`</e></C></TD><i>   | </i><TD>Fecha y Hora exactas (<C><s>`</s>DATETIME<e>`</e></C>).</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:timestamp("c")<e>`</e></C></TD><i>  | </i><TD>Marca temporal SQL (<C><s>`</s>TIMESTAMP<e>`</e></C> o equivalente).</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:text("c")<e>`</e></C></TD><i>       | </i><TD>Almacenamiento masivo de texto (<C><s>`</s>TEXT<e>`</e></C> o <C><s>`</s>MEMO<e>`</e></C>).</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:json("c")<e>`</e></C></TD><i>       | </i><TD>Estructura JSON si el driver lo encapsula, o String puro en su defecto.</TD><i> |</i></TR>
+<TR><i>| </i><TD><C><s>`</s>table:timestamps()<e>`</e></C></TD><i>    | </i><TD>Helper. Genera autmáticamente <C><s>`</s>created_at<e>`</e></C> y <C><s>`</s>updated_at<e>`</e></C>.</TD><i> |</i></TR></TBODY></TABLE>
+
+<H3 slug="operaciones-posteriores-y-mantenimiento"><s>### </s>Operaciones Posteriores y Mantenimiento</H3>
+
+<p>También puedes intervenir esquemas existentes o destruirlos de forma fluida:</p>
+
+<p><STRONG><s>**</s>Destruir Tablas:<e>**</e></STRONG></p>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;THSchema():drop("users")
+THSchema():dropIfExists("users") // Evita excepciones si la tabla ya no existía&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="5-resoluci-n-de-gram-ticas-thgrammar"><s>## </s>5. Resolución de Gramáticas (THGrammar)</H2>
+
+<p>La clase <C><s>`</s>THGrammar<e>`</e></C> se aloja detrás de los bastidores del ORM. Es una capa completamente <EM><s>*</s>Abstracta<e>*</e></EM>.</p>
+
+<p>Cada driver individual en HDBC (Ej: Postgres, MariaDB) inyectará al ORM su propia extensión (Hija) de <C><s>`</s>THGrammar<e>`</e></C> que sabe cómo codificar al dialecto correcto y escapar las palabras clave o valores requeridos (Ej: <C><s>`</s>LIMIT<e>`</e></C> u <C><s>`</s>OFFSET<e>`</e></C> pueden diverger o los comillados <C><s>`</s>\`` contra<e> `</e></C>[]<C><s>` </s>o<e> `</e></C>""`).</p>
+
+<p>No debes instanciarla tú explícitamente, pero puedes alterar aspectos globales y consultar la delegación actuando desde tu objeto THDbc:</p>
+<p><CODE lang="harbour"><s><code>harbour&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;// Acceder al inyector de tu driver actual
+LOCAL oGrammar := THModel():getGrammar()
+? oGrammar:sqlListTables()&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<HR>
+<p>---</HR></p>
+<H2 slug="6-ejemplo-pr-ctico-completo"><s>## </s>6. Ejemplo Práctico Completo</H2>
+
+<p>Aquí agrupamos todo el conocimiento de los bloques anteriores para levantar un escenario completo: crear las bases de datos de <C><s>`</s>Autores<e>`</e></C> y <C><s>`</s>Libros<e>`</e></C>, definir sus clases enlazadas, inyectar el juego de datos (Altas), leerlos relacionadamente (Listados), mutarlos (Modificaciones) y borrarlos (Bajas).</p>
+
+<p><CODE lang="harbour"><s>```harbour</s><i><br>
+</i>#include "hdbc_conn.ch"</p>
+<h1>include "hbclass.ch"</h1>
+<h1>include "hdbc.ch"</h1>
+<p>// ---------------------------------------------------------<br>
+// 1. DEFINICIÓN DE MODELOS<br>
+// ---------------------------------------------------------<br>
+CLASS Author FROM THModel<br>
+   DATA table_name INIT "autores"<br>
+   DATA id, name</p>
+<p>METHOD books() // Relacion 1:N<br>
+ENDCLASS</p>
+<p>METHOD books() CLASS Author ; return ::hasMany( "Book", "author_id" )</p>
+<p>CLASS Book FROM THModel<br>
+   DATA table_name INIT "libros"<br>
+   DATA id, author_id, title, in_stock</p>
+<p>METHOD author() // Inversa N:1<br>
+ENDCLASS</p>
+<p>METHOD author() CLASS Book ; return ::belongsTo( "Author", "author_id" )</p>
+<p>// ---------------------------------------------------------<br>
+// 2. FUNCIÓN PRINCIPAL Y EJECUCIÓN<br>
+// ---------------------------------------------------------<br>
+PROCEDURE Main()<br>
+   LOCAL oDb := THDbc():new( HDBC_DRIVER_SQLITE )<br>
+   LOCAL oAuthor, oBook, oAuthorsSet</p>
+<p>// A. CONEXIÓN AL NÚCLEO<br>
+   oDb:connect( "database=library.db" )<br>
+   THModel():setConnection( oDb )</p>
+<p>// B. GESTIÓN DEL ESQUEMA (Crear si no existe)</p>
+<p>// Crear tabla de autores<br>
+   THSchema():new( "autores" ):dropIfExists()<br>
+   oSchema := THSchema():new( "autores" )<br>
+   oSchema:add( THField():id() )<br>
+   oSchema:add( THField():string( "name", 150 ) )<br>
+   oSchema:add( THField():timestamps() )<br>
+   oSchema:create()</p>
+<p>// Crear tabla de libros<br>
+   THSchema():new( "libros" ):dropIfExists()<br>
+   oSchema := THSchema():new( "libros" )<br>
+   oSchema:add( THField():id() )<br>
+   oSchema:add( THField():integer( "author_id" ) )<br>
+   oSchema:add( THField():string( "title", 200 ) )<br>
+   oSchema:add( THField():boolean( "in_stock" ):default(.T.) )<br>
+   oSchema:add( THField():timestamps() )<br>
+   oSchema:create()</p>
+<p>// C. ALTAS (Inyección de Datos)<br>
+   // Alta masiva<br>
+   Author():create({ "id" =&gt; 1, "name" =&gt; "Gabriel Garcia Marquez" })<br>
+   Author():create({ "id" =&gt; 2, "name" =&gt; "Isabel Allende" })</p>
+<p>// Alta Relacional<br>
+   Book():create({ "author_id" =&gt; 1, "title" =&gt; "Cien Años de Soledad", "in_stock" =&gt; 1 })<br>
+   Book():create({ "author_id" =&gt; 1, "title" =&gt; "El Amor en Tiempos...", "in_stock" =&gt; 0 })<br>
+   Book():create({ "author_id" =&gt; 2, "title" =&gt; "La Casa de los Espiritus", "in_stock" =&gt; 1 })</p>
+<p>// D. LISTADOS Y BÚSQUEDAS (Eager Loading para Eficiencia)<br>
+   ? "---- LISTADO DE CATÁLOGO ----"<br>
+   oAuthorsSet := Author():with("books"):all()</p>
+<p>oAuthorsSet:each({|a| ;<br>
+       QOut( "=&gt; Autor: " + a:name ), ;<br>
+       a:books:each({|b| ;<br>
+          QOut( "   * Libro: " + b:title + " (Stock: " + hb_ValToStr(b:in_stock) + ")" ) ;<br>
+       }) ;<br>
+   })</p>
+<p>// E. MODIFICACIONES (Update)<br>
+   ? "---- ACTUALIZANDO STOCK ----"<br>
+   oBook := Book():where("title", "LIKE", "%Amor en Tiempos%"):first()<br>
+   IF oBook != nil<br>
+      oBook:in_stock := 1 // Reposición de libro<br>
+      oBook:save()<br>
+      ? "Stock reabastecido de:", oBook:title<br>
+   ENDIF</p>
+<p>// F. BAJAS (Delete)<br>
+   ? "---- ELIMINANDO REGISTRO ----"<br>
+   oAuthor := Author():find( 2 ) // Buscando a Isabel Allende<br>
+   IF oAuthor != nil<br>
+      // Borrar todos sus libros secuencialmente primero usando su relación<br>
+      oAuthor:books:each({|b| b:delete() })</p>
+<pre><code>  // Borrar el autor
+  oAuthor:delete()
+  ? "Autor y libros asociados borrados correctamente."
+</code></pre>
+<p>ENDIF</p>
+<p>THModel():end()<br>
+   oDb:disconnect()<br>
+RETURN<i><br>
+</i><e>```</e></CODE></p>
+<HR>
+<p>---</HR></p>
+<p><EMOJI seq="2699" tseq="2699">⚙️</EMOJI> <EM><s>*</s>Fin del manual ORM. Combina <C><s>`</s>THModel<e>`</e></C> con validaciones sólidas (<C><s>`</s>rules<e>`</e></C>) para gobernar las lógicas de negocio con elegancia y seguridad.<e>*</e></EM> <EMOJI seq="1f680" tseq="1f680">&#128640;</EMOJI></p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284375">
+    <div class="poster">
+      <div class="name" style="color:#105289">VictorCasajuana</div>
+      <div class="rank">Posts: 308</div>
+      <div class="avatar"></div>
+      Joined: Wed Mar 28, 2018 04:38 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Manual de Referencia ORM para Harbour (HDBC)</span><br>
+        Posted: Mon Mar 16, 2026 07:33 AM
+      </div>
+      <div class="content"><p><t><p>buen trabajo!</p></t></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

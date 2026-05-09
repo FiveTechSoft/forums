@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Artificial Intelligence: GPT with Harbour and FWH - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-39270">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Artificial Intelligence: GPT with Harbour and FWH</div>
+  <div class="post" id="p234352">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Artificial Intelligence: GPT with Harbour and FWH</span><br>
+        Posted: Fri Aug 14, 2020 11:37 AM
+      </div>
+      <div class="content">Past July 2020, the company OpenAI released GPT3 (175 billions parameters) into private beta which has been a tremendous advance on AI natural language processing. GPT3 is the evolution of previous products and research like Microsoft Turing (17 billions parameters), NVidia Megatron (8 billions parameters), GPT2 (1.5 billions parameters), etc. In fact Google has already announced an enhanced new product named GShard that uses up to 600 billions parameters.<br>
+<br>
+GPT stands for &quot;Generative Pre Trained&quot;. This means that its work is to &quot;generate&quot; the next word, given some words, and that the system has been trained previously in advance.<br>
+<br>
+Seven years ago Google developed and provided a &quot;word2vec&quot; routines that basically help to &quot;vectorize&quot; words. As an example for this, lets consider &quot;colors&quot;. Colors can be represented by 3 numbers (red,green,blue) which could be represented as x,y,z coordinates (vectors) in &quot;space&quot;. This way we can add &quot;red&quot; and &quot;blue&quot; and obtain &quot;purple&quot;. We can see that this vector representation allows to &quot;sum&quot; colors, find &quot;near&quot; colors, &quot;sustract&quot; them, etc.<br>
+<br>
+word2vec <a href="https://code.google.com/archive/p/word2vec/" rel="noopener">https&#58;//code&#46;google&#46;com/archive/p/word2vec/</a> generates these vectors from a given text, and the results are quite impressive. I have managed to build it on Windows in case you may want to test it.<br>
+<br>
+Given those ideas, Rao and I decided to build a simple Harbour and FWH (as the GUI) example to check the basic concepts of a very simple GPT using Harbour. Here you have the code to build it and see how to use it to generate the next word. You can provide your own texts to it. On a next msg we will explain how it works and how you can apply it to your apps already <br>
+<br>
+gpt_2.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+request DBFCDX
+
+field WORDS
+
+static nSize   := 3
+
+function Main()
+
+   local oFont, oDlg, oBrw, oGet, cScope
+   local cSearch  := Space( 60 )
+   local aSentences :=  { "the cat eats mouse","the mouse eats cheese",;
+         "the cat eats fish","the fish eats fly", "the dog eats meat", ;
+         "the dog barks at strangers", "the dog bites theives", ;
+         "this is a really long long text", "this was a stage" }
+
+   FErase( "GPT_2.dbf" )
+   FErase( "GPT_2.cdx" )
+
+   if ! File( "GPT_2.dbf" )
+      DbCreate( "GPT_2.dbf", { { "ID", "+", 10, 0 }, { "WORDS", "C", 30, 0 } }, "DBFCDX" )
+      USE GPT_2 VIA "DBFCDX"
+      INDEX ON WORDS TAG GPT_2 CUSTOM
+      USE
+   endif
+
+   USE GPT_2 VIA "DBFCDX"
+   SET ORDER TO TAG GPT_2
+   AEval( aSentences, { |c| RecordSentence( c ) } )
+
+   OrdScope( 0, " " )
+   OrdScope( 1, " " )
+   GO TOP
+
+   SetGetColorFocus()
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-14
+   DEFINE DIALOG oDlg SIZE 800, 350 PIXEL TRUEPIXEL FONT oFont
+
+   @ 22,  20 SAY "Enter word(s)" SIZE 100, 20 PIXEL OF oDlg
+   @ 20, 120 GET oGet VAR cSearch SIZE 660,24 PIXEL OF oDlg ;
+        ON CHANGE ( If( nKey == 32, ResetBrowse( oGet:GetText(), oBrw ), nil ) ) ;
+        UPDATE
+
+   @ 60, 20 XBROWSE oBrw SIZE 760, 250 PIXEL OF oDlg ;
+      DATASOURCE ReadSuggestions( "" ) ;
+      COLUMNS 1, 2, 3 ;
+      HEADERS "RecNo", "Suggestions", "Strength" NOBORDER
+
+   WITH OBJECT oBrw
+      :nStretchCol = 2
+      :aCols[ 2 ]:bLDClickData := &lt; ||
+         oGet:cText := PadR( Trim( cSearch ) + " " + Trim( oBrw:aCols[ 2 ]:Value ), 60 )
+         ResetBrowse( cSearch, oBrw )
+         return nil
+         &gt;
+
+      :CreateFromCode()
+   END
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   OrdScope( 0, "this " ); OrdScope( 1, "this " )
+
+   XBROWSER "GPT_2" COLUMNS "id", "words", "OrdKeyVal()", "OrdKeyCount()"
+
+return nil
+
+function ResetBrowse( cText, oBrw )
+
+   local aSuggest := ReadSuggestions( cText )
+
+   oBrw:aArrayData   := aSuggest
+   oBrw:GoTop()
+   oBrw:Refresh()
+
+return nil
+
+function ReadSuggestions( cText )
+
+   local aRet     := {}
+   local nTokens, n, nn, cKey
+
+   cText    := Lower( AllTrim( cText ) )
+   if Empty( cText )
+      OrdScope( 0, " " )
+      OrdScope( 1, " " )
+      dbGoTop()
+      DbEVal( { || AAdd( aRet, { RECNO(), WORDS, 1 } ) } )
+      return aRet
+   endif
+
+   nTokens  := NumToken( cText )
+   SetScope( nil )
+
+   if !dbSeek( Token( cText ) )
+      return aRet
+   endif
+
+   for n := Max( 1, nTokens - nSize + 1 ) to nTokens
+
+      cKey  := AddTokens( cText, n, nTokens )
+      nn    := NumToken( cKey )
+      SetScope( cKey + " " )
+
+      DbEVal( { || If( AScan( aRet, { |a| a[ 1 ] == RECNO() } ) == 0, AAdd( aRet, { RECNO(), WORDS, nn } ), nil ) }, ;
+              { || NumToken( OrdKeyVal() ) == nn + 1 }  )
+
+   next
+
+return aRet
+
+function SetScope( c )
+
+   OrdScope( 0, c ); OrdScope( 1, c ); dbGoTop()
+
+return nil
+
+function RecordSentence( cText )
+
+   local nToken, nTokens := NumToken( cText )
+   local aTokens  := Array( nTokens )
+   local n, cKey
+
+   AEval( aTokens, { |u,i| aTokens[ i ] := Token( cText, nil, i ) } )
+
+   SET ORDER TO TAG GPT_2
+
+   if !dbSeek( " " + aTokens[ 1 ] )
+      dbAppend()
+      WORDS   := aTokens[ 1 ]
+      OrdKeyAdd( "GPT_2", nil, " " + Lower( aTokens[ 1 ] ) )
+   endif
+
+   for nToken := 1 to Len( aTokens ) - 1
+      cKey  := Lower( aTokens[ nToken ] + " " + aTokens[ nToken + 1 ] )
+      if !dbSeek( cKey )
+         dbAppend()
+         WORDS   := aTokens[ nToken + 1 ]
+         OrdKeyAdd( "GPT_2", nil, cKey )
+         if nToken &gt; 1
+            for n := nToken -1 to Max( 1, nToken - nSize ) step - 1
+               cKey  := Lower( AddTokens( cText, n, nToken + 1 ) )
+               OrdKeyAdd( "GPT_2", nil, cKey )
+            next
+         endif
+      endif
+   next
+
+return nil
+
+function LastTokens( cText, nCount )
+
+   local nTokens  := NumToken( cText )
+   local n
+   local nFrom    := Max( nTokens - nCount + 1, 1 )
+   local cRet     := Token( cText, , nFrom )
+
+   for n := nFrom + 1 to nTokens
+      cRet  += " " + Token( cText, , n )
+   next
+
+return cRet
+
+function AddTokens( cText, nFrom, nLast )
+
+   local n, cRet
+
+   DEFAULT nLast  := NumToken( cText )
+   nFrom    := Max( 1, nFrom )
+   cRet     := Token( cText, , nFrom )
+
+   for n := nFrom + 1 to nLast
+      cRet  += " " + Token( cText, , n )
+   next
+
+return cRet</code></pre></div><br>
+<br>
+<img src="https://github.com/FiveTechSoft/screenshots/blob/master/gpt1.JPG?raw=true" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p234374">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Artificial Intelligence: GPT with Harbour and FWH</span><br>
+        Posted: Fri Aug 14, 2020 11:14 PM
+      </div>
+      <div class="content">Though OpenAI GPT3 is in closed private beta, there is an easy to way to start using it! <br>
+Go to <a href="https://play.aidungeon.io/" rel="noopener">https&#58;//play&#46;aidungeon&#46;io/</a> select option 6 and use these chat models with the historical characters of your choice.<br>
+Be aware that all these answers are fiction so they may be unaccurate or totally false. Enjoy it!<br>
+<br>
+These are some examples of chats with historical characters using OpenAI GPT3:<br>
+<br>
+An interview with Steve Jobs: (some of my questions were written by the AI also!)<br>
+<blockquote>My name is Antonio and I went to California to meet Steve Jobs. Antonio: Hi Steve, what a great honor to meet you. Steve: You are welcome. Antonio: what inspired you to build the iphone ?<br>
+Steve: The iPhone was an idea that came to me while I was in Hawaii.<br>
+Antonio: what phone did you use by that time ? Steve: I was using a Motorola V171. Antonio: how did you choose that phone and how many tests did you make before the launch of the iphone? Steve: My team and I picked the phone for several reasons.<br>
+Antonio: Could you explain those reasons ? Steve: Yes, first we chose a CDMA carrier so that it would work in all of the US. Second, we wanted a phone with a good camera.<br>
+Antonio: was it clear to you that it was going to be a true computer ? Steve: It was not a computer per say, but we knew that it could do many of the things that computers can do.<br>
+Antonio: do you know how long did it take you to build it?<br>
+Steve: The phone took around 3 months to build.<br>
+Antonio: what do you think about the reactions of the phone?<br>
+Steve: I think it's the greatest invention since the computer.<br>
+Antonio: is it true that you were thinking about calling it &quot;the iPod phone&quot;?<br>
+Steve: It was discussed, but the name &quot;iPhone&quot; got more votes.<br>
+Antonio: is it true that you were offered a lot of money by various companies to stop developing it?<br>
+Steve: I was offered several million dollars to abandon the project, but I knew it was a good idea and we would make it successful.<br>
+Antonio: what about Microsoft ? what was its reaction ? Steve: The first reaction of most people was WOW, then some were skeptical, some wanted to know more, and others tried to steal the idea.<br>
+Antonio: Anyhow the first iphone versions lacked enough quality. How do you explain the overall positive reaction to it ? Steve: I don't know, I think it's a great phone and people were just surprised that it was this good.<br>
+Antonio: What about the &quot;antennagate&quot; controversy?<br>
+Steve: That was a another controversy that didn't get as much attention as it should have. The phone has great reception, I'd change the design though if I could do it all over again.<br>
+Antonio: Did you manage an anternative design ? Steve: Yes, we tried many designs before arriving at the current one. The search was not easy.<br>
+Antonio: what was the most difficult part about the process?<br>
+Steve: The most difficult part of the process was making sure that it could easily be mass-produced at a cost that was reasonable to consumers.<br>
+Antonio: How many iphones were made in the first days?<br>
+Steve: We made around 10,000 iphones in the first week.<br>
+Antonio: what happened to the phones after that? Steve: We continued to make them as fast as we could.<br>
+Antonio: Surely we became very satisfied about it. Steve: I'm glad to see that, because Apple is working on new features for the next version.<br>
+Antonio: Could you tell us more about the features?<br>
+Steve: Sure, there are a few new features that we are working on.<br>
+Antonio: Do you think it is going to be a big success this time?<br>
+Steve: I think this is going to be a big success, Apple has a reputation to uphold and the iphone is going to do that.<br>
+Antonio: Have you ever experienced a period of great personal pressure?<br>
+Steve: When I first started working on the project, there were many times when I didn't think we were going to succeed, but the great thing is that my team and I believed in the idea so much that we persevered<br>
+Antonio: are there any flaws still in its design ? Steve: The phone has good design, but we are always trying to make it better.<br>
+Antonio: Could you tell us about some of the improvements you are going to make in the future?<br>
+Steve: No, I don't think I should, but we are always trying to make the product better.<br>
+Antonio: one more question, do you think it is going to be popular among the kids?<br>
+Steve: I don't think so, kids usually don't want to be bothered with making calls and using the internet.<br>
+Antonio: It's funny because it's true.<br>
+</blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p234385">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Artificial Intelligence: GPT with Harbour and FWH</span><br>
+        Posted: Sat Aug 15, 2020 07:10 PM
+      </div>
+      <div class="content"><a href="https://github.com/elyase/awesome-gpt3" rel="noopener">https&#58;//github&#46;com/elyase/awesome-gpt3</a><br>
+<br>
+Request access to the beta here:<br>
+<a href="https://onboard.openai.com/" rel="noopener">https&#58;//onboard&#46;openai&#46;com/</a></div>
+    </div>
+  </div>
+  <div class="post" id="p234404">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Artificial Intelligence: GPT with Harbour and FWH</span><br>
+        Posted: Mon Aug 17, 2020 10:08 AM
+      </div>
+      <div class="content"><a href="https://app.inferkit.com/" rel="noopener">https&#58;//app&#46;inferkit&#46;com/</a></div>
+    </div>
+  </div>
+  <div class="post" id="p234410">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Artificial Intelligence: GPT with Harbour and FWH</span><br>
+        Posted: Mon Aug 17, 2020 05:31 PM
+      </div>
+      <div class="content">i tried also <br>
+<br>
+<blockquote>You are Antonio Linares, a person trying to stay sane during a global quarantine. You have a ton of free time and a rubik's cube that you will never finish. You are bored out of your mind and have run out of things to do. But then you notice in the corner of your room something strange. There is a small box with a glowing green button on it. You have seen this box before, in the corner of your parent's room. You think to yourself, &quot;This is so cool!&quot;<br>
+<br>
+&gt; You press the green button.<br>
+The button makes a flashing green light appear on the box. Soon, there is a low, rumbling noise coming from all sides of the room.<br>
+&gt; You say &quot;I am hurt&quot;<br>
+The lights begin to flicker on and off.<br>
+&quot;I am hurt,&quot; you say.<br>
+Suddenly, something appears from the box.<br>
+<br>
+&gt; You say &quot;the Silvio Falconi Photo&quot;<br>
+A dark figure appears and hovers in the air in front of you.<br>
+&quot;The Silvio Falconi photo!&quot; you say.<br>
+&quot;Noooo!&quot;<br>
+<br>
+&gt; You say &quot;Perhaps is NagesWararo, my indian friend&quot;<br>
+A second figure appears and hovers in the air in front of you.<br>
+&quot;Maybe it's NagesWararo, my indian friend,&quot; you say.<br>
+&quot;I Am Not NagesWararo!<br>
+<br>
+&gt; You say &quot;Who are you?&quot;<br>
+&quot;I am the spirit of Christmas Future,&quot; the spirit says in a thick Indian accent.<br>
+<br>
+&gt; You say &quot;today is not Xmax , you must come back until 3 month &quot;<br>
+&quot;No, no, no, no! Nobody knows I am here! Not the humans, not the ghosts, not the weird creatures, no!&quot;<br>
+The spirit floats around your room, becoming more and more agitated.<br>
+<br>
+I open the windows !&quot; he says, &quot;and the humans will catch me! I must leave before they find me!&quot;<br>
+Suddenly, the lights flicker off.<br>
+&quot;I cannot fly in the dark! Humans are coming!</blockquote><br>
+<br>
+<br>
+<br>
+aahahahahahahahahahahahahahahahahahahahahahahahahahhahahahahahahahahahahhahah</div>
+    </div>
+  </div>
+  <div class="post" id="p234412">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Artificial Intelligence: GPT with Harbour and FWH</span><br>
+        Posted: Mon Aug 17, 2020 06:17 PM
+      </div>
+      <div class="content"><p>great! ;-D</p></div>
+    </div>
+  </div>
+  <div class="post" id="p234415">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Artificial Intelligence: GPT with Harbour and FWH</span><br>
+        Posted: Mon Aug 17, 2020 09:13 PM
+      </div>
+      <div class="content">Another site using GPT2<br>
+<br>
+<a href="https://transformer.huggingface.co/" rel="noopener">https&#58;//transformer&#46;huggingface&#46;co/</a></div>
+    </div>
+  </div>
+  <div class="post" id="p252244">
+    <div class="poster">
+      <div class="name" style="color:#105289">goosfancito</div>
+      <div class="rank">Posts: 1956</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:08 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Artificial Intelligence: GPT with Harbour and FWH</span><br>
+        Posted: Sat Aug 06, 2022 10:05 AM
+      </div>
+      <div class="content"><p>Leyendo facebook terminé aca. no lo sabía.</p>
+<p>bien ahi!</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

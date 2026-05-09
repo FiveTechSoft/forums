@@ -1,0 +1,1185 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Client Server Database Access the xBase Way - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-12269">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Client Server Database Access the xBase Way</div>
+<div class="pagination">Page: <a href="topic-12269.html">1</a> <strong>2</strong> <a href="topic-12269-page-3.html">3</a> (40 posts)</div>  <div class="post" id="p61656">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server Database Access the xBase Way</span><br>
+        Posted: Tue Aug 19, 2008 07:07 AM
+      </div>
+      <div class="content"><p>Hi Antonio</p>
+<p>Happy to share details, code etc but in a hurry to get to an appointment at present.  Also would like to clean up code a bit.</p>
+<p>I am using sockets.  Backend is xHarbour text mode.  Front end is xHarbour / Five Linux GUI.  Data is transmitted in binary (HB_Serialize()) format in an array (of arrays etc as required).  This includes variable names, parameters etc.  For single record type queries object properties can be updated by a single call __ObjSetValueList.  I haven't had to write a single line of C.  Although I intend using threads I am just using a single thread model at this stage.  Can just have separate copies listening on separate ports until I do threads.</p>
+<p>Will give more details soon.</p>
+<p>Regards</p>
+<p>Doug</p></div>
+    </div>
+  </div>
+  <div class="post" id="p61719">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server xBase - Introduction</span><br>
+        Posted: Tue Aug 19, 2008 10:09 PM
+      </div>
+      <div class="content"><p>Hi Antonio</p>
+<p>Before I present actual code (in the posts to follow) I should provide the following by way of explanation.</p>
+<p>Whilst this code is functional in the sense that I am using it in an application it is very much work in progress.  The code is not claimed to be complete, neat, robust or optimised.</p>
+<p>Also please note that the code has been written to meet my needs and not as a general "library" in any sense.  Along the way I have had to make many design decisions where there were many alternatives which may suit you better.</p>
+<p>Why would you bother going client-server with xBase?  In my case the answer is simple.  I need better performance across a VPN than I can achieve with conventional xBase code.  The alternative is to use a third party data base back end such as mySQL, PostrgeSQL, or if you want to pay for the privilege Advantage DataBase Server, Sybase or SQLServer.</p>
+<p>Those options will in general give you more than my option will, the extent of those extras depending upon your choice.  Features such as transaction control, roll forward / roll back, ad hoc queries / reports and management tools.</p>
+<p>At this stage all I have set out to do is to write a data base back end to do reads, updates and inserts. </p>
+<p>Regards<br>
+xProgrammer</p></div>
+    </div>
+  </div>
+  <div class="post" id="p61720">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server xBase - Sockets</span><br>
+        Posted: Tue Aug 19, 2008 10:33 PM
+      </div>
+      <div class="content">Hi Antonio<br>
+<br>
+I am using sockets to communicate between the GUI application front end (the client) and the data base back end (the server).  I started with the sample code for the INet....() xHarbour functions to get a feel for socket programs.  But there were quite a few changes required to get what I wanted.<br>
+<br>
+Since the front end application obviously needs to communicate with the data base back end from many different points in the code I put together a basic sockets class.  The current version is as follows:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CLASS TSocket
+
+CLASSDATA lInitialised INIT .F.
+DATA sIPAddress
+DATA iPortNumber
+DATA pSocket
+DATA lConnected
+DATA cData
+
+METHOD New() CONSTRUCTOR
+METHOD SetIP( sIPAddress )
+METHOD SetPort( iPortNumber )
+METHOD Connect()
+METHOD Send( cMessage )
+METHOD Receive()
+METHOD Close()
+METHOD SendReceive( cMessage )
+METHOD CleanUp()
+
+ENDCLASS
+
+METHOD New() CLASS TSocket
+
+::sIPAddress := "127.0.0.1"
+::iPortNumber := 1800
+IF !::lInitialised
+   INetInit()
+   ::lInitialised := .T.
+ENDIF
+
+RETURN self
+
+METHOD SetIP( sIPAddress ) CLASS TSocket
+
+::sIPAddress := sIPAddress
+
+RETURN nil
+
+
+METHOD SetPort( iPortNumber ) CLASS TSocket
+
+::iPortNumber := iPortNumber
+
+RETURN nil
+
+
+METHOD Connect() CLASS TSocket
+
+lOK := .T.
+TRY
+    ::pSocket := INetConnect( ::sIPAddress, 1800 )
+CATCH
+    MsgInfo( "Unable to connect to data server" )
+    lOK := .F.
+END
+
+IF INetErrorCode( ::pSocket ) &lt;&gt; 0
+   ? "Socket error:", INetErrorDesc( ::pSocket )
+   INetCleanUp()
+   lOK := .F.
+   // QUIT
+ENDIF
+
+IF lOK 
+   ::lConnected := .T.
+  ELSE
+   ::lConnected := .F.
+ENDIF
+
+RETURN lOK
+
+
+METHOD Send( cMessage ) CLASS TSocket
+
+INetSend( ::pSocket, cMessage )
+
+RETURN nil
+
+
+METHOD Receive() CLASS TSocket
+
+LOCAL cBuffer
+LOCAL nBytes
+
+::cData := ""
+nBytes := 1
+DO WHILE nBytes &gt; 0
+   cBuffer := Space( 1024 )
+   nBytes := INetRecv( ::pSocket, @cBuffer )
+   ::cData += Left( cBuffer, nBytes )
+ENDDO
+
+RETURN nil
+
+
+METHOD Close() CLASS TSocket
+
+INetClose( ::pSocket )
+
+RETURN nil
+
+
+METHOD SendReceive( cMessage ) CLASS TSocket
+
+::Send( cMessage )
+::Receive()
+::Close()
+
+RETURN ::cData
+
+
+METHOD CleanUp() CLASS TSocket
+
+RETURN InetCleanUp()</code></pre></div><br>
+<br>
+There are some further possible developments that would simplify using this class but they wouldn't really fit into a fairly generic TSocket class so I will probably end up creating a sub class of TSocket enhanced to suit the particular needs of communicating with the data base back end.<br>
+<br>
+Regards<br>
+xProgrammer</div>
+    </div>
+  </div>
+  <div class="post" id="p61728">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server xBase - Communicating</span><br>
+        Posted: Tue Aug 19, 2008 11:40 PM
+      </div>
+      <div class="content">Hi Antonio<br>
+<br>
+The front end application needs to set up communication as follows:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oSocket := TSocket():New()
+oSocket:SetIP( sIPAddress )
+oSocket:SetPort( 1800 )</code></pre></div><br>
+<br>
+Currently my database queries are identified by numbers set in defines as follows:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#define query_PT_LIST_BY_NAME 1
+#define query_PT_BY_KEY       2
+#define query_PT_WRITE        3
+etc.....</code></pre></div><br>
+<br>
+Sending a query to the data base back end is done as follows:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   oSocket:Connect()
+   aREQUEST[1] := query_PT_LIST_BY_NAME
+   aREQUEST[2] := Array( 1 )
+   aREQUEST[2][1] := ::sSearch
+   oSocket:Send( HB_Serialize( aREQUEST) )</code></pre></div><br>
+<br>
+A few words of explanation are required here.  I am using arrays to communicate between the client and the server.  The array is then serialized for transmission to the server where the process is reversed.  The same method is used in reverse for the server's response.  The parameter(s) are passed in the second element of the passed array.<br>
+<br>
+The above code is requesting a list of patients with a name matching the value in ::sSearch.<br>
+<br>
+The return is handled by the following code:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   oSocket:Receive()
+   oSocket:Close()
+   aTranslated := HB_Deserialize( oSocket:cData )
+   aSTATUS := aTranslated[1]
+   aOUTPUT := aTranslated[2]</code></pre></div><br>
+<br>
+aSTATUS will contain success / failure information.  aOUTPUT contains the returned data.  At the present time the format of aOUPUT is as follows:<br>
+<br>
+aOUTPUT[1] contains a list of variables returned (currently not used), the values themselves are contained in aOUTPUT[2] through aOUTPUT[n+1].  So in this case the data returned can be most easily used as follows:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   iList := LEN( aLIST[2] )
+   ::aKey := aLIST[2]
+   ::aFName := aLIST[3]
+   ::aGName := aLIST[4]
+   ::aDOB := aLIST[5]
+   ::aGender := aLIST[6]</code></pre></div><br>
+<br>
+Perhaps easier to follow is a query that returns a single record.  Here is the code to get the data for a single patient record with key <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   LOCAL aREQUEST
+   oSocket:Connect()
+   aREQUEST := ARRAY( 2 )
+   aREQUEST[1] := query_PT_BY_KEY
+   aREQUEST[2] := Array( 1 )
+   aREQUEST[2][1] := ::sKey
+   oSocket:Send( HB_Serialize( aREQUEST) )  
+   oSocket:Receive()
+   oSocket:Close()
+   aTranslated := HB_Deserialize( oSocket:cData )
+   aSTATUS := aTranslated[1]
+   aOUTPUT := aTranslated[2]
+   __ObjSetValueList( self, aOUTPUT )
+   ::dDOB := SToD( ::sDOB )</code></pre></div><br>
+<br>
+Note that aTranslated[2] contains the data in the following format:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">{ { &lt;variable-name-1&gt;, &lt;variable-1-value&gt; },  { &lt;variable-name-2&gt;, &lt;variable-2-value&gt; }, ............. { &lt;variable-name-n&gt;, &lt;variable-n-value&gt; } }</code></pre></div><br>
+<br>
+That is convenient because we can use __ObjSetValueList() to put the values into the calling object.<br>
+<br>
+I'll explain more in subsequent posts, but I have to get back to programming or I'll get in trouble so bye for now.<br>
+<br>
+Regards<br>
+xProgrammer</div>
+    </div>
+  </div>
+  <div class="post" id="p61738">
+    <div class="poster">
+      <div class="name" style="color:#105289">hua</div>
+      <div class="rank">Posts: 1096</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 28, 2005 02:27 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server Database Access the xBase Way</span><br>
+        Posted: Wed Aug 20, 2008 02:15 AM
+      </div>
+      <div class="content">Hi Doug,<br>
+<br>
+<blockquote><cite>xProgrammer wrote:</cite><br>
+I guess I have sort of wandered off the topic a bit!  I put the topic here because I thought some others might be interested in the approach I am taking.  But I'm quite happy to push on regardless.  In fact to date the journey has been rather exciting.  Does that make me strange?  Probably.  But I can live with that.<br>
+</blockquote><br>
+<br>
+Whatever you (or anyone else) can share is appreciated Doug   Nowadays there's no books, magazines, etc that can help me increase my knowledge of programming using FWH+[x]Harbour to the expert level yet. The only major source of knowledge is this forum.<br>
+<br>
+On a completely different matter I wish we had a book for FWH similar to Clipper Developers Guide book where the best methods to tackle different issues are experly disected and explained.</div>
+    </div>
+  </div>
+  <div class="post" id="p61739">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server xBase - Performance across a VPN</span><br>
+        Posted: Wed Aug 20, 2008 02:58 AM
+      </div>
+      <div class="content"><p>Hi Antonio</p>
+<p>I've just done my first performance test across my VPN and I'm very pleased to say that its fast.  Still more development to do but its going well.</p>
+<p>Regards<br>
+xProgrammer</p></div>
+    </div>
+  </div>
+  <div class="post" id="p61872">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server xBase - The Back End</span><br>
+        Posted: Wed Aug 20, 2008 11:24 PM
+      </div>
+      <div class="content">Hi Antonio<br>
+<br>
+The data base server back end is very much a work in progress but it is functional.  Quite a few features need to be added such as error handling, links to other tables, automatic allocation of primary keys etc.<br>
+<br>
+Also please note that I have made a number of design decisions that suit my purposes.  Some of these make the code slightly more complicated but they give me what I need.<br>
+<br>
+There are really two types of queries - those that will ever only return a single record or fail and those that will return 0 through many records.  The first type might be a read, an update or an insert.  The second type will be a read.<br>
+<br>
+I have created a base TData Class and two subclasses, namely TSingleData and TListData.  Current versions are as follows:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CLASS TData
+
+DATA iWorkArea
+DATA aPROPERTIES
+DATA iProperties
+DATA aOUTPUT
+DATA aLIST
+DATA lFound
+DATA iRecord
+DATA sName
+
+METHOD New() CONSTRUCTOR
+
+ENDCLASS
+
+METHOD New() CLASS TData
+
+RETURN self
+
+
+CLASS TListData FROM TData
+
+METHOD New() CONSTRUCTOR
+METHOD SetUp()
+METHOD ClearData()
+METHOD ReadRecord()
+METHOD IndexRead()
+
+ENDCLASS
+
+METHOD New( iWorkArea, aProperties, sName ) CLASS TListData
+
+::iWorkArea := iWorkArea
+::aPROPERTIES := aProperties
+IF PCount() &gt; 2
+   ::sName := sName
+  ELSE
+   ::sName := ""
+ENDIF
+::SetUp()
+
+RETURN self
+
+METHOD SetUp() CLASS TListData
+
+LOCAL ii
+LOCAL aTHIS
+
+SELECT ( ::iWorkArea )
+::iProperties := LEN( ::aPROPERTIES )
+IF lVerbose
+   ?
+   ? "Setting Up List Data ", ::sName, " property count ", LTRIM( STR( ::iProperties ) )
+ENDIF
+::aLIST := Array( ::iProperties + 1 )
+::aLIST[1] := ARRAY( ::iProperties )
+FOR ii = 1 TO ::iProperties
+   ::aLIST[1][ii] := ::aPROPERTIES[ii][2]
+   ::aPROPERTIES[ii][3] := FieldPos( ::aPROPERTIES[ii][1] )
+   IF lVerbose
+      ? "Field ", ::aPROPERTIES[ii][1], " found at ", ::aPROPERTIES[ii][3], " returned as ", ::aPROPERTIES[ii][2]
+   ENDIF
+   ::aLIST[ii + 1] := ARRAY( 0 )
+NEXT
+
+RETURN nil
+
+METHOD IndexRead( iOrder, sSearch, bCompare ) CLASS TListData
+
+LOCAL vTest
+
+SELECT ( ::iWorkArea )
+::ClearData()
+SET ORDER TO ( iOrder )
+SEEK sSearch
+::lFound := FOUND()
+IF ::lFound 
+   lLoop := .T.
+   DO WHILE lLoop
+      IF lVerbose
+         ? "Found ", sSearch, " at record ", RecNo(), " in ", ::sName
+      ENDIF
+      ::ReadRecord()
+      SKIP
+      IF EOF()
+         lLoop := .F.
+         IF lVerbose
+            ? "End of file reached in ", ::sName
+         ENDIF
+        ELSE
+         vTest := Eval( bCompare )
+         IF vTest &lt;&gt; sSearch
+            lLoop := .F.
+            IF lVerbose
+               ? "No match at record ", RecNo(), " in ", ::sName
+            ENDIF
+         ENDIF
+      ENDIF
+   ENDDO
+  ELSE
+   IF lVerbose
+      ? "Failed to find ", sSearch, " in ", ::sName
+   ENDIF
+ENDIF
+
+RETURN nil
+
+METHOD ClearData() CLASS TListData
+
+LOCAL ii 
+FOR ii = 2 TO ::iProperties + 1
+   ASize( ::aLIST[ii], 0 )
+NEXT
+
+RETURN nil
+
+METHOD ReadRecord() CLASS TListData
+
+SELECT ( ::iWorkArea )
+
+FOR ii = 1 TO ::iProperties
+   cDataType := FieldType( ::aProperties[ii][3] )
+   DO CASE
+      CASE cDataType = "D"
+         AAdd( ::aLIST[ii + 1], STOD( FieldGet( ::aPROPERTIES[ii][3] ) ) )
+      OTHERWISE
+         AAdd( ::aLIST[ii + 1], FieldGet( ::aPROPERTIES[ii][3] ) )
+   ENDCASE
+   IF lVerbose
+      ? ::aLIST[1][ii], " = ", ::aLIST[ii + 1][Len( ::aLIST[ii + 1] )]
+   ENDIF
+NEXT
+
+RETURN nil
+
+
+
+CLASS TSingleData FROM TData
+
+METHOD New() CONSTRUCTOR
+METHOD SetUp()
+METHOD ReadRecord()
+METHOD KeyRead()
+METHOD Write()
+METHOD WriteRecord()
+
+ENDCLASS
+
+METHOD New( iWorkArea, aProperties, iKeyAllocator, sName ) CLASS TSingleData
+
+::iWorkArea := iWorkArea
+::aPROPERTIES := aProperties
+IF PCount() &gt; 3
+   ::sName := sName
+  ELSE
+   ::sName := ""
+ENDIF
+::SetUp()
+
+RETURN self
+
+
+METHOD Setup() CLASS TSingleData
+
+LOCAL ii
+LOCAL aTHIS
+
+SELECT ( ::iWorkArea )
+::iProperties := LEN( ::aPROPERTIES )
+IF lVerbose
+   ? "Setting Up Single Data ", ::sName, " property count ", LTRIM( STR( ::iProperties ) )
+ENDIF
+::aOUTPUT := ARRAY( ::iProperties )
+FOR ii = 1 TO ::iProperties
+   aTHIS := Array( 2 )
+   aTHIS[1] := ::aPROPERTIES[ii][2]
+   ::aOUTPUT[ii] := aTHIS
+   ::aPROPERTIES[ii][3] := FieldPos( ::aPROPERTIES[ii][1] )
+   IF lVerbose
+      ? "Field ", ::aPROPERTIES[ii][1], " found at position ", ::aPROPERTIES[ii][3], " returned as ", ::aPROPERTIES[ii][2]
+   ENDIF
+NEXT
+
+RETURN nil
+
+METHOD ReadRecord() CLASS TSingleData
+
+SELECT ( ::iWorkArea )
+FOR ii = 1 TO ::iProperties
+   ::aOUTPUT[ii][2] := FieldGet( ::aPROPERTIES[ii][3] )
+   ? ::aOUTPUT[ii][1], " = ", ::aOUTPUT[ii][2]
+NEXT
+
+RETURN nil
+
+METHOD KeyRead( iOrder, sKey ) CLASS TSingleData
+
+SELECT ( ::iWorkArea )
+SET ORDER TO ( iOrder )
+SEEK sKey
+::lFound := FOUND()
+IF ::lFound
+   IF lVerbose
+      ? "Found ", sKey, " at ", RecNo(), " in ", ::sName
+   ENDIF
+   ::iRecord := RecNo()
+   ::ReadRecord()
+   aRESPONSE[2] := ::aOUTPUT
+  ELSE
+   IF lVerbose
+      ? "ERROR: Failed to find ", sKey, " in ", ::sName
+   ENDIF
+ENDIF
+
+RETURN nil
+
+METHOD Write( iOrder, aRESPONSE, sKey ) CLASS TSingleData
+
+SELECT ( ::iWorkArea )
+SET ORDER TO ( iOrder )
+
+IF aRESPONSE[1][2] = "["
+   ? "Insert Required"
+   APPEND BLANK
+   aRESPONSE[1][2] := "999999999999001"
+  ELSE
+   ? "Update Required"
+   SEEK sKey
+   ::lFound := FOUND()
+   IF ::lFound
+      ? "Record Found"
+      ::WriteRecord( aRESPONSE )
+     ELSE
+      ? "ERROR: Unable to locate record for update"
+   ENDIF
+ENDIF
+
+RETURN nil
+
+METHOD WriteRecord( aOUTPUT ) CLASS TSingleData
+
+LOCAL ii
+LOCAL iPosition
+
+FOR ii = 1 TO LEN( aOUTPUT )
+   iPosition := FieldPos( aOUTPUT[ii][1] )  
+   IF iPosition &gt; 0
+      FieldPut( iPosition, aOUTPUT[ii][2] )   
+   ENDIF
+NEXT
+
+RETURN nil</code></pre></div><br>
+<br>
+As you can see TSingleData:Write() will handle both update and insert operations but the code for insert has not yet been completed.<br>
+<br>
+::aPROPERTIES is an array holding the details of what fields are to be returned and what the variable name to be used is equivalent to SELECT &lt;field&gt; AS &lt;variable&gt;.  In the ::SetUp() function field positions are determined from the field names and used thereafter.  Also an array is built up with the variable names ready for the values to be inserted at query time and returned to the client.<br>
+<br>
+You can run the server in verbose mode (lVerbose := .T.) and see it in operation.<br>
+<br>
+Regards<br>
+xProgrammer</div>
+    </div>
+  </div>
+  <div class="post" id="p61873">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server xBase - Defining the Queries</span><br>
+        Posted: Wed Aug 20, 2008 11:46 PM
+      </div>
+      <div class="content">Hi Antonio<br>
+<br>
+Defining the queries is easy (if a little long winded given that I am returning variable names which aren't field names).  For example:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   oPT_BY_KEY := TSingleData():New( 1, { { "PT_KEY", "sKey", 0 }, { "PT_NMFAMLY", "sNmFamly", 0 }, { "PT_NMGIVEN", "sNmGiven", 0 }, ;
+      { "PT_NMOTHER", "sNmOther", 0 }, { "PT_NMPREV", "sNmPrev", 0 }, { "PT_NMPREF", "sNmPref", 0 }, { "PT_NMTITLE", "sNmTitle", 0 }, ;
+      { "PT_DOB", "sDOB", 0 }, { "PT_GENDER", "cGender", 0 }, { "PT_ADLINE1", "sAdLine1", 0 }, { "PT_ADLINE2", "sAdLine2", 0 }, ;
+      { "PT_ADSUBRB", "sAdSubrb", 0 }, { "PT_ADSTATE", "sAdState", 0 }, { "PT_ADPCODE", "sAdPCode", 0 }, { "PT_ADCNTRY", "sAdCntry", 0 }, ;
+      { "PT_PHHOME", "sPhHome", 0 }, { "PT_PHWORK", "sPhWork", 0 }, { "PT_PHMOB", "sPhMob", 0 }, { "PT_PHFAX", "sPhFax", 0 }, ;
+      { "PT_EMAIL", "sEmail", 0 }, { "PT_MEDIC", "sMedic", 0 }, { "PT_MEDPOS", "sMedPos", 0 }, { "PT_VETAFF", "sVetAff", 0 }, ;
+      { "PT_ACTIVE", "cActive", 0 }, { "PT_LUBY", "sLUBy", 0 }, { "PT_LUWHEN", "sLUWhen", 0 }, { "PT_LUACTN", "cLUActn", 0 } }, ;
+      1, "Patient by Key" )
+   oPT_LIST_BY_NAME := TListData():New( 1, { { "PT_KEY", "sKey", 0 }, { "PT_NMFAMLY", "sNmFamly", 0 }, { "PT_NMGIVEN", "sNmGiven", 0 }, ;
+      { "PT_DOB", "dDOB", 0 }, { "PT_GENDER", "cGender", 0 } }, "Patient List by Name" )
+   oPF_LIST_BY_PT_KEY := TListData():New( 3, { { "PF_KEY", "aKey", 0 }, { "PF_FLKEY", "aFLKey", 0 }, { "PF_FLKEY", "aFLName", -1, 2, 1 }, ;
+      { "PF_DTFIRST", "aDtFirst", 0 }, { "PF_DTLAST", "aDtLast", 0 }, { "PF_CLOSED", "aClosed", 0 } }, "Patient File List by Patient Key")</code></pre></div><br>
+<br>
+Note that the first parameter is the WorkArea to use (my code assumes that all files are opened up by the data base server on startup).  Then follows an array of fields to return in the format { { &lt;field-name&gt;, &lt;variable-name&gt;, 0  }, .... }.  The third element will (in most cases) be updated by the SetUp function to the field's position in the table.  For return values that are something other than the value of a field there are further options available which I can explain in the future.  Fot TSingleData:New() the next parameter is an offset into the primary key allocator (yet to be included).  The final parameter is a name to be used when in verbose mode.<br>
+<br>
+Defining how to process a particular request is pretty easy.  Currently I am using a CASE statement but I may need to use a more efficient method as the number of possible requests increases.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   aREQUEST := HB_Deserialize( cData )
+   IF lVerbose
+      ? "Received request number: ", aREQUEST[1]
+   ENDIF
+   iSelection := aREQUEST[1]
+   DO CASE
+      CASE iSelection = query_PT_LIST_BY_NAME
+         oPT_LIST_BY_NAME:IndexRead( 2, aREQUEST[2][1], { | | UPPER( PT_NMFAMLY + PT_NMGIVEN ) } )
+      CASE iSelection = query_PT_BY_KEY
+         oPT_BY_KEY:KeyRead( 1, aREQUEST[2][1] ) 
+         aRESPONSE[2] := oPT_BY_KEY:aOUTPUT
+      CASE iSelection = query_PT_WRITE
+         oPT_BY_KEY:Write( 1, aREQUEST[2], aREQUEST[2][1][2] )
+      CASE iSelection := query_PF_LIST_BY_PT_KEY
+         oPF_BY_PT_KEY:Read( 2, aREQUEST[2][1] )
+      OTHERWISE
+         // error handling required here
+   ENDCASE
+   IF lVerbose
+      ? "Press [Ctl-C] to quit"
+   ENDIF</code></pre></div><br>
+<br>
+Pretty straight forward.  A few words of explanation.  TListData:IndexRead() takes the following parameters:<br>
+iOrder - to set the controlling index<br>
+sSearch - the value to seek<br>
+bCompare - a code block to evaluate to see if subsequent records match sSearch.  <br>
+<br>
+Regards<br>
+xProgrammer</div>
+    </div>
+  </div>
+  <div class="post" id="p61882">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server Database Access the xBase Way</span><br>
+        Posted: Thu Aug 21, 2008 06:38 AM
+      </div>
+      <div class="content"><p>Doug,</p>
+<p>many thanks for your explanations, very interesting <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p61914">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">xBase Client Server - the Server main loop</span><br>
+        Posted: Thu Aug 21, 2008 11:33 AM
+      </div>
+      <div class="content">Hi Antonio<br>
+<br>
+The current code for the server main loop is:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   INetInit()
+   // listen on port 1800
+   pServer := INetServer( 1800 )
+   INetSetTimeout( pServer, 500 )
+   ? "Server up and ready for requests", pServer
+   ? "Press [Ctl-C] to quit"
+   lContinue := .T.
+   DO WHILE lContinue
+      // wait for incoming connection requests
+      pClient := INetAccept( pServer )
+      IF INetErrorCode( pServer ) == 0
+         // process client request 
+         // possibly in a future version in a separate thread
+         ServeClient( pClient )
+      ENDIF
+   ENDDO
+   // WaitForThreads() would go here in a threded version
+   // close socket and cleanup memory
+   INetClose( pServer )
+   INetCleanup()</code></pre></div><br>
+<br>
+Please note that this does not use threads so it would be a case of one instance per remote user.  Some restructuring of code would be required (I think) for a threaded version.<br>
+<br>
+The server now supports returning record numbers and fields from a "foreign" file by following a foreign key all just using an extension of the current parameter arrays.<br>
+<br>
+Regards<br>
+xProgrammer</div>
+    </div>
+  </div>
+  <div class="post" id="p61916">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server xBase - Making Queries Easier to Execute</span><br>
+        Posted: Thu Aug 21, 2008 11:53 AM
+      </div>
+      <div class="content">Hi Antonio<br>
+<br>
+This is very much an ongoing exercise.  I have simplified the process of executing a query from the client (GUI application) with the following little class TQuery:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CLASS TQuery
+
+DATA lSuccess
+DATA aREQUEST
+DATA aTranslated
+
+METHOD New() CONSTRUCTOR
+METHOD Execute()
+
+ENDCLASS
+
+METHOD New() CLASS TQuery
+
+::aREQUEST := Array( 2 )
+
+RETURN self
+
+METHOD Execute( iQuery, aParameters) CLASS TQuery
+
+::aREQUEST[1] := iQuery
+::aREQUEST[2] := aParameters
+oSocket:Connect()
+oSocket:Send( HB_Serialize( ::aREQUEST) )   
+oSocket:Receive()
+oSocket:Close()
+::aTranslated := HB_Deserialize( oSocket:cData )
+// For now
+::lSuccess := .T.
+
+RETURN ::lSuccess</code></pre></div><br>
+<br>
+This class needs to be extended to handle errors, give an opportunity to retry updates where records are locked etc.<br>
+<br>
+So now for example to get a list of patients with a given name the application does:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   oQuery:Execute( query_PT_LIST_BY_NAME, { ::sSearch } )
+   aSTATUS := oQuery:aTranslated[1]
+   aLIST := oQuery:aTranslated[2]</code></pre></div><br>
+<br>
+A later version should have TQuery:Execute() returning a meaningful status.  It should also check that the return value is an array with at least two elements.<br>
+<br>
+Regards<br>
+xProgrammer</div>
+    </div>
+  </div>
+  <div class="post" id="p62074">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server Database Access the xBase Way</span><br>
+        Posted: Sat Aug 23, 2008 11:03 AM
+      </div>
+      <div class="content">Hi Antonio<br>
+<br>
+Work on the xBase data server continues.  Code is much better organised on the server end with a TServerQueryClass that will be responsible for gathering error information as well as the communication process.  Structre is nice and flexible this way so that multiple queries can be handled in the one round trip.  Thus, for example, you can not only retrieve the data needed for a particular object you can also get all the options that will be needed to populate list-boxes etc that may be part of the screen.  TServerQuery has done away with the DO CASE and is using an array of function pointers.  The current code for TServerQuery is:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CLASS TServerQuery
+
+DATA iErrorLevel
+DATA aErrors
+DATA aResponse
+DATA aRequest
+
+METHOD New()
+METHOD Request( pClient )
+METHOD FlagError( iErrorLevel, iErrorNumber )
+
+ENDCLASS
+
+METHOD New()
+
+::aErrors := Array( 0 )
+
+RETURN self
+
+METHOD Request( pClient ) CLASS TServerQuery
+
+LOCAL cBuffer
+LOCAL nBytes
+LOCAL cData 
+LOCAL aOUTPUT := ARRAY( 0 )
+LOCAL aSTATUS := ARRAY( 3 )
+
+
+::iErrorLevel := 0
+ASize( ::aErrors, 0 )
+::aResponse := Array( 3 )
+? "Serving:", INetAddress( pClient )
+cData := ""
+lReceiving := .T.
+INetSetTimeout( pClient, 100 ) 
+DO WHILE  lReceiving
+   cBuffer := Space( 4096 )
+   nBytes := INetRecv( pClient, @cBuffer )
+   ? "Bytes received:", nBytes
+   IF nBytes &lt; 1
+      lReceiving := .F.
+     ELSE
+      cData += Left( cBuffer, nBytes )
+   ENDIF
+ENDDO
+::aREQUEST := HB_Deserialize( cData )
+IF lVerbose
+   ? "Received request number: ", ::aREQUEST[1] 
+ENDIF
+aSTATUS[1] := 0
+iSelection := ::aREQUEST[1]
+HB_Exec( aCompiled[iSelection], nil )
+
+
+
+   IF lVerbose
+      ? "Press [Ctl-C] to quit"
+   ENDIF
+   aSTATUS[1] := ::iErrorLevel
+   aSTATUS[2] := 1
+   aSTATUS[3] := ""
+   ::aRESPONSE[1] := aSTATUS
+   cData := HB_Serialize( ::aRESPONSE )
+   INetSend( pClient, cData )
+
+
+RETURN nil
+
+METHOD FlagError( iErrorLevel, iErrorNumber ) CLASS TServerQuery
+
+::iErrorLevel := MAX( ::iErrorLevel, iErrorLevel )
+IF PCount() &gt; 1
+   AAdd( ::aErrors, iErrorNumber )
+ENDIF
+
+RETURN ni</code></pre></div><br>
+<br>
+Code for the individual queries is:<br>
+<br>
+[code]<br>
+FUNCTION GetPatientListByName() <br>
+<br>
+oPT_LIST_BY_NAME:IndexRead( 2, oQuery:aREQUEST[2][1], { | | UPPER( PT_NMFAMLY + PT_NMGIVEN ) } )<br>
+oQuery:aRESPONSE[2] := oPT_LIST_BY_NAME:aLIST<br>
+<br>
+RETURN nil<br>
+<br>
+FUNCTION GetPatientDataByKey()<br>
+<br>
+oPT_BY_KEY:KeyRead( 1, oQuery:aREQUEST[2][1] ) <br>
+oQuery:aRESPONSE[2] := oPT_BY_KEY:aOUTPUT<br>
+<br>
+RETURN nil<br>
+<br>
+FUNCTION WritePatientData()<br>
+<br>
+oPT_BY_KEY:Write( 1, oQuery:aREQUEST[2], oQuery:aREQUEST[2][1][2] )<br>
+<br>
+RETURN nil<br>
+<br>
+FUNCTION GetPatientFileListByPatientKey()<br>
+<br>
+oPF_LIST_BY_PT_KEY:IndexRead( 2, oQuery:aREQUEST[2][1], { | | PF_PTKEY } )<br>
+oQuery:aRESPONSE[2] := oPF_LIST_BY_PT_KEY:aLIST<br>
+<br>
+RETURN nil<br>
+<br>
+FUNCTION GetPatientFileDataByKey()<br>
+<br>
+oPF_BY_KEY:KeyRead( 1, oQuery:aREQUEST[2][1] )<br>
+oQuery:aRESPONSE[2] := oPF_BY_KEY:aOUTPUT<br>
+oFL_LIST:ReadAll( nil )<br>
+oQuery:aRESPONSE[3] := oFL_LIST:aLIST<br>
+<br>
+RETURN nil<br>
+<br>
+FUNCTION GetFileLocationList()<br>
+<br>
+oFL_LIST:ReadAll( nil )<br>
+oQuery:aRESPONSE[2] := oFL_LIST:aLIST<br>
+<br>
+RETURN nil<br>
+<br>
+FUNCTION WritePatientFileData()<br>
+<br>
+oPF_BY_KEY:Write( 1, oQuery:aREQUEST[2], oQuery:aREQUEST[2][1][2] )<br>
+<br>
+RETURN nil[code]<br>
+<br>
+Note that aCompiled is set up as follows:<br>
+<br>
+  &#91;code&#93; PUBLIC aCompiled := Array( 7 )<br>
+   aCompiled[1] := ( @GetPatientListByName() )<br>
+   aCompiled[2] := ( @GetPatientDataByKey() )<br>
+   aCompiled[3] := ( @WritePatientData() )<br>
+   aCompiled[4] := ( @GetPatientFileListByPatientKey() )<br>
+   aCompiled[5] := ( @GetPatientFileDataByKey() )<br>
+   aCompiled[6] := ( @GetFileLocationList() )<br>
+   aCompiled[7] := ( @WritePatientFileData() ])&#91;/code&#93;<br>
+<br>
+The other main piece of setting up the queries is <br>
+<br>
+&#91;code&#93;<br>
+ // Patient by Key<br>
+   oPT_BY_KEY := TSingleData():New( wa_PT_PATIENT, { { "PT_KEY", "sKey", 0 }, { "PT_NMFAMLY", "sNmFamly", 0 }, { "PT_NMGIVEN", "sNmGiven", 0 }, ;<br>
+      { "PT_NMOTHER", "sNmOther", 0 }, { "PT_NMPREV", "sNmPrev", 0 }, { "PT_NMPREF", "sNmPref", 0 }, { "PT_NMTITLE", "sNmTitle", 0 }, ;<br>
+      { "PT_DOB", "sDOB", 0 }, { "PT_GENDER", "cGender", 0 }, { "PT_ADLINE1", "sAdLine1", 0 }, { "PT_ADLINE2", "sAdLine2", 0 }, ;<br>
+      { "PT_ADSUBRB", "sAdSubrb", 0 }, { "PT_ADSTATE", "sAdState", 0 }, { "PT_ADPCODE", "sAdPCode", 0 }, { "PT_ADCNTRY", "sAdCntry", 0 }, ;<br>
+      { "PT_PHHOME", "sPhHome", 0 }, { "PT_PHWORK", "sPhWork", 0 }, { "PT_PHMOB", "sPhMob", 0 }, { "PT_PHFAX", "sPhFax", 0 }, ;<br>
+      { "PT_EMAIL", "sEmail", 0 }, { "PT_MEDIC", "sMedic", 0 }, { "PT_MEDPOS", "sMedPos", 0 }, { "PT_VETAFF", "sVetAff", 0 }, ;<br>
+      { "PT_ACTIVE", "cActive", 0 }, { "PT_LUBY", "sLUBy", 0 }, { "PT_LUWHEN", "sLUWhen", 0 }, { "PT_LUACTN", "cLUActn", 0 } }, ;<br>
+      1, "Patient by Key" )<br>
+<br>
+   // Patient List by Name<br>
+   oPT_LIST_BY_NAME := TListData():New( wa_PT_PATIENT, { { "PT_KEY", "sKey", 0 }, { "PT_NMFAMLY", "sNmFamly", 0 }, { "PT_NMGIVEN", "sNmGiven", 0 }, ;<br>
+      { "PT_DOB", "dDOB", 0 }, { "PT_GENDER", "cGender", 0 } }, "Patient List by Name" )<br>
+<br>
+   // Patient File List by Patient Key<br>
+   oPF_LIST_BY_PT_KEY := TListData():New( wa_PF_PATIENTFILE, { { "PF_KEY", "aKey", 0 }, { "PF_FLKEY", "aFLKey", 0 }, ;<br>
+      { "PF_FLKEY", "aFLName", -2, 2, 1, "FL_NAME" }, { "PF_DTFIRST", "aDtFirst", 0 }, { "PF_DTLAST", "aDtLast", 0 }, ;<br>
+      { "PF_CLOSED", "aClosed", 0 } }, "Patient File List by Patient Key")<br>
+<br>
+   // Patient File by Key<br>
+   oPF_BY_KEY := TSingleData():New( wa_PF_PATIENTFILE, { { "PF_KEY", "sKey", 0 }, { "PF_FLKEY", "sFLKey", 0 }, ;<br>
+      { "PF_FLKEY", "sFLName", -1, 2, 1, "FL_NAME" }, { "PF_DTFIRST", "sDtFirst", 0 }, { "PF_DTLAST", "sDtLast", 0 }, ;<br>
+      { "PF_CLOSED", "cClosed", 0 }, { "PF_ACTIVE", "cActive", 0 }, { "PF_LUBY", "sLUBy", 0 }, { "PF_LUWHEN", "sLUWhen", 0 }, ;<br>
+      { "PF_LUACTN", "cLUActn", 0 } }, 3,  "Patient File by Key")<br>
+   // File Location List<br>
+   oFL_LIST := TListData():New( wa_FL_FILELOCATION, { { "FL_KEY", "aFLKey", 0 }, { "FL_NAME", "aFLName", 0 } }, "File Locations List" )<br>
+&#91;/code&#93;<br>
+<br>
+Note that these objects may be used by more than 1 query, eg for reading a record and for updating or inserting it.</div>
+    </div>
+  </div>
+  <div class="post" id="p62080">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server Database Access the xBase Way</span><br>
+        Posted: Sat Aug 23, 2008 11:32 AM
+      </div>
+      <div class="content"><p>Doug,</p>
+<p>Very interesting work, thanks for sharing it <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>How do you control that the socket connection is active ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p62109">
+    <div class="poster">
+      <div class="name" style="color:#105289">xProgrammer</div>
+      <div class="rank">Posts: 464</div>
+      <div class="avatar"></div>
+      Joined: Tue May 16, 2006 07:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Client Server xBase - Main Server Loop</span><br>
+        Posted: Sat Aug 23, 2008 10:55 PM
+      </div>
+      <div class="content">Hi Antonio<br>
+<br>
+The data base back end server runs the following loop to see if there is an incoming request:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   ?
+   ? "Setting up sockets"
+   INetInit()
+   // listen on port 1800
+   pServer := INetServer( 1800 )
+   INetSetTimeout( pServer, 500 )
+   ? "Server up and ready for requests", pServer
+   ? "Press [Ctl-C] to quit"
+   lContinue := .T.
+   DO WHILE lContinue
+      // wait for incoming connection requests
+      pClient := INetAccept( pServer )
+      IF INetErrorCode( pServer ) == 0
+         // process client request 
+         // possibly in a future version in a separate thread
+         //ServeClient( pClient )
+         oQuery:Request( pClient )
+      ENDIF
+   ENDDO
+   // WaitForThreads() would go here in a threaded version
+   // close socket and cleanup memory
+   INetClose( pServer )
+   INetCleanup()
+RETURN</code></pre></div><br>
+<br>
+Currently there is no exit from the loop.  I would have coded in {Ctl-C] as an exit with an InKey() function call but [Ctl-C] terminates the application  without Inkey() returning anyhow as a text based application under Linux.  I don't know if that might cause longer term issues.  Maybe I should code in an alternative?<br>
+<br>
+Regards<br>
+Doug<br>
+(xProgrammer)</div>
+    </div>
+  </div>
+  <div class="post" id="p62121">
+    <div class="poster">
+      <div class="name" style="color:#105289">Patrick Mast</div>
+      <div class="rank">Posts: 246</div>
+      <div class="avatar"></div>
+      Joined: Sat Mar 03, 2007 08:42 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Client Server xBase - Main Server Loop</span><br>
+        Posted: Sun Aug 24, 2008 10:08 AM
+      </div>
+      <div class="content"><p>Hey Doug,</p>
+<p>Is this not what LetoDB does?</p>
+<p>Patrick</p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-12269.html">1</a> <strong>2</strong> <a href="topic-12269-page-3.html">3</a> (40 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

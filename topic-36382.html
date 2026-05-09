@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>FWH 18.11: MARIAROWSET Table Replication Features - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-36382">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> FWH 18.11: MARIAROWSET Table Replication Features</div>
+  <div class="post" id="p217138">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Tue Nov 27, 2018 01:45 PM
+      </div>
+      <div class="content">FWH 18.11 introduces simple means to replicate changes (edit,append and delete) effected to a table through fwmariarowset object to another remote server, without any effort from the programmer's side. This feature is useful when it is intended to replicate changes to one or more tables to the tables with the same names on another remote server.<br>
+<br>
+It is necessary that the remote server already has identical tables with identical structures and records with the same names.  This can be setup initially by using<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oCn:CopyTableToServer( cTable, oRemoteServer )</code></pre></div><br>
+<br>
+<span style="font-size:150%"><strong>Using the replication feature:</strong></span><br>
+<br>
+Open connections to main server and also replication server.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oCn := maria_connect( &lt;mainserver&gt;, .... )
+oRemote := maria_connect( &lt;remote server&gt;, ... )</code></pre></div><br>
+<br>
+Open the rowset for the table to edit in the usual way.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oRs := oCn:RowSet( &lt;mytable&gt; )</code></pre></div><br>
+<br>
+The only additional work we need to do for the replication is to assign oRs:oCn2 with the connection to remote server<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oRs:oCn2 := oRemote</code></pre></div><br>
+<br>
+This is enough.<br>
+All changes made to &lt;mytable&gt; through the methods of RowSet are automatically written simultaneously to the same table on the remote server also.<br>
+<br>
+<strong>Conditions:</strong><br>
+Do not change the table with your own SQL statements. <br>
+Do not directly modify the replicated tables on the remote server.<br>
+<br>
+<strong>\fwh\samples\mariarpl.prg</strong><br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+function Main()
+
+   local oMain    := FW_DemoDB()
+   local oRepl    := FW_DemoDB( 6 )
+   local oRsMain, oRsRepl
+   local oDlg, oFont, oBold, oBrwMain, oBrwRepl
+
+   SetGetColorFocus()
+
+   oRsMain        := oMain:RowSet( "states" )
+   oRsMain:oCn2   := oRepl
+   oRsRepl        := oRepl:RowSet( "states", , .t. ) // readonly
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-14
+   oBold    := oFont:Bold()
+
+   DEFINE DIALOG oDlg SIZE 900,500 PIXEL TRUEPIXEL FONT oFont ;
+      TITLE "FWH 18.11 : TABLE REPLICATION"
+
+   @ 20, 20 XBROWSE oBrwMain SIZE 425,-20 PIXEL OF oDlg ;
+      DATASOURCE oRsMain ;
+      AUTOCOLS CELL LINES NOBORDER
+
+   @ 20,455 XBROWSE oBrwRepl SIZE -20,-20 PIXEL OF oDlg ;
+      DATASOURCE oRsRepl ;
+      AUTOCOLS CELL LINES NOBORDER
+
+   WITH OBJECT oBrwMain
+      :SetGroupHeader( "MAIN SERVER", 1, 3, oBold )
+      :nEditTypes    := EDIT_GET
+      :bOnChanges    := { || oRsRepl:ReSync(), oBrwRepl:RefreshCurrent() }
+      :lColChangeNotify := .t.
+      :bChange       := { || oBrwRepl:BookMark := oBrwMain:BookMark, ;
+                             oBrwRepl:nRowSel  := oBrwMain:nRowSel,  ;
+                             oBrwRepl:nColSel  := oBrwMain:nColSel,  ;
+                             oBrwRepl:Refresh() }
+      //
+      :CreateFromCode()
+   END
+
+   WITH OBJECT oBrwRepl
+      :SetGroupHeader( "REPLICATION SERVER", 1, 3, oBold )
+      :bClrSel       := { || { CLR_WHITE, CLR_GREEN } }
+
+      //
+      :CreateFromCode()
+   END
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oFont, oBold
+
+   oRsMain  := nil
+   oRsRepl  := nil
+
+   oMain:Close()
+   oRepl:Close()
+
+return nil</code></pre></div><br>
+Note: It is not necessary to open the table on the remote server. This is opened in the above sample to demonstrate simultaneous changes to the remote table.<br>
+<a href="https://imageshack.com/i/pl7bu3Lzg" rel="noopener"><img src="https://imageshack.com/a/img921/9652/7bu3Lz.gif" alt="" loading="lazy"></a></div>
+    </div>
+  </div>
+  <div class="post" id="p217188">
+    <div class="poster">
+      <div class="name" style="color:#105289">shri_fwh</div>
+      <div class="rank">Posts: 336</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 07, 2009 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Wed Nov 28, 2018 11:53 AM
+      </div>
+      <div class="content"><p>Dear Rao Sir , </p>
+<pre><code> Just wanted know if in case Replication sever is off/failed and after some time when it becomes live then how it is replicated the in between changes ? OR we need to manually runs any jobs to update ? OR may be some other way work around ?
+</code></pre>
+<p>Thanks<br>
+Shridhar</p></div>
+    </div>
+  </div>
+  <div class="post" id="p217191">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Wed Nov 28, 2018 04:18 PM
+      </div>
+      <div class="content"><p>If the write to replication server fails, the transaction is rolled back on the main server too. Thereby it is ensured that either the transaction is written to both servers or none at all.</p>
+<p>In the case of single server, nothing can be written if that server is off. Same way in the case of replicated rowset, nothing can be written if both the servers are not working, i.e., if one of the servers is off.</p>
+<p>Replication can be turned off by setting oRs:oCn2 to nil. Then the transactions are written to the main server only. Subsequent resumption of replication results in totally unreliable results. Only way is to copy the entire table again from the main server to the replication server and resume replication.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p217201">
+    <div class="poster">
+      <div class="name" style="color:#105289">shri_fwh</div>
+      <div class="rank">Posts: 336</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 07, 2009 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Thu Nov 29, 2018 09:05 AM
+      </div>
+      <div class="content">Dear Rao Sir , <br>
+<br>
+ Excellent feature...! <br>
+ <blockquote>If the write to replication server fails, the transaction is rolled back on the main server too. Thereby it is ensured that either the transaction is written to both servers or none at all.</blockquote><br>
+<br>
+ Any Function that does truncate all the tables of replication server and copy all table's data from  Main to Replication ?<br>
+<blockquote> Then the transactions are written to the main server only. Subsequent resumption of replication results in totally unreliable results. Only way is to copy the entire table again from the main server to the replication server and resume replication.</blockquote><br>
+<br>
+<br>
+<br>
+Thanks<br>
+Shridhar</div>
+    </div>
+  </div>
+  <div class="post" id="p217205">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Thu Nov 29, 2018 01:53 PM
+      </div>
+      <div class="content">Use<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oMainCn:CopyTableToServer( cTable, oRemoteCn )</code></pre></div><br>
+This will overwrite the remote table with the present table on the main server and makes both the tables identical.<br>
+The time taken depends on the size of the table.</div>
+    </div>
+  </div>
+  <div class="post" id="p217209">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Thu Nov 29, 2018 03:30 PM
+      </div>
+      <div class="content">We have added a new method<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">UpdateTableToServer( cTable, oDestServer, cTimeStampFld ) --&gt; lSuccess</code></pre></div><br>
+<br>
+If the table contains a timestamp field which is updated everytime a row is updated or inserted, this method updates the destination table with the latest changes from the table on the current server. This is a faster way to update the destination table after failure or discontinuation of replication.<br>
+<br>
+Please note that it is easy to create such a timestamp field using datatype &quot;=&quot; using oCn:CreateTable() method instead of creating the table with your own sql.</div>
+    </div>
+  </div>
+  <div class="post" id="p217210">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Thu Nov 29, 2018 03:35 PM
+      </div>
+      <div class="content"><p>We request interested users of FWH 18.11 to put this feature to intensive test and provide feedback and suggestions to help us to improve this feature.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p217234">
+    <div class="poster">
+      <div class="name" style="color:#105289">shri_fwh</div>
+      <div class="rank">Posts: 336</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 07, 2009 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Fri Nov 30, 2018 11:40 AM
+      </div>
+      <div class="content">Dear Rao Sir , <br>
+<br>
+  Good Idea Data Sync On TimeStamp Based ..! <br>
+<br>
+<blockquote><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">UpdateTableToServer( cTable, oDestServer, cTimeStampFld ) --&gt; lSuccess</code></pre></div></blockquote><br>
+<br>
+ Will Replication manage automatically, if Table Structure columns count is diff between source and target ? e.g. source table has extra column compare to target table <br>
+<br>
+Thanks<br>
+Shridhar</div>
+    </div>
+  </div>
+  <div class="post" id="p226127">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurizio</div>
+      <div class="rank">Posts: 842</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Tue Oct 01, 2019 02:55 PM
+      </div>
+      <div class="content"><p>Hello RAO <br>
+1) I am testing Table Replication Features.<br>
+   If I make changes in the xbrowse oRsMain  all works ok .<br>
+   But if at the same time I make changes to the oRsMain table with another program or procedure the oRsRepl table<br>
+   it is not updated.<br>
+   So this function only works if I have the 2 tables open in the same function?</p>
+<p>2) I Try the function UpdateTableToServer( cTable, oDestServer, cTimeStampFld ) --&gt; lSuccess</p>
+<p>I modify my table ans create a field TIMESTAMP <br>
+  ALTER TABLE arti ADD modificato_il TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP</p>
+<p>when  I use <br>
+  UpdateTableToServer( 'arti', oDestServer, 'modificato_il' ) </p>
+<p>In the oRsRepl  only the field 'modificato_il'  change ,the other fields are not updated </p>
+<p>Regards Maurizio</p></div>
+    </div>
+  </div>
+  <div class="post" id="p226128">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Tue Oct 01, 2019 03:17 PM
+      </div>
+      <div class="content"><p>1) You have to keep both servers open.<br>
+2) When you open a table on the main server, you need to set oRs:oReplServer := &lt;replserverconnection&gt;</p>
+<p>The corresponding table on the replication server should be identical with the main table.</p>
+<p>Then any changes made to the main table will be replicated to the same table on the replication server.<br>
+This is the functionality we attempted to create.</p>
+<p>Please test and share your observations.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p226131">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurizio</div>
+      <div class="rank">Posts: 842</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Tue Oct 01, 2019 03:27 PM
+      </div>
+      <div class="content"><p>RAO <br>
+1 ) Ok , i check </p>
+<p>can you  answer me for point 2 ?<br>
+2) I Try the function UpdateTableToServer( cTable, oDestServer, cTimeStampFld ) --&gt; lSuccess</p>
+<p>I modify my table ans create a field TIMESTAMP<br>
+ALTER TABLE arti ADD modificato_il TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP</p>
+<p>when I use<br>
+UpdateTableToServer( 'arti', oDestServer, 'modificato_il' )</p>
+<p>In the oRsRepl only the field 'modificato_il' change ,the other fields are not updated</p>
+<p>Thanks </p>
+<p>Maurizio</p></div>
+    </div>
+  </div>
+  <div class="post" id="p226169">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 18.11: MARIAROWSET Table Replication Features</span><br>
+        Posted: Wed Oct 02, 2019 04:59 PM
+      </div>
+      <div class="content"><p>Hello Mr. Rao, hello everyone else, and my apologies for being absent for so long;</p>
+<p>Let me suggest a different approach at achieving replication:  </p>
+<ol>
+<li>
+<p>have a way to declare a &quot;publication&quot;.  A publication describes what tables &amp; columns are to be replicated.  A single database could potentially contain various publications with different sets of tables to be replicated.  </p>
+</li>
+<li>
+<p>have a way to declare a &quot;subscription&quot;.  A subscription describes what servers are to receive a publication.  A single database could potentially have various subscriptions.</p>
+</li>
+<li>
+<p>Any insert/delete/update to a &quot;publicated&quot; table executes some code via a table trigger that writes to a queue an operation to be executed on any subscription that contains this &quot;publicated&quot; table.</p>
+</li>
+<li>
+<p>Now have a windows service running on the server that takes care of connecting to all subscriptions to post all pending transactions on the queue.  In this manner it doesn't matter if the replication server is up or down or connection has been lost.   If a target database is not available, the source server will maintain updates in a queue and transmit them to the target when it becomes available.    </p>
+</li>
+</ol>
+<p>***Keep in mind that connection to remote servers are bound to be broken at some point.  Therefore, unless replication is impelled in such way that allows for interruptions, this replication attempt becomes futile.</p>
+<p>***Also, because it is a table trigger that writes to a queue; it doesn't matter if changes to a table are done with or without our applications.  Any 3rd party app making changes to the table will pull the trigger. </p>
+<p>This is how Advantage implements replication.  It works flawlessly.   I have been using it since 2004.  For example; in heavy traffic servers with hundreds of users, I like to install a &quot;reporting&quot; server.  That's a server that only servers SQL selects for reports that queries millions of records and you have accountants constantly querying data.    You can have one server replicating to many servers or you can also have many servers replicating to one single &quot;central&quot; server.  It doesn't matter if internet connection is lost.  Once connection is back, replication server is updated and synched in just a few seconds.</p>
+<p>Just an idea stolen from ADS.</p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

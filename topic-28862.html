@@ -1,0 +1,1610 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>New free REDEFINE.prg utility - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-28862">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> New free REDEFINE.prg utility</div>
+  <div class="post" id="p162270">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">New free REDEFINE.prg utility</span><br>
+        Posted: Sun Jul 13, 2014 02:07 PM
+      </div>
+      <div class="content">I am aware that using FWH the most hard part is to code the REDEFINEs <br>
+<br>
+Recently I was chatting with Ariel and made me realize that such difficulty is still there, so today that I got some free time, I wrote this REDEFINE.prg utility that writes the REDEFINEs for you <br>
+<br>
+It is not finished yet, we may finish it in the next days, but you can already start using it <br>
+<br>
+redefine.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Automatic REDEFINEs generator
+
+#include "FiveWin.ch"
+
+static cRCSrcCode, aDialogs := {}
+
+function Main()
+
+   local oDlg, oGet, cRCFileName := Space( 250 )
+   local oLbx, cDlgName := Space( 50 ), oMemo1, cCode := ""
+   local oFont, oMemo2, cPrg := ""
+
+   SetDlgGradient( { { 1, RGB( 199, 216, 237 ), RGB( 237, 242, 248 ) } } )
+   
+   DEFINE FONT oFont NAME "Courier New" SIZE 0, -14
+   
+   DEFINE DIALOG oDlg TITLE "RCs REDEFINEs builder" ;
+      SIZE 900, 700
+
+   @ 0.7, 1.5 SAY "RC filename:" OF oDlg SIZE 80, 9
+   
+   @ 0.8, 6 GET oGet VAR cRCFileName OF oDlg SIZE 200, 12 ;
+      ACTION ( cRCFileName := cGetFile( "*.rc", "Please select a RC file" ),;
+               oGet:oBtn:Refresh(), oGet:SetFocus(),;
+               aDialogs := {}, ListDialogs( cRCFileName, oLbx ) )
+
+   @ 2, 1.5 SAY "Dialogs in the RC file:" OF oDlg SIZE 80, 9
+
+   @ 3, 1 LISTBOX oLbx VAR cDlgName ITEMS {} OF oDlg SIZE 80, 164 ;
+      ON CHANGE ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   @ 2, 16.4 SAY "RC dialog source:" OF oDlg SIZE 80, 9
+
+   @ 3.3, 12 GET oMemoRC VAR cCode MEMO OF oDlg SIZE 345, 157 ;
+      FONT oFont HSCROLL
+
+   @ 16, 1 GET oMemoPrg VAR cPrg MEMO OF oDlg SIZE 433, 135 ;
+      FONT oFont HSCROLL
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   oFont:End()
+
+return nil
+
+function ListDialogs( cRCFileName, oLbx )
+
+   local n, cDlgName, lDone
+
+   if ! File( cRCFileName )
+      MsgAlert( cRCFileName + " does not exist" )
+      return nil
+   endif   
+   
+   cRCSrcCode = MemoRead( cRCFileName )
+   oLbx:Reset()
+   
+   for n = 1 to MLCount( cRCSrcCode )
+      cLine = MemoLine( cRCSrcCode,, n )
+      SysRefresh()
+      if ! SubStr( cLine, 1, 2 ) $ "//,/*" 
+         if Upper( StrToken( MemoLine( cRCSrcCode,, n ), 2 ) ) == "DIALOG"
+            oLbx:Add( cDlgName := StrToken( MemoLine( cRCSrcCode,, n ), 1 ) )
+            AAdd( aDialogs, { cDlgName, { cLine } } )
+            lDone = .F.
+         else
+            if ! Empty( aDialogs )
+               if Len( AllTrim( cLine ) ) == 1 .and. SubStr( cLine, 1, 1 ) == "}"
+                  AAdd( ATail( aDialogs )[ 2 ], "}" )  
+                  lDone = .T.
+               else   
+                  if ! lDone
+                     AAdd( ATail( aDialogs )[ 2 ], cLine )  
+                  endif   
+               endif   
+            endif   
+         endif
+      endif   
+   next
+   
+   oLbx:GoTop()
+   
+return nil         
+
+function ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   local nAt := AScan( aDialogs, { | aDlg | aDlg[ 1 ] == cDlgName } )
+   
+   if nAt != 0
+      oMemoRC:SetText( ArrayToText( aDialogs[ nAt ][ 2 ] ) )
+      oMemoPrg:SetText( RcToPrg( cDlgName, aDialogs[ nAt ][ 2 ] ) )
+   endif   
+   
+return nil   
+
+function ArrayToText( aArray )
+
+   local n, cText := ""
+   
+   for n = 1 to Len( aArray )
+      cText += aArray[ n ] + CRLF
+   next
+   
+return cText
+
+function RcToPrg( cDlgName, aRCSource )
+
+   local cFuncName := "function " + cDlgName + "()" + CRLF + CRLF
+   local n, cCode := "", aTokens, cToken
+   local nSay := 0, nGet := 0, cVars := "   local "
+   
+   for n = 1 to Len( aRCSource )
+      aTokens = hb_ATokens( aRCSource[ n ] )
+      cToken = AllTrim( aTokens[ 1 ] )
+      // MsgInfo( aTokens[ 1 ] )
+      do case
+         case cToken == "EDITTEXT"
+            cCode += "   REDEFINE GET oGet" + AllTrim( Str( ++nGet ) ) + ;
+                     " ID " + StrTran( aTokens[ 2 ], ",", "" ) + ;
+                     " OF oDlg" + CRLF + CRLF
+            cVars += "oGet" + AllTrim( Str( nGet ) ) + ", "      
+                     
+         case cToken == "LTEXT"
+            cCode += "   REDEFINE SAY oSay" + AllTrim( Str( ++nSay ) ) + ;
+                     " ID " + StrTran( aTokens[ 3 ], ",", "" ) + ;
+                     " OF oDlg" + " // " + StrTran( aTokens[ 2 ], ",", "" ) + CRLF + CRLF
+            cVars += "oSay" + AllTrim( Str( nSay ) ) + ", "      
+      endcase
+      
+   next
+   
+return cFuncName + cVars + CRLF + CRLF + cCode + "return nil"</code></pre></div><br>
+<br>
+redefine.rc<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">ico  ICON "./../ICONS/fivewin.ico"
+
+#ifdef __FLAT__
+  1 24 "WinXP/WindowsXP.Manifest" 
+#endif
+
+#ifdef __64__
+  1 24 "WinXP/WindowsXP.Manifest64"
+#endif</code></pre></div><br>
+<br>
+<img src="https://bitbucket.org/fivetech/screenshots/downloads/redefine_utility.jpg" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p162273">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New free REDEFINE.prg utility</span><br>
+        Posted: Sun Jul 13, 2014 02:22 PM
+      </div>
+      <div class="content">Enhanced version that generates the DEFINE DIALOG and the ACTIVATE DIALOG.<br>
+<br>
+redefine.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Automatic REDEFINEs generator
+
+#include "FiveWin.ch"
+
+static cRCSrcCode, aDialogs := {}
+
+function Main()
+
+   local oDlg, oGet, cRCFileName := Space( 250 )
+   local oLbx, cDlgName := Space( 50 ), oMemo1, cCode := ""
+   local oFont, oMemo2, cPrg := ""
+
+   SetDlgGradient( { { 1, RGB( 199, 216, 237 ), RGB( 237, 242, 248 ) } } )
+   
+   DEFINE FONT oFont NAME "Courier New" SIZE 0, -14
+   
+   DEFINE DIALOG oDlg TITLE "RCs REDEFINEs builder" ;
+      SIZE 900, 700
+
+   @ 0.7, 1.5 SAY "RC filename:" OF oDlg SIZE 80, 9
+   
+   @ 0.8, 6 GET oGet VAR cRCFileName OF oDlg SIZE 200, 12 ;
+      ACTION ( cRCFileName := cGetFile( "*.rc", "Please select a RC file" ),;
+               oGet:oBtn:Refresh(), oGet:SetFocus(),;
+               aDialogs := {}, ListDialogs( cRCFileName, oLbx ) )
+
+   @ 2, 1.5 SAY "Dialogs in the RC file:" OF oDlg SIZE 80, 9
+
+   @ 3, 1 LISTBOX oLbx VAR cDlgName ITEMS {} OF oDlg SIZE 80, 164 ;
+      ON CHANGE ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   @ 2, 16.4 SAY "RC dialog source:" OF oDlg SIZE 80, 9
+
+   @ 3.3, 12 GET oMemoRC VAR cCode MEMO OF oDlg SIZE 345, 157 ;
+      FONT oFont HSCROLL
+
+   @ 16, 1 GET oMemoPrg VAR cPrg MEMO OF oDlg SIZE 433, 135 ;
+      FONT oFont HSCROLL
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   oFont:End()
+
+return nil
+
+function ListDialogs( cRCFileName, oLbx )
+
+   local n, cDlgName, lDone
+
+   if ! File( cRCFileName )
+      MsgAlert( cRCFileName + " does not exist" )
+      return nil
+   endif   
+   
+   cRCSrcCode = MemoRead( cRCFileName )
+   oLbx:Reset()
+   
+   for n = 1 to MLCount( cRCSrcCode )
+      cLine = MemoLine( cRCSrcCode,, n )
+      SysRefresh()
+      if ! SubStr( cLine, 1, 2 ) $ "//,/*" 
+         if Upper( StrToken( MemoLine( cRCSrcCode,, n ), 2 ) ) == "DIALOG"
+            oLbx:Add( cDlgName := StrToken( MemoLine( cRCSrcCode,, n ), 1 ) )
+            AAdd( aDialogs, { cDlgName, { cLine } } )
+            lDone = .F.
+         else
+            if ! Empty( aDialogs )
+               if Len( AllTrim( cLine ) ) == 1 .and. SubStr( cLine, 1, 1 ) == "}"
+                  AAdd( ATail( aDialogs )[ 2 ], "}" )  
+                  lDone = .T.
+               else   
+                  if ! lDone
+                     AAdd( ATail( aDialogs )[ 2 ], cLine )  
+                  endif   
+               endif   
+            endif   
+         endif
+      endif   
+   next
+   
+   oLbx:GoTop()
+   
+return nil         
+
+function ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   local nAt := AScan( aDialogs, { | aDlg | aDlg[ 1 ] == cDlgName } )
+   
+   if nAt != 0
+      oMemoRC:SetText( ArrayToText( aDialogs[ nAt ][ 2 ] ) )
+      oMemoPrg:SetText( RcToPrg( cDlgName, aDialogs[ nAt ][ 2 ] ) )
+   endif   
+   
+return nil   
+
+function ArrayToText( aArray )
+
+   local n, cText := ""
+   
+   for n = 1 to Len( aArray )
+      cText += aArray[ n ] + CRLF
+   next
+   
+return cText
+
+function RcToPrg( cDlgName, aRCSource )
+
+   local cFuncName := "function " + cDlgName + "()" + CRLF + CRLF
+   local n, cCode := "", aTokens, cToken
+   local nSay := 0, nGet := 0, cVars := "   local "
+   local cDlgDefine := CRLF + CRLF + "   DEFINE DIALOG oDlg RESOURCE " + '"' + ;
+                       cDlgName + '"'
+   local cDlgActivate := "   ACTIVATE DIALOG oDlg CENTERED" + CRLF + CRLF                     
+   
+   for n = 1 to Len( aRCSource )
+      aTokens = hb_ATokens( aRCSource[ n ] )
+      cToken = AllTrim( aTokens[ 1 ] )
+      // MsgInfo( aTokens[ 1 ] )
+      do case
+         case cToken == "EDITTEXT"
+            cCode += "   REDEFINE GET oGet" + AllTrim( Str( ++nGet ) ) + ;
+                     " ID " + StrTran( aTokens[ 2 ], ",", "" ) + ;
+                     " OF oDlg" + CRLF + CRLF
+            cVars += "oGet" + AllTrim( Str( nGet ) ) + ", "      
+                     
+         case cToken == "LTEXT"
+            cCode += "   REDEFINE SAY oSay" + AllTrim( Str( ++nSay ) ) + ;
+                     " ID " + StrTran( aTokens[ 3 ], ",", "" ) + ;
+                     " OF oDlg" + " // " + StrTran( aTokens[ 2 ], ",", "" ) + CRLF + CRLF
+            cVars += "oSay" + AllTrim( Str( nSay ) ) + ", "      
+      endcase
+      
+   next
+   
+return cFuncName + cVars + cDlgDefine + CRLF + CRLF + cCode + ;
+       cDlgActivate + "return nil"</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p162280">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New free REDEFINE.prg utility</span><br>
+        Posted: Sun Jul 13, 2014 06:36 PM
+      </div>
+      <div class="content">Enhanced version with proper support for Push Buttons:<br>
+<br>
+redefine.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Automatic REDEFINEs generator
+
+#include "FiveWin.ch"
+
+static cRCSrcCode, aDialogs := {}
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oDlg, oGet, cRCFileName := Space( 250 )
+   local oLbx, cDlgName := Space( 50 ), oMemo1, cCode := ""
+   local oFont, oMemo2, cPrg := ""
+
+   SetDlgGradient( { { 1, RGB( 199, 216, 237 ), RGB( 237, 242, 248 ) } } )
+   
+   DEFINE FONT oFont NAME "Courier New" SIZE 0, -14
+   
+   DEFINE DIALOG oDlg TITLE "RCs REDEFINEs builder" ;
+      SIZE 900, 700
+
+   @ 0.7, 1.5 SAY "RC filename:" OF oDlg SIZE 80, 9
+   
+   @ 0.8, 6 GET oGet VAR cRCFileName OF oDlg SIZE 200, 12 ;
+      ACTION ( cRCFileName := cGetFile( "*.rc", "Please select a RC file" ),;
+               oGet:oBtn:Refresh(), oGet:SetFocus(),;
+               aDialogs := {}, ListDialogs( cRCFileName, oLbx ) )
+
+   @ 2, 1.5 SAY "Dialogs in the RC file:" OF oDlg SIZE 80, 9
+
+   @ 3, 1 LISTBOX oLbx VAR cDlgName ITEMS {} OF oDlg SIZE 80, 164 ;
+      ON CHANGE ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   @ 2, 16.4 SAY "RC dialog source:" OF oDlg SIZE 80, 9
+
+   @ 3.3, 12 GET oMemoRC VAR cCode MEMO OF oDlg SIZE 345, 157 ;
+      FONT oFont HSCROLL
+
+   @ 16, 1 GET oMemoPrg VAR cPrg MEMO OF oDlg SIZE 433, 135 ;
+      FONT oFont HSCROLL
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   oFont:End()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function ListDialogs( cRCFileName, oLbx )
+
+   local n, cDlgName, lDone
+
+   if ! File( cRCFileName )
+      MsgAlert( cRCFileName + " does not exist" )
+      return nil
+   endif   
+   
+   cRCSrcCode = MemoRead( cRCFileName )
+   oLbx:Reset()
+   
+   for n = 1 to MLCount( cRCSrcCode )
+      cLine = MemoLine( cRCSrcCode,, n )
+      SysRefresh()
+      if ! SubStr( cLine, 1, 2 ) $ "//,/*" 
+         if Upper( StrToken( MemoLine( cRCSrcCode,, n ), 2 ) ) == "DIALOG"
+            oLbx:Add( cDlgName := StrToken( MemoLine( cRCSrcCode,, n ), 1 ) )
+            AAdd( aDialogs, { cDlgName, { cLine } } )
+            lDone = .F.
+         else
+            if ! Empty( aDialogs )
+               if Len( AllTrim( cLine ) ) == 1 .and. SubStr( cLine, 1, 1 ) == "}"
+                  AAdd( ATail( aDialogs )[ 2 ], "}" )  
+                  lDone = .T.
+               else   
+                  if ! lDone
+                     AAdd( ATail( aDialogs )[ 2 ], cLine )  
+                  endif   
+               endif   
+            endif   
+         endif
+      endif   
+   next
+   
+   oLbx:GoTop()
+   
+return nil         
+
+//----------------------------------------------------------------------------//
+
+function ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   local nAt := AScan( aDialogs, { | aDlg | aDlg[ 1 ] == cDlgName } )
+   
+   if nAt != 0
+      oMemoRC:SetText( ArrayToText( aDialogs[ nAt ][ 2 ] ) )
+      oMemoPrg:SetText( RcToPrg( cDlgName, aDialogs[ nAt ][ 2 ] ) )
+   endif   
+   
+return nil   
+
+//----------------------------------------------------------------------------//
+
+function ArrayToText( aArray )
+
+   local n, cText := ""
+   
+   for n = 1 to Len( aArray )
+      cText += aArray[ n ] + CRLF
+   next
+   
+return cText
+
+//----------------------------------------------------------------------------//
+
+function RcToPrg( cDlgName, aRCSource )
+
+   local cFuncName := "function " + cDlgName + "()" + CRLF + CRLF
+   local n, cCode := "", aTokens, cToken
+   local nSay := 0, nGet := 0, nBtn := 0
+   local cVars := "   local "
+   local cDlgDefine := CRLF + CRLF + "   DEFINE DIALOG oDlg RESOURCE " + '"' + ;
+                       cDlgName + '"'
+   local cDlgActivate := "   ACTIVATE DIALOG oDlg CENTERED" + CRLF + CRLF                     
+   
+   for n = 1 to Len( aRCSource )
+      aTokens = hb_ATokens( aRCSource[ n ] )
+      cToken = AllTrim( aTokens[ 1 ] )
+      // MsgInfo( aTokens[ 1 ] )
+      do case
+         case cToken == "EDITTEXT"
+            cCode += "   REDEFINE GET oGet" + AllTrim( Str( ++nGet ) ) + ;
+                     " ID " + StrTran( aTokens[ 2 ], ",", "" ) + ;
+                     " OF oDlg" + CRLF + CRLF
+            cVars += "oGet" + AllTrim( Str( nGet ) ) + ", "      
+                     
+         case cToken == "LTEXT"
+            cCode += "   REDEFINE SAY oSay" + AllTrim( Str( ++nSay ) ) + ;
+                     " ID " + StrTran( aTokens[ 3 ], ",", "" ) + ;
+                     " OF oDlg" + " // " + StrTran( aTokens[ 2 ], ",", "" ) + CRLF + CRLF
+            cVars += "oSay" + AllTrim( Str( nSay ) ) + ", "      
+
+         case cToken == "PUSHBUTTON"
+            // MsgInfo( aRcSource[ n ] )
+            cCode += "   REDEFINE BUTTON oBtn" + AllTrim( Str( ++nBtn ) ) + ;
+                     " ID " + AllTrim( StrToken( aRcSource[ n ], 2, ',' ) ) + ;
+                     " OF oDlg ; // " + ;
+                     '"' + StrToken( aRcSource[ n ], 2, '"' ) + '"' + CRLF + ;
+                     "      ACTION MsgInfo( " + '"PushButton ' + ;
+                     AllTrim( Str( nBtn ) ) + '"' + " )" + CRLF + CRLF
+            cVars += "oBtn" + AllTrim( Str( nBtn ) ) + ", "      
+      endcase
+      
+   next
+   
+   cVars = SubStr( cVars, 1, Len( cVars ) - 2 )
+   
+return cFuncName + cVars + cDlgDefine + CRLF + CRLF + cCode + ;
+       cDlgActivate + "return nil"            
+       
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+This code has been automatically generated by this utility, see how usefull it is <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   REDEFINE BUTTON oBtn5 ID 4380 OF oDlg ; // "&amp;Top"
+      ACTION MsgInfo( "PushButton 5" )
+
+   REDEFINE BUTTON oBtn6 ID 4390 OF oDlg ; // "&amp;Prev"
+      ACTION MsgInfo( "PushButton 6" )
+
+   REDEFINE BUTTON oBtn7 ID 4400 OF oDlg ; // "&amp;Next"
+      ACTION MsgInfo( "PushButton 7" )
+
+   REDEFINE BUTTON oBtn8 ID 4410 OF oDlg ; // "&amp;Bottom"
+      ACTION MsgInfo( "PushButton 8" )</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p162288">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New free REDEFINE.prg utility</span><br>
+        Posted: Mon Jul 14, 2014 01:43 AM
+      </div>
+      <div class="content">Enhanced version (local variables grouped according the type of objects):<br>
+<br>
+redefine.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Automatic REDEFINEs generator
+
+#include "FiveWin.ch"
+
+static cRCSrcCode, aDialogs := {}
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oDlg, oGet, cRCFileName := Space( 250 )
+   local oLbx, cDlgName := Space( 50 ), oMemoRC, cCode := ""
+   local oFont, oMemoPrg, cPrg := ""
+
+   SetDlgGradient( { { 1, RGB( 199, 216, 237 ), RGB( 237, 242, 248 ) } } )
+   
+   DEFINE FONT oFont NAME "Courier New" SIZE 0, -14
+   
+   DEFINE DIALOG oDlg TITLE "RCs REDEFINEs builder" ;
+      SIZE 900, 700
+
+   @ 0.7, 1.5 SAY "RC filename:" OF oDlg SIZE 80, 9
+   
+   @ 0.8, 6 GET oGet VAR cRCFileName OF oDlg SIZE 200, 12 ;
+      ACTION ( cRCFileName := cGetFile( "*.rc", "Please select a RC file" ),;
+               oGet:oBtn:Refresh(), oGet:SetFocus(),;
+               aDialogs := {}, ListDialogs( cRCFileName, oLbx ) )
+
+   @ 2, 1.5 SAY "Dialogs in the RC file:" OF oDlg SIZE 80, 9
+
+   @ 3, 1 LISTBOX oLbx VAR cDlgName ITEMS {} OF oDlg SIZE 80, 164 ;
+      ON CHANGE ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   @ 2, 16.4 SAY "RC dialog source:" OF oDlg SIZE 80, 9
+
+   @ 3.3, 12 GET oMemoRC VAR cCode MEMO OF oDlg SIZE 345, 157 ;
+      FONT oFont HSCROLL
+
+   @ 16, 1 GET oMemoPrg VAR cPrg MEMO OF oDlg SIZE 433, 135 ;
+      FONT oFont HSCROLL
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   oFont:End()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function ListDialogs( cRCFileName, oLbx )
+
+   local n, cDlgName, lDone, cLine
+
+   if ! File( cRCFileName )
+      MsgAlert( cRCFileName + " does not exist" )
+      return nil
+   endif   
+   
+   cRCSrcCode = MemoRead( cRCFileName )
+   oLbx:Reset()
+   
+   for n = 1 to MLCount( cRCSrcCode )
+      cLine = MemoLine( cRCSrcCode,, n )
+      SysRefresh()
+      if ! SubStr( cLine, 1, 2 ) $ "//,/*" 
+         if Upper( StrToken( MemoLine( cRCSrcCode,, n ), 2 ) ) == "DIALOG"
+            oLbx:Add( cDlgName := StrToken( MemoLine( cRCSrcCode,, n ), 1 ) )
+            AAdd( aDialogs, { cDlgName, { cLine } } )
+            lDone = .F.
+         else
+            if ! Empty( aDialogs )
+               if Len( AllTrim( cLine ) ) == 1 .and. SubStr( cLine, 1, 1 ) == "}"
+                  AAdd( ATail( aDialogs )[ 2 ], "}" )  
+                  lDone = .T.
+               else   
+                  if ! lDone
+                     AAdd( ATail( aDialogs )[ 2 ], cLine )  
+                  endif   
+               endif   
+            endif   
+         endif
+      endif   
+   next
+   
+   oLbx:GoTop()
+   
+return nil         
+
+//----------------------------------------------------------------------------//
+
+function ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   local nAt := AScan( aDialogs, { | aDlg | aDlg[ 1 ] == cDlgName } )
+   
+   if nAt != 0
+      oMemoRC:SetText( ArrayToText( aDialogs[ nAt ][ 2 ] ) )
+      oMemoPrg:SetText( RcToPrg( cDlgName, aDialogs[ nAt ][ 2 ] ) )
+   endif   
+   
+return nil   
+
+//----------------------------------------------------------------------------//
+
+function ArrayToText( aArray )
+
+   local n, cText := ""
+   
+   for n = 1 to Len( aArray )
+      cText += aArray[ n ] + CRLF
+   next
+   
+return cText
+
+//----------------------------------------------------------------------------//
+
+function RcToPrg( cDlgName, aRCSource )
+
+   local cFuncName := "function " + cDlgName + "()" + CRLF + CRLF
+   local n, cCode := "", aTokens, cToken
+   local nSay := 0, nGet := 0, nBtn := 0
+   local cVarsSays := "   local "
+   local cVarsGets := "   local "
+   local cVarsButtons := "   local " 
+   local cDlgDefine := "   DEFINE DIALOG oDlg RESOURCE " + '"' + ;
+                       cDlgName + '"'
+   local cId                   
+   local cDlgActivate := "   ACTIVATE DIALOG oDlg CENTERED" + CRLF + CRLF 
+   
+   for n = 1 to Len( aRCSource )
+      aTokens = hb_ATokens( aRCSource[ n ] )
+      cToken = AllTrim( aTokens[ 1 ] )
+      do case
+         case cToken == "EDITTEXT"
+            cId = AllTrim( StrTran( aTokens[ 2 ], ",", "" ) )
+            cCode += "   REDEFINE GET oGet" + AllTrim( Str( ++nGet ) ) + ;
+                     " ID " + cId + " OF oDlg" + CRLF + CRLF
+            cVarsGets += "oGet" + AllTrim( Str( nGet ) ) + ", "      
+                     
+                     
+         case cToken == "LTEXT"
+            cId = AllTrim( StrToken( aRCSource[ n ], 2, ',' ) )
+            if ! cId $ "0,-1" // We don't redefine 0 and -1 IDs
+               cCode += "   REDEFINE SAY oSay" + AllTrim( Str( ++nSay ) ) + ;
+                        " ID " + cId + " OF oDlg" + " // " + ;
+                        StrTran( aTokens[ 2 ], ",", "" ) + CRLF + CRLF
+               cVarsSays += "oSay" + AllTrim( Str( nSay ) ) + ", "      
+            endif   
+
+         case cToken == "PUSHBUTTON"
+            cId = AllTrim( StrToken( aRcSource[ n ], 2, ',' ) )
+            cCode += "   REDEFINE BUTTON oBtn" + AllTrim( Str( ++nBtn ) ) + ;
+                     " ID " + cId + " OF oDlg ; // " + ;
+                     '"' + StrToken( aRcSource[ n ], 2, '"' ) + '"' + CRLF + ;
+                     "      ACTION MsgInfo( " + ;
+                     '"' + StrToken( aRcSource[ n ], 2, '"' ) + '"' + " )" + ;
+                     CRLF + CRLF
+            cVarsButtons += "oBtn" + AllTrim( Str( nBtn ) ) + ", "      
+      endcase
+      
+   next
+   
+   if Len( cVarsSays ) &gt; Len( "   local " )
+      cVarsSays = SubStr( cVarsSays, 1, Len( cVarsSays ) - 2 )
+   else
+      cVarsSays = ""
+   endif
+   
+   if Len( cVarsGets ) &gt; Len( "   local " )      
+      cVarsGets = SubStr( cVarsGets, 1, Len( cVarsGets ) - 2 )
+   else
+      cVarsGets = ""
+   endif
+   
+   if Len( cVarsButtons ) &gt; Len( "   local " )
+      cVarsButtons = SubStr( cVarsButtons, 1, Len( cVarsButtons ) - 2 )
+   else   
+      cVarsButtons = ""
+   endif
+         
+return cFuncName + ;
+       If( ! Empty( cVarsSays ), cVarsSays + CRLF, "" ) + ;
+       If( ! Empty( cvarsGets ), cVarsGets + CRLF, "" ) + ;
+       If( ! Empty( cVarsButtons ), cVarsButtons + CRLF, "" ) + ;
+       If( ! Empty( cVarsSays ) .or. ! Empty( cVarsGets ) .or. ;
+           ! Empty( cVarsButtons ), CRLF, "" ) + cDlgDefine + CRLF + ;
+       CRLF + cCode + ;
+       cDlgActivate + "return nil"            
+       
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+<img src="https://bitbucket.org/fivetech/screenshots/downloads/redefine_2.jpg" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p162309">
+    <div class="poster">
+      <div class="name" style="color:#105289">Kleyber</div>
+      <div class="rank">Posts: 581</div>
+      <img class="avatar avatar-img" src="avatars/103.png" alt="" loading="lazy">
+      Joined: Tue Oct 11, 2005 11:28 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New free REDEFINE.prg utility</span><br>
+        Posted: Mon Jul 14, 2014 12:19 PM
+      </div>
+      <div class="content"><p>Antonio,</p>
+<p>Fantastic!!! It will help me a lot!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p162329">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New free REDEFINE.prg utility</span><br>
+        Posted: Mon Jul 14, 2014 04:08 PM
+      </div>
+      <div class="content"><p>Kleyber,</p>
+<p>yes, it seems to be very usefull <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>And surely it will improve very much as its source code is really simple, so when some more users realize its power, surely it will grow much more <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p162336">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New free REDEFINE.prg utility</span><br>
+        Posted: Mon Jul 14, 2014 04:57 PM
+      </div>
+      <div class="content">New version with ListBoxes support and othe enhancements:<br>
+<br>
+redefine.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Automatic REDEFINEs generator
+
+#include "FiveWin.ch"
+
+static cRCSrcCode, aDialogs := {}
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oDlg, oGet, cRCFileName := Space( 250 )
+   local oLbx, cDlgName := Space( 50 ), oMemoRC, cCode := ""
+   local oFont, oMemoPrg, cPrg := ""
+
+   SetDlgGradient( { { 1, RGB( 199, 216, 237 ), RGB( 237, 242, 248 ) } } )
+   
+   DEFINE FONT oFont NAME "Courier New" SIZE 0, -14
+   
+   DEFINE DIALOG oDlg TITLE "RCs REDEFINEs builder" ;
+      SIZE 900, 700
+
+   @ 0.7, 1.5 SAY "RC filename:" OF oDlg SIZE 80, 9
+   
+   @ 0.8, 6 GET oGet VAR cRCFileName OF oDlg SIZE 200, 12 ;
+      ACTION ( cRCFileName := cGetFile( "*.rc", "Please select a RC file" ),;
+               oGet:oBtn:Refresh(), oGet:SetFocus(),;
+               aDialogs := {}, ListDialogs( cRCFileName, oLbx ) )
+
+   @ 2, 1.5 SAY "Dialogs in the RC file:" OF oDlg SIZE 80, 9
+
+   @ 3, 1 LISTBOX oLbx VAR cDlgName ITEMS {} OF oDlg SIZE 80, 164 ;
+      ON CHANGE ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   @ 2, 16.4 SAY "RC dialog source:" OF oDlg SIZE 80, 9
+
+   @ 3.3, 12 GET oMemoRC VAR cCode MEMO OF oDlg SIZE 345, 157 ;
+      FONT oFont HSCROLL
+
+   @ 16, 1 GET oMemoPrg VAR cPrg MEMO OF oDlg SIZE 433, 135 ;
+      FONT oFont HSCROLL
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   oFont:End()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function ListDialogs( cRCFileName, oLbx )
+
+   local n, cDlgName, lDone, cLine
+
+   if ! File( cRCFileName )
+      MsgAlert( cRCFileName + " does not exist" )
+      return nil
+   endif   
+   
+   cRCSrcCode = MemoRead( cRCFileName )
+   oLbx:Reset()
+   
+   for n = 1 to MLCount( cRCSrcCode )
+      cLine = MemoLine( cRCSrcCode,, n )
+      SysRefresh()
+      if ! SubStr( cLine, 1, 2 ) $ "//,/*" 
+         if Upper( StrToken( MemoLine( cRCSrcCode,, n ), 2 ) ) == "DIALOG"
+            oLbx:Add( cDlgName := StrToken( MemoLine( cRCSrcCode,, n ), 1 ) )
+            AAdd( aDialogs, { cDlgName, { cLine } } )
+            lDone = .F.
+         else
+            if ! Empty( aDialogs )
+               if Len( AllTrim( cLine ) ) == 1 .and. SubStr( cLine, 1, 1 ) == "}"
+                  AAdd( ATail( aDialogs )[ 2 ], "}" )  
+                  lDone = .T.
+               else   
+                  if ! lDone
+                     AAdd( ATail( aDialogs )[ 2 ], cLine )  
+                  endif   
+               endif   
+            endif   
+         endif
+      endif   
+   next
+   
+   oLbx:GoTop()
+   
+return nil         
+
+//----------------------------------------------------------------------------//
+
+function ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   local nAt := AScan( aDialogs, { | aDlg | aDlg[ 1 ] == cDlgName } )
+   
+   if nAt != 0
+      oMemoRC:SetText( ArrayToText( aDialogs[ nAt ][ 2 ] ) )
+      oMemoPrg:SetText( RcToPrg( cDlgName, aDialogs[ nAt ][ 2 ] ) )
+   endif   
+   
+return nil   
+
+//----------------------------------------------------------------------------//
+
+function ArrayToText( aArray )
+
+   local n, cText := ""
+   
+   for n = 1 to Len( aArray )
+      cText += aArray[ n ] + CRLF
+   next
+   
+return cText
+
+//----------------------------------------------------------------------------//
+
+function RcToPrg( cDlgName, aRCSource )
+
+   local cFuncName := "function " + cDlgName + "()" + CRLF + CRLF
+   local n, cCode := "", aTokens, cToken
+   local nSay := 0, nGet := 0, nBtn := 0, nLbx := 0
+   local cVarsSays := "   local "
+   local cVarsGets := "   local "
+   local cVarsButtons := "   local " 
+   local cVarsLbxs := "   local "
+   local cDlgDefine := "   DEFINE DIALOG oDlg RESOURCE " + '"' + ;
+                       cDlgName + '"'
+   local cId                   
+   local cDlgActivate := "   ACTIVATE DIALOG oDlg CENTERED" + CRLF + CRLF 
+   
+   for n = 1 to Len( aRCSource )
+      aTokens = hb_ATokens( aRCSource[ n ] )
+      cToken = AllTrim( aTokens[ 1 ] )
+      do case
+         case cToken == "EDITTEXT"
+            cId = AllTrim( StrTran( aTokens[ 2 ], ",", "" ) )
+            cCode += "   REDEFINE GET oGet" + AllTrim( Str( ++nGet ) ) + ;
+                     " ID " + cId + " OF oDlg" + CRLF + CRLF
+            cVarsGets += "oGet" + AllTrim( Str( nGet ) ) + ", "      
+
+         case cToken == "LISTBOX"
+            cId = AllTrim( StrTran( aTokens[ 2 ], ",", "" ) )
+            cCode += "   REDEFINE LISTBOX oLbx" + AllTrim( Str( ++nLbx ) ) + ;
+                     " ITEMS {}" + ;
+                     " ID " + cId + " OF oDlg" + CRLF + CRLF
+            cVarsLbxs += "oLbx" + AllTrim( Str( nLbx ) ) + ", "      
+                     
+         case cToken == "LTEXT"
+            cId = AllTrim( StrToken( aRCSource[ n ], 2, ',' ) )
+            if ! cId $ "0,-1" // We don't redefine 0 and -1 IDs
+               cCode += "   REDEFINE SAY oSay" + AllTrim( Str( ++nSay ) ) + ;
+                        " ID " + cId + " OF oDlg" + " // " + ;
+                        StrTran( aTokens[ 2 ], ",", "" ) + CRLF + CRLF
+               cVarsSays += "oSay" + AllTrim( Str( nSay ) ) + ", "      
+            endif   
+
+         case cToken == "PUSHBUTTON"
+            cId = AllTrim( StrToken( aRcSource[ n ], 2, ',' ) )
+            cCode += "   REDEFINE BUTTON oBtn" + AllTrim( Str( ++nBtn ) ) + ;
+                     " ID " + cId + " OF oDlg ; // " + ;
+                     '"' + StrToken( aRcSource[ n ], 2, '"' ) + '"' + CRLF + ;
+                     "      ACTION MsgInfo( " + ;
+                     '"' + StrToken( aRcSource[ n ], 2, '"' ) + '"' + " )" + ;
+                     CRLF + CRLF
+            cVarsButtons += "oBtn" + AllTrim( Str( nBtn ) ) + ", "      
+      endcase
+      
+   next
+   
+   if Len( cVarsSays ) &gt; Len( "   local " )
+      cVarsSays = SubStr( cVarsSays, 1, Len( cVarsSays ) - 2 )
+   else
+      cVarsSays = ""
+   endif
+   
+   if Len( cVarsGets ) &gt; Len( "   local " )      
+      cVarsGets = SubStr( cVarsGets, 1, Len( cVarsGets ) - 2 )
+   else
+      cVarsGets = ""
+   endif
+   
+   if Len( cVarsButtons ) &gt; Len( "   local " )
+      cVarsButtons = SubStr( cVarsButtons, 1, Len( cVarsButtons ) - 2 )
+   else   
+      cVarsButtons = ""
+   endif
+
+   if Len( cVarsLbxs ) &gt; Len( "   local " )
+      cVarsLbxs = SubStr( cVarsLbxs, 1, Len( cVarsLbxs ) - 2 )
+   else   
+      cVarsLbxs = ""
+   endif
+         
+return cFuncName + ;
+       "   local oDlg" + CRLF + ;
+       If( ! Empty( cVarsSays ), cVarsSays + CRLF, "" ) + ;
+       If( ! Empty( cVarsGets ), cVarsGets + CRLF, "" ) + ;
+       If( ! Empty( cVarsButtons ), cVarsButtons + CRLF, "" ) + ;
+       If( ! Empty( cVarsLbxs ), cVarsLbxs + CRLF, "" ) + ;
+       If( ! Empty( cVarsSays ) .or. ! Empty( cVarsGets ) .or. ;
+           ! Empty( cVarsButtons ) .or. ! Empty( cVarsLbxs ), CRLF, "" ) + ;
+       If( Empty( cVarsSays ) .and. Empty( cVarsGets ) .and. ;
+           Empty( cVarsButtons ) .and. Empty( cVarsLbxs ),;
+       CRLF, "" ) + cDlgDefine + CRLF + ;
+       CRLF + cCode + ;
+       cDlgActivate + "return nil"            
+       
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+<img src="https://bitbucket.org/fivetech/screenshots/downloads/redefine_4.jpg" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p162360">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New free REDEFINE.prg utility</span><br>
+        Posted: Mon Jul 14, 2014 09:57 PM
+      </div>
+      <div class="content">PellesC compatible on GETs, next PellesC controls support coming:<br>
+<br>
+redefine.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Automatic REDEFINEs generator
+
+#include "FiveWin.ch"
+
+static cRCSrcCode, aDialogs := {}
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oDlg, oGet, cRCFileName := Space( 250 )
+   local oLbx, cDlgName := Space( 50 ), oMemoRC, cCode := ""
+   local oFont, oMemoPrg, cPrg := ""
+
+   SetDlgGradient( { { 1, RGB( 199, 216, 237 ), RGB( 237, 242, 248 ) } } )
+   
+   DEFINE FONT oFont NAME "Courier New" SIZE 0, -14
+   
+   DEFINE DIALOG oDlg TITLE "RCs REDEFINEs builder" ;
+      SIZE 900, 700
+
+   @ 0.7, 1.5 SAY "RC filename:" OF oDlg SIZE 80, 9
+   
+   @ 0.8, 6 GET oGet VAR cRCFileName OF oDlg SIZE 200, 12 ;
+      ACTION ( cRCFileName := cGetFile( "*.rc", "Please select a RC file" ),;
+               oGet:oBtn:Refresh(), oGet:SetFocus(),;
+               aDialogs := {}, ListDialogs( cRCFileName, oLbx ) )
+
+   @ 2, 1.5 SAY "Dialogs in the RC file:" OF oDlg SIZE 80, 9
+
+   @ 3, 1 LISTBOX oLbx VAR cDlgName ITEMS {} OF oDlg SIZE 80, 164 ;
+      ON CHANGE ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   @ 2, 16.4 SAY "RC dialog source:" OF oDlg SIZE 80, 9
+
+   @ 3.3, 12 GET oMemoRC VAR cCode MEMO OF oDlg SIZE 345, 157 ;
+      FONT oFont HSCROLL
+
+   @ 16, 1 GET oMemoPrg VAR cPrg MEMO OF oDlg SIZE 433, 135 ;
+      FONT oFont HSCROLL
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   oFont:End()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function ListDialogs( cRCFileName, oLbx )
+
+   local n, cDlgName, lDone, cLine
+
+   if ! File( cRCFileName )
+      MsgAlert( cRCFileName + " does not exist" )
+      return nil
+   endif   
+   
+   cRCSrcCode = MemoRead( cRCFileName )
+   oLbx:Reset()
+   
+   for n = 1 to MLCount( cRCSrcCode )
+      cLine = MemoLine( cRCSrcCode,, n )
+      SysRefresh()
+      if ! SubStr( cLine, 1, 2 ) $ "//,/*" 
+         if Upper( StrToken( MemoLine( cRCSrcCode,, n ), 2 ) ) $ "DIALOGEX"
+            oLbx:Add( cDlgName := StrToken( MemoLine( cRCSrcCode,, n ), 1 ) )
+            AAdd( aDialogs, { cDlgName, { cLine } } )
+            lDone = .F.
+         else
+            if ! Empty( aDialogs )
+               if Len( AllTrim( cLine ) ) == 1 .and. SubStr( cLine, 1, 1 ) == "}"
+                  AAdd( ATail( aDialogs )[ 2 ], "}" )  
+                  lDone = .T.
+               else   
+                  if ! lDone
+                     AAdd( ATail( aDialogs )[ 2 ], cLine )  
+                  endif   
+               endif   
+            endif   
+         endif
+      endif   
+   next
+   
+   oLbx:GoTop()
+   
+return nil         
+
+//----------------------------------------------------------------------------//
+
+function ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   local nAt := AScan( aDialogs, { | aDlg | aDlg[ 1 ] == cDlgName } )
+   
+   if nAt != 0
+      oMemoRC:SetText( ArrayToText( aDialogs[ nAt ][ 2 ] ) )
+      oMemoPrg:SetText( RcToPrg( cDlgName, aDialogs[ nAt ][ 2 ] ) )
+   endif   
+   
+return nil   
+
+//----------------------------------------------------------------------------//
+
+function ArrayToText( aArray )
+
+   local n, cText := ""
+   
+   for n = 1 to Len( aArray )
+      cText += aArray[ n ] + CRLF
+   next
+   
+return cText
+
+//----------------------------------------------------------------------------//
+
+function RcToPrg( cDlgName, aRCSource )
+
+   local cFuncName := "function " + cDlgName + "()" + CRLF + CRLF
+   local n, cCode := "", aTokens, cToken
+   local nSay := 0, nGet := 0, nBtn := 0, nLbx := 0
+   local cVarsSays := "   local "
+   local cVarsGets := "   local "
+   local cVarsButtons := "   local " 
+   local cVarsLbxs := "   local "
+   local cDlgDefine := "   DEFINE DIALOG oDlg RESOURCE " + '"' + ;
+                       cDlgName + '"'
+   local cId                   
+   local cDlgActivate := "   ACTIVATE DIALOG oDlg CENTERED" + CRLF + CRLF 
+   
+   for n = 1 to Len( aRCSource )
+      aTokens = hb_ATokens( aRCSource[ n ] )
+      cToken = AllTrim( aTokens[ 1 ] )
+      // XBrowser aTokens
+      do case
+         case cToken == "EDITTEXT" .or. ;
+              ( cToken == "CONTROL" .and. aTokens[ 2 ] == '"Edit",' )
+            if cToken == "EDITTEXT"  
+               cId = AllTrim( StrTran( aTokens[ 2 ], ",", "" ) )
+            else   
+               cId = AllTrim( StrToken( aRCSource[ n ], 2, "," ) )
+            endif   
+            cCode += "   REDEFINE GET oGet" + AllTrim( Str( ++nGet ) ) + ;
+                     " ID " + cId + " OF oDlg" + CRLF + CRLF
+            cVarsGets += "oGet" + AllTrim( Str( nGet ) ) + ", "      
+
+         case cToken == "LISTBOX"
+            cId = AllTrim( StrTran( aTokens[ 2 ], ",", "" ) )
+            cCode += "   REDEFINE LISTBOX oLbx" + AllTrim( Str( ++nLbx ) ) + ;
+                     " ITEMS {}" + ;
+                     " ID " + cId + " OF oDlg" + CRLF + CRLF
+            cVarsLbxs += "oLbx" + AllTrim( Str( nLbx ) ) + ", "      
+                     
+         case cToken == "LTEXT"
+            cId = AllTrim( StrToken( aRCSource[ n ], 2, ',' ) )
+            if ! cId $ "0,-1" // We don't redefine 0 and -1 IDs
+               cCode += "   REDEFINE SAY oSay" + AllTrim( Str( ++nSay ) ) + ;
+                        " ID " + cId + " OF oDlg" + " // " + ;
+                        StrTran( aTokens[ 2 ], ",", "" ) + CRLF + CRLF
+               cVarsSays += "oSay" + AllTrim( Str( nSay ) ) + ", "      
+            endif   
+
+         case cToken == "PUSHBUTTON"
+            cId = AllTrim( StrToken( aRcSource[ n ], 2, ',' ) )
+            cCode += "   REDEFINE BUTTON oBtn" + AllTrim( Str( ++nBtn ) ) + ;
+                     " ID " + cId + " OF oDlg ; // " + ;
+                     '"' + StrToken( aRcSource[ n ], 2, '"' ) + '"' + CRLF + ;
+                     "      ACTION MsgInfo( " + ;
+                     '"' + StrToken( aRcSource[ n ], 2, '"' ) + '"' + " )" + ;
+                     CRLF + CRLF
+            cVarsButtons += "oBtn" + AllTrim( Str( nBtn ) ) + ", "      
+      endcase
+      
+   next
+   
+   if Len( cVarsSays ) &gt; Len( "   local " )
+      cVarsSays = SubStr( cVarsSays, 1, Len( cVarsSays ) - 2 )
+   else
+      cVarsSays = ""
+   endif
+   
+   if Len( cVarsGets ) &gt; Len( "   local " )      
+      cVarsGets = SubStr( cVarsGets, 1, Len( cVarsGets ) - 2 )
+   else
+      cVarsGets = ""
+   endif
+   
+   if Len( cVarsButtons ) &gt; Len( "   local " )
+      cVarsButtons = SubStr( cVarsButtons, 1, Len( cVarsButtons ) - 2 )
+   else   
+      cVarsButtons = ""
+   endif
+
+   if Len( cVarsLbxs ) &gt; Len( "   local " )
+      cVarsLbxs = SubStr( cVarsLbxs, 1, Len( cVarsLbxs ) - 2 )
+   else   
+      cVarsLbxs = ""
+   endif
+         
+return cFuncName + ;
+       "   local oDlg" + CRLF + ;
+       If( ! Empty( cVarsSays ), cVarsSays + CRLF, "" ) + ;
+       If( ! Empty( cVarsGets ), cVarsGets + CRLF, "" ) + ;
+       If( ! Empty( cVarsButtons ), cVarsButtons + CRLF, "" ) + ;
+       If( ! Empty( cVarsLbxs ), cVarsLbxs + CRLF, "" ) + ;
+       If( ! Empty( cVarsSays ) .or. ! Empty( cVarsGets ) .or. ;
+           ! Empty( cVarsButtons ) .or. ! Empty( cVarsLbxs ), CRLF, "" ) + ;
+       If( Empty( cVarsSays ) .and. Empty( cVarsGets ) .and. ;
+           Empty( cVarsButtons ) .and. Empty( cVarsLbxs ),;
+       CRLF, "" ) + cDlgDefine + CRLF + ;
+       CRLF + cCode + ;
+       cDlgActivate + "return nil"            
+       
+//----------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p162364">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New free REDEFINE.prg utility</span><br>
+        Posted: Mon Jul 14, 2014 10:11 PM
+      </div>
+      <div class="content">Enhanced version:<br>
+<br>
+redefine.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Automatic REDEFINEs generator
+
+#include "FiveWin.ch"
+
+static cRCSrcCode, aDialogs := {}
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oDlg, oGet, cRCFileName := Space( 250 )
+   local oLbx, cDlgName := Space( 50 ), oMemoRC, cCode := ""
+   local oFont, oMemoPrg, cPrg := ""
+
+   SetDlgGradient( { { 1, RGB( 199, 216, 237 ), RGB( 237, 242, 248 ) } } )
+   
+   DEFINE FONT oFont NAME "Courier New" SIZE 0, -14
+   
+   DEFINE DIALOG oDlg TITLE "RCs REDEFINEs builder" ;
+      SIZE 900, 700
+
+   @ 0.7, 1.5 SAY "RC filename:" OF oDlg SIZE 80, 9
+   
+   @ 0.8, 6 GET oGet VAR cRCFileName OF oDlg SIZE 200, 12 ;
+      ACTION ( cRCFileName := cGetFile( "*.rc", "Please select a RC file" ),;
+               oGet:oBtn:Refresh(), oGet:SetFocus(),;
+               aDialogs := {}, ListDialogs( cRCFileName, oLbx ) )
+
+   @ 2, 1.5 SAY "Dialogs in the RC file:" OF oDlg SIZE 80, 9
+
+   @ 3, 1 LISTBOX oLbx VAR cDlgName ITEMS {} OF oDlg SIZE 80, 164 ;
+      ON CHANGE ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   @ 2, 16.4 SAY "RC dialog source:" OF oDlg SIZE 80, 9
+
+   @ 3.3, 12 GET oMemoRC VAR cCode MEMO OF oDlg SIZE 345, 157 ;
+      FONT oFont HSCROLL
+
+   @ 16, 1 GET oMemoPrg VAR cPrg MEMO OF oDlg SIZE 433, 135 ;
+      FONT oFont HSCROLL
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   oFont:End()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function ListDialogs( cRCFileName, oLbx )
+
+   local n, cDlgName, lDone, cLine, oRCFile
+
+   if ! File( cRCFileName )
+      MsgAlert( cRCFileName + " does not exist" )
+      return nil
+   endif   
+   
+   // cRCSrcCode = MemoRead( cRCFileName )
+   oRCFile = TTxtFile():New( cRCFileName )
+   oLbx:Reset()
+   
+   for n = 1 to oRCFile:RecCount() // MLCount( cRCSrcCode )
+      cLine = oRCFile:ReadLine() // MemoLine( cRCSrcCode,, n )
+      oRcFile:Skip()
+      SysRefresh()
+      if ! SubStr( cLine, 1, 2 ) $ "//,/*" 
+         if Upper( StrToken( cLine, 2 ) ) $ "DIALOGEX"
+            oLbx:Add( cDlgName := StrToken( cLine, 1 ) )
+            AAdd( aDialogs, { cDlgName, { cLine } } )
+            lDone = .F.
+         else
+            if ! Empty( aDialogs )
+               if Len( AllTrim( cLine ) ) == 1 .and. SubStr( cLine, 1, 1 ) == "}"
+                  AAdd( ATail( aDialogs )[ 2 ], "}" )  
+                  lDone = .T.
+               else   
+                  if ! lDone
+                     AAdd( ATail( aDialogs )[ 2 ], cLine )  
+                  endif   
+               endif   
+            endif   
+         endif
+      endif   
+   next
+   
+   oLbx:GoTop()
+   
+return nil         
+
+//----------------------------------------------------------------------------//
+
+function ShowCode( cDlgName, oMemoRC, oMemoPrg )
+
+   local nAt := AScan( aDialogs, { | aDlg | aDlg[ 1 ] == cDlgName } )
+   
+   if nAt != 0
+      oMemoRC:SetText( ArrayToText( aDialogs[ nAt ][ 2 ] ) )
+      oMemoPrg:SetText( RcToPrg( cDlgName, aDialogs[ nAt ][ 2 ] ) )
+   endif   
+   
+return nil   
+
+//----------------------------------------------------------------------------//
+
+function ArrayToText( aArray )
+
+   local n, cText := ""
+   
+   for n = 1 to Len( aArray )
+      cText += aArray[ n ] + CRLF
+   next
+   
+return cText
+
+//----------------------------------------------------------------------------//
+
+function RcToPrg( cDlgName, aRCSource )
+
+   local cFuncName := "function " + cDlgName + "()" + CRLF + CRLF
+   local n, cCode := "", aTokens, cToken
+   local nSay := 0, nGet := 0, nBtn := 0, nLbx := 0
+   local cVarsSays := "   local "
+   local cVarsGets := "   local "
+   local cVarsButtons := "   local " 
+   local cVarsLbxs := "   local "
+   local cDlgDefine := "   DEFINE DIALOG oDlg RESOURCE " + '"' + ;
+                       cDlgName + '"'
+   local cId                   
+   local cDlgActivate := "   ACTIVATE DIALOG oDlg CENTERED" + CRLF + CRLF 
+   
+   for n = 1 to Len( aRCSource )
+      aTokens = hb_ATokens( aRCSource[ n ] )
+      cToken = AllTrim( aTokens[ 1 ] )
+      // XBrowser aTokens
+      do case
+         case cToken == "EDITTEXT" .or. ;
+              ( cToken == "CONTROL" .and. Upper( aTokens[ 4 ] ) == '"EDIT",' )
+            if cToken == "EDITTEXT"  
+               cId = AllTrim( StrTran( aTokens[ 2 ], ",", "" ) )
+            else   
+               cId = AllTrim( StrToken( aRCSource[ n ], 2, "," ) )
+            endif   
+            cCode += "   REDEFINE GET oGet" + AllTrim( Str( ++nGet ) ) + ;
+                     " ID " + cId + " OF oDlg" + CRLF + CRLF
+            cVarsGets += "oGet" + AllTrim( Str( nGet ) ) + ", "      
+
+         case cToken == "LISTBOX"
+            cId = AllTrim( StrTran( aTokens[ 2 ], ",", "" ) )
+            cCode += "   REDEFINE LISTBOX oLbx" + AllTrim( Str( ++nLbx ) ) + ;
+                     " ITEMS {}" + ;
+                     " ID " + cId + " OF oDlg" + CRLF + CRLF
+            cVarsLbxs += "oLbx" + AllTrim( Str( nLbx ) ) + ", "      
+                     
+         case cToken == "LTEXT"
+            cId = AllTrim( StrToken( aRCSource[ n ], 2, ',' ) )
+            if ! cId $ "0,-1" // We don't redefine 0 and -1 IDs
+               cCode += "   REDEFINE SAY oSay" + AllTrim( Str( ++nSay ) ) + ;
+                        " ID " + cId + " OF oDlg" + " // " + ;
+                        StrTran( aTokens[ 2 ], ",", "" ) + CRLF + CRLF
+               cVarsSays += "oSay" + AllTrim( Str( nSay ) ) + ", "      
+            endif   
+
+         case cToken == "PUSHBUTTON"
+            cId = AllTrim( StrToken( aRcSource[ n ], 2, ',' ) )
+            cCode += "   REDEFINE BUTTON oBtn" + AllTrim( Str( ++nBtn ) ) + ;
+                     " ID " + cId + " OF oDlg ; // " + ;
+                     '"' + StrToken( aRcSource[ n ], 2, '"' ) + '"' + CRLF + ;
+                     "      ACTION MsgInfo( " + ;
+                     '"' + StrToken( aRcSource[ n ], 2, '"' ) + '"' + " )" + ;
+                     CRLF + CRLF
+            cVarsButtons += "oBtn" + AllTrim( Str( nBtn ) ) + ", "      
+      endcase
+      
+   next
+   
+   if Len( cVarsSays ) &gt; Len( "   local " )
+      cVarsSays = SubStr( cVarsSays, 1, Len( cVarsSays ) - 2 )
+   else
+      cVarsSays = ""
+   endif
+   
+   if Len( cVarsGets ) &gt; Len( "   local " )      
+      cVarsGets = SubStr( cVarsGets, 1, Len( cVarsGets ) - 2 )
+   else
+      cVarsGets = ""
+   endif
+   
+   if Len( cVarsButtons ) &gt; Len( "   local " )
+      cVarsButtons = SubStr( cVarsButtons, 1, Len( cVarsButtons ) - 2 )
+   else   
+      cVarsButtons = ""
+   endif
+
+   if Len( cVarsLbxs ) &gt; Len( "   local " )
+      cVarsLbxs = SubStr( cVarsLbxs, 1, Len( cVarsLbxs ) - 2 )
+   else   
+      cVarsLbxs = ""
+   endif
+         
+return cFuncName + ;
+       "   local oDlg" + CRLF + ;
+       If( ! Empty( cVarsSays ), cVarsSays + CRLF, "" ) + ;
+       If( ! Empty( cVarsGets ), cVarsGets + CRLF, "" ) + ;
+       If( ! Empty( cVarsButtons ), cVarsButtons + CRLF, "" ) + ;
+       If( ! Empty( cVarsLbxs ), cVarsLbxs + CRLF, "" ) + ;
+       If( ! Empty( cVarsSays ) .or. ! Empty( cVarsGets ) .or. ;
+           ! Empty( cVarsButtons ) .or. ! Empty( cVarsLbxs ), CRLF, "" ) + ;
+       If( Empty( cVarsSays ) .and. Empty( cVarsGets ) .and. ;
+           Empty( cVarsButtons ) .and. Empty( cVarsLbxs ),;
+       CRLF, "" ) + cDlgDefine + CRLF + ;
+       CRLF + cCode + ;
+       cDlgActivate + "return nil"            
+       
+//----------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p162368">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New free REDEFINE.prg utility</span><br>
+        Posted: Mon Jul 14, 2014 10:58 PM
+      </div>
+      <div class="content"><p>Enhanced version:</p>
+<!-- l -->
+<p><a class="postlink-local" href="http://forums.fivetechsupport.com/viewtopic.php?p=162366#p162366">viewtopic.php?p=162366#p162366</a></p>
+<!-- l --></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

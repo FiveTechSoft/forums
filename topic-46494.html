@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>XBrowse con MySQL - no respeta Collation Latin1_spanish_ci - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46494">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> XBrowse con MySQL - no respeta Collation Latin1_spanish_ci</div>
+  <div class="post" id="p285050">
+    <div class="poster">
+      <div class="name" style="color:#105289">José</div>
+      <div class="rank">Posts: 54</div>
+      <div class="avatar"></div>
+      Joined: Sat Dec 10, 2016 08:58 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">XBrowse con MySQL - no respeta Collation Latin1_spanish_ci</span><br>
+        Posted: Fri May 01, 2026 01:08 AM
+      </div>
+      <div class="content"><p><t><p>Antonio / Mr Rao / Amigos</p></p>
+<p>Hola a todos, solicito guía por favor.</p>
+
+<p>A la base de datos MySQL/MaríaDB de mi software le he establecido CHARSET Latin1.</p>
+
+<p>A las tablas ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_spanish_ci.</p>
+
+<p>También me he asegurado que los campos de texto Tengan COLLATE latin1_spanish_ci.</p>
+
+<p>Y la Conexión con FWConnect incluye Charset  'latin1'  y luego agrego oCnx:Execute( "SET NAMES latin1 COLLATE latin1_spanish_ci" )</p>
+
+<p>Eso por cuestiones de compatibilidad con DBF/CDX y con otros productos, y por la necesidad de ordenar correctamente las tildes (á, Á, é, É…) y las ñ y Ñ.</p>
+
+<p>Resulta que los Rowset se alimentan correctamente en las consultas con ORDER BY, lo se porque si inmediatamente después de la consulta hago un browse() o si navego el Rowset de otras formas las filas se ven correctamente ordenadas.</p>
+
+<p>El problema es que al usar XBrowse con sus atributos ya no se respeta el orden latin_spanish_ci, sino que, al parecer, y como me indica la IA, asume el orden Binario por como quedan ordenadas las filas, y al parecer sería porque XBrowse ordena internamente aunwue no se lo pida, y usaría ese método binario.</p>
+
+<p>He probado con lSortOrder:= .f., que no aplica ordenamiento desde las cabeceras, pero tampoco lo resuelve, igual se pierde el orden.</p>
+
+<p>Por favor si alguien sabe como resolverlo, como evitar que se ordene diferente a lo que el Order By trae correctamente.</p>
+
+<p>Uso HB MSVSC + FWH 24.04 + MySQL/MaríaDB/DBFCDX (64 bits)</p>
+
+<p>Muchas Gracias!</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p285052">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse con MySQL - no respeta Collation Latin1_spanish_ci</span><br>
+        Posted: Fri May 01, 2026 07:18 AM
+      </div>
+      <div class="content"><p><r><p>Estimado José,</p></p>
+<H2 slug="an-lisis-del-problema"><s>## </s>Análisis del problema</H2>
+
+<p>El diagnóstico es correcto: <C><s>`</s>FWMariaRowSet<e>`</e></C> (y su clase padre <C><s>`</s>FWRowSet<e>`</e></C>) realizan <STRONG><s>**</s>ordenamiento en memoria<e>**</e></STRONG> del array <C><s>`</s>::aData<e>`</e></C> usando <C><s>`</s>ASort()<e>`</e></C> de Harbour, que <STRONG><s>**</s>no respeta<e>**</e></STRONG> la collation <C><s>`</s>latin1_spanish_ci<e>`</e></C> de MySQL. Esto ocurre en varios puntos del código:</p>
+
+<H3 slug="causa-ra-z"><s>### </s>Causa raíz</H3>
+
+<p><STRONG><s>**</s>1. Durante el <C><s>`</s>SetUp()<e>`</e></C> inicial<e>**</e></STRONG>, el RowSet parsea la cláusula <C><s>`</s>ORDER BY<e>`</e></C> del SQL y crea bloques de ordenamiento internos:</p>
+
+<p><CODE lang="prg"><s><code>prg&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;::aOrder := ::SortStr2Cols( AfterAtNum( "ORDER BY", Upper( ::Source ) ) )
+::MakeSortBlocks( ::aOrder )</code> <a href="#0-cite-0">0-cite-0</a> </p>
+<p>Esto establece <code>::nOrder</code> y <code>::bSort</code>, lo que significa que el RowSet "sabe" que hay un orden activo.</p>
+<p><strong>2. En <code>SortData()</code></strong>, se ejecuta el re-ordenamiento en memoria con comparación binaria:</p>
+<p><code>prg
+ASort( ::aData, nFrom, nLast, ::bSort )</code> <a href="#0-cite-1">0-cite-1</a> </p>
+<p><strong>3. En <code>Requery()</code></strong>, después de recargar datos, si <code>::bSort</code> no está vacío, se llama a <code>::SortData()</code>, destruyendo el orden que trajo MySQL:</p>
+<p><code>prg
+if ! Empty( ::bSort )
+   ::SortData()
+endif</code> <a href="#0-cite-2">0-cite-2</a> </p>
+<p><strong>4. <code>SetXBrowse()</code> asigna automáticamente <code>cSortOrder</code></strong> a cada columna (línea 988), lo que habilita el ordenamiento al hacer clic en cabeceras:</p>
+<p><code>prg
+:cSortOrder := cCol</code> <a href="#0-cite-3">0-cite-3</a> </p>
+<p><strong>5. En <code>FWRowSet::SetOrder()</code></strong> (la clase padre), para campos de texto usa <code>StrICmp()</code> que es case-insensitive pero <strong>no es locale-aware</strong> (no respeta reglas de ñ, tildes, etc.):</p>
+<p><code>prg
+ASort( ::aData, 1, nLimit, { |x,y| StrICmp( x[ nFld ], y[ nFld ] ) &amp;lt; 0 } )</code> <a href="#0-cite-4">0-cite-4</a> </p>
+<hr>
+<h3>Soluciones posibles</h3>
+<h4>Solución 1: Evitar el re-ordenamiento interno (la más práctica)</h4>
+<p>Después de crear el RowSet y antes de asignarlo al XBrowse, limpie el orden interno para que el RowSet no re-ordene los datos que ya vienen correctamente ordenados desde MySQL:</p>
+<p>```prg<br>
+oRs := oCn:RowSet( cSql )  // datos vienen con ORDER BY correcto</p>
+<p>// Limpiar el orden interno para que no re-ordene<br>
+oRs:aOrder := { 0 }<br>
+oRs:bSort  := nil</p>
+<p>// Configurar XBrowse SIN autosort<br>
+XBROWSER oRs SETUP ( oBrw:lAutoSort := .f. )<i><br>
+</i><e>```</e></CODE></p>
+<p>Y después de <C><s>`</s>SetXBrowse<e>`</e></C> o <C><s>`</s>CreateFromCode<e>`</e></C>, limpie el <C><s>`</s>cSortOrder<e>`</e></C> de cada columna para evitar que al hacer clic en cabeceras se re-ordene:</p>
+
+<p><CODE lang="prg"><s><code>prg&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;// Después de CreateFromCode()
+AEval( oBrw:aCols, { |oCol| oCol:cSortOrder := "" } )&lt;i&gt;
+&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
+<H4 slug="soluci-n-2-no-usar-autosort-y-limpiar-csortorder"><s>#### </s>Solución 2: No usar AUTOSORT y limpiar cSortOrder</H4>
+
+<p>Si construye el browse manualmente:</p>
+
+<p><CODE lang="prg"><s>```prg</s><i><br>
+</i>oRs := oCn:RowSet( cSql )</p>
+<p>@ 0,0 XBROWSE oBrw OF oWnd ;<br>
+   COLUMNS "CAMPO1", "CAMPO2" ;<br>
+   LINES NOBORDER CELL</p>
+<p>// NO usar AUTOSORT<br>
+// Limpiar cSortOrder de todas las columnas<br>
+AEval( oBrw:aCols, { |oCol| oCol:cSortOrder := "" } )</p>
+<p>// Limpiar el sort interno del RowSet<br>
+oRs:aOrder := { 0 }<br>
+oRs:bSort  := nil</p>
+<p>oBrw:CreateFromCode()<i><br>
+</i><e>```</e></CODE></p>
+<H4 slug="soluci-n-3-re-ordenar-desde-el-servidor-al-hacer-clic-en-cabecera"><s>#### </s>Solución 3: Re-ordenar desde el servidor al hacer clic en cabecera</H4>
+
+<p>Si necesita que el usuario pueda cambiar el orden haciendo clic en cabeceras pero respetando la collation, puede interceptar el evento de ordenamiento para hacer un <C><s>`</s>Requery<e>`</e></C> con un nuevo <C><s>`</s>ORDER BY<e>`</e></C> en lugar de ordenar en memoria:</p>
+
+<p><CODE lang="prg"><s>```prg</s><i><br>
+</i>// Después de configurar el browse:<br>
+oRs:aOrder := { 0 }<br>
+oRs:bSort  := nil<br>
+AEval( oBrw:aCols, { |oCol| oCol:cSortOrder := "" } )</p>
+<p>// Si quiere re-habilitar sort por cabecera pero desde el servidor:<br>
+oBrw:bOnSort := { |oBrw, oCol| MyServerSort( oBrw, oCol ) }<i><br>
+</i><e>```</e></CODE></p>
+<p>Donde <C><s>`</s>MyServerSort<e>`</e></C> modifica el SQL con el nuevo <C><s>`</s>ORDER BY<e>`</e></C> y hace <C><s>`</s>Requery()<e>`</e></C> (asegurándose de limpiar <C><s>`</s>bSort<e>`</e></C> después del requery).</p>
+
+<HR>
+<p>---</HR></p>
+<H3 slug="resumen"><s>### </s>Resumen</H3>
+
+<p>El problema <STRONG><s>**</s>no es de XBrowse<e>**</e></STRONG> directamente, sino de <C><s>`</s>FWMariaRowSet<e>`</e></C> que:</p>
+<p><LIST type="decimal"><LI><s>1. </s>Parsea el <C><s><code>&lt;/s&gt;ORDER BY&lt;e&gt;</code></e></C> del SQL y crea bloques de ordenamiento en memoria</LI></p>
+<LI><s>2. </s>Usa <C><s>`</s>ASort()<e>`</e></C> con comparación binaria/<C><s>`</s>StrICmp()<e>`</e></C> que no respeta <C><s>`</s>latin1_spanish_ci<e>`</e></C></LI>
+<LI><s>3. </s>Re-aplica ese ordenamiento en <C><s>`</s>Requery()<e>`</e></C> y cuando se hace clic en cabeceras</LI>
+<p></LIST></p>
+<p>La solución más directa es <STRONG><s>**</s>limpiar <C><s>`</s>oRs:aOrder<e>`</e></C>, <C><s>`</s>oRs:bSort<e>`</e></C><e>**</e></STRONG> y los <C><s>`</s>cSortOrder<e>`</e></C> de las columnas del browse para que no se aplique ningún ordenamiento en memoria y se respete el orden que trae el <C><s>`</s>ORDER BY<e>`</e></C> de MySQL.</p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p285066">
+    <div class="poster">
+      <div class="name" style="color:#105289">José</div>
+      <div class="rank">Posts: 54</div>
+      <div class="avatar"></div>
+      Joined: Sat Dec 10, 2016 08:58 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse con MySQL - no respeta Collation Latin1_spanish_ci</span><br>
+        Posted: Fri May 01, 2026 01:36 PM
+      </div>
+      <div class="content"><p><t><p>Estimado Antonio</p></p>
+<p>Hola. Gracias por la pronta y completa respuesta, haré lo que indicas y probaré.</p>
+
+<p>Es una pena que el ordenamiento por cabecera sin tener que recargar no respete el collation en este caso; pero por algo será, y después de todo si la consulta está bien elaborada tampoco es tan lento realmente 'reordenar' las filas en el navegador.</p>
+
+<p>Quizás podría aplicar esta solución de recargar solo para las columnas de texto, conservando el reordenamiento actual para las de fechas y números ¿desde tu perspectiva y experiencia te parece conveniente?</p>
+
+<p>Gracias nuevamente. Saludos.</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p285069">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBrowse con MySQL - no respeta Collation Latin1_spanish_ci</span><br>
+        Posted: Fri May 01, 2026 03:17 PM
+      </div>
+      <div class="content"><p><t><p>Estimado José,</p></p>
+<p>No tengo experiencia en este tema, me he limitado a consultar DeepWiki sobre el repositorio de FWH.</p>
+
+<p>Quien realmente conocía este tema es nuestro querido Rao, que ya no está entre nosotros</p>
+<p></t></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

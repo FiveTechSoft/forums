@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Problem with FWPPC - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-19089">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-4.html">FiveWin for Pocket PC</a> Problem with FWPPC</div>
+  <div class="post" id="p100289">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurizio</div>
+      <div class="rank">Posts: 842</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Problem with FWPPC</span><br>
+        Posted: Thu Jun 17, 2010 01:35 PM
+      </div>
+      <div class="content">Hello Antonio <br>
+<br>
+With a old version of fwppc (before 2008)  I use this code without error <br>
+With FWPPC of October 2008 I have this error <br>
+<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// TEST.PRG
+#include "FWCE.ch"
+Function Main()
+Local aIp
+ inetinit()
+
+   aIP:=InetGetHosts(Getenv("ComputerName"))
+   inetcleanup()
+   for i:=1 to len(aIP)
+      MsgInfo(aIP[i])
+   next
+
+
+
+Return .T.
+#pragma BEGINDUMP
+
+#include &lt;hbapi.h&gt;
+#include &lt;windows.h&gt;
+#include &lt;aygshell.h&gt;
+
+#include &lt;WinSock2.h&gt;
+#include &lt;inet.h&gt;
+#include &lt;thread.h&gt;
+#include "hbapiitm.h"
+
+static volatile int s_iSessions = 0;
+
+/*** Utilty to access host DNS */
+struct hostent *hb_getHosts( char *name, HB_SOCKET_STRUCT *Socket )
+{
+   struct hostent *Host = NULL;
+
+   /* let's see if name is an IP address; not necessary on linux */
+   #if defined(HB_OS_WIN_32) || defined(HB_OS_OS2)
+   ULONG ulAddr;
+
+   ulAddr = inet_addr( name );
+   if( ulAddr == INADDR_NONE )
+   {
+      if( strcmp( "255.255.255.255", name ) == 0 )
+      {
+         Host = gethostbyaddr( (const char*) &amp;ulAddr, sizeof( ulAddr ), AF_INET );
+      }
+   }
+   else
+   {
+      Host = gethostbyaddr( (const char*)  &amp;ulAddr, sizeof( ulAddr ), AF_INET );
+   }
+   #endif
+
+   if( Host == NULL )
+   {
+      Host = gethostbyname( name );
+   }
+
+   if( Host == NULL &amp;&amp; Socket != NULL )
+   {
+      #if defined(HB_OS_WIN_32)
+         HB_SOCKET_SET_ERROR2( Socket, WSAGetLastError() , "Generic error in GetHostByName()" );
+         WSASetLastError( 0 );
+      #elif defined(HB_OS_OS2)
+         HB_SOCKET_SET_ERROR2( Socket, h_errno, "Generic error in GetHostByName()" );
+      #else
+         HB_SOCKET_SET_ERROR2( Socket, h_errno, (char *) hstrerror( h_errno ) );
+      #endif
+   }
+   return Host;
+}
+
+
+
+HB_FUNC( INETINIT )
+{
+   if( s_iSessions )
+   {
+      s_iSessions++;
+   }
+   else
+   {
+      #if defined(HB_OS_WIN_32)
+         WSADATA wsadata;
+         WSAStartup( MAKEWORD(1,1), &amp;wsadata );
+      #elif defined( HB_OS_LINUX )
+         signal( HB_INET_LINUX_INTERRUPT, hb_inetLinuxSigusrHandle );
+      #endif
+      s_iSessions = 1;
+   }
+}
+
+HB_FUNC( INETCLEANUP )
+{
+   if( --s_iSessions == 0 )
+   {
+      #if defined(HB_OS_WIN_32)
+         WSACleanup();
+      #endif
+   }
+}
+#define _HB_API_INTERNAL_
+#include "hbapiitm.h"
+
+
+HB_FUNC( INETGETHOSTS )
+{
+   PHB_ITEM pHost = hb_param( 1, HB_IT_STRING );
+   PHB_ITEM aHosts, Tmp;
+   struct hostent *Host;
+   char **cHosts;
+   if( pHost == NULL )
+   {
+      hb_errRT_BASE_SubstR( EG_ARG, 3012, NULL, "INETGETHOSTS", 1, hb_paramError(1) );
+      return;
+   }
+   HB_STACK_UNLOCK;
+   HB_TEST_CANCEL_ENABLE_ASYN;
+   Host = hb_getHosts( pHost-&gt;item.asString.value, NULL );
+   HB_DISABLE_ASYN_CANC;
+   HB_STACK_LOCK;
+   aHosts.type = HB_IT_NIL;
+   Tmp.type = HB_IT_NIL;
+   hb_arrayNew( &amp;aHosts, 0 );
+   if( Host == NULL )
+   {
+      hb_itemReturnForward( &amp;aHosts );
+      return;
+   }
+   cHosts = Host-&gt;h_addr_list;
+   while( *cHosts ) {
+      hb_arrayAddForward( &amp;aHosts, hb_itemPutC( &amp;Tmp, inet_ntoa( *( (struct in_addr *)*cHosts ) ) ) );
+      cHosts++;
+   }
+   hb_itemReturnForward( &amp;aHosts );
+}
+#pragma ENDDUMP</code></pre></div><br>
+<br>
++----------------------------------------------------------------------------+<br>
+¦ FiveWin for Pocket PC - October 2008             Harbour development power ¦_<br>
+¦ (c) FiveTech, 1993-2008                    for Microsoft Windows Pocket PC ¦¦<br>
++----------------------------------------------------------------------------+¦<br>
+  ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯<br>
+Compiling...<br>
+Harbour 1.0.1dev Intl. (Rev. 9361)<br>
+Copyright (c) 1999-2008, <!-- m --><a class="postlink" href="http://www.harbour-project.org/">http://www.harbour-project.org/</a><!-- m --><br>
+Compiling 'newsock.prg' and generating preprocessed output to 'newsock.ppo'...<br>
+Lines 1901, Functions/Procedures 1<br>
+Generating C source output to 'newsock.c'... Done.<br>
+Microsoft (R) C/C++ Optimizing Compiler Version 12.20.9615 for ARM<br>
+Copyright (C) Microsoft Corp 1984-2002. All rights reserved.<br>
+<br>
+newsock.c<br>
+newsock.prg(103) : error C2065: 'HB_ITEM' : undeclared identifier<br>
+newsock.prg(103) : error C2146: syntax error : missing ';' before identifier 'aHosts'<br>
+newsock.prg(103) : error C2065: 'aHosts' : undeclared identifier<br>
+newsock.prg(103) : error C2065: 'Tmp' : undeclared identifier<br>
+newsock.prg(121) : error C2227: left of '-&gt;item' must point to class/struct/union<br>
+newsock.prg(121) : error C2228: left of '.asString' must have class/struct/union type<br>
+newsock.prg(121) : error C2228: left of '.value' must have class/struct/union type<br>
+newsock.prg(126) : error C2228: left of '.type' must have class/struct/union type<br>
+newsock.prg(127) : error C2228: left of '.type' must have class/struct/union type<br>
+LINK : fatal error LNK1181: cannot open input file 'newsock.obj'<br>
+* Linking errors *<br>
+<br>
+CE:C:\FWPPCnew\SAMPLES&gt;<br>
+<br>
+Regards Maurizio</div>
+    </div>
+  </div>
+  <div class="post" id="p100297">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Daniel Garcia-Gil</div>
+      <div class="rank">Posts: 2365</div>
+      <img class="avatar avatar-img" src="avatars/249.gif" alt="" loading="lazy">
+      Joined: Wed Nov 02, 2005 11:46 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Problem with FWPPC</span><br>
+        Posted: Thu Jun 17, 2010 03:15 PM
+      </div>
+      <div class="content">Hello...<br>
+<br>
+change HB_ITEM aHosts by <span style="color:#FF0000">PHB_ITEM aHosts</span> ( line 103 )</div>
+    </div>
+  </div>
+  <div class="post" id="p100298">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurizio</div>
+      <div class="rank">Posts: 842</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Problem with FWPPC</span><br>
+        Posted: Thu Jun 17, 2010 03:27 PM
+      </div>
+      <div class="content"><p>Thank Daniel </p>
+<p>Now I have this </p>
+<p>┌────────────────────────────────────────────────────────────────────────────┐<br>
+│ FiveWin for Pocket PC - October 2008             Harbour development power │▄<br>
+│ (c) FiveTech, 1993-2008                    for Microsoft Windows Pocket PC │█<br>
+└────────────────────────────────────────────────────────────────────────────┘█<br>
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀<br>
+Compiling...<br>
+Harbour 1.0.1dev Intl. (Rev. 9361)<br>
+Copyright (c) 1999-2008, <!-- m --><a class="postlink" href="http://www.harbour-project.org/">http://www.harbour-project.org/</a><!-- m --><br>
+Compiling 'NEWSOCK.prg' and generating preprocessed output to 'NEWSOCK.ppo'...<br>
+Lines 1901, Functions/Procedures 1<br>
+Generating C source output to 'NEWSOCK.c'... Done.<br>
+Microsoft (R) C/C++ Optimizing Compiler Version 12.20.9615 for ARM<br>
+Copyright (C) Microsoft Corp 1984-2002. All rights reserved.</p>
+<p>NEWSOCK.c<br>
+NEWSOCK.prg(121) : error C2227: left of '-&gt;item' must point to class/struct/union<br>
+NEWSOCK.prg(121) : error C2228: left of '.asString' must have class/struct/union type<br>
+NEWSOCK.prg(121) : error C2228: left of '.value' must have class/struct/union type<br>
+NEWSOCK.prg(126) : error C2228: left of '.type' must have class/struct/union type<br>
+NEWSOCK.prg(127) : error C2228: left of '.type' must have class/struct/union type<br>
+LINK : fatal error LNK1181: cannot open input file 'NEWSOCK.obj'</p>
+<p>Regards Maurizio</p></div>
+    </div>
+  </div>
+  <div class="post" id="p100306">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Problem with FWPPC</span><br>
+        Posted: Thu Jun 17, 2010 05:33 PM
+      </div>
+      <div class="content"><p>Maurizio,</p>
+<p>You have to specify this define so Harbour lets you access to the internals of HB_ITEMS:</p>
+<h1>define <em>HB_API_INTERNAL</em></h1>
+<h1>include &quot;hbapiitm.h&quot;</h1>
+<p>This was implemented in Harbour in order to enforce the security and stability of applications, avoiding the access to internals.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p100340">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurizio</div>
+      <div class="rank">Posts: 842</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Problem with FWPPC</span><br>
+        Posted: Fri Jun 18, 2010 07:03 AM
+      </div>
+      <div class="content"><p>Thank Antonio <br>
+I have the same error </p>
+<p>┌────────────────────────────────────────────────────────────────────────────┐<br>
+│ FiveWin for Pocket PC - October 2008             Harbour development power │▄<br>
+│ (c) FiveTech, 1993-2008                    for Microsoft Windows Pocket PC │█<br>
+└────────────────────────────────────────────────────────────────────────────┘█<br>
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀<br>
+Compiling...<br>
+Harbour 1.0.1dev Intl. (Rev. 9361)<br>
+Copyright (c) 1999-2008, <!-- m --><a class="postlink" href="http://www.harbour-project.org/">http://www.harbour-project.org/</a><!-- m --><br>
+Compiling 'newsock.prg' and generating preprocessed output to 'newsock.ppo'...<br>
+Lines 1888, Functions/Procedures 1<br>
+Generating C source output to 'newsock.c'... Done.<br>
+Microsoft (R) C/C++ Optimizing Compiler Version 12.20.9615 for ARM<br>
+Copyright (C) Microsoft Corp 1984-2002. All rights reserved.</p>
+<p>newsock.c<br>
+newsock.prg(116) : error C2227: left of '-&gt;item' must point to class/struct/union<br>
+newsock.prg(116) : error C2228: left of '.asString' must have class/struct/union type<br>
+newsock.prg(116) : error C2228: left of '.value' must have class/struct/union type<br>
+newsock.prg(119) : error C2228: left of '.type' must have class/struct/union type<br>
+newsock.prg(120) : error C2228: left of '.type' must have class/struct/union type<br>
+LINK : fatal error LNK1181: cannot open input file 'newsock.obj'<br>
+* Linking errors *</p></div>
+    </div>
+  </div>
+  <div class="post" id="p100348">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Problem with FWPPC</span><br>
+        Posted: Fri Jun 18, 2010 08:21 AM
+      </div>
+      <div class="content"><p>Maurizio,</p>
+<p>What source code there is in newsock.prg(116) ? and the others ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p100350">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurizio</div>
+      <div class="rank">Posts: 842</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Problem with FWPPC</span><br>
+        Posted: Fri Jun 18, 2010 09:12 AM
+      </div>
+      <div class="content"><p>Antonio, </p>
+<p>In my first message there is the source </p>
+<p>116 -    HB_TEST_CANCEL_ENABLE_ASYN;<br>
+119   HB_STACK_LOCK;<br>
+120   aHosts.type = HB_IT_NIL;</p>
+<p>Regards Maurizio</p></div>
+    </div>
+  </div>
+  <div class="post" id="p100351">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Problem with FWPPC</span><br>
+        Posted: Fri Jun 18, 2010 09:21 AM
+      </div>
+      <div class="content"><p>Maurizio,</p>
+<p>We don't find the translation for HB_TEST_CANCEL_ENABLE_ASYN in Harbour header files,</p>
+<p>what it translates to ?</p>
+<p>And the other defines ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p100355">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurizio</div>
+      <div class="rank">Posts: 842</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Problem with FWPPC</span><br>
+        Posted: Fri Jun 18, 2010 10:22 AM
+      </div>
+      <div class="content"><p>Antonio<br>
+I have in <br>
+C:\harbour_ce\include\thread.h(408):    </p>
+<h1>define HB_TEST_CANCEL_ENABLE_ASYN  pthread_testcancel();</h1>
+<h1>define HB_STACK_LOCK</h1>
+<p>C:\harbour_ce\include\extend.api(68): #define UNDEF           HB_IT_NIL<br>
+Trovato 'HB_IT_NIL' 1 volte.</p>
+<p>Regards Maurizio</p></div>
+    </div>
+  </div>
+  <div class="post" id="p100367">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Problem with FWPPC</span><br>
+        Posted: Fri Jun 18, 2010 04:45 PM
+      </div>
+      <div class="content"><p>Maurizio,</p>
+<p>We don't find that thread.h file in Harbour</p>
+<p>Could you please email it to me ? thanks</p></div>
+    </div>
+  </div>
+  <div class="post" id="p100386">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Problem with FWPPC</span><br>
+        Posted: Sat Jun 19, 2010 11:49 AM
+      </div>
+      <div class="content"><p>Maurizio,</p>
+<p>I got your file by email.</p>
+<p>That thread.h file belongs to xHarbour. It is not a Harbour file.</p>
+<p>See its copyright:</p>
+<ul>
+<li>xHarbour Project source code:</li>
+<li>The MT support<br>
+*</li>
+<li>Copyright 2002 Giancarlo Niccolai [gian@niccolai.ws]</li>
+<li>www - <!-- m --><a class="postlink" href="http://www.xharbour.org">http://www.xharbour.org</a><!-- m --></li>
+</ul>
+<p>You can not use it with Harbour. Neither with FWPPC.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

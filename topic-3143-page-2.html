@@ -1,0 +1,1907 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Print system functions - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-3143">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-1.html">FiveWin for CA-Clipper</a> Print system functions</div>
+<div class="pagination">Page: <a href="topic-3143.html">1</a> <strong>2</strong> (26 posts)</div>  <div class="post" id="p68662">
+    <div class="poster">
+      <div class="name" style="color:#105289">Badara Thiam</div>
+      <div class="rank">Posts: 160</div>
+      <img class="avatar avatar-img" src="avatars/170.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 18, 2005 10:21 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Mon Nov 03, 2008 12:18 PM
+      </div>
+      <div class="content">Hello Friends,<br>
+<br>
+Here is the source code of the last update of some printers<br>
+functions i have created to solve problems encountered<br>
+in the past with printers. I give you to help. Thank you<br>
+to return me information about problem not solved.<br>
+I think this work under ALL Windows. Tell me if not :<br>
+this could be only because differents Windows registry<br>
+address than those tested.<br>
+<br>
+To work with actual Reg32 Class under Vista (perhaps not only),<br>
+you must add a parameter ( nRegistreDroitsAcces )<br>
+into Reg32():New() function like this :<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//----------------------------------------------------------------------------//
+
+CLASS TReg32
+
+   DATA   cRegKey, nKey, nHandle, nError, lError
+
+   METHOD New( nKey, cRegKey, lShowError, nRegistreDroitsAcces ) CONSTRUCTOR
+
+   METHOD Create( nKey, cRegKey ) CONSTRUCTOR
+
+   METHOD Get( cSubKey, uVar )
+
+   METHOD Set( cSubKey, uVar )
+
+   METHOD Close() INLINE If(::lError,,RegCloseKey( ::nHandle ))
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( nKey, cRegKey, lShowError, nRegistreDroitsAcces ) CLASS TReg32
+
+   local nReturn, nHandle := 0
+
+   DEFAULT cRegKey  := ""
+   DEFAULT ::lError := .f.
+
+   #ifdef __XPP__
+      #undef New
+   #endif
+
+   #ifdef __CLIPPER__
+      ::nError = RegOpenKeyEx( nKey, cRegKey,, IIF(nRegistreDroitsAcces = NIL, KEY_ALL_ACCESS, nRegistreDroitsAcces), @nHandle )
+   #else
+      ::nError = RegOpenKeyExA( nKey, cRegKey,, IIF(nRegistreDroitsAcces = NIL, KEY_ALL_ACCESS, nRegistreDroitsAcces), @nHandle )
+   #endif
+
+   ::cRegKey = cRegKey
+   ::nHandle = nHandle
+
+return Self
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include  "fivewin.ch"
+
+#IFNDEF __XPP__ 
+
+    #define  HKEY_CLASSES_ROOT       2147483648        // 0x80000000
+    #define  HKEY_CURRENT_USER       2147483649        // 0x80000001
+    #define  HKEY_LOCAL_MACHINE      2147483650        // 0x80000002
+    #define  HKEY_USERS              2147483651        // 0x80000003
+    #define  HKEY_PERFORMANCE_DATA   2147483652        // 0x80000004
+    #define  HKEY_CURRENT_CONFIG     2147483653        // 0x80000005
+    #define  HKEY_DYN_DATA           2147483654        // 0x80000006
+
+#ELSE 
+
+   #define  HKEY_CLASSES_ROOT       1 
+   #define  HKEY_CURRENT_USER       2 
+   #define  HKEY_LOCAL_MACHINE      3 
+   #define  HKEY_USERS              4 
+   #define  HKEY_PERFORMANCE_DATA   5 
+   #define  HKEY_CURRENT_CONFIG     6 
+   #define  HKEY_DYN_DATA           7 
+
+#ENDIF 
+
+// Registry Specific Access Rights.
+
+#define KEY_QUERY_VALUE         1    // 0x0001
+#define KEY_SET_VALUE           2    // 0x0002
+#define KEY_CREATE_SUB_KEY      4    // 0x0004
+#define KEY_ENUMERATE_SUB_KEYS  8    // 0x0008
+#define KEY_NOTIFY              16   // 0x0010
+#define KEY_CREATE_LINK         32   // 0x0020
+
+
+******************
+FUNCTION WinGetPrn( lOrigine )
+******************
+* Recherche les imprimantes installées sous windows
+* dans le registre de Windows (remplace le WIN.INI qui est obsolète sous Windows 2000 et suivants)
+* Auteur Badara Thiam
+
+LOCAL TIMP := {}
+LOCAL nHandle
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL nok
+LOCAL nLen
+LOCAL cSubkeys
+LOCAL aHKey := HKEY_LOCAL_MACHINE
+LOCAL TSERVEURS := {}
+LOCAL X
+LOCAL oReg
+
+* Recherche des imprimantes disponibles depuis le poste courant
+cSubKeys := "System\CurrentControlSet\Control\Print\Printers"
+
+IF RegOpenKey( aHKey,  cSubKeys,  @nHandle ) == 0
+    n1 := 0
+    DO WHILE .T.
+      cValue := ""
+      n2 := RegEnumKey( nHandle, n1,  @cvalue  )
+      SysRefresh()
+      IF n2 = 0
+        IF ASCAN(TIMP, STRTRAN(cValue, "," , "\")) = 0
+          SysRefresh()
+          AADD(TIMP, STRTRAN(cValue, "," , "\"))
+        ENDIF
+      ELSE
+        EXIT
+      ENDIF
+      n1 ++
+    ENDDO
+    SysRefresh()
+    RegCloseKey( nHandle )
+ENDIF
+
+* Recherche des imprimantes réseau non répertoriées dans la clé précédente (ci-dessus)
+* Ajouté le 20/10/2006
+TSERVEURS := WinGetSerP()
+
+IF !EMPTY(TSERVEURS)
+  FOR X := 1 TO LEN(TSERVEURS)
+    cSubKeys := TSERVEURS[X][2] + "\" + TSERVEURS[X][1] + "\Printers"
+
+    IF RegOpenKey( TSERVEURS[X][3],  cSubKeys,  @nHandle ) == 0
+      n1 := 0
+      DO WHILE .T.
+        cValue := ""
+        n2 := RegEnumKey( nHandle, n1,  @cvalue  )
+        SysRefresh()
+        IF n2 = 0
+
+          * Pour vista : le nom d'imprimante (sous précédents os) est le port, codé avec "{" et "}"
+          IF EMPTY( lOrigine ) .AND. ( "{" $ cValue )
+            oReg := TReg32():New( TSERVEURS[X][3], TSERVEURS[X][2] + "\" + TSERVEURS[X][1] + "\Printers" ;
+            + "\" + cValue + "\PrinterDriverData", , KEY_QUERY_VALUE )
+            IF oReg:nError = 0
+              cValue := oReg:Get("Model", "")
+            ENDIF
+            oReg:Close()
+          ENDIF
+          IF ASCAN(TIMP, STRTRAN(cValue, "," , "\")) = 0
+            IF "," $ cValue
+              AADD(TIMP, STRTRAN(cValue, "," , "\"))
+            ELSE
+              AADD(TIMP, "\\" + TSERVEURS[X][1] + "\" + cValue)
+            ENDIF
+          ENDIF
+          SysRefresh()
+        ELSE
+          EXIT
+        ENDIF
+        n1 ++
+      ENDDO
+      RegCloseKey( nHandle )
+    ENDIF
+    SysRefresh()
+  NEXT X
+
+ENDIF
+
+RETURN ACLONE(TIMP)
+
+*******************
+FUNCTION WinGetSerP()
+*******************
+* Renvoie les noms des serveurs d'impression disponibles pour le poste courant
+* Auteur Badara Thiam
+LOCAL nHandle
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL cSubkeys
+LOCAL aHKey
+LOCAL TSERVEURS := {}
+LOCAL nSubK := 0
+
+DO WHILE .T.
+  nSubK ++
+  IF nSubK = 1
+    aHKey := HKEY_LOCAL_MACHINE
+    cSubKeys := "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\LanMan Print Services\Servers"
+  ELSEIF nSubK = 2
+    * Sous Vista version premium familiale
+    aHKey := HKEY_LOCAL_MACHINE
+    cSubKeys := "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\Client Side Rendering Print Provider\Servers"
+  ELSE
+    EXIT
+  ENDIF
+  IF RegOpenKey( aHKey,  cSubKeys,  @nHandle ) == 0
+
+    * Recherche des serveurs accessibles
+    n1 := 0
+    DO WHILE .T.
+      cValue := ""
+      n2 := RegEnumKey( nHandle, n1,  @cvalue  )
+      SysRefresh()
+      IF n2 = 0
+        IF ASCAN(TSERVEURS, { |qelem| qelem[1] = cValue } ) = 0
+          AADD(TSERVEURS, { cValue, cSubKeys, aHKey } )
+        ENDIF
+      ELSE
+        EXIT
+      ENDIF
+      SysRefresh()
+      n1 ++
+    ENDDO
+
+    RegCloseKey( nHandle )
+  ENDIF
+ENDDO
+RETURN ACLONE(TSERVEURS)
+
+*******************
+FUNCTION WinGetPrnD(cNomDriver)
+*******************
+* Recherche le driver d'une imprimante installée sous windows
+* dans le registre de Windows (remplace le WIN.INI qui est obsolète sous Windows 2000 et suivants)
+* Auteur Badara THIAM
+
+LOCAL nHandle
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL nok
+LOCAL nLen
+LOCAL cSubkeys
+LOCAL cSubkeys2
+LOCAL cSubkeys3
+LOCAL X, X2
+LOCAL XENV
+LOCAL TENV := {}
+LOCAL TVERDRIVER := {}
+LOCAL oReg
+LOCAL cDriver := ""
+
+X := 0
+DO WHILE EMPTY(cDriver)
+
+  X ++
+  TENV := {}
+  TVERDRIVER := {}
+  cDriver := ""
+  nHandle := NIL
+
+  IF X = 1
+    cSubKeys := "System\CurrentControlSet\Control\Print\Environments"
+  ELSEIF X = 2
+    cSubKeys := "System\ControlSet001\Control\Print\Environments"
+  ELSEIF X = 3
+    cSubKeys := "System\ControlSet002\Control\Print\Environments"
+  ELSE
+    EXIT
+  ENDIF
+
+  IF RegOpenKey( HKEY_LOCAL_MACHINE,  cSubKeys,  @nHandle ) = 0
+      * Stocke tous les sous chemins de ..\Environments
+      * dans le tableau TENV, pour analyse le contenu de chaque "environment" 
+      SysRefresh()
+      n1 := 0
+      DO WHILE .T.
+        cValue := ""
+        n2 := RegEnumKey( nHandle, n1,  @cvalue  )
+        IF n2 = 0
+          IF ASCAN(TENV, STRTRAN(cValue, "," , "\")) = 0
+            AADD(TENV, STRTRAN(cValue, "," , "\"))
+          ENDIF
+        ELSE
+          EXIT
+        ENDIF
+        n1 ++
+        SysRefresh()
+      ENDDO
+      RegCloseKey( nHandle )
+      SysRefresh()
+  ENDIF
+
+  FOR XENV := 1 TO LEN(TENV)
+    cSubKeys2 := cSubKeys + "\" + TENV[XENV] + "\Drivers"
+    cSubKeys3 := cSubKeys2 + "\" + cNomDriver
+
+    oReg := TReg32():New(HKEY_LOCAL_MACHINE, cSubKeys3, , KEY_QUERY_VALUE)
+
+    IF oReg:nError = 0
+    * Si le nom de l'imprimante est présent dans le chemin ..\Drivers
+      cDriver := oReg:Get("Driver", "")
+      oReg:Close()
+      oReg := NIL
+
+      IF !EMPTY(cDriver)
+        cDriver := IIF("." $ cDriver, LEFT(cDriver, AT(".", cDriver) - 1), cDriver)
+        EXIT
+      ENDIF
+    ELSE
+
+      oReg:Close()
+      oReg := NIL
+
+      IF RegOpenKey( HKEY_LOCAL_MACHINE,  cSubKeys2,  @nHandle ) = 0
+
+        n1 := 0
+        TVERDRIVER := {}
+        DO WHILE .T.
+          cValue := ""
+          n2 := RegEnumKey( nHandle, n1,  @cvalue  )
+          IF n2 = 0
+            IF ASCAN(TVERDRIVER, STRTRAN(cValue, "," , "\")) = 0
+              AADD(TVERDRIVER, STRTRAN(cValue, "," , "\"))
+            ENDIF
+          ELSE
+            EXIT
+          ENDIF
+          SysRefresh()
+          n1 ++
+        ENDDO
+
+        RegCloseKey( nHandle )
+        SysRefresh()
+
+        FOR X2 := 1 TO LEN(TVERDRIVER)
+          nHandle := NIL
+
+          cSubKeys3 := cSubKeys2 + "\" + TVERDRIVER[X2] + "\" + cNomDriver
+
+          oReg := TReg32():New(HKEY_LOCAL_MACHINE, cSubKeys3, , KEY_QUERY_VALUE)
+
+          IF oReg:nError = 0
+
+            cDriver := oReg:Get("Driver", "")
+            SysRefresh()
+            oReg:Close()
+            oReg := NIL
+            IF !EMPTY(cDriver)
+              cDriver := IIF("." $ cDriver, LEFT(cDriver, AT(".", cDriver) - 1), cDriver)
+              EXIT
+            ENDIF
+          ELSE
+            oReg:Close()
+            oReg := NIL
+          ENDIF
+          SysRefresh()
+
+        NEXT X2
+        IF !EMPTY(cDriver)
+          EXIT
+        ENDIF
+      ENDIF
+    ENDIF
+    SysRefresh()
+  NEXT XENV
+
+ENDDO
+
+SysRefresh()
+RETURN cDriver
+
+*******************
+FUNCTION WinGetPrnP(cNomImpr)
+*******************
+* Renvoie le (nom du fichier) Driver et le Port de l'imprimante dont le nom est le contenu de cNomImpr.
+* Le Driver et le Port sont renvoyés dans une chaine, séparés par une virgule.
+* Auteur Badara THIAM
+
+LOCAL cDriver := ""
+LOCAL cNomDriver := ""
+LOCAL cPort := ""
+LOCAL oReg
+LOCAL X
+LOCAL Y
+LOCAL TIMP := WinGetPrn()
+LOCAL TImpOrig := WinGetPrn(.T.)
+LOCAL TSERVEURS := {}
+
+* Recherche l'imprimante Windows ayant le même nom,
+* en convertissant en minuscule et en supprimant les espaces
+FOR X := 1 TO LEN(TIMP)
+  IF MEMEIMPRIM(@cNomImpr, TIMP[X])
+  * Si c'est la même imprimante
+    EXIT
+  ENDIF
+NEXT X
+
+IF X &lt;= LEN(TIMP)
+
+  IF "\" $ TIMP[X] .AND. TIMP[X] != TImpOrig[X]
+  * Si imprimante réseau
+
+    TSERVEURS := WinGetSerP()
+
+    FOR Y := 1 TO LEN(TSERVEURS)
+        oReg := TReg32():New( TSERVEURS[Y][3], TSERVEURS[Y][2] ;
+        + "\" + TSERVEURS[Y][1] + "\Printers\" + SUBSTR(TImpOrig[X], RAT("\",TImpOrig[X]) + 1) ;
+        + "\DsSpooler", , KEY_QUERY_VALUE )
+        IF oReg:nError = 0
+          EXIT
+        ENDIF
+        oReg:Close()
+        oReg := NIL
+    NEXT Y
+
+    IF oReg != NIL
+      IF oReg:nError = 0
+        cPort := oReg:Get("portName", "")
+        cNomDriver := oReg:Get("driverName", "")
+      ENDIF
+      oReg:Close()
+      oReg := NIL
+    ENDIF
+
+  ELSE
+    oReg := TReg32():New(HKEY_LOCAL_MACHINE,;
+   "System\CurrentControlSet\Control\Print\Printers\" + STRTRAN(TIMP[X],"\",","), , KEY_QUERY_VALUE)
+
+    IF oReg:nError &lt;&gt; 0
+
+      * Cherche si cette imprimante non répertoriée est en réseau (10/2006)
+      oReg:Close()
+      oReg := NIL
+      TSERVEURS := WinGetSerP()
+
+      FOR Y := 1 TO LEN(TSERVEURS)
+
+        oReg := TReg32():New( TSERVEURS[Y][3], TSERVEURS[Y][2] ;
+        + "\" + TSERVEURS[Y][1] + "\Printers\" + STRTRAN(TIMP[X],"\",","), , KEY_QUERY_VALUE)
+
+        IF oReg:nError = 0
+          EXIT
+        ELSEIF "\" $ TIMP[X]
+          * Si "\" est présent dans le nom d'imprimante, c'est "peut-être" la fonction WinGetPrn()
+          * qui a inséré le nom de serveur dans le nom d'imprimante. Pour le vérifier,
+          * recherche également le nom de l'imprimante sans le nom de serveur
+          oReg:Close()
+          oReg := NIL
+          oReg := TReg32():New( TSERVEURS[Y][3], TSERVEURS[Y][2] ;
+          + "\" + TSERVEURS[Y][1] + "\Printers\" + SUBSTR(TIMP[X], RAT("\",TIMP[X]) + 1 ), , KEY_QUERY_VALUE )
+          IF oReg:nError = 0
+            EXIT
+          ENDIF
+        ENDIF
+        oReg:Close()
+        oReg := NIL
+      NEXT Y
+
+    ENDIF
+
+    IF oReg != NIL
+      IF oReg:nError = 0
+        cPort := oReg:Get("Port", "")
+        cNomDriver := oReg:Get("Printer Driver", "")
+      ENDIF
+      oReg:Close()
+      oReg := NIL
+    ENDIF
+
+  ENDIF
+
+  IF cNomDriver != ""
+    cDriver := WinGetPrnD( STRTRAN(cNomDriver, CHR(0), "") )
+  ENDIF
+
+ENDIF
+RETURN cDriver + "," + cPort
+
+******************
+FUNCTION WinDefPrn()
+******************
+* Dernière modification le 17/11/2006
+* Retourne le nom de l'imprimante par défaut en allant le chercher dans le registre Windows
+* (regedit.exe)
+LOCAL cDefPrn := ""
+* Adresse dans le registre pour Windows 2000 et suivants
+LOCAL oReg := TReg32():New(HKEY_CURRENT_USER, "Software\Microsoft\Windows NT\CurrentVersion\Windows", , KEY_QUERY_VALUE)
+IF oReg:nError = 0
+  cDefPrn := oReg:Get("Device", "")
+  IF "," $ cDefPrn
+    * Suppression du Pilote et du Port, non requis ici
+    cDefPrn := LEFT(cDefPrn, AT(",",cDefPrn) -1)
+  ENDIF
+ELSE
+  * Alternative pour Windows 9x et Millennium
+  oReg:Close()
+  oReg := NIL
+  oReg := TReg32():New(HKEY_CURRENT_CONFIG, "System\CurrentControlSet\Control\Print\Printers", , KEY_QUERY_VALUE)
+  IF oReg:nError = 0
+    cDefPrn := oReg:Get("Default", "")
+  ENDIF
+ENDIF
+oReg:Close()
+oReg := NIL
+RETURN cDefPrn</code></pre></div><br>
+<br>
+Regards.</div>
+    </div>
+  </div>
+  <div class="post" id="p68664">
+    <div class="poster">
+      <div class="name" style="color:#105289">Badara Thiam</div>
+      <div class="rank">Posts: 160</div>
+      <img class="avatar avatar-img" src="avatars/170.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 18, 2005 10:21 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Mon Nov 03, 2008 12:36 PM
+      </div>
+      <div class="content"><blockquote><cite>Badara Thiam wrote:</cite><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">*******************
+FUNCTION MEMEIMPRIM(cImp1, cImp2)
+*******************
+* Return .T. if the two printers names are the sames
+* when we delete the spaces and upper &lt;-&gt; lower
+* and changing "/" by "," if "/" is in the printer name
+
+* Renvoie .T. si les deux noms d'imprimantes
+* correspondent à la même imprimante,
+* en ignorant les espaces et la casse
+* et en remplaçant "/" par "," si présent dans le nom de l'imprimante
+
+RETURN ( LOWER(STRTRAN(STRTRAN(cImp1, "", ","), " ", "")) == LOWER(STRTRAN(STRTRAN(cImp2, "", ","), " ","")) )</code></pre></div></blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p68756">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Tue Nov 04, 2008 06:13 AM
+      </div>
+      <div class="content">Dear Badara<br>
+<br>
+The updated function WinGetSerP() which you posed yesterday is giving error when used in Windows XP.<br>
+<br>
+<strong><span style="color:red">Old Function Working Fine</span></strong><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">*******************
+FUNCTION WinGetSerP()
+*******************
+* Renvoie les noms des serveurs d'impression disponibles pour le poste courant
+* Auteur Badara Thiam
+LOCAL nHandle
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL cSubkeys
+LOCAL aHKey := HKEY_LOCAL_MACHINE
+LOCAL TSERVEURS := {}
+
+cSubKeys := "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\LanMan Print Services\Servers"
+IF RegOpenKey( aHKey,  cSubKeys,  @nHandle ) == 0
+
+    * Recherche des serveurs accessibles
+    n1 := 0
+    TSERVEURS := {}
+    DO WHILE .T.
+      cValue := ""
+      n2 := RegEnumKey( nHandle, n1,  @cvalue  )
+      SysRefresh()
+      IF n2 = 0
+        AADD(TSERVEURS, cValue)
+      ELSE
+        EXIT
+      ENDIF
+      n1 ++
+    ENDDO
+
+    RegCloseKey( nHandle )
+ENDIF
+RETURN ACLONE(TSERVEURS)</code></pre></div><br>
+<br>
+<br>
+<strong>New Function Giving Error in XP Professional</strong><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">*******************
+FUNCTION WinGetSerP()
+*******************
+* Returns the names of print servers available for the current post
+* Author Badara Thiam
+* Renvoie les noms des serveurs d'impression disponibles pour le poste courant
+* Auteur Badara Thiam
+LOCAL nHandle
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL cSubkeys
+LOCAL aHKey
+LOCAL TSERVEURS := {}
+LOCAL nSubK := 0
+
+DO WHILE .T.
+  nSubK ++
+  IF nSubK = 1
+    aHKey := HKEY_LOCAL_MACHINE
+    cSubKeys := "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\LanMan Print Services\Servers"
+  ELSEIF nSubK = 2
+    * Sous Vista version premium familiale
+    aHKey := HKEY_LOCAL_MACHINE
+    cSubKeys := "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\Client Side Rendering Print Provider\Servers"
+  ELSE
+    EXIT
+  ENDIF
+  IF RegOpenKey( aHKey,  cSubKeys,  @nHandle ) == 0
+
+    * Recherche des serveurs accessibles
+    n1 := 0
+    DO WHILE .T.
+      cValue := ""
+      n2 := RegEnumKey( nHandle, n1,  @cvalue  )
+      SysRefresh()
+      IF n2 = 0
+        IF ASCAN(TSERVEURS, { |qelem| qelem[1] = cValue } ) = 0
+          AADD(TSERVEURS, { cValue, cSubKeys, aHKey } )
+        ENDIF
+      ELSE
+        EXIT
+      ENDIF
+      SysRefresh()
+      n1 ++
+    ENDDO
+
+    RegCloseKey( nHandle )
+  ENDIF
+ENDDO
+RETURN ACLONE(TSERVEURS)</code></pre></div><br>
+<br>
+Application will quit abnormally<br>
+Error Screen snapshot<br>
+<br>
+<a href="http://imageshack.us" rel="noopener"><img src="http://img399.imageshack.us/img399/3203/errortv0.jpg" alt="" loading="lazy"></a><br>
+<br>
+Regards<br>
+<br>
+Anser</div>
+    </div>
+  </div>
+  <div class="post" id="p68818">
+    <div class="poster">
+      <div class="name" style="color:#105289">Badara Thiam</div>
+      <div class="rank">Posts: 160</div>
+      <img class="avatar avatar-img" src="avatars/170.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 18, 2005 10:21 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Tue Nov 04, 2008 04:29 PM
+      </div>
+      <div class="content"><p>Anserkk,</p>
+<p>I have tried today and it's ok here with XP Pro SP2.<br>
+I suspect the RegOpenKey() or RegEnumKey()<br>
+be the cause of this. I look to solve it now.</p>
+<p><strong><em>*</em></strong><strong><em> VERY IMPORTANT </em></strong><strong><em>*</em></strong>****<br>
+These functions assume than SET EXACT is ON.<br>
+If NOT :</p>
+<p>Put this at the START of each function...<br>
+LOCAL lSetExact := SET( _SET_EXACT, .T. )</p>
+<p>...and put this at the END of each same function<br>
+SET( _SET_EXACT, lSetExact )</p>
+<hr>
+<p>Regards,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p68819">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Tue Nov 04, 2008 04:36 PM
+      </div>
+      <div class="content"><p>I shall try and let u know</p>
+<p>Regards</p>
+<p>Anser</p></div>
+    </div>
+  </div>
+  <div class="post" id="p68828">
+    <div class="poster">
+      <div class="name" style="color:#105289">Badara Thiam</div>
+      <div class="rank">Posts: 160</div>
+      <img class="avatar avatar-img" src="avatars/170.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 18, 2005 10:21 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Tue Nov 04, 2008 05:54 PM
+      </div>
+      <div class="content">Here is the update of today. I have replaced all<br>
+RegOpenKey() with oReg32():New(), RegCloseKey() with oReg:Close()<br>
+and this work in the same way for me under Vista (Clipper &amp; [x]Harbour).<br>
+I shall test under XP Pro SP2 after.<br>
+<br>
+I have included also SET( _SET_EXACT ) into the functions.<br>
+<br>
+Regards,<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include  "fivewin.ch" 
+
+#IFNDEF __XPP__ 
+
+    #define  HKEY_CLASSES_ROOT       2147483648        // 0x80000000 
+    #define  HKEY_CURRENT_USER       2147483649        // 0x80000001 
+    #define  HKEY_LOCAL_MACHINE      2147483650        // 0x80000002 
+    #define  HKEY_USERS              2147483651        // 0x80000003 
+    #define  HKEY_PERFORMANCE_DATA   2147483652        // 0x80000004 
+    #define  HKEY_CURRENT_CONFIG     2147483653        // 0x80000005 
+    #define  HKEY_DYN_DATA           2147483654        // 0x80000006 
+
+#ELSE 
+
+   #define  HKEY_CLASSES_ROOT       1 
+   #define  HKEY_CURRENT_USER       2 
+   #define  HKEY_LOCAL_MACHINE      3 
+   #define  HKEY_USERS              4 
+   #define  HKEY_PERFORMANCE_DATA   5 
+   #define  HKEY_CURRENT_CONFIG     6 
+   #define  HKEY_DYN_DATA           7 
+
+#ENDIF 
+
+// Registry Specific Access Rights. 
+
+#define KEY_QUERY_VALUE         1    // 0x0001 
+#define KEY_SET_VALUE           2    // 0x0002 
+#define KEY_CREATE_SUB_KEY      4    // 0x0004 
+#define KEY_ENUMERATE_SUB_KEYS  8    // 0x0008 
+#define KEY_NOTIFY              16   // 0x0010 
+#define KEY_CREATE_LINK         32   // 0x0020 
+
+
+
+******************
+FUNCTION WinGetPrn( lOrigine )
+******************
+* Recherche les imprimantes installées sous windows
+* dans le registre de Windows (remplace le WIN.INI qui est obsolète sous Windows 2000 et suivants)
+* Auteur Badara Thiam
+
+LOCAL lSetExact := SET( _SET_EXACT, .T. )
+LOCAL TIMP := {}
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL nok
+LOCAL nLen
+LOCAL cSubkeys
+LOCAL aHKey := HKEY_LOCAL_MACHINE
+LOCAL TSERVEURS := {}
+LOCAL X
+LOCAL oReg
+LOCAL oRegSubK
+
+* Recherche des imprimantes disponibles depuis le poste courant
+cSubKeys := "System\CurrentControlSet\Control\Print\Printers"
+
+oReg := TReg32():New( aHKey, cSubKeys, , KEY_ENUMERATE_SUB_KEYS )
+IF oReg:nError = 0
+    n1 := 0
+    DO WHILE .T.
+      cValue := ""
+      n2 := RegEnumKey( oReg:nHandle, n1,  @cvalue  )
+      SysRefresh()
+      IF n2 = 0
+        IF ASCAN(TIMP, STRTRAN(cValue, "," , "\")) = 0
+          SysRefresh()
+          AADD(TIMP, STRTRAN(cValue, "," , "\"))
+        ENDIF
+      ELSE
+        EXIT
+      ENDIF
+      n1 ++
+    ENDDO
+    SysRefresh()
+    oReg:Close()
+ENDIF
+
+* Recherche des imprimantes réseau non répertoriées dans la clé précédente (ci-dessus)
+* Ajouté le 20/10/2006
+TSERVEURS := WinGetSerP()
+
+IF !EMPTY(TSERVEURS)
+  FOR X := 1 TO LEN(TSERVEURS)
+    cSubKeys := TSERVEURS[X][2] + "\" + TSERVEURS[X][1] + "\Printers"
+
+    oRegSubK := TReg32():New( TSERVEURS[X][3], cSubKeys, , KEY_ENUMERATE_SUB_KEYS )
+    IF oRegSubK:nError = 0
+      n1 := 0
+      DO WHILE .T.
+        cValue := ""
+        n2 := RegEnumKey( oRegSubK:nHandle, n1,  @cvalue  )
+        SysRefresh()
+        IF n2 = 0
+
+          * Pour vista : le nom d'imprimante (sous précédents os) est le port, codé avec "{" et "}"
+          IF EMPTY( lOrigine ) .AND. ( "{" $ cValue )
+            oReg := TReg32():New( TSERVEURS[X][3], TSERVEURS[X][2] + "\" + TSERVEURS[X][1] + "\Printers" ;
+            + "\" + cValue + "\PrinterDriverData", , KEY_QUERY_VALUE )
+            IF oReg:nError = 0
+              cValue := oReg:Get("Model", "")
+            ENDIF
+            oReg:Close()
+          ENDIF
+          IF ASCAN(TIMP, STRTRAN(cValue, "," , "\")) = 0
+            IF "," $ cValue
+              AADD(TIMP, STRTRAN(cValue, "," , "\"))
+            ELSE
+              AADD(TIMP, "\\" + TSERVEURS[X][1] + "\" + cValue)
+            ENDIF
+          ENDIF
+          SysRefresh()
+        ELSE
+          EXIT
+        ENDIF
+        n1 ++
+      ENDDO
+      oRegSubK:Close()
+
+    ENDIF
+    SysRefresh()
+  NEXT X
+
+ENDIF
+
+SET( _SET_EXACT, lSetExact )
+RETURN ACLONE(TIMP)
+
+*******************
+FUNCTION WinGetSerP()
+*******************
+* Renvoie les noms des serveurs d'impression disponibles pour le poste courant
+* Auteur Badara Thiam
+
+LOCAL lSetExact := SET( _SET_EXACT, .T. )
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL cSubkeys
+LOCAL aHKey
+LOCAL TSERVEURS := {}
+LOCAL nSubK := 0
+LOCAL oReg
+
+DO WHILE .T.
+  nSubK ++
+  IF nSubK = 1
+    aHKey := HKEY_LOCAL_MACHINE
+    cSubKeys := "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\LanMan Print Services\Servers"
+  ELSEIF nSubK = 2
+    * Sous Vista version premium familiale
+    aHKey := HKEY_LOCAL_MACHINE
+    cSubKeys := "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\Client Side Rendering Print Provider\Servers"
+  ELSE
+    EXIT
+  ENDIF
+
+  oReg := TReg32():New( aHKey, cSubKeys, , KEY_ENUMERATE_SUB_KEYS )
+  IF oReg:nError = 0
+
+    * Recherche des serveurs accessibles
+    n1 := 0
+    DO WHILE .T.
+      cValue := ""
+      n2 := RegEnumKey( oReg:nHandle, n1,  @cvalue  )
+      SysRefresh()
+      IF n2 = 0
+        IF ASCAN(TSERVEURS, { |qelem| qelem[1] = cValue } ) = 0
+          AADD(TSERVEURS, { cValue, cSubKeys, aHKey } )
+        ENDIF
+      ELSE
+        EXIT
+      ENDIF
+      SysRefresh()
+      n1 ++
+    ENDDO
+    oReg:Close()
+  ENDIF
+ENDDO
+SET( _SET_EXACT, lSetExact )
+RETURN ACLONE(TSERVEURS)
+
+*******************
+FUNCTION WinGetPrnD(cNomDriver)
+*******************
+* Recherche le driver d'une imprimante installée sous windows
+* dans le registre de Windows (remplace le WIN.INI qui est obsolète sous Windows 2000 et suivants)
+* Auteur Badara THIAM
+
+LOCAL lSetExact := SET( _SET_EXACT, .T. )
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL nok
+LOCAL nLen
+LOCAL cSubkeys
+LOCAL cSubkeys2
+LOCAL cSubkeys3
+LOCAL X, X2
+LOCAL XENV
+LOCAL TENV := {}
+LOCAL TVERDRIVER := {}
+LOCAL oReg
+LOCAL cDriver := ""
+
+X := 0
+DO WHILE EMPTY(cDriver)
+
+  X ++
+  TENV := {}
+  TVERDRIVER := {}
+  cDriver := ""
+
+  IF X = 1
+    cSubKeys := "System\CurrentControlSet\Control\Print\Environments"
+  ELSEIF X = 2
+    cSubKeys := "System\ControlSet001\Control\Print\Environments"
+  ELSEIF X = 3
+    cSubKeys := "System\ControlSet002\Control\Print\Environments"
+  ELSE
+    EXIT
+  ENDIF
+
+  oReg := TReg32():New(HKEY_LOCAL_MACHINE, cSubKeys, , KEY_ENUMERATE_SUB_KEYS )
+  IF oReg:nError = 0
+      * Stocke tous les sous chemins de ..\Environments
+      * dans le tableau TENV, pour analyse le contenu de chaque "environment" 
+      SysRefresh()
+      n1 := 0
+      DO WHILE .T.
+        cValue := ""
+        n2 := RegEnumKey( oReg:nHandle, n1,  @cvalue  )
+        IF n2 = 0
+          IF ASCAN(TENV, STRTRAN(cValue, "," , "\")) = 0
+            AADD(TENV, STRTRAN(cValue, "," , "\"))
+          ENDIF
+        ELSE
+          EXIT
+        ENDIF
+        n1 ++
+        SysRefresh()
+      ENDDO
+      oReg:Close()
+      SysRefresh()
+  ENDIF
+
+  FOR XENV := 1 TO LEN(TENV)
+    cSubKeys2 := cSubKeys + "\" + TENV[XENV] + "\Drivers"
+    cSubKeys3 := cSubKeys2 + "\" + cNomDriver
+
+    oReg := TReg32():New(HKEY_LOCAL_MACHINE, cSubKeys3, , KEY_QUERY_VALUE)
+
+    IF oReg:nError = 0
+    * Si le nom de l'imprimante est présent dans le chemin ..\Drivers
+      cDriver := oReg:Get("Driver", "")
+      oReg:Close()
+      oReg := NIL
+
+      IF !EMPTY(cDriver)
+        cDriver := IIF("." $ cDriver, LEFT(cDriver, AT(".", cDriver) - 1), cDriver)
+        EXIT
+      ENDIF
+    ELSE
+
+      oReg:Close()
+      oReg := NIL
+
+      oReg := TReg32():New(HKEY_LOCAL_MACHINE, cSubKeys2, , KEY_ENUMERATE_SUB_KEYS )
+      IF oReg:nError = 0
+
+        n1 := 0
+        TVERDRIVER := {}
+        DO WHILE .T.
+          cValue := ""
+          n2 := RegEnumKey( oReg:nHandle, n1,  @cvalue  )
+          IF n2 = 0
+            IF ASCAN(TVERDRIVER, STRTRAN(cValue, "," , "\")) = 0
+              AADD(TVERDRIVER, STRTRAN(cValue, "," , "\"))
+            ENDIF
+          ELSE
+            EXIT
+          ENDIF
+          SysRefresh()
+          n1 ++
+        ENDDO
+        oReg:Close()
+        SysRefresh()
+
+        FOR X2 := 1 TO LEN(TVERDRIVER)
+
+          cSubKeys3 := cSubKeys2 + "\" + TVERDRIVER[X2] + "\" + cNomDriver
+
+          oReg := TReg32():New(HKEY_LOCAL_MACHINE, cSubKeys3, , KEY_QUERY_VALUE)
+
+          IF oReg:nError = 0
+
+            cDriver := oReg:Get("Driver", "")
+            SysRefresh()
+            oReg:Close()
+            oReg := NIL
+            IF !EMPTY(cDriver)
+              cDriver := IIF("." $ cDriver, LEFT(cDriver, AT(".", cDriver) - 1), cDriver)
+              EXIT
+            ENDIF
+          ELSE
+            oReg:Close()
+            oReg := NIL
+          ENDIF
+          SysRefresh()
+
+        NEXT X2
+        IF !EMPTY(cDriver)
+          EXIT
+        ENDIF
+      ENDIF
+    ENDIF
+    SysRefresh()
+  NEXT XENV
+
+ENDDO
+
+SysRefresh()
+SET( _SET_EXACT, lSetExact )
+RETURN cDriver
+
+*******************
+FUNCTION WinGetPrnP(cNomImpr)
+*******************
+* Renvoie le (nom du fichier) Driver et le Port de l'imprimante dont le nom est le contenu de cNomImpr.
+* Le Driver et le Port sont renvoyés dans une chaine, séparés par une virgule.
+* Auteur Badara THIAM
+
+LOCAL lSetExact := SET( _SET_EXACT, .T. )
+LOCAL cDriver := ""
+LOCAL cNomDriver := ""
+LOCAL cPort := ""
+LOCAL oReg
+LOCAL X
+LOCAL Y
+LOCAL TIMP := WinGetPrn()
+LOCAL TImpOrig := WinGetPrn(.T.)
+LOCAL TSERVEURS := {}
+
+* Recherche l'imprimante Windows ayant le même nom,
+* en convertissant en minuscule et en supprimant les espaces
+FOR X := 1 TO LEN(TIMP)
+  IF MEMEIMPRIM(@cNomImpr, TIMP[X])
+  * Si c'est la même imprimante
+    EXIT
+  ENDIF
+NEXT X
+
+IF X &lt;= LEN(TIMP)
+
+  IF "\" $ TIMP[X] .AND. TIMP[X] != TImpOrig[X]
+  * Si imprimante réseau
+
+    TSERVEURS := WinGetSerP()
+
+    FOR Y := 1 TO LEN(TSERVEURS)
+        oReg := TReg32():New( TSERVEURS[Y][3], TSERVEURS[Y][2] ;
+        + "\" + TSERVEURS[Y][1] + "\Printers\" + SUBSTR(TImpOrig[X], RAT("\",TImpOrig[X]) + 1) ;
+        + "\DsSpooler", , KEY_QUERY_VALUE )
+        IF oReg:nError = 0
+          EXIT
+        ENDIF
+        oReg:Close()
+        oReg := NIL
+    NEXT Y
+
+    IF oReg != NIL
+      IF oReg:nError = 0
+        cPort := oReg:Get("portName", "")
+        cNomDriver := oReg:Get("driverName", "")
+      ENDIF
+      oReg:Close()
+      oReg := NIL
+    ENDIF
+
+  ELSE
+    oReg := TReg32():New(HKEY_LOCAL_MACHINE,;
+   "System\CurrentControlSet\Control\Print\Printers\" + STRTRAN(TIMP[X],"\",","), , KEY_QUERY_VALUE)
+
+    IF oReg:nError &lt;&gt; 0
+
+      * Cherche si cette imprimante non répertoriée est en réseau (10/2006)
+      oReg:Close()
+      oReg := NIL
+      TSERVEURS := WinGetSerP()
+
+      FOR Y := 1 TO LEN(TSERVEURS)
+
+        oReg := TReg32():New( TSERVEURS[Y][3], TSERVEURS[Y][2] ;
+        + "\" + TSERVEURS[Y][1] + "\Printers\" + STRTRAN(TIMP[X],"\",","), , KEY_QUERY_VALUE)
+
+        IF oReg:nError = 0
+          EXIT
+        ELSEIF "\" $ TIMP[X]
+          * Si "\" est présent dans le nom d'imprimante, c'est "peut-être" la fonction WinGetPrn()
+          * qui a inséré le nom de serveur dans le nom d'imprimante. Pour le vérifier,
+          * recherche également le nom de l'imprimante sans le nom de serveur
+          oReg:Close()
+          oReg := NIL
+          oReg := TReg32():New( TSERVEURS[Y][3], TSERVEURS[Y][2] ;
+          + "\" + TSERVEURS[Y][1] + "\Printers\" + SUBSTR(TIMP[X], RAT("\",TIMP[X]) + 1 ), , KEY_QUERY_VALUE )
+          IF oReg:nError = 0
+            EXIT
+          ENDIF
+        ENDIF
+        oReg:Close()
+        oReg := NIL
+      NEXT Y
+
+    ENDIF
+
+    IF oReg != NIL
+      IF oReg:nError = 0
+        cPort := oReg:Get("Port", "")
+        cNomDriver := oReg:Get("Printer Driver", "")
+      ENDIF
+      oReg:Close()
+      oReg := NIL
+    ENDIF
+
+  ENDIF
+
+  IF cNomDriver != ""
+    cDriver := WinGetPrnD( STRTRAN(cNomDriver, CHR(0), "") )
+  ENDIF
+
+ENDIF
+SET( _SET_EXACT, lSetExact )
+RETURN cDriver + "," + cPort
+
+******************
+FUNCTION WinDefPrn()
+******************
+* Dernière modification le 17/11/2006
+* Retourne le nom de l'imprimante par défaut en allant le chercher dans le registre Windows
+* (regedit.exe)
+LOCAL cDefPrn := ""
+* Adresse dans le registre pour Windows 2000 et suivants
+LOCAL oReg := TReg32():New(HKEY_CURRENT_USER, "Software\Microsoft\Windows NT\CurrentVersion\Windows", , KEY_QUERY_VALUE)
+IF oReg:nError = 0
+  cDefPrn := oReg:Get("Device", "")
+  IF "," $ cDefPrn
+    * Suppression du Pilote et du Port, non requis ici
+    cDefPrn := LEFT(cDefPrn, AT(",",cDefPrn) -1)
+  ENDIF
+ELSE
+  * Alternative pour Windows 9x et Millennium
+  oReg:Close()
+  oReg := NIL
+  oReg := TReg32():New(HKEY_CURRENT_CONFIG, "System\CurrentControlSet\Control\Print\Printers", , KEY_QUERY_VALUE)
+  IF oReg:nError = 0
+    cDefPrn := oReg:Get("Default", "")
+  ENDIF
+ENDIF
+oReg:Close()
+oReg := NIL
+RETURN cDefPrn</code></pre></div></ul></div>
+    </div>
+  </div>
+  <div class="post" id="p68883">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Wed Nov 05, 2008 10:44 AM
+      </div>
+      <div class="content">Dear Badara,<br>
+<br>
+I tested you function and is found to be working.<br>
+<br>
+Your fuction WinGetSerP() is supposed to Return an array containing the name of the Print Servers<br>
+<br>
+If I try MsgList(WinGetSerP()) will make my app quit abnormally with the error screen which I posted above<br>
+<br>
+I also tried in different ways like<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">aTestArr:=WinGetSerP()
+MsgList(aTestArr)</code></pre></div><br>
+<br>
+but the problem is still there. I checked the VALTYPE(aTestArr) and I am getting the result as "A"<br>
+<br>
+But if try your old function MsgList(WinGetSerP()) posten in the first page of this thread, it will display the array without any problem.<br>
+<br>
+Regards<br>
+<br>
+Anser</div>
+    </div>
+  </div>
+  <div class="post" id="p68897">
+    <div class="poster">
+      <div class="name" style="color:#105289">Badara Thiam</div>
+      <div class="rank">Posts: 160</div>
+      <img class="avatar avatar-img" src="avatars/170.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 18, 2005 10:21 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Wed Nov 05, 2008 01:39 PM
+      </div>
+      <div class="content">Dear Anserkk,<br>
+<br>
+Try to change this line in WinGetSerP :<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> AADD(TSERVEURS, { cValue, cSubKeys, aHKey } )</code></pre></div><br>
+replace it with :<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"> AADD(TSERVEURS, ACLONE( { cValue, cSubKeys, aHKey } ) )</code></pre></div><br>
+<br>
+Perhaps this solve...<br>
+<br>
+Regards,</div>
+    </div>
+  </div>
+  <div class="post" id="p68904">
+    <div class="poster">
+      <div class="name" style="color:#105289">Badara Thiam</div>
+      <div class="rank">Posts: 160</div>
+      <img class="avatar avatar-img" src="avatars/170.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 18, 2005 10:21 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Wed Nov 05, 2008 02:14 PM
+      </div>
+      <div class="content">Dear Anserkk,<br>
+<br>
+Here and now the last update. The WinGetSerP()<br>
+is rewritted and return the sames values like the first WinGetSerP().<br>
+<br>
+The previous WinGetSerP() (of yesterday) is renamed WinGetSP().<br>
+<br>
+Thank you to help me to keep compatibility with my previous code...<br>
+<br>
+Regards.<br>
+<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">******************
+FUNCTION WinGetPrn( lOrigine )
+******************
+* Recherche les imprimantes installées sous windows
+* dans le registre de Windows (remplace le WIN.INI qui est obsolète sous Windows 2000 et suivants)
+* Auteur Badara Thiam
+
+LOCAL lSetExact := SET( _SET_EXACT, .T. )
+LOCAL TIMP := {}
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL nok
+LOCAL nLen
+LOCAL cSubkeys
+LOCAL nHKey := HKEY_LOCAL_MACHINE
+LOCAL TSERVEURS := {}
+LOCAL X
+LOCAL oReg
+LOCAL oRegSubK
+
+* Recherche des imprimantes disponibles depuis le poste courant
+cSubKeys := "System\CurrentControlSet\Control\Print\Printers"
+
+oReg := TReg32():New( nHKey, cSubKeys, , KEY_ENUMERATE_SUB_KEYS )
+IF oReg:nError = 0
+    n1 := 0
+    DO WHILE .T.
+      cValue := ""
+      n2 := RegEnumKey( oReg:nHandle, n1,  @cvalue  )
+      SysRefresh()
+      IF n2 = 0
+        IF ASCAN(TIMP, STRTRAN(cValue, "," , "\")) = 0
+          SysRefresh()
+          AADD(TIMP, STRTRAN(cValue, "," , "\"))
+        ENDIF
+      ELSE
+        EXIT
+      ENDIF
+      n1 ++
+    ENDDO
+    SysRefresh()
+    oReg:Close()
+ENDIF
+
+* Recherche des imprimantes réseau non répertoriées dans la clé précédente (ci-dessus)
+* Ajouté le 20/10/2006
+TSERVEURS := WinGetSP()
+
+IF !EMPTY(TSERVEURS)
+  FOR X := 1 TO LEN(TSERVEURS)
+    cSubKeys := TSERVEURS[X][2] + "\" + TSERVEURS[X][1] + "\Printers"
+
+    oRegSubK := TReg32():New( TSERVEURS[X][3], cSubKeys, , KEY_ENUMERATE_SUB_KEYS )
+    IF oRegSubK:nError = 0
+      n1 := 0
+      DO WHILE .T.
+        cValue := ""
+        n2 := RegEnumKey( oRegSubK:nHandle, n1,  @cvalue  )
+        SysRefresh()
+        IF n2 = 0
+
+          * Pour vista : le nom d'imprimante (sous précédents os) est le port, codé avec "{" et "}"
+          IF EMPTY( lOrigine ) .AND. ( "{" $ cValue )
+            oReg := TReg32():New( TSERVEURS[X][3], TSERVEURS[X][2] + "\" + TSERVEURS[X][1] + "\Printers" ;
+            + "\" + cValue + "\PrinterDriverData", , KEY_QUERY_VALUE )
+            IF oReg:nError = 0
+              cValue := oReg:Get("Model", "")
+            ENDIF
+            oReg:Close()
+          ENDIF
+          IF ASCAN(TIMP, STRTRAN(cValue, "," , "\")) = 0
+            IF "," $ cValue
+              AADD(TIMP, STRTRAN(cValue, "," , "\"))
+            ELSE
+              AADD(TIMP, "\\" + TSERVEURS[X][1] + "\" + cValue)
+            ENDIF
+          ENDIF
+          SysRefresh()
+        ELSE
+          EXIT
+        ENDIF
+        n1 ++
+      ENDDO
+      oRegSubK:Close()
+
+    ENDIF
+    SysRefresh()
+  NEXT X
+
+ENDIF
+
+SET( _SET_EXACT, lSetExact )
+RETURN ACLONE(TIMP)</code></pre></div><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">*****************
+FUNCTION WinGetSP()
+*****************
+* Renvoie un tableau dont chaque élément est un tableau contenant
+* 1 : les noms des serveurs d'impression disponibles pour le poste courant
+* 2 : la sous-clé dans le registre Windows où est localisée l'information concernant le serveur
+* 3 : clé dans le registre Windows où est localisée l'information concernant le serveur
+* Auteur Badara Thiam
+
+LOCAL lSetExact := SET( _SET_EXACT, .T. )
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL cSubkeys
+LOCAL nHKey
+LOCAL TSERVEURS := {}
+LOCAL nSubK := 0
+LOCAL oReg
+
+DO WHILE .T.
+  nSubK ++
+  IF nSubK = 1
+    nHKey := HKEY_LOCAL_MACHINE
+    cSubKeys := "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\LanMan Print Services\Servers"
+  ELSEIF nSubK = 2
+    * Sous Vista version premium familiale
+    nHKey := HKEY_LOCAL_MACHINE
+    cSubKeys := "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\Client Side Rendering Print Provider\Servers"
+  ELSE
+    EXIT
+  ENDIF
+
+  oReg := TReg32():New( nHKey, cSubKeys, , KEY_ENUMERATE_SUB_KEYS )
+  IF oReg:nError = 0
+
+    * Recherche des serveurs accessibles
+    n1 := 0
+    DO WHILE .T.
+      cValue := ""
+      n2 := RegEnumKey( oReg:nHandle, n1,  @cvalue  )
+      SysRefresh()
+      IF n2 = 0
+        IF ASCAN(TSERVEURS, { |qelem| qelem[1] = cValue } ) = 0
+          AADD(TSERVEURS, ACLONE( { cValue, cSubKeys, nHKey } ) )
+        ENDIF
+      ELSE
+        EXIT
+      ENDIF
+      SysRefresh()
+      n1 ++
+    ENDDO
+    oReg:Close()
+  ENDIF
+ENDDO
+SET( _SET_EXACT, lSetExact )
+RETURN ACLONE(TSERVEURS)</code></pre></div><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">*******************
+FUNCTION WinGetSerP()
+*******************
+* Renvoie dans un tableau les noms des serveurs d'impression disponibles pour le poste courant
+* Auteur Badara Thiam
+LOCAL N
+LOCAL TSERVEURS := WinGetSP()
+LOCAL aServeurs := {}
+FOR N := 1 TO LEN(TSERVEURS)
+  AADD( aServeurs, TSERVEURS[N][1] )
+NEXT N
+RETURN ACLONE(aServeurs)</code></pre></div><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">*******************
+FUNCTION WinGetPrnD(cNomDriver)
+*******************
+* Recherche le driver d'une imprimante installée sous windows
+* dans le registre de Windows (remplace le WIN.INI qui est obsolète sous Windows 2000 et suivants)
+* Auteur Badara THIAM
+
+LOCAL lSetExact := SET( _SET_EXACT, .T. )
+LOCAL cValue
+LOCAL n1
+LOCAL n2
+LOCAL nok
+LOCAL nLen
+LOCAL cSubkeys
+LOCAL cSubkeys2
+LOCAL cSubkeys3
+LOCAL X, X2
+LOCAL XENV
+LOCAL TENV := {}
+LOCAL TVERDRIVER := {}
+LOCAL oReg
+LOCAL cDriver := ""
+
+X := 0
+DO WHILE EMPTY(cDriver)
+
+  X ++
+  TENV := {}
+  TVERDRIVER := {}
+  cDriver := ""
+
+  IF X = 1
+    cSubKeys := "System\CurrentControlSet\Control\Print\Environments"
+  ELSEIF X = 2
+    cSubKeys := "System\ControlSet001\Control\Print\Environments"
+  ELSEIF X = 3
+    cSubKeys := "System\ControlSet002\Control\Print\Environments"
+  ELSE
+    EXIT
+  ENDIF
+
+  oReg := TReg32():New(HKEY_LOCAL_MACHINE, cSubKeys, , KEY_ENUMERATE_SUB_KEYS )
+  IF oReg:nError = 0
+      * Stocke tous les sous chemins de ..\Environments
+      * dans le tableau TENV, pour analyse le contenu de chaque "environment" 
+      SysRefresh()
+      n1 := 0
+      DO WHILE .T.
+        cValue := ""
+        n2 := RegEnumKey( oReg:nHandle, n1,  @cvalue  )
+        IF n2 = 0
+          IF ASCAN(TENV, STRTRAN(cValue, "," , "\")) = 0
+            AADD(TENV, STRTRAN(cValue, "," , "\"))
+          ENDIF
+        ELSE
+          EXIT
+        ENDIF
+        n1 ++
+        SysRefresh()
+      ENDDO
+      oReg:Close()
+      SysRefresh()
+  ENDIF
+
+  FOR XENV := 1 TO LEN(TENV)
+    cSubKeys2 := cSubKeys + "\" + TENV[XENV] + "\Drivers"
+    cSubKeys3 := cSubKeys2 + "\" + cNomDriver
+
+    oReg := TReg32():New(HKEY_LOCAL_MACHINE, cSubKeys3, , KEY_QUERY_VALUE)
+
+    IF oReg:nError = 0
+    * Si le nom de l'imprimante est présent dans le chemin ..\Drivers
+      cDriver := oReg:Get("Driver", "")
+      oReg:Close()
+      oReg := NIL
+
+      IF !EMPTY(cDriver)
+        cDriver := IIF("." $ cDriver, LEFT(cDriver, AT(".", cDriver) - 1), cDriver)
+        EXIT
+      ENDIF
+    ELSE
+
+      oReg:Close()
+      oReg := NIL
+
+      oReg := TReg32():New(HKEY_LOCAL_MACHINE, cSubKeys2, , KEY_ENUMERATE_SUB_KEYS )
+      IF oReg:nError = 0
+
+        n1 := 0
+        TVERDRIVER := {}
+        DO WHILE .T.
+          cValue := ""
+          n2 := RegEnumKey( oReg:nHandle, n1,  @cvalue  )
+          IF n2 = 0
+            IF ASCAN(TVERDRIVER, STRTRAN(cValue, "," , "\")) = 0
+              AADD(TVERDRIVER, STRTRAN(cValue, "," , "\"))
+            ENDIF
+          ELSE
+            EXIT
+          ENDIF
+          SysRefresh()
+          n1 ++
+        ENDDO
+        oReg:Close()
+        SysRefresh()
+
+        FOR X2 := 1 TO LEN(TVERDRIVER)
+
+          cSubKeys3 := cSubKeys2 + "\" + TVERDRIVER[X2] + "\" + cNomDriver
+
+          oReg := TReg32():New(HKEY_LOCAL_MACHINE, cSubKeys3, , KEY_QUERY_VALUE)
+
+          IF oReg:nError = 0
+
+            cDriver := oReg:Get("Driver", "")
+            SysRefresh()
+            oReg:Close()
+            oReg := NIL
+            IF !EMPTY(cDriver)
+              cDriver := IIF("." $ cDriver, LEFT(cDriver, AT(".", cDriver) - 1), cDriver)
+              EXIT
+            ENDIF
+          ELSE
+            oReg:Close()
+            oReg := NIL
+          ENDIF
+          SysRefresh()
+
+        NEXT X2
+        IF !EMPTY(cDriver)
+          EXIT
+        ENDIF
+      ENDIF
+    ENDIF
+    SysRefresh()
+  NEXT XENV
+
+ENDDO
+
+SysRefresh()
+SET( _SET_EXACT, lSetExact )
+RETURN cDriver</code></pre></div><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">*******************
+FUNCTION WinGetPrnP(cNomImpr)
+*******************
+* Renvoie le (nom du fichier) Driver et le Port de l'imprimante dont le nom est le contenu de cNomImpr.
+* Le Driver et le Port sont renvoyés dans une chaine, séparés par une virgule.
+* Auteur Badara THIAM
+
+LOCAL lSetExact := SET( _SET_EXACT, .T. )
+LOCAL cDriver := ""
+LOCAL cNomDriver := ""
+LOCAL cPort := ""
+LOCAL oReg
+LOCAL X
+LOCAL Y
+LOCAL TIMP := WinGetPrn()
+LOCAL TImpOrig := WinGetPrn(.T.)
+LOCAL TSERVEURS := {}
+
+* Recherche l'imprimante Windows ayant le même nom,
+* en convertissant en minuscule et en supprimant les espaces
+FOR X := 1 TO LEN(TIMP)
+  IF MEMEIMPRIM(@cNomImpr, TIMP[X])
+  * Si c'est la même imprimante
+    EXIT
+  ENDIF
+NEXT X
+
+IF X &lt;= LEN(TIMP)
+
+  IF "\" $ TIMP[X] .AND. TIMP[X] != TImpOrig[X]
+  * Si imprimante réseau
+
+    TSERVEURS := WinGetSP()
+
+    FOR Y := 1 TO LEN(TSERVEURS)
+        oReg := TReg32():New( TSERVEURS[Y][3], TSERVEURS[Y][2] ;
+        + "\" + TSERVEURS[Y][1] + "\Printers\" + SUBSTR(TImpOrig[X], RAT("\",TImpOrig[X]) + 1) ;
+        + "\DsSpooler", , KEY_QUERY_VALUE )
+        IF oReg:nError = 0
+          EXIT
+        ENDIF
+        oReg:Close()
+        oReg := NIL
+    NEXT Y
+
+    IF oReg != NIL
+      IF oReg:nError = 0
+        cPort := oReg:Get("portName", "")
+        cNomDriver := oReg:Get("driverName", "")
+      ENDIF
+      oReg:Close()
+      oReg := NIL
+    ENDIF
+
+  ELSE
+    oReg := TReg32():New(HKEY_LOCAL_MACHINE,;
+   "System\CurrentControlSet\Control\Print\Printers\" + STRTRAN(TIMP[X],"\",","), , KEY_QUERY_VALUE)
+
+    IF oReg:nError &lt;&gt; 0
+
+      * Cherche si cette imprimante non répertoriée est en réseau (10/2006)
+      oReg:Close()
+      oReg := NIL
+      TSERVEURS := WinGetSP()
+
+      FOR Y := 1 TO LEN(TSERVEURS)
+
+        oReg := TReg32():New( TSERVEURS[Y][3], TSERVEURS[Y][2] ;
+        + "\" + TSERVEURS[Y][1] + "\Printers\" + STRTRAN(TIMP[X],"\",","), , KEY_QUERY_VALUE)
+
+        IF oReg:nError = 0
+          EXIT
+        ELSEIF "\" $ TIMP[X]
+          * Si "\" est présent dans le nom d'imprimante, c'est "peut-être" la fonction WinGetPrn()
+          * qui a inséré le nom de serveur dans le nom d'imprimante. Pour le vérifier,
+          * recherche également le nom de l'imprimante sans le nom de serveur
+          oReg:Close()
+          oReg := NIL
+          oReg := TReg32():New( TSERVEURS[Y][3], TSERVEURS[Y][2] ;
+          + "\" + TSERVEURS[Y][1] + "\Printers\" + SUBSTR(TIMP[X], RAT("\",TIMP[X]) + 1 ), , KEY_QUERY_VALUE )
+          IF oReg:nError = 0
+            EXIT
+          ENDIF
+        ENDIF
+        oReg:Close()
+        oReg := NIL
+      NEXT Y
+
+    ENDIF
+
+    IF oReg != NIL
+      IF oReg:nError = 0
+        cPort := oReg:Get("Port", "")
+        cNomDriver := oReg:Get("Printer Driver", "")
+      ENDIF
+      oReg:Close()
+      oReg := NIL
+    ENDIF
+
+  ENDIF
+
+  IF cNomDriver != ""
+    cDriver := WinGetPrnD( STRTRAN(cNomDriver, CHR(0), "") )
+  ENDIF
+
+ENDIF
+SET( _SET_EXACT, lSetExact )
+RETURN cDriver + "," + cPort</code></pre></div><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">******************
+FUNCTION WinDefPrn()
+******************
+* Dernière modification le 17/11/2006
+* Retourne le nom de l'imprimante par défaut en allant le chercher dans le registre Windows
+* (regedit.exe)
+LOCAL cDefPrn := ""
+* Adresse dans le registre pour Windows 2000 et suivants
+LOCAL oReg := TReg32():New(HKEY_CURRENT_USER, "Software\Microsoft\Windows NT\CurrentVersion\Windows", , KEY_QUERY_VALUE)
+IF oReg:nError = 0
+  cDefPrn := oReg:Get("Device", "")
+  IF "," $ cDefPrn
+    * Suppression du Pilote et du Port, non requis ici
+    cDefPrn := LEFT(cDefPrn, AT(",",cDefPrn) -1)
+  ENDIF
+ELSE
+  * Alternative pour Windows 9x et Millennium
+  oReg:Close()
+  oReg := NIL
+  oReg := TReg32():New(HKEY_CURRENT_CONFIG, "System\CurrentControlSet\Control\Print\Printers", , KEY_QUERY_VALUE)
+  IF oReg:nError = 0
+    cDefPrn := oReg:Get("Default", "")
+  ENDIF
+ENDIF
+oReg:Close()
+oReg := NIL
+RETURN cDefPrn</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p68907">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Wed Nov 05, 2008 02:38 PM
+      </div>
+      <div class="content"><p>Thank you Badara,</p>
+<p>I shall check and give u a feedback tomorrow. By the way any Idea about checking the online status of a network dot matrix printer (pserver). I have created a new post regarding the same on FWH english thread </p>
+<p>Regards,</p>
+<p>Anser</p></div>
+    </div>
+  </div>
+  <div class="post" id="p68999">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print system functions</span><br>
+        Posted: Thu Nov 06, 2008 10:44 AM
+      </div>
+      <div class="content"><p>Dear Badara,</p>
+<p>It is Working fine.</p>
+<p>Regards</p>
+<p>Anser</p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-3143.html">1</a> <strong>2</strong> (26 posts)</div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

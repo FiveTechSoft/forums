@@ -1,0 +1,988 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Fine tune Phi2 from Microsoft with your own data - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-44085">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Fine tune Phi2 from Microsoft with your own data</div>
+  <div class="post" id="p266725">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Mon Jan 08, 2024 10:27 PM
+      </div>
+      <div class="content"><r>go.bat<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;pip install -q -U bitsandbytes
+pip install -q -U git+https://github.com/huggingface/transformers.git
+pip install -q -U git+https://github.com/huggingface/peft.git
+pip install -q -U git+https://github.com/huggingface/accelerate.git
+pip install -q -U datasets scipy ipywidgets matplotlib einops
+pip install -q -U torch
+pip install -q -U trl
+pip install -q -U huggingface_hub&lt;e&gt;</code></pre></div></e></CODE><br>
+phi2_finetune.py<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    HfArgumentParser,
+    AutoTokenizer,
+    TrainingArguments,
+)
+
+from datasets import load_dataset
+import peft
+import torch
+from peft import (
+    LoraConfig,
+    PeftConfig,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+)
+from trl import SFTTrainer
+from huggingface_hub import notebook_login
+
+base_model = "microsoft/phi-2"
+new_model = "phi-2-fivetech_forums"
+dataset = load_dataset('fivetech/forums2')
+
+tokenizer = AutoTokenizer.from_pretrained(base_model, use_fast=True)
+tokenizer.pad_token=tokenizer.eos_token
+tokenizer.padding_side="right"
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_use_double_quant=False,
+)
+
+model = AutoModelForCausalLM.from_pretrained(
+    base_model,
+    quantization_config=bnb_config,
+    # use_flash_attention_2=True, # Phi does not support yet.
+    trust_remote_code=True,
+    flash_attn=True,
+    flash_rotary=True,
+    fused_dense=True,
+    low_cpu_mem_usage=True,
+    device_map={"": 0},
+    revision="refs/pr/23",
+)
+
+model.config.use_cache = False
+model.config.pretraining_tp = 1
+
+model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+
+training_arguments = TrainingArguments(
+    output_dir="./results",
+    num_train_epochs=80,
+    per_device_train_batch_size=2,
+    gradient_accumulation_steps=32,
+    evaluation_strategy="steps",
+    eval_steps=2000,
+    logging_steps=15,
+    optim="paged_adamw_8bit",
+    learning_rate=2e-4,
+    lr_scheduler_type="cosine",
+    save_steps=2000,
+    warmup_ratio=0.05,
+    weight_decay=0.01,
+    report_to="tensorboard",
+    max_steps=-1, # if maximum steps=2, it will stop after two steps
+)
+
+peft_config = LoraConfig(
+    r=32,
+    lora_alpha=64,
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM",
+    target_modules= ["Wqkv", "fc1", "fc2" ] # ["Wqkv", "out_proj", "fc1", "fc2" ], - 41M params
+    # modules_to_save=["embed_tokens","lm_head"]
+)
+
+trainer = SFTTrainer(
+    model=model,
+    train_dataset=dataset['train'],
+    eval_dataset=dataset['train'], #No separate evaluation dataset, i am using the same dataset
+    peft_config=peft_config,
+    dataset_text_field="topic", # "text"
+    max_seq_length=690,
+    tokenizer=tokenizer,
+    args=training_arguments,
+)
+
+trainer.train()
+trainer.save_model( new_model )
+
+#notebook_login()
+#trainer.push_to_hub()&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266728">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Mon Jan 08, 2024 10:52 PM
+      </div>
+      <div class="content"><p><t>For those of you that have a computer with GPU, we do appreciate if you can test it and report us how it works<br/><br>
+<br/><br>
+many thanks!</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p266856">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Mon Jan 15, 2024 06:05 AM
+      </div>
+      <div class="content"><r>go.bat<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;pip install -q -U bitsandbytes
+pip install -q -U git+https://github.com/huggingface/transformers.git
+pip install -q -U git+https://github.com/huggingface/peft.git
+pip install -q -U git+https://github.com/huggingface/accelerate.git
+pip install -q -U datasets scipy ipywidgets matplotlib einops&lt;e&gt;</code></pre></div></e></CODE><br>
+phi2-FT.py<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;from accelerate import FullyShardedDataParallelPlugin, Accelerator
+from torch.distributed.fsdp.fully_sharded_data_parallel import FullOptimStateDictConfig, FullStateDictConfig
+
+fsdp_plugin = FullyShardedDataParallelPlugin(
+    state_dict_config=FullStateDictConfig(offload_to_cpu=True, rank0_only=False),
+    optim_state_dict_config=FullOptimStateDictConfig(offload_to_cpu=True, rank0_only=False),
+)
+
+accelerator = Accelerator(fsdp_plugin=fsdp_plugin)
+
+from datasets import load_dataset
+
+train_dataset = load_dataset('fivetech/forums')
+eval_dataset = load_dataset('fivetech/forums')
+
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+base_model_id = "microsoft/phi-2"
+model = AutoModelForCausalLM.from_pretrained(base_model_id, trust_remote_code=True, torch_dtype=torch.float16, load_in_8bit=True)
+
+def formatting_func(example):
+    text = f"### Question: {example['input']}\n ### Answer: {example['output']}"
+    return text
+
+tokenizer = AutoTokenizer.from_pretrained(
+    base_model_id,
+    padding_side="left",
+    add_eos_token=True,
+    add_bos_token=True,
+    use_fast=False, # needed for now, should be fixed soon
+)
+tokenizer.pad_token = tokenizer.eos_token
+
+def generate_and_tokenize_prompt(prompt):
+    return tokenizer(formatting_func(prompt))
+
+tokenized_train_dataset = train_dataset.map(generate_and_tokenize_prompt)
+tokenized_val_dataset = eval_dataset.map(generate_and_tokenize_prompt)
+
+import matplotlib.pyplot as plt
+
+def plot_data_lengths(tokenized_train_dataset, tokenized_val_dataset):
+    lengths = [len(x['input_ids']) for x in tokenized_train_dataset['train']]
+    lengths += [len(x['input_ids']) for x in tokenized_val_dataset['train']]
+    print(len(lengths))
+
+    # Plotting the histogram
+    plt.figure(figsize=(10, 6))
+    plt.hist(lengths, bins=20, alpha=0.7, color='blue')
+    plt.xlabel('Length of input_ids')
+    plt.ylabel('Frequency')
+    plt.title('Distribution of Lengths of input_ids')
+    plt.show()
+
+plot_data_lengths(tokenized_train_dataset, tokenized_val_dataset)
+
+max_length = 512 # This was an appropriate max length for my dataset
+
+def generate_and_tokenize_prompt2(prompt):
+    result = tokenizer(
+        formatting_func(prompt),
+        truncation=True,
+        max_length=max_length,
+        padding="max_length",
+    )
+    result["labels"] = result["input_ids"].copy()
+    return result
+
+tokenized_train_dataset = train_dataset.map(generate_and_tokenize_prompt2)
+tokenized_val_dataset = eval_dataset.map(generate_and_tokenize_prompt2)
+
+eval_prompt = "Como crear indices"
+
+# Init an eval tokenizer so it doesn't add padding or eos token
+eval_tokenizer = AutoTokenizer.from_pretrained(
+    base_model_id,
+    add_bos_token=True,
+    use_fast=False, # needed for now, should be fixed soon
+)
+
+model_input = eval_tokenizer(eval_prompt, return_tensors="pt").to("cuda")
+
+model.eval()
+with torch.no_grad():
+    print(eval_tokenizer.decode(model.generate(**model_input, max_new_tokens=256, repetition_penalty=1.15)[0], skip_special_tokens=True))
+
+def print_trainable_parameters(model):
+    """
+    Prints the number of trainable parameters in the model.
+    """
+    trainable_params = 0
+    all_param = 0
+    for _, param in model.named_parameters():
+        all_param += param.numel()
+        if param.requires_grad:
+            trainable_params += param.numel()
+    print(
+        f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
+    )
+
+from peft import LoraConfig, get_peft_model
+
+config = LoraConfig(
+    r=32,
+    lora_alpha=64,
+    target_modules=[
+        "Wqkv",
+        "fc1",
+        "fc2",
+    ],
+    bias="none",
+    lora_dropout=0.05,  # Conventional
+    task_type="CAUSAL_LM",
+)
+
+model = get_peft_model(model, config)
+print_trainable_parameters(model)
+
+model = accelerator.prepare_model(model)
+
+if torch.cuda.device_count() &gt; 1: # If more than 1 GPU
+    model.is_parallelizable = True
+    model.model_parallel = True
+
+import transformers
+from datetime import datetime
+
+project = "journal-finetune"
+base_model_name = "phi2"
+run_name = base_model_name + "-" + project
+output_dir = "./" + run_name
+
+trainer = transformers.Trainer(
+    model=model,
+    train_dataset=tokenized_train_dataset[ 'train' ],
+    eval_dataset=tokenized_val_dataset[ 'train' ],
+    args=transformers.TrainingArguments(
+        output_dir=output_dir,
+        warmup_steps=1,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=1,
+        max_steps=1000, #tenia 500
+        learning_rate=2.5e-5, # Want a small lr for finetuning
+        optim="paged_adamw_8bit",
+        logging_steps=25,              # When to start reporting loss
+        logging_dir="./logs",        # Directory for storing logs
+        save_strategy="steps",       # Save the model checkpoint every logging step
+        save_steps=25,                # Save checkpoints every 50 steps
+        evaluation_strategy="steps", # Evaluate the model every logging step
+        eval_steps=25,               # Evaluate and save checkpoints every 50 steps
+        do_eval=True,                # Perform evaluation at the end of training
+        #report_to="wandb",           # Comment this out if you don't want to use weights &amp; baises
+        run_name=f"{run_name}-{datetime.now().strftime('%Y-%m-%d-%H-%M')}"          # Name of the W&amp;B run (optional)
+    ),
+    data_collator=transformers.DataCollatorForLanguageModeling(tokenizer, mlm=False),
+)
+
+model.config.use_cache = False  # silence the warnings. Please re-enable for inference!
+torch.cuda.empty_cache()
+trainer.train()
+ &lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266857">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Mon Jan 15, 2024 06:09 AM
+      </div>
+      <div class="content"><r><URL url="https://medium.com/@mohamedahmedkrichen/a-comprehensive-guide-to-fine-tuning-the-microsoft-phi-2-model-free-notebook-52a4b5e486aa"><s><a href="</s><LINK_TEXT text="https://medium.com/@mohamedahmedkrichen ... a4b5e486aa">https://medium.com/@mohamedahmedkrichen/a-comprehensive-guide-to-fine-tuning-the-microsoft-phi-2-model-free-notebook-52a4b5e486aa</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://medium.com/@mohamedahmedkrichen ... a4b5e486aa">https://medium.com/@mohamedahmedkrichen/a-comprehensive-guide-to-fine-tuning-the-microsoft-phi-2-model-free-notebook-52a4b5e486aa</LINK_TEXT><e></a></e></URL><br/><br>
+<br/><br>
+go.bat<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;!pip install einops
+!pip install peft
+!pip install trl
+!pip install bitsandbytes
+!pip install datasets==2.16&lt;e&gt;</code></pre></div></e></CODE><br>
+run.py<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;import os
+from dataclasses import dataclass, field
+from typing import Optional
+import pandas as pd
+import json
+import warnings
+
+import torch
+from datasets import load_dataset
+from datasets import load_from_disk
+from peft import LoraConfig
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    HfArgumentParser,
+    AutoTokenizer,
+    TrainingArguments,
+)
+from tqdm.notebook import tqdm
+
+from trl import SFTTrainer
+from huggingface_hub import interpreter_login
+os.environ["WANDB_DISABLED"] = "true"
+warnings.filterwarnings("ignore")
+
+df = pd.read_csv("/kaggle/input/layoutlm/medquad.csv")
+df = df.iloc[:,:2]
+df.columns = ["text",'label']
+df.head()
+
+result = list(df.to_json(orient="records"))
+result[0] = '{"json":['
+result[-1] = ']'
+result.append('}')
+result = ''.join(result)
+result = result.strip('"\'')
+result = json.loads(result)
+with open('data.json', 'w') as json_file:
+    json.dump(result, json_file)
+
+def formatting_func(example):
+    text = f"### Question: {example['text']}\n ### Answer: {example['label']}"
+    return text
+
+def generate_and_tokenize_prompt(prompt):
+    return tokenizer(formatting_func(prompt))
+
+#interpreter_login()
+bnb_config = BitsAndBytesConfig(
+    load_in_8bit=True,
+    bnb_4bit_quant_type='nf4',
+    bnb_4bit_compute_dtype='float16',
+    bnb_4bit_use_double_quant=False,
+)
+
+model = AutoModelForCausalLM.from_pretrained(
+        "microsoft/phi-2", 
+        #quantization_config=bnb_config, 
+        device_map = 'auto',
+        trust_remote_code=True,
+        use_auth_token=False,
+    )
+
+model.config.pretraining_tp = 1 
+peft_config = LoraConfig(
+r=32,
+lora_alpha=16,
+bias="none",
+lora_dropout=0.05, # Conventional
+task_type="CAUSAL_LM",
+)
+
+tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", trust_remote_code=True)
+tokenizer.pad_token = tokenizer.eos_token
+
+training_arguments = TrainingArguments(
+output_dir= "./results",
+num_train_epochs= 4,
+per_device_train_batch_size= 2,
+gradient_accumulation_steps= 1,
+optim="paged_adamw_32bit",
+save_strategy="epoch",
+logging_steps=100,
+logging_strategy="steps",
+learning_rate= 2e-4,
+fp16= False,
+bf16= False,
+group_by_length= True,
+disable_tqdm=False,
+report_to=None
+)
+model.config.use_cache = False
+
+dataset = load_dataset("json", data_files="/kaggle/working/data.json", field='json', split="train")
+dataset = dataset.map(generate_and_tokenize_prompt)
+
+trainer = SFTTrainer(
+    model=model,
+    train_dataset=dataset,
+    peft_config=peft_config,
+    dataset_text_field="text",
+    max_seq_length=2048,
+    tokenizer=tokenizer,
+    args=training_arguments,
+    packing=False,
+)
+trainer.train()
+
+df.iloc[5004,:]['text'],df.iloc[5004,:]['label']
+
+inputs = tokenizer('''Instruct:What are the treatments for Acanthoma \n Output:''', return_tensors="pt", return_attention_mask=False)
+outputs = model.generate(**inputs, max_length=100)
+text = tokenizer.batch_decode(outputs[0], skip_special_tokens=True)
+print(''.join(text))
+
+"""torch.set_default_device("cuda")
+
+model_test = AutoModelForCausalLM.from_pretrained("microsoft/phi-2", torch_dtype="auto", trust_remote_code=True)
+tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", trust_remote_code=True)
+
+inputs = tokenizer('''Question: What is (are) Trigeminal Neuralgia ?\n Output:''', return_tensors="pt", return_attention_mask=False)
+
+outputs = model_test.generate(**inputs, max_length=100)
+text = tokenizer.batch_decode(outputs)[0]
+print(text)"""
+ &lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266860">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Mon Jan 15, 2024 07:55 AM
+      </div>
+      <div class="content"><r><URL url="https://medium.com/@nimritakoul01/finetuning-microsoft-phi-2-small-language-model-on-veggo-dataset-using-qlora-8bcf70ab625e"><s><a href="</s><LINK_TEXT text="https://medium.com/@nimritakoul01/finet ... cf70ab625e">https://medium.com/@nimritakoul01/finetuning-microsoft-phi-2-small-language-model-on-veggo-dataset-using-qlora-8bcf70ab625e</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://medium.com/@nimritakoul01/finet ... cf70ab625e">https://medium.com/@nimritakoul01/finetuning-microsoft-phi-2-small-language-model-on-veggo-dataset-using-qlora-8bcf70ab625e</LINK_TEXT><e></a></e></URL><br/><br>
+<br/><br>
+Tested on Google Colab T4<br/><br>
+<br/><br>
+go.bat<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;pip install accelerate==0.25.0
+pip install bitsandbytes==0.41.1
+pip install datasets==2.14.6
+pip install peft==0.6.2
+pip install transformers==4.36.2
+pip install torch==2.1.0
+pip install einops==0.4.1  
+pip install huggingface_hub&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+run.py<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;import torch
+import transformers
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+torch.set_default_device("cuda")
+
+model = AutoModelForCausalLM.from_pretrained("microsoft/phi-2", torch_dtype="auto", trust_remote_code=True)
+tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", trust_remote_code=True)
+
+inputs = tokenizer("What is vedanta ?", return_tensors="pt", return_attention_mask=False)
+
+outputs = model.generate(**inputs, max_length=2000)
+text = tokenizer.batch_decode(outputs)[0]
+print(text)&lt;e&gt;</code></pre></div></e></CODE><br>
+<QUOTE><s><blockquote></s>What is vedanta?<br/><br>
+Vedanta is a Sanskrit word that means "the end of the Vedas". The Vedas are the oldest scriptures of Hinduism, which contain hymns, rituals, and philosophical teachings. Vedanta is a branch of Hindu philosophy that aims to understand the nature of reality, the self, and the supreme being.<br/><br>
+<br/><br>
+What are the main schools of Vedanta?<br/><br>
+There are many schools of Vedanta, but the most influential ones are:<br/><br>
+<br/><br>
+- Advaita Vedanta: This school was founded by Adi Shankara, a Hindu philosopher and theologian, in the 8th century CE. Advaita Vedanta teaches that the ultimate reality is Brahman, the supreme being, who is the same as the individual soul, the jiva. Brahman is beyond any description, perception, or distinction, and is the source of all existence. The jiva is the individual soul that is born, lives, and dies in the material world, which is also called the purusha. The jiva is not separate from Brahman, but is a part of Brahman, and can attain liberation, or moksha, by realizing this oneness.<br/><br>
+<br/><br>
+- Vishishtadvaita Vedanta: This school was founded by Ramanuja, a Hindu philosopher and theologian, in the 11th century CE. Vishishtadvaita Vedanta teaches that the ultimate reality is Vishnu, the preserver, who is the same as the individual soul, the jiva. Vishnu is the supreme being, who is the source of all existence, but also the creator and sustainer of the material world, which is also called the prakriti. The jiva is not separate from Vishnu, but is a part of Vishnu, and can attain liberation, or moksha, by realizing this oneness.<br/><br>
+<br/><br>
+- Dvaita Vedanta: This school was founded by Madhvacharya, a Hindu philosopher and theologian, in the 13th century CE. Dvaita Vedanta teaches that the ultimate reality is Vishnu, the preserver, who is the same as the individual soul, the jiva. Vishnu is the supreme being, who is the source of all existence, but also the creator and sustainer of the material world, which is also called the prakriti. The jiva is not separate from Vishnu, but is a part of Vishnu, and can attain liberation, or moksha, by realizing this oneness. However, Dvaita Vedanta also teaches that there are other supreme beings, such as Shiva, the destroyer, and Brahma, the creator, who are also different from Vishnu, and who have their own realms and attributes.<br/><br>
+<br/><br>
+- Nirguna Vedanta: This school was founded by Ramanuja, a Hindu philosopher and theologian, in the 11th century CE. Nirguna Vedanta teaches that the ultimate reality is Brahman, the supreme being, who is beyond any description, perception, or distinction. Brahman is the source of all existence, but also the creator and sustainer of the material world, which is also called the prakriti. The jiva is not separate from Brahman, but is a part of Brahman, and can attain liberation, or moksha, by realizing this oneness.<br/><br>
+<br/><br>
+What are the main concepts of Vedanta?<br/><br>
+Some of the main concepts of Vedanta are:<br/><br>
+<br/><br>
+- Brahman: This is the ultimate reality, the supreme being, who is the source of all existence, and who is beyond any description, perception, or distinction. Brahman is the essence of everything, and is the cause and the effect of everything. Brahman is also the creator, the sustainer, and the destroyer of everything. Brahman is also the jiva, the individual soul, who is the same as Brahman, and who can attain liberation, or moksha, by realizing this oneness.<br/><br>
+<br/><br>
+- Jiva: This is the individual soul, who is the agent of action, the experiencer of sensation, and the bearer of consciousness. The jiva is the essence of everything, and is the cause and the effect of everything. The jiva is also the creator, the sustainer, and the destroyer of everything. The jiva is also Brahman, the supreme being, who is the same as the jiva, and who can attain liberation, or moksha, by realizing this oneness.<br/><br>
+<br/><br>
+- Purusha: This is the material world, which is also called the prakriti. The purusha is the source of all existence, and is the cause and the effect of everything. The purusha is also the creator, the sustainer, and the destroyer of everything. The purusha is also the jiva, the individual soul, who is the same as the purusha, and who can attain liberation, or moksha, by realizing this oneness.<br/><br>
+<br/><br>
+- Maya: This is the illusion, the ignorance, and the bondage that prevent the jiva from realizing its true nature, which is Brahman. Maya is the cause of all suffering, and the obstacle to all liberation. Maya is also the difference between the jiva and Brahman, and the distinction between the purusha and the prakriti. Maya can be overcome by knowledge, wisdom, and devotion.<br/><br>
+<br/><br>
+- Karma: This is the action, the deed, and the consequence that bind the jiva to the cycle of birth and death, which is also called samsara. Karma is the cause of all bondage, and the obstacle to all liberation. Karma is also the difference between the jiva and Brahman, and the distinction between the purusha and the prakriti. Karma can be overcome by knowledge, wisdom, and devotion.<br/><br>
+<br/><br>
+- Moksha: This is the liberation, the release, and the union that the jiva can attain by realizing its true nature, which is Brahman. Moksha is the cause of all happiness, and the obstacle to all suffering. Moksha is also the difference between the jiva and Brahman, and the distinction between the purusha and the prakriti. Moksha can be achieved by knowledge, wisdom, and devotion.<br/><br>
+<br/><br>
+What are the main sources of Vedanta?<br/><br>
+Some of the main sources of Vedanta are:<br/><br>
+<br/><br>
+- The Vedas: These are the oldest scriptures of Hinduism, which contain hymns, rituals, and philosophical teachings. The Vedas are divided into four parts: the Rigveda, the Samaveda, the Yajurveda, and the Atharvaveda. The Vedas are considered to be the word of God, and the source of all knowledge.<br/><br>
+<br/><br>
+- The Upanishads: These are the later scriptures of Hinduism, which contain the philosophical teachings of the Vedas. The Upanishads are divided into two parts: the minor Upanishads, which are shorter and more practical, and the major Upanishads, which are longer and more abstract. The Upanishads are considered to be the word of Brahman, and the source of all knowledge.<br/><br>
+<br/><br>
+- The Bhagavad Gita: This is a part of the Mahabharata, one of the two great epics of Hinduism, which narrates the story of the Kurukshetra war, and the moral and spiritual dilemmas of the characters. The Bhagavad Gita is a dialogue between Lord Krishna, the supreme being, and Arjuna, a warrior prince, who is about to fight in the war. The Bhagavad Gita is considered to be the word of Krishna, and the source of all knowledge.<br/><br>
+<br/><br>
+- The commentaries: These are the writings of the Hindu scholars and philosophers, who have interpreted and explained the Vedas, the Upanishads, and the Bhagavad Gita. The commentaries are divided into two parts: the orthodox commentaries, which follow the traditional and orthodox views of the Vedanta schools, and the heterodox commentaries, which challenge and criticize the orthodox views of the Vedanta schools. The commentaries are considered to be the word of the scholars and philosophers, and the source of all knowledge.<br/><br>
+<br/><br>
+What are the main branches of Vedanta?<br/><br>
+Some of the main branches of Vedanta are:<br/><br>
+<br/><br>
+- Advaita Vedanta: This is the school of Vedanta that was founded by Adi Shankara, a Hindu philosopher and theologian, in the 8th century CE. Advaita Vedanta teaches that the ultimate reality is Brahman, the supreme being, who is the same as the individual soul, the jiva. Brahman is beyond any description, perception, or distinction, and is the source of all existence. The jiva is not separate from Brahman, but is a part of Brahman, and can attain liberation, or moksha, by realizing this oneness.<br/><br>
+<br/><br>
+- Vishishtadvaita Vedanta: This is the school of Vedanta that was founded by Ramanuja, a Hindu philosopher and theologian, in the 11th century CE. Vishishtadvaita Vedanta teaches that the ultimate reality is Vishnu, the preserver, who is the same as the individual soul, the jiva. Vishnu is the supreme being, who is the source of all existence, but also the creator and sustainer of the material world, which is also called the prakriti. The jiva is not separate from Vishnu, but is a part of Vishnu, and can attain liberation, or moksha, by realizing<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266925">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Wed Jan 17, 2024 10:48 AM
+      </div>
+      <div class="content"><r>loading an extra trained layer to the base model Phi-2, based on:<br/><br>
+<URL url="https://medium.com/@nimritakoul01/finetuning-microsoft-phi-2-small-language-model-on-veggo-dataset-using-qlora-8bcf70ab625e"><s><a href="</s><LINK_TEXT text="https://medium.com/@nimritakoul01/finet ... cf70ab625e">https://medium.com/@nimritakoul01/finetuning-microsoft-phi-2-small-language-model-on-veggo-dataset-using-qlora-8bcf70ab625e</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://medium.com/@nimritakoul01/finet ... cf70ab625e">https://medium.com/@nimritakoul01/finetuning-microsoft-phi-2-small-language-model-on-veggo-dataset-using-qlora-8bcf70ab625e</LINK_TEXT><e></a></e></URL><br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;!pip install accelerate==0.25.0
+!pip install bitsandbytes==0.41.1
+!pip install datasets==2.14.6
+!pip install peft==0.6.2
+!pip install transformers==4.36.2
+!pip install torch==2.1.0
+!pip install einops==0.4.1  # Phi needs this one&lt;e&gt;</code></pre></div></e></CODE><br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+base_model = AutoModelForCausalLM.from_pretrained(
+    "microsoft/phi-2",
+    load_in_8bit=True,
+    device_map="auto",
+    trust_remote_code=True,
+    torch_dtype=torch.float16,
+)
+
+eval_tokenizer = AutoTokenizer.from_pretrained(
+    "microsoft/phi-2",
+    add_bos_token=True,
+    trust_remote_code=True,
+    use_fast=False,
+)
+
+from peft import PeftModel
+ft_model = PeftModel.from_pretrained(base_model, "nimrita/phi2-finetunedonviggodataset", force_download=True)
+
+model_input = eval_tokenizer("what is zen ?", return_tensors="pt").to('cuda')
+ft_model = ft_model.to('cuda')
+ft_model.eval()
+with torch.no_grad():
+    print(eval_tokenizer.decode(ft_model.generate(**model_input, max_new_tokens=200)[0], skip_special_tokens=True))&lt;e&gt;</code></pre></div></e></CODE><br>
+<QUOTE><s><blockquote></s>what is zen?<br/><br>
+by: admin on: September 11, 2017<br/><br>
+The meaning of zen is a form of Buddhism that is practiced by millions of people around the world. It is a way of life that emphasizes the importance of mindfulness, meditation, and self-reflection.<br/><br>
+<br/><br>
+The practice of zen is often associated with the teachings of the Buddha, who is believed to have lived in India in the 6th century BCE. The Buddha's teachings are centered around the idea of finding inner peace and happiness through the practice of mindfulness and meditation.<br/><br>
+<br/><br>
+One of the key principles of zen is the concept of "zenith," which refers to the peak of one's spiritual development. This is the point at which one has achieved a deep understanding of themselves and the world around them, and is able to live in harmony with others.<br/><br>
+<br/><br>
+Another important aspect of zen is the idea of "shinzen," which refers to the process of achieving the zenith. This involves a series<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266942">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Wed Jan 17, 2024 06:52 PM
+      </div>
+      <div class="content"><r><B><s><strong></s>Locally saving a fine tuned model quantized:<e></strong></e></B><br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;!pip install accelerate==0.25.0
+!pip install bitsandbytes==0.41.1
+!pip install datasets==2.14.6
+!pip install peft==0.6.2
+!pip install transformers==4.36.2
+!pip install torch==2.1.0
+!pip install einops==0.4.1  # Phi needs this one&lt;e&gt;</code></pre></div></e></CODE><br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+base_model = AutoModelForCausalLM.from_pretrained(
+    "microsoft/phi-2",
+    load_in_8bit=True,
+    device_map="auto",
+    trust_remote_code=True,
+    torch_dtype=torch.float16,
+)
+
+eval_tokenizer = AutoTokenizer.from_pretrained(
+    "microsoft/phi-2",
+    add_bos_token=True,
+    trust_remote_code=True,
+    use_fast=False,
+)
+
+from peft import PeftModel
+ft_model = PeftModel.from_pretrained( base_model, "nimrita/phi2-finetunedonviggodataset", force_download=True )
+ft_model = ft_model.merge_and_unload()
+ft_model.save_pretrained( "./Phi2-FT" )
+eval_tokenizer.save_pretrained( "./Phi2-FT" )&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266943">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Wed Jan 17, 2024 07:13 PM
+      </div>
+      <div class="content"><r><B><s><strong></s>Locally saving a fine tuned model without modifying quantization:<e></strong></e></B><br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;!pip install accelerate==0.25.0
+!pip install bitsandbytes==0.41.1
+!pip install datasets==2.14.6
+!pip install peft==0.6.2
+!pip install transformers==4.36.2
+!pip install torch==2.1.0
+!pip install einops==0.4.1  # Phi needs this one&lt;e&gt;</code></pre></div></e></CODE><br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+base_model = AutoModelForCausalLM.from_pretrained(
+    "microsoft/phi-2",
+    #load_in_8bit=True,
+    device_map="auto",
+    trust_remote_code=True,
+    #torch_dtype=torch.float16,
+)
+
+eval_tokenizer = AutoTokenizer.from_pretrained(
+    "microsoft/phi-2",
+    add_bos_token=True,
+    trust_remote_code=True,
+    use_fast=False,
+)
+
+from peft import PeftModel
+ft_model = PeftModel.from_pretrained( base_model, "nimrita/phi2-finetunedonviggodataset", force_download=True )
+ft_model = ft_model.merge_and_unload()
+ft_model.save_pretrained( "./Phi2-FT" )
+eval_tokenizer.save_pretrained( "./Phi2-FT" )&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266945">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Wed Jan 17, 2024 07:46 PM
+      </div>
+      <div class="content"><r><B><s><strong></s>Loading a fine tuned model from disk:<e></strong></e></B> (don't use this, it consumes a huge GPU memory! Use next post)<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;!pip install accelerate==0.25.0
+!pip install bitsandbytes==0.41.1
+!pip install datasets==2.14.6
+!pip install peft==0.6.2
+!pip install transformers==4.36.2
+!pip install torch==2.1.0
+!pip install einops==0.4.1  # Phi needs this one&lt;e&gt;</code></pre></div></e></CODE><br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+model = AutoModelForCausalLM.from_pretrained(
+    "./Phi2-FT",
+    load_in_8bit=True,
+    device_map="auto",
+    trust_remote_code=True,
+    torch_dtype=torch.float16,
+)
+
+tokenizer = AutoTokenizer.from_pretrained(
+    "./Phi2-FT",
+    add_bos_token=True,
+    trust_remote_code=True,
+    use_fast=False,
+)
+
+input = eval_tokenizer( "what is zen ?", return_tensors="pt").to('cuda')
+#model = model.to('cuda')
+model.eval()
+with torch.no_grad():
+    print(eval_tokenizer.decode(model.generate(**input, max_new_tokens=200)[0], skip_special_tokens=True))&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266947">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Wed Jan 17, 2024 08:00 PM
+      </div>
+      <div class="content"><r><B><s><strong></s>Locally using a fine tuned model with quantization:<e></strong></e></B><br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;!pip install accelerate==0.25.0
+!pip install bitsandbytes==0.41.1
+!pip install datasets==2.14.6
+!pip install peft==0.6.2
+!pip install transformers==4.36.2
+!pip install torch==2.1.0
+!pip install einops==0.4.1  # Phi needs this one&lt;e&gt;</code></pre></div></e></CODE><br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+model = AutoModelForCausalLM.from_pretrained(
+    "./Phi2-FT",
+    load_in_8bit=True,
+    device_map="auto",
+    trust_remote_code=True,
+    torch_dtype=torch.float16,
+)
+
+tokenizer = AutoTokenizer.from_pretrained(
+    "./Phi2-FT",
+    add_bos_token=True,
+    trust_remote_code=True,
+    use_fast=False,
+)
+
+input = eval_tokenizer( "what is zen ?", return_tensors="pt").to('cuda')
+model.eval()
+with torch.no_grad():
+    print(eval_tokenizer.decode(model.generate(**input, max_new_tokens=200)[0], skip_special_tokens=True))&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p266961">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Thu Jan 18, 2024 06:47 AM
+      </div>
+      <div class="content"><r><URL url="https://www.kaggle.com/code/lucamassaron/fine-tune-phi-2-for-sentiment-analysis"><s><a href="</s><LINK_TEXT text="https://www.kaggle.com/code/lucamassaro ... t-analysis">https://www.kaggle.com/code/lucamassaron/fine-tune-phi-2-for-sentiment-analysis</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://www.kaggle.com/code/lucamassaro ... t-analysis">https://www.kaggle.com/code/lucamassaron/fine-tune-phi-2-for-sentiment-analysis</LINK_TEXT><e></a></e></URL><br/><br>
+<br/><br>
+<URL url="https://medium.com/@yernenip/optimizing-phi-2-a-deep-dive-into-fine-tuning-small-language-models-9d545ac90a99"><s><a href="</s><LINK_TEXT text="https://medium.com/@yernenip/optimizing ... 545ac90a99">https://medium.com/@yernenip/optimizing-phi-2-a-deep-dive-into-fine-tuning-small-language-models-9d545ac90a99</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://medium.com/@yernenip/optimizing ... 545ac90a99">https://medium.com/@yernenip/optimizing-phi-2-a-deep-dive-into-fine-tuning-small-language-models-9d545ac90a99</LINK_TEXT><e></a></e></URL><br/><br>
+<br/><br>
+<URL url="https://medium.aiplanet.com/fine-tune-small-model-micphi-2-to-convert-natural-language-to-sql-32fc4f6ed40c"><s><a href="</s><LINK_TEXT text="https://medium.aiplanet.com/fine-tune-s ... fc4f6ed40c">https://medium.aiplanet.com/fine-tune-small-model-micphi-2-to-convert-natural-language-to-sql-32fc4f6ed40c</LINK_TEXT><e>" rel="noopener"></s><LINK_TEXT text="https://medium.aiplanet.com/fine-tune-s ... fc4f6ed40c">https://medium.aiplanet.com/fine-tune-small-model-micphi-2-to-convert-natural-language-to-sql-32fc4f6ed40c</LINK_TEXT><e></a></e></URL></r></div>
+    </div>
+  </div>
+  <div class="post" id="p267387">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Fine tune Phi2 from Microsoft with your own data</span><br>
+        Posted: Thu Feb 01, 2024 09:03 AM
+      </div>
+      <div class="content"><r><URL url="https://huggingface.co/blog/g-ronimo/phinetuning"><s><a href="</s>https://huggingface.co/blog/g-ronimo/phinetuning<e>" rel="noopener"></s>https://huggingface.co/blog/g-ronimo/phinetuning<e></a></e></URL></r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

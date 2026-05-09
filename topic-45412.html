@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Class TGemini to use Google Gemini AI - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-45412">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-40.html">Artificial Intelligence examples</a> Class TGemini to use Google Gemini AI</div>
+  <div class="post" id="p277636">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Class TGemini to use Google Gemini AI</span><br>
+        Posted: Thu Feb 13, 2025 08:34 AM
+      </div>
+      <div class="content"><r>tgemini.prg<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;// Get your API key from https://aistudio.google.com
+
+#include "FiveWin.ch"
+#include "c:\harbour\contrib\hbcurl\hbcurl.ch"
+
+//----------------------------------------------------------------------------//
+
+CLASS TGemini
+    
+    DATA   cKey   INIT ""
+    DATA   cModel INIT "gemini-2.0-flash"
+    DATA   cResponse
+    DATA   cUrl
+    DATA   hCurl
+    DATA   nError INIT 0
+    DATA   nHttpCode INIT 0
+    DATA   nTemperature INIT 0
+
+    METHOD New( cKey, cModel )
+    METHOD Send( cPrompt )    
+    METHOD End()    
+    METHOD GetValue()    
+
+ENDCLASS        
+
+//----------------------------------------------------------------------------//
+
+METHOD New( cKey, cModel ) CLASS TGemini
+
+    if Empty( cKey )
+       ::cKey = GetEnv( "GEMINI_API_KEY" )
+    else
+       ::cKey = cKey   
+    endif
+
+    if ! Empty( cModel )
+       ::cModel = cModel
+    endif
+    
+    ::cUrl = "https://generativelanguage.googleapis.com/v1beta/models"
+    ::hCurl = curl_easy_init()
+    
+return Self    
+
+//----------------------------------------------------------------------------//
+
+METHOD End() CLASS TGemini
+
+    curl_easy_cleanup( ::hCurl )
+    ::hCurl = nil
+
+return nil    
+
+//----------------------------------------------------------------------------//
+
+METHOD GetValue() CLASS TGemini
+
+   local uValue := hb_jsonDecode( ::cResponse )
+
+   TRY 
+      uValue = uValue[ "candidates" ][ 1 ][ "content" ][ "parts" ][ 1 ][ "text" ]
+   CATCH
+      uValue = uValue[ "error" ][ "message" ]
+   END   
+
+return uValue
+
+//----------------------------------------------------------------------------//
+
+METHOD Send( cPrompt ) CLASS TGemini 
+
+   local aHeaders, cJson, hRequest, hContents := { =&gt; }, hGenerationConfig
+
+   curl_easy_setopt( ::hCurl, HB_CURLOPT_POST, .T. )
+   curl_easy_setopt( ::hCurl, HB_CURLOPT_URL, ::cUrl + "/" + ::cModel + ":generateContent?key=" + ::cKey )
+
+   aHeaders := { "Content-Type: application/json" }
+
+   curl_easy_setopt( ::hCurl, HB_CURLOPT_HTTPHEADER, aHeaders )
+   curl_easy_setopt( ::hCurl, HB_CURLOPT_USERNAME, "" )
+   curl_easy_setopt( ::hCurl, HB_CURLOPT_DL_BUFF_SETUP )
+   curl_easy_setopt( ::hCurl, HB_CURLOPT_SSL_VERIFYPEER, .F. )
+
+   hContents[ "role" ]  = "user"
+   hContents[ "parts" ] = { { "text" =&gt; cPrompt } }
+   hGenerationConfig = { "temperature" =&gt; ::nTemperature,;
+                         "topK" =&gt; 40, "topP" =&gt; 0.95, "maxOutputTokens" =&gt; 8192,;
+                         "responseMimeType" =&gt; "text/plain" }  
+   hRequest = { "contents" =&gt; hContents, "generationConfig" =&gt; hGenerationConfig }
+
+   cJson = hb_jsonEncode( hRequest )
+   curl_easy_setopt( ::hCurl, HB_CURLOPT_POSTFIELDS, cJson )
+   ::nError = curl_easy_perform( ::hCurl )
+   curl_easy_getinfo( ::hCurl, HB_CURLINFO_RESPONSE_CODE, @::nHttpCode )
+
+   if ::nError == HB_CURLE_OK
+      ::cResponse = curl_easy_dl_buff_get( ::hCurl )
+   else
+      ::cResponse := "Error code " + Str( ::nError )
+   endif
+    
+return ::cResponse
+
+//----------------------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+gemini1.prg<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;// Get your API key from https://aistudio.google.com
+// from cmd: set GEMINI_API_KEY=your_api_key
+
+#include "FiveWin.ch"
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oChat := TGemini():New()
+
+   oChat:Send( "cuantas 'r's hay en 'strawberry' ?" )
+   ? oChat:GetValue() 
+
+   oChat:End()
+
+return nil   
+
+//----------------------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p277709">
+    <div class="poster">
+      <div class="name" style="color:#105289">quim_</div>
+      <div class="rank">Posts: 16</div>
+      <div class="avatar"></div>
+      Joined: Tue Jan 07, 2025 11:59 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Class TGemini to use Google Gemini AI</span><br>
+        Posted: Mon Feb 17, 2025 10:22 AM
+      </div>
+      <div class="content"><p><t>Enhorabuena !<br/><br>
+<br/><br>
+Qué forma tan sencilla y bonita de conectar nuestro 'pequeño' mundo harbour con la IA, almenos esta IA convesacional<br/><br>
+<br/><br>
+Despues de algunos problemas con CURL, instalando la ultima version proporcionada por Enrico Maria Giordano (Grazie mille!) he compilado sin más problemas<br/><br>
+<br/><br>
+Veo que a la pregunta : cuantas 'r's hay en 'strawberry' ? contesta que sólo 1, supongo que rr se considera un token aparte<br/><br>
+<br/><br>
+Ahora toca investigar un poco lo que ofrece la API, he visto que se pueden subir archivos de video o PDF y mantener un chat 'razonable'<br/><br>
+<br/><br>
+Gracias de nuevo !</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p277710">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Class TGemini to use Google Gemini AI</span><br>
+        Posted: Mon Feb 17, 2025 11:01 AM
+      </div>
+      <div class="content"><p><r>Estimado Quim,<br/><br>
+<br/><br>
+Disponemos ya de una Clase TGemini actualizada que permite enviar imágenes y PDFs. Ahora estamos generalizándola para que admita muchos mas tipos de ficheros, incluidos videos.<br/><br>
+<br/><br>
+Además le falta el ir reportando token a token, algo que ya tenemos en las Clases TOpenAI, TDeepSeek y TOllama, para que el usuario vea como se va escribiendo la salida poco a poco.<br/><br>
+<br/><br>
+Todo esto lo veremos en el webinar de IA con Harbour/xHarbour los dias 26 y 27 de este mismo mes de Febrero  <E>:)</E></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p277711">
+    <div class="poster">
+      <div class="name" style="color:#105289">quim_</div>
+      <div class="rank">Posts: 16</div>
+      <div class="avatar"></div>
+      Joined: Tue Jan 07, 2025 11:59 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Class TGemini to use Google Gemini AI</span><br>
+        Posted: Mon Feb 17, 2025 12:33 PM
+      </div>
+      <div class="content"><r>Super interesante la movida que estás preparando para que estos viejos rokeros clipperos podamos subir al carro de la IA<br/><br>
+<br/><br>
+Veo si puedo tener el tiempo y la tranquilidad para poder asistir al evento, seguiré el hilo creado a tal efecto<br/><br>
+<br/><br>
+Mis primeras pruebas con esta IA, parece que no guarda el contexto ( o no sé como decirle que lo guarde) <br/><br>
+<br/><br>
+<br/><br>
+<B><s><strong></s>&gt; Conoces el lenguaje de programacion harbour ?<e></strong></e></B><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;Sí, conozco Harbour.  Es un lenguaje de programación de propósito general, un dialecto de xBase,  que es compatible con la mayoría del código Clipper.  Se caracteriza por ser:
+
+* **Open source:**  Su código fuente está disponible públicamente.
+* **Multiplataforma:**  Puede compilarse para diferentes sistemas operativos, incluyendo Windows, Linux, macOS y otros.
+* **Orientado a bases de datos:**  Aunque puede usarse para otras tareas, su fortaleza reside en el desarrollo de aplicaciones que interactúan con bases de datos, especialmente aquellas compatibles con el formato DBF (dBase).
+* **Compilado:**  A diferencia de lenguajes interpretados, Harbour genera código ejecutable, lo que resulta en aplicaciones más rápidas.
+* **Compatible con Clipper:**  Gran parte del código escrito en Clipper puede ser compilado con Harbour con mínimas o ninguna modificación.  Esto facilita la migración de aplicaciones antiguas.
+
+Sin embargo, es importante destacar que Harbour no es tan popular como otros lenguajes de programación modernos.  Su comunidad es más pequeña y la documentación puede ser menos extensa que la de lenguajes como Java, Python o C#.  Su uso se centra principalmente en la migración y mantenimiento de aplicaciones legacy basadas en xBase.
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<B><s><strong></s>&gt; Un ejemplo en codigo ?<e></strong></e></B><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;Para darte un ejemplo de código, necesito saber qué tipo de código quieres.  Por favor, especifica:
+
+* **Lenguaje de programación:** (ej. Python, JavaScript, C++, Java, etc.)
+* **Propósito del código:** ¿Qué debería hacer el código? (ej. calcular el factorial de un número, imprimir "Hola, mundo!", leer un archivo, etc.)
+* **Nivel de complejidad:** ¿Algo simple o algo más avanzado?
+
+Una vez que me des esta información, podré proporcionarte un ejemplo de código relevante.
+
+&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p277718">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Class TGemini to use Google Gemini AI</span><br>
+        Posted: Mon Feb 17, 2025 02:07 PM
+      </div>
+      <div class="content"><p><r>Tienes que enviarle lo hablado hasta ese momento, para que sepa en que contexto está  <E>:)</E></r></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

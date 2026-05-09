@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Firmar fichero con certificado - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-39508">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Firmar fichero con certificado</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-39508-page-2.html">2</a> (19 posts)</div>  <div class="post" id="p235791">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Firmar fichero con certificado</span><br>
+        Posted: Fri Oct 23, 2020 04:38 PM
+      </div>
+      <div class="content"><r>Buenas tardes !!!<br/><br>
+<br/><br>
+Las gracias y el reconocimiento a <B><s><strong></s>Diego Fazio<e></strong></e></B>.<br/><br>
+<br/><br>
+cms.c<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "hbssl.h"
+#include &lt;openssl/cms.h&gt;
+
+HB_FUNC( HB_CMS_SIGNFILE )
+{
+    // HB_SignFile( Archivo a firmar, Archivo .crt, Archivo .key, Archivo Firmado)
+    BIO *in = NULL, *out = NULL, *archivo = NULL;
+    CMS_ContentInfo *cms = NULL;
+    X509 *x509;
+    CMS_SignerInfo *si;
+    EVP_PKEY *priKey;
+    int flags = CMS_PARTIAL;
+    OpenSSL_add_all_algorithms();
+    OpenSSL_add_all_ciphers();
+    //int flags = CMS_PARTIAL;
+
+//read the .crt file
+    archivo = BIO_new_file(hb_parc(2), "r");
+    if (!archivo) {
+        hb_retni(2); // error opening .crt file
+        return;     
+    }
+    x509 = PEM_read_bio_X509(archivo, NULL, NULL, NULL);
+    BIO_reset(archivo);
+    
+    
+//read the .key file
+    archivo = BIO_new_file(hb_parc(3), "r");
+    if (!archivo) {
+        hb_retni(3);  // error opening key file
+        return;
+    }
+    priKey = PEM_read_bio_PrivateKey(archivo,NULL, NULL, NULL);
+    if(!priKey) {
+        hb_retni(4); //error creating PrivateKey object
+        return;
+    }
+
+    if (!X509_check_private_key(x509, priKey)) {
+        hb_retni(5); //the Key does not correspond to the Certificate
+        return;     
+    }   
+    
+//open file to sign
+    in = BIO_new_file(hb_parc(1), "r");
+    if (!in) {
+        hb_retni(6); //error opening file to sign
+        return;     
+    }
+
+//create cms object
+    cms = CMS_sign(NULL, NULL, NULL, in, flags);
+    if (!cms) {
+        hb_retni(7); //error creating cms object
+        return;     
+    }
+    
+    //CMS_SignerInfo *si;
+    si = CMS_add1_signer(cms, x509, priKey, EVP_sha1(), flags);
+    if (!si) {
+        hb_retni(8); //error asigning data to cms object
+        return;     
+    }
+
+    if (!CMS_final(cms, in, NULL, flags)) {
+        hb_retni(9); //error closing data structure of cms object
+        return;     
+    }
+
+    
+//create file signed
+    out = BIO_new_file(hb_parc(4), "wb");
+    if (!out) {
+        hb_retni(10); //error creating out file
+        return;     
+    }
+    BIO_reset(in);
+    
+    
+    if (!i2d_CMS_bio_stream(out,cms, in, flags)) {//lo graba en formato DER
+        hb_retni(11); //error generating final cms file
+        return;     
+    }
+    CMS_ContentInfo_free(cms);
+    X509_free(x509);
+    BIO_free(in);
+    BIO_free(out);
+    BIO_free(archivo);  
+    hb_retni( 1 );
+    return; 
+}
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+cms_singfile_pfx.c<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "hbssl.h"
+#include &lt;openssl/pem.h&gt;
+#include &lt;openssl/err.h&gt;
+#include &lt;openssl/pkcs12.h&gt;
+#include &lt;openssl/cms.h&gt;
+
+HB_FUNC( HB_CMS_SIGNFILE_PFX )
+{
+    // HB_SignFile( Archivo a firmar, Archivo .pfx, clave, Archivo Firmado)
+    BIO *in = NULL, *out = NULL;
+    CMS_ContentInfo *cms = NULL;
+    CMS_SignerInfo *si;
+    int flags = CMS_PARTIAL;
+    X509 *x509;
+    EVP_PKEY *priKey;
+    FILE *fp;
+    PKCS12 *p12;
+    STACK_OF(X509) *ca = NULL;
+    OpenSSL_add_all_algorithms();
+    OpenSSL_add_all_ciphers();
+    //int flags = CMS_PARTIAL;
+
+    if ((fp = fopen(hb_parc(2), "rb")) == NULL) {
+        hb_retni( 2 );
+        return;
+    }
+    p12 = d2i_PKCS12_fp(fp, NULL);
+    fclose(fp);
+    if (!p12) {
+        hb_retni( 3 );
+        return;
+    }
+    if (!PKCS12_parse(p12, hb_parc(3), &amp;priKey, &amp;x509, &amp;ca)) {
+        hb_retni( 4 );
+        return;
+    }
+    PKCS12_free(p12);   
+
+//abre el archivo a firmar  
+    in = BIO_new_file(hb_parc(1), "r");
+    if (!in) {
+        hb_retni(5); //error al crear objeto in
+        return;     
+    }
+
+//crea el cms
+    cms = CMS_sign(NULL, NULL, NULL, in, flags);
+    if (!cms) {
+        hb_retni(6); //error al crear objeto cms
+        return;     
+    }
+    
+    //CMS_SignerInfo *si;
+    si = CMS_add1_signer(cms, x509, priKey, EVP_sha1(), flags);
+    if (!si) {
+        hb_retni(8); //error al crear objeto cms
+        return;     
+    }
+
+    if (!CMS_final(cms, in, NULL, flags)) {
+        hb_retni(9); //error al crear objeto cms
+        return;     
+    }
+    
+    
+    out = BIO_new_file(hb_parc(4), "wb");
+    if (!out) {
+        hb_retni(10); //error al abrir el archivo toSignFile
+        return;     
+    }
+    BIO_reset(in);
+    
+    //if(!PEM_write_bio_CMS_stream(out,cms, in, flags)) {//lo graba en formato PEM
+    //if (!SMIME_write_CMS(out, cms, in, flags)) { //lo graba en formato SMIME
+    if (!i2d_CMS_bio_stream(out,cms, in, flags)) {//lo graba en formato DER
+        hb_retni(11); //error al grabar el archivo toSignFile
+        return;     
+    }
+    CMS_ContentInfo_free(cms);
+    X509_free(x509);
+    BIO_free(in);
+    BIO_free(out);
+    hb_retni( 1 );
+    return; 
+}&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+hbssl.hbm para la construcción de la librería hbssl<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;-stop{wce}
+
+-hblib
+-inc
+
+-o${hb_targetname}
+-workdir=${hb_work}/${hb_plat}/${hb_comp}/${hb_targetname}
+
+-w3 -es2
+
+-depkeyhead=openssl:openssl/ssl.h
+-depcontrol=openssl:no{HB_BUILD_3RDEXT='no'}
+-depcontrol=openssl:${HB_WITH_OPENSSL}
+-depincpath=openssl:/usr/local/opt/openssl/include
+-depincpath=openssl:/usr/local/opt/libressl/include
+-depincpath=openssl:/usr/include
+-depincpath=openssl:/usr/local/include
+-depincpath=openssl:/usr/local/ssl/include
+-depincpath=openssl:/boot/common/include
+-depincpath=openssl:/usr/pkg/include
+-depfinish=openssl
+
+{darwin}-cflag=-DOPENSSL_NO_SHA256
+{darwin}-cflag=-DOPENSSL_NO_SHA512
+{darwin}-cflag=-DOPENSSL_NO_CAMELLIA
+{darwin}-cflag=-DOPENSSL_NO_DGRAM
+{darwin}-cflag=-DHB_OPENSSL_OLD_OSX_
+
+# Patent expires in 2010/2011
+-cflag=-DOPENSSL_NO_IDEA
+
+# to suppress Apple's deprecation warnings that apply to
+# the complete OpenSSL API, starting with OS X Lion 10.7
+-cflag={allgcc&amp;darwin}-Wno-deprecated
+
+# For _fileno() in openssl/applink.c
+-c=gnu90
+
+hbssl.hbx
+
+ssl_hbcon.prg
+
+ssl_hb.c
+ssl_inet.c
+ssl_sock.c
+bio.c
+err.c
+evp.c
+evpciph.c
+evpenc.c
+evpmd.c
+evppkey.c
+pem.c
+rand.c
+ssl.c
+sslciph.c
+sslctx.c
+sslsess.c
+x509.c
+cms_singfile_pfx.c
+cms.c
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Tip4.prg<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "hbssl.ch"
+
+Function main()
+Local nError
+
+/*
+     RESULTADO
+         1: Signing OK
+         2: error opening .crt file
+         3: error opening key file
+         4: error creating PrivateKey object
+         5: the Key does not correspond to the Certificate
+         6: error opening file to sign
+         7: error creating cms object
+         8: error asigning data to cms object
+         9: error closing data structure of cms object
+        10: error creating out file
+        11: error generating final cms file
+*/
+        
+ssl_ini()
+nError := HB_CMS_SignFile( "TRA.XML", "CERT.CRT", "CERT.KEY", "TRA.TMP")
+if ( nError !=1 )
+    MsgInfo( nError )
+endif
+
+return nil&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+He añadido las siguientes dlls ( OpenSSL ) a la ubicación del ejecutable:<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;libcrypto-1_1.dll
+libssl-1_1.dll
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+y he añadido las siguientes libs de Harbour:<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;libcrypto-1_1.a 
+libssl-1_1.a
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Y también he añadido las siguientes libs de MinGW:<br/><br>
+<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;LIBIPHLPAPI.A
+LIBWS2_32.A
+ &lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Se ha comprobado con MinGW. Ahora me queda hacerlo con Borland.<br/><br>
+<br/><br>
+Nuevamente darle las gracias a Diego Fazio por sus rutinas en C.<br/><br>
+<br/><br>
+Muchas gracias !!!<br/><br>
+<br/><br>
+Saludos,</r></div>
+    </div>
+  </div>
+  <div class="post" id="p235817">
+    <div class="poster">
+      <div class="name" style="color:#105289">mgsoft</div>
+      <div class="rank">Posts: 422</div>
+      <img class="avatar avatar-img" src="avatars/1777.jpg" alt="" loading="lazy">
+      Joined: Mon Aug 17, 2009 12:18 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Sun Oct 25, 2020 08:56 AM
+      </div>
+      <div class="content"><p>Muy interesante.</p>
+<p>¿Funciona también para los certificados de España de la FNMT para poder firmar por ejemplo las facturas electrónicas?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p235823">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Sun Oct 25, 2020 03:09 PM
+      </div>
+      <div class="content"><p>Hola Eduardo,</p>
+<p>imagino que se podrá. Yo no lo he hecho.</p>
+<p>Muchas gracias.</p>
+<p>Saludos,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238365">
+    <div class="poster">
+      <div class="name" style="color:#105289">oliveiros junior</div>
+      <div class="rank">Posts: 148</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 20, 2007 03:13 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Wed Feb 03, 2021 04:45 PM
+      </div>
+      <div class="content"><p>¡Hola, buenas tardes! </p>
+<p>¿Sabe si es posible definir la ubicación de firma de documentos con este cambio con los cambios anteriores? </p>
+<p>Pregunte además si sería posible liberar el lib hbssl que ya ha compilado?</p>
+<p>Muchas gracias por la atención.</p>
+<p>Oliveiros Junior</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238374">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Wed Feb 03, 2021 08:12 PM
+      </div>
+      <div class="content"><p>Hola Oliveros Junior !!!</p>
+<p>Yo he creado la lib para MinGW, no tengo ningún problema en pasarte la lib hbssl.</p>
+<p>Saludos,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238377">
+    <div class="poster">
+      <div class="name" style="color:#105289">oliveiros junior</div>
+      <div class="rank">Posts: 148</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 20, 2007 03:13 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Wed Feb 03, 2021 10:48 PM
+      </div>
+      <div class="content"><p>Hola Baxajaun, </p>
+<p>lo siento, no había prestado atención a ese detalle. En realidad necesito compilar en FWH. </p>
+<p>De todos modos, muchas gracias por su ayuda.</p>
+<p>Att.,</p>
+<p>Oliveiros Junior</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238390">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Thu Feb 04, 2021 08:10 AM
+      </div>
+      <div class="content"><p>Buenos días !!!<br>
+Oliveiros Junior, qué compilador de C usas ? Harbour o xHarbour ?</p>
+<p>Muchas gracias.</p>
+<p>Saludos,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238408">
+    <div class="poster">
+      <div class="name" style="color:#105289">mgsoft</div>
+      <div class="rank">Posts: 422</div>
+      <img class="avatar avatar-img" src="avatars/1777.jpg" alt="" loading="lazy">
+      Joined: Mon Aug 17, 2009 12:18 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Thu Feb 04, 2021 10:41 AM
+      </div>
+      <div class="content"><p>Hola,</p>
+<p>¿Se podrían incluir estas funciones en FWH por favor?</p>
+<p>Gracias</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238409">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Thu Feb 04, 2021 10:46 AM
+      </div>
+      <div class="content"><p>Eduardo,</p>
+<p>Si incluyésemos esas funciones en FWH se tendrían siempre que enlazar las librerías de criptografia lo cual implica tener que instalarlas, etc<br>
+y no todo el mundo las necesita</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238412">
+    <div class="poster">
+      <div class="name" style="color:#105289">mgsoft</div>
+      <div class="rank">Posts: 422</div>
+      <img class="avatar avatar-img" src="avatars/1777.jpg" alt="" loading="lazy">
+      Joined: Mon Aug 17, 2009 12:18 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Thu Feb 04, 2021 11:14 AM
+      </div>
+      <div class="content"><p>Entendido.<br>
+¿Y en una librería complementaria?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238434">
+    <div class="poster">
+      <div class="name" style="color:#105289">oliveiros junior</div>
+      <div class="rank">Posts: 148</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 20, 2007 03:13 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Thu Feb 04, 2021 05:30 PM
+      </div>
+      <div class="content"><p>Hola Baxajaun, </p>
+<p>Harbour con bcc730. </p>
+<p>Gracias.</p>
+<p>Oliveiros Junior</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238437">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Thu Feb 04, 2021 07:16 PM
+      </div>
+      <div class="content"><p>Eduardo,</p>
+<p>has tratado de crear la lib hbssl con las rutinas en C de Diego Fazio ?</p>
+<p>Muchas gracias.</p>
+<p>Saludos,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238451">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Fri Feb 05, 2021 08:44 AM
+      </div>
+      <div class="content"><p>Hola Oliveiros Junior !</p>
+<p>Has tratado de crear la lib hbssl con las rutinas de Diego Fazio ? Si me das una dirección de correo, trato de crear la lib para Borland y te la envío.</p>
+<p>Muchas gracias.</p>
+<p>Saludos,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238464">
+    <div class="poster">
+      <div class="name" style="color:#105289">oliveiros junior</div>
+      <div class="rank">Posts: 148</div>
+      <div class="avatar"></div>
+      Joined: Tue Mar 20, 2007 03:13 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Fri Feb 05, 2021 03:34 PM
+      </div>
+      <div class="content"><p>¡Hola buenos dias! </p>
+<p>Mi correo electrónico es <!-- e --><a href="mailto:oliveiros.jr@uol.com.br">oliveiros.jr@uol.com.br</a><!-- e --> </p>
+<p>muchas gracias.</p>
+<p>Oliveiros Junior</p></div>
+    </div>
+  </div>
+  <div class="post" id="p238475">
+    <div class="poster">
+      <div class="name" style="color:#105289">csincuir</div>
+      <div class="rank">Posts: 476</div>
+      <div class="avatar"></div>
+      Joined: Sat Feb 03, 2007 06:36 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Firmar fichero con certificado</span><br>
+        Posted: Sat Feb 06, 2021 12:24 PM
+      </div>
+      <div class="content"><p>Hola Baxajaun,<br>
+Podrías enviarme la librería para Borland también por favor,  gracias:</p>
+<!-- e -->
+<p><a href="mailto:sincuir@yahoo.com">sincuir@yahoo.com</a></p>
+<p>Saludos</p>
+<p>Carlos</p>
+<!-- e --></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-39508-page-2.html">2</a> (19 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

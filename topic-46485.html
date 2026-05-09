@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Coversación entre Claude Code y API remoto - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46485">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-40.html">Artificial Intelligence examples</a> Coversación entre Claude Code y API remoto</div>
+  <div class="post" id="p284952">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Coversación entre Claude Code y API remoto</span><br>
+        Posted: Fri Apr 24, 2026 12:16 PM
+      </div>
+      <div class="content"><p><r><p>Le he pedido a CC que analizase su propia conversación con el API remoto <EMOJI seq="1f44d-1f3fb" tseq="1f44d-1f3fb">&#128077;&#127995;</EMOJI></p></p>
+<p>Ha construido un proxy y ha guardado toda la conversación. Luego le he pedido que la analice:</p>
+
+<p>Cómo funciona la conversación entre Claude Code y la API</p>
+<pre><code>                                                
+                                                      &lt;br/&gt;
+</code></pre>
+<p>Visión general</p>
+<pre><code>                                                                                          
+                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>Cada vez que pulsas Enter en Claude Code, no se envía solo tu mensaje. Se envía un HTTP POST enorme que     <br/>
+  contiene el estado completo de toda la conversación. La API es completamente stateless — no recuerda nada   <br/>
+  entre llamadas.</p>
+<pre><code>                                                                                         
+              &lt;br/&gt;
+</code></pre>
+<p>┌─────────────────────────────────────────────────────────────────┐                                         <br/>
+  │  Claude Code (cliente)         api.anthropic.com                │<br/>
+  │                                                                  │                                        <br/>
+  │  Turno 1:                                                        │<br/>
+  │  POST /v1/messages?beta=true ──────────────────────────────►    │                                         <br/>
+  │  { system, tools, messages: [msg0] }                            │                                         <br/>
+  │                                                      ◄─── SSE   │                                         <br/>
+  │                                                                  │                                        <br/>
+  │  Turno 2:                                                        │                                        <br/>
+  │  POST /v1/messages?beta=true ──────────────────────────────►    │<br/>
+  │  { system, tools, messages: [msg0, msg1, msg2, msg3] }         │                                          <br/>
+  │                                                      ◄─── SSE   │                                         <br/>
+  │                                                                  │<br/>
+  │  Turno N:                                                        │                                        <br/>
+  │  POST /v1/messages?beta=true ──────────────────────────────►    │                                         <br/>
+  │  { system, tools, messages: [msg0 ... msgN-1] }                │<br/>
+  │                                                      ◄─── SSE   │                                         <br/>
+  └─────────────────────────────────────────────────────────────────┘</p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<HR>
+<p>---             </HR><br>
+<br>
+<p>Estructura del request</p></p>
+<pre><code>                                                                                  
+              &lt;br/&gt;
+</code></pre>
+<p>{<br/>
+    "model":      "claude-sonnet-4-6",<br/>
+    "max_tokens": 32000,<br/>
+    "stream":     true,                                                                                       <br/>
+    "system":     [ ... ],   ← instrucciones permanentes<br/>
+    "tools":      [ ... ],   ← 28 herramientas disponibles                                                    <br/>
+    "messages":   [ ... ]    ← historial completo de la conversación<br/>
+  }</p>
+<pre><code>                                                                                                       
+              &lt;br/&gt;
+</code></pre>
+<HR>
+<p>---                                                                                                         </HR><br>
+<br>
+<p>1 — system: las instrucciones permanentes</p></p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>El system prompt llega dividido en 3 bloques, cada uno con una estrategia de caché diferente:</p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>"system": [     <br/>
+    {                                                                                                         <br/>
+      "type": "text",<br/>
+      "cache_control": null,                                                                                  <br/>
+      "text": "x-anthropic-billing-header: cc_version=2.1.119.918; cc_entrypoint=sdk-cli; cch=9aaa4;"<br/>
+    },                                                                                                        <br/>
+    {             <br/>
+      "type": "text",                                                                                         <br/>
+      "cache_control": { "type": "ephemeral", "ttl": "1h" },<br/>
+      "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK."                                <br/>
+    },                                                                                                        <br/>
+    {<br/>
+      "type": "text",                                                                                         <br/>
+      "cache_control": { "type": "ephemeral", "ttl": "1h" },<br/>
+      "text": "You are an interactive agent that helps users with software engineering tasks..."              <br/>
+                           ↑ <SUB><s>~</s>26</SUB>.000 caracteres de instrucciones                                              <br/>
+    }                                                                                                         <br/>
+  ]</p>
+<pre><code>                                                                                                       
+                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>cache_control: ephemeral ttl=1h significa que Anthropic guarda en caché ese bloque durante 1 hora. Si se    <br/>
+  repite idéntico en el siguiente request (lo cual siempre ocurre), no se cobra ni se procesa de nuevo — es la<br/>
+   razón por la que Claude Code es más eficiente de lo que parece.</p>
+<pre><code>                                        
+              &lt;br/&gt;
+</code></pre>
+<HR>
+<p>---</HR><br>
+<br>
+<p>2 — tools: las 28 herramientas</p></p>
+<pre><code>                            &lt;br/&gt;
+</code></pre>
+<p>Cada herramienta se define una vez y se envía en todos los requests:</p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>{<br/>
+    "name": "Bash",                                                                                           <br/>
+    "description": "Executes a given bash command and returns its output...",<br/>
+    "input_schema": {                                                                                         <br/>
+      "type": "object",                                                                                       <br/>
+      "properties": {                                                                                         <br/>
+        "command":     { "type": "string" },                                                                  <br/>
+        "description": { "type": "string" },<br/>
+        "timeout":     { "type": "number" },<br/>
+        "run_in_background": { "type": "boolean" }                                                            <br/>
+      },<br/>
+      "required": ["command"]                                                                                 <br/>
+    }             <br/>
+  }</p>
+
+<p>Las 28 herramientas en tu instalación: Agent, AskUserQuestion, Bash, CronCreate, CronDelete, CronList, Edit,<br/>
+   EnterPlanMode, EnterWorktree, ExitPlanMode, ExitWorktree, Glob, Grep, Monitor, NotebookEdit,<br/>
+  PushNotification, Read, RemoteTrigger, ScheduleWakeup, Skill, TaskOutput, TaskStop, TodoWrite, WebFetch,    <br/>
+  WebSearch, Write, + 2 de Google Drive MCP.</p>
+
+<HR>
+<p>---</HR><br>
+<br>
+<p>3 — messages: el historial</p></p>
+<pre><code>                        &lt;br/&gt;
+</code></pre>
+<p>Este es el núcleo. En tu sesión de hoy, al final había 201 mensajes. Hay 5 tipos de partes de mensaje:</p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>Tipo A — Mensaje de usuario (texto simple)</p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>{               <br/>
+    "role": "user",<br/>
+    "content": [                                                                                              <br/>
+      { "type": "text", "text": "me gustaria ver cual es la conversacion..." }<br/>
+    ]                                                                                                         <br/>
+  }</p>
+<pre><code>           
+                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>Tipo B — Respuesta del asistente (solo texto)</p>
+<pre><code>
+</code></pre>
+<p><br/><br>
+<br>
+<p>{                                                                                                           <br/>
+    "role": "assistant",<br/>
+    "content": [<br/>
+      {<br/>
+        "type": "thinking",<br/>
+        "thinking": "",<br/>
+        "signature": "EuQrClsIDRgCKkB+FBBr..."  ← bloque de razonamiento interno (cifrado)<br/>
+      },                                                                                                      <br/>
+      {<br/>
+        "type": "text",                                                                                       <br/>
+        "text": "Aquí está lo que encontré. La conversación completa se guarda en..."<br/>
+      }                                                                                                       <br/>
+    ]<br/>
+  }</p></p>
+<pre><code>                                                                                                       
+              &lt;br/&gt;
+</code></pre>
+<p>Tipo C — Asistente solicitando ejecutar una herramienta</p>
+<pre><code>
+</code></pre>
+<p><br/><br>
+<br>
+<p>{                                                                                                           <br/>
+    "role": "assistant",<br/>
+    "content": [<br/>
+      {<br/>
+        "type": "tool_use",<br/>
+        "id": "toulu_01Ru3wLkJGi1FFkT2YTA22Hx",   ← ID único de esta llamada<br/>
+        "name": "Bash",                                                                                       <br/>
+        "input": {<br/>
+          "command": "ls ~/.claude/projects/-Users-usuario-temp/ | head -10",                                 <br/>
+          "description": "List conversation files for current project"                                        <br/>
+        }<br/>
+      }                                                                                                       <br/>
+    ]                                                                                                         <br/>
+  }</p></p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>Tipo D — Usuario devolviendo el resultado de la herramienta</p>
+
+<p>{<br/>
+    "role": "user",<br/>
+    "content": [                                                                                              <br/>
+      {<br/>
+        "type": "tool_result",                                                                                <br/>
+        "tool_use_id": "toolu_01Ru3wLkJGi1FFkT2YTA22Hx",  ← mismo ID<br/>
+        "content":                                                                                            <br/>
+  "3a75ff99-0429-46d5-8f44-22a0cc3efae3.jsonl\nab53faa9-38cc-4ce9-8154-fdc0fad02064.jsonl\nmemory",           <br/>
+        "is_error": false                                                                                     <br/>
+      }                                                                                                       <br/>
+    ]             <br/>
+  }</p>
+
+<p>Tipo E — Asistente con texto Y herramienta en el mismo turno</p>
+<pre><code>
+</code></pre>
+<p><br/><br>
+<br>
+<p>{                                                                                                           <br/>
+    "role": "assistant",                                                                                      <br/>
+    "content": [<br/>
+      { "type": "thinking", "thinking": "", "signature": "..." },                                             <br/>
+      { "type": "text",     "text": "Voy a arrancar el proxy en background..." },<br/>
+      {                                                                                                       <br/>
+        "type": "tool_use",<br/>
+        "id": "toulu_011DdmrMpGQXdL7KWMHF8qPz",                                                               <br/>
+        "name": "Bash",                                                                                       <br/>
+        "input": { "command": "python3 anthropic_proxy.py &amp;\nsleep 1\necho \"PID=$!\"" }                      <br/>
+      }                                                                                                       <br/>
+    ]                                                                                                         <br/>
+  }</p></p>
+<pre><code>                                                                                                       
+              &lt;br/&gt;
+</code></pre>
+<HR>
+<p>---</HR><br>
+<br>
+<p>4 — El ciclo completo de un "turno"</p></p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>Usuario escribe Enter<br/>
+          │                                                                                                   <br/>
+          ▼       <br/>
+  ┌───────────────────────────────────────────────┐                                                           <br/>
+  │  Request N                                     │<br/>
+  │  messages: [A, B, C, D, ..., Nuevo_msg_user]  │                                                           <br/>
+  └───────────────────────────────────────────────┘                                                           <br/>
+          │  POST → api.anthropic.com<br/>
+          ▼                                                                                                   <br/>
+  ┌───────────────────────────────────────────────┐<br/>
+  │  La API responde (streaming SSE):              │                                                          <br/>
+  │  ¿Quiere hablar?  → devuelve tipo B            │                                                          <br/>
+  │  ¿Quiere actuar?  → devuelve tipo C o E        │                                                          <br/>
+  └───────────────────────────────────────────────┘                                                           <br/>
+          │                                                                                                   <br/>
+          ├── Si devuelve texto → se muestra en terminal → FIN del turno                                      <br/>
+          │                                                                                                   <br/>
+          └── Si devuelve tool_use:                                                                           <br/>
+                      │                                                                                       <br/>
+                      ▼                                                                                       <br/>
+              Claude Code ejecuta la herramienta localmente<br/>
+              (Bash, Read, Edit, Write...)                                                                    <br/>
+                      │                                                                                       <br/>
+                      ▼<br/>
+              Request N+1 automático:                                                                         <br/>
+              messages: [..., msg_user, msg_assistant_tool_use, msg_user_tool_result]                         <br/>
+                      │                                                                                       <br/>
+                      └──► vuelve al principio (puede haber 20+ iteraciones)</p>
+<pre><code>                              
+                                                                                                          &lt;br/&gt;
+</code></pre>
+<HR>
+<p>---             </HR><br>
+<br>
+<p>5 — Desglose real de los 201 mensajes</p></p>
+<pre><code>                                                                   
+              &lt;br/&gt;
+</code></pre>
+<p>Así quedó distribuida la conversación de hoy (proxy setup session):</p>
+
+<p>95  user  → tool_result         (Claude Code devolviendo resultados de comandos)<br/>
+   75  asst  → tool_use            (Claude pidiendo ejecutar algo)                                            <br/>
+   20  asst  → text + tool_use     (Claude explicando Y pidiendo ejecutar)<br/>
+    5  asst  → text                (Claude solo respondiendo en texto)                                        <br/>
+    3  user  → text                (tus mensajes escritos)                                                    <br/>
+    3  user  → (sistema/transición)                                                                           <br/>
+  ─────                                                                                                       <br/>
+  201  total</p>
+<pre><code>  
+                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>Es decir: de cada 201 mensajes, solo 3 fueron texto que escribiste tú. El 98% es el protocolo de            <br/>
+  herramientas.</p>
+<pre><code>                                                                                           
+                                                                                                          &lt;br/&gt;
+</code></pre>
+<HR>
+<p>---             </HR><br>
+<br>
+<p>6 — Qué pasa cuando el contexto se llena</p></p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>Cuando la conversación se acerca al límite (<SUB><s>~</s>200K</SUB> tokens), Claude Code comprime el historial antes de<br/>
+  enviarlo. En el request llegaría esto:</p>
+<pre><code>                                                                  
+              &lt;br/&gt;
+</code></pre>
+<p>"messages": [                                                                                               <br/>
+    {             <br/>
+      "role": "user",<br/>
+      "content": [{<br/>
+        "type": "text",                                                                                       <br/>
+        "text": "&lt;parameter name=\"summary\"&gt;Resumen de los primeros 150 mensajes:\n- El usuario pidió ver la <br/>
+  conversación con el modelo\n- Se creó anthropic_proxy.py para interceptar tráfico\n- Se depuró un error SSL <br/>
+  en la versión inicial\n- Se descubrió que OAuth no funciona en /v1/messages directo\n- Se reescribió el <br/>
+  proxy con httpx y se resolvió el gzip...\n&lt;/parameter&gt;"                                                     <br/>
+      }]          <br/>
+    },<br/>
+    { "role": "assistant", "content": [...] },  ← mensajes recientes, intactos<br/>
+    ...                                                                                                       <br/>
+    { "role": "user",      "content": [{ "type": "text", "text": "y cuando quiera desactivarlo?" }] }<br/>
+  ]</p>
+<pre><code>                                                                                                       
+              &lt;br/&gt;
+</code></pre>
+<p>Con el proxy activo esto sería perfectamente visible: el número de mensajes bajaría de golpe (de 180 a 40,  <br/>
+  por ejemplo) y aparecería ese bloque &lt;parameter name="summary"&gt;.</p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<HR>
+<p>---             </HR><br>
+<br>
+<p>7 — La respuesta (streaming SSE)</p></p>
+<pre><code>                              &lt;br/&gt;
+</code></pre>
+<p>La API no devuelve JSON completo sino un stream de eventos:</p>
+<pre><code>                                                                                                          &lt;br/&gt;
+</code></pre>
+<p>data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking",...}}<br/>
+  data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"..."}}                     <br/>
+  data: {"type":"content_block_stop","index":0}                                                               <br/>
+  data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}                    <br/>
+  data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hola"}}                            <br/>
+  data: {"type":"content_block_stop","index":1}                                                               <br/>
+  data: {"type":"message_delta","usage":{"output_tokens":3}}                                                  <br/>
+  data: {"type":"message_stop"}</p>
+<pre><code>                                                                           
+              &lt;br/&gt;
+</code></pre>
+<p>Claude Code va leyendo estos eventos y mostrando el texto en terminal en tiempo real. Cuando detecta un     <br/>
+  tool_use block completo, lo ejecuta sin esperar al final del stream.</p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p284953">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Coversación entre Claude Code y API remoto</span><br>
+        Posted: Fri Apr 24, 2026 12:24 PM
+      </div>
+      <div class="content"><r><p><URL url="https://github.com/juliusbrussee/caveman"><s><a href="</s>https://github.com/juliusbrussee/caveman<e>" rel="noopener"></s>https://github.com/juliusbrussee/caveman<e></a></e></URL></p><br>
+<br>
+<QUOTE><s><blockquote></s><p>why use many token when few token do trick — Claude Code skill that cuts 65% of tokens by talking like caveman</p><e></blockquote></e></QUOTE><br>
+<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;instala este skill https://github.com/juliusbrussee/caveman&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

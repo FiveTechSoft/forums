@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Create a windows service - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-43014">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Create a windows service</div>
+  <div class="post" id="p258694">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">leandro</div>
+      <div class="rank">Posts: 1816</div>
+      <img class="avatar avatar-img" src="avatars/228.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 26, 2005 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Create a windows service</span><br>
+        Posted: Mon Apr 10, 2023 03:50 PM
+      </div>
+      <div class="content"><p><t>Buenos días para todos,<br/><br>
+<br/><br>
+Tim buenos días como estas?, estuve consultando el foro como crear un servicio de windows y todo los caminos conducen hacia ti, jejejejeje.<br/><br>
+De casualidad me puedes indicar el camino a seguir para lograr crear el servicio, y si de casualidad tienes un ejemplo te lo agradecería, de antemano gracias. <br/><br>
+<br/><br>
+Good morning Tim, how are you? I was consulting the forum on how to create a windows service and all roads lead to you, hehehehehe.<br/><br>
+By chance can you tell me the way to follow to create the service, and if by chance you have an example I would appreciate it, thanks in advance.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p258702">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Create a windows service</span><br>
+        Posted: Mon Apr 10, 2023 09:28 PM
+      </div>
+      <div class="content"><r>Here is the structure that I use.  All commands go in the area noted /*.   */<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;/*
+                                                PRG:                      MLS12us.exe   Auto Updating Service
+                                                Purpose:              Background running routine to handle updates and submissions2/15/2022 4:51:32 PM
+                                               
+                                                Updated:             11/26/2022 5:07:44 PM
+*/                                          
+ 
+#INCLUDE "Fivewin.CH"
+#INCLUDE "ini.CH"
+#INCLUDE "TDATA.CH"
+#INCLUDE "common.CH"
+#INCLUDE "mail.ch"
+#include "fileio.ch"
+#include "hbwin.ch"
+#include "hbmzip.ch"
+#include "ads.ch"
+#INCLUDE "constant.ch"
+#INCLUDE "hbClass.ch"
+#include "hbcurl.ch"
+ 
+#DEFINE INTERNET_FLAG_PASSIVE    0x08000000
+#define  HKEY_LOCAL_MACHINE      2147483650
+EXTERN ADSKeyCount, ADSKeyNo, AdsGetRelKeyPos, AdsSetRelKeyPos
+ 
+#if ! defined( __HBSCRIPT__HBSHELL )
+#define _SERVICE_NAME "MLS12_Auto_Updater"
+ 
+PROCEDURE Main( cMode )
+ 
+   LOCAL nError
+   LOCAL cMsg
+ 
+   hb_default( @cMode, "S" ) // NOTE: Must be the default action
+ 
+   SWITCH Upper( cMode )
+   CASE "I"
+ 
+      IF win_serviceInstall( _SERVICE_NAME, "MLS Auto Updater Service" )
+         ? "Service has been successfully installed"
+      ELSE
+         nError := wapi_GetLastError()
+         cMsg := Space( 128 )
+         wapi_FormatMessage( ,,,, @cMsg )
+         ? "Error installing service: " + hb_ntos( nError ) + " " + cMsg
+      ENDIF
+      EXIT
+ 
+   CASE "U"
+ 
+      IF win_serviceDelete( _SERVICE_NAME )
+         ? "Service has been deleted"
+      ELSE
+         nError := wapi_GetLastError()
+         cMsg := Space( 128 )
+         wapi_FormatMessage( ,,,, @cMsg )
+         ? "Error deleting service: " + hb_ntos( nError ) + " " + cMsg
+      ENDIF
+      EXIT
+ 
+   CASE "S"
+ 
+      // NOTE: Used when starting up as service.  Do not invoke the executable manually with this option
+ 
+      IF win_serviceStart( _SERVICE_NAME, @SrvMain() )
+         ? "Service has started OK"
+      ELSE
+         nError := wapi_GetLastError()
+         cMsg := Space( 128 )
+         wapi_FormatMessage( ,,,, @cMsg )
+         ? "Service has had some problems: " + hb_ntos( nError ) + " " + cMsg
+      ENDIF
+      EXIT
+ 
+   ENDSWITCH
+ 
+RETURN
+ 
+ 
+PROCEDURE SrvMain( cParam1, cParam2 )
+ 
+                LOCAL n := 0
+                LOCAL cParam
+                LOCAL CurDir  := CURDIR(), CurDri  := DISKNAME()
+                LOCAL owIcon, oIni, meSavStr, nHandle, nServer := 7
+                PRIVATE oWnd, oTray, oIcon, oIcon1, oTmr
+ 
+                PRIVATE  cPath := hb_DirBase() + "DATA\"// CurDri + ":\" + CurDir + "\Data\"
+                PRIVATE  cDnPath := hb_DirBase() + "MLS\"
+                PRIVATE cBakPath := CurDri + ":\" + CurDir
+                PRIVATE cValue, cStart := Time( )            
+                PRIVATE cInstVer, dLstBkUp, cGetSN, eSavStr, lCFXActive, dCFLstDte,;
+                                dvChkDte, cvChkVer, lvOKToDl, cvOnSrvr, cvAuthTo, cvChkBul, dCLLstDte,;
+                                sCurDte, sWkCxDte, sWkClDte, cBackupPath, ldForce, lKukui, oDbLog
+                PRIVATE mCLinkAC, mCLinkFt, mCLinkPw, mCLinkUn, oDcf, lCloudBackup := .f.
+ 
+                PUBLIC fhnd := hb_FCreate( hb_FNameExtSet( hb_ProgName(), ".out" ), FC_NORMAL, FO_DENYNONE + FO_WRITE )
+                PUBLIC cHome := cPath
+                PUBLIC iDLL, lfHndl
+                PUBLIC nConnect := AdsIsServerLoaded( cPath ), lCFXloyalty := .f.
+ 
+                FWrite( fhnd, TIME() + " Startup" + hb_eol() )
+ 
+                REQUEST DBFCDX
+rddRegister( "DBFCDX", 1 )
+                rddsetdefault( "DBFCDX" )
+ 
+                SET DELETED ON
+                SET EXCLUSIVE OFF
+                SET DEFAULT TO ( cPath )
+                FWrite( fhnd, TIME() + " RDD Initialized" + hb_eol() )
+                FWrite( fhnd, TIME() + " Path: " + cPath + hb_eol() )
+ 
+                // Load the DLL
+                iDLL := LoadLibrary( "wininet.dll" )
+ 
+               FWrite( fhnd, TIME() + " wininet.dll is loaded " + hb_eol() )
+ 
+               DO WHILE  .t. //  win_serviceGetStatus() == WIN_SERVICE_RUNNING
+ 
+FWrite( fhnd, TIME() + " Work in progress " + hb_eol() )
+ 
+/* This is where you add in your operations.  You can call Functions from here
+Remember, a service can have NO screen interaction or prompts.  You will find
+Many FWH calls won’t be useable in a service.  */
+ 
+FWrite( fhnd, TIME() + " Cycle Completed" + hb_eol() )
+               
+                hb_idleSleep( 10000 )   // 3 hours
+ 
+ENDDO
+ 
+//      Close the log file
+                FWrite( fhnd, TIME() + " Exiting..." + hb_eol() )
+                Close( fhnd )
+ 
+// Close the library
+FreeLibrary( iDLL )
+ 
+RETURN
+ 
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Remember, you DO NOT use any screen calls or operations ( or at least not in my experience ).</r></div>
+    </div>
+  </div>
+  <div class="post" id="p258744">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">leandro</div>
+      <div class="rank">Posts: 1816</div>
+      <img class="avatar avatar-img" src="avatars/228.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 26, 2005 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Create a windows service</span><br>
+        Posted: Tue Apr 11, 2023 06:52 PM
+      </div>
+      <div class="content"><p><r>Tim, muchas gracias por la respuesta, nuestro amigo Cristóbal tambien nos envió el mismo código, pero el problema es que no funciona con xharbour, solo con harbour  <E>:(</E></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p258750">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Create a windows service</span><br>
+        Posted: Tue Apr 11, 2023 07:48 PM
+      </div>
+      <div class="content"><p><t>In the past I used xHarbour Builder ( many years ago ).  I have not used the current xHarbour.<br/><br>
+<br/><br>
+Perhaps you could install Harbour and build your service with it.  Several functions in here are necessary for my build but you might not need them.  For example, ADS functions.</t></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

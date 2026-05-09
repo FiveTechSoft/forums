@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>List all functions and classes in FWH library - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-36560">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> List all functions and classes in FWH library</div>
+  <div class="post" id="p218092">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">List all functions and classes in FWH library</span><br>
+        Posted: Thu Jan 03, 2019 04:35 PM
+      </div>
+      <div class="content">Many but not all functions provided by FWH are listed in the Wiki. Newly added functions from time to time are announced in whatsnew.txt.<br>
+<br>
+This program lists all functions and classes included in the installed FWH library. In addition, the program name and source code of the function/class are also displayed, except in the case of internal functions.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+#define EM_LINESCROLL           182
+#define EM_GETFIRSTVISIBLELINE  0x00CE
+
+
+//----------------------------------------------------------------------------//
+
+static cBccFolder  := "c:\bcc7\"   // your bcc folder here
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local aFunc
+   local oDlg, nWd, oFont, oFixed, oBrw, oSay, oGet
+   local cModule, cFile, cText, cUpper
+
+   SetMGetColorFocus()
+
+   aFunc := ReadFuncs()
+   if Empty( aFunc )
+      return nil
+   endif
+
+   cModule  := aFunc[ 1, 1 ]
+   cFile    := ModuleToFile( cModule )
+   cText    := If( Empty( cFile ), "", MemoRead( cFile ) )
+
+   DEFINE FONT oFont  NAME "TAHOMA" SIZE 0,-13
+   DEFINE FONT oFixed NAME "LUCIDA CONSOLE" SIZE 0,-14
+
+   nWd      := Int( ScreenWidth() * 0.9 )
+
+   DEFINE DIALOG oDlg SIZE nWd,600 PIXEL TRUEPIXEL FONT oFont ;
+      TITLE "FWH Functions"
+
+   @ 20,20 XBROWSE oBrw SIZE 400,-20 PIXEL OF oDlg ;
+      DATASOURCE aFunc COLUMNS 1,2 ;
+      HEADERS "MODULE", "FUNCTION" ;
+      COLSIZES "BBBBBBBBBB" ;
+      CELL LINES NOBORDER FOOTERS AUTOSORT
+
+   WITH OBJECT oBrw
+      :bRecSelData   := { || oBrw:KeyNo }
+      :nRecSelWidth  := "9999"
+      :bRecSelHeader := { || "SlNo" }
+      :bRecSelFooter := { || oBrw:nLen }
+
+      :lHScroll      := .f.
+      :lSeekBar      := .t.
+      :bClrEdits     := { || { CLR_HRED, CLR_YELLOW } }
+      :lSeekWild     := .t.
+      :nStretchCol   := 2
+
+      :bChange       := &lt;||
+         if !( cModule == oBrw:aRow[ 1 ] )
+            cModule  := oBrw:aRow[ 1 ]
+            cFile    := ModuleToFile( cModule )
+            if Empty( cFile )
+               cText := ""
+            else
+               cText := MemoRead( cFile )
+            endif
+            cUpper   := Upper( cText )
+            oSay:Refresh()
+            oGet:Refresh()
+         endif
+         LocateFunction( oBrw:aRow[ 2 ], cText, cUpper, oGet )
+         return nil
+         &gt;
+
+      :CreateFromCode()
+   END
+
+   @ 20,420 SAY oSay PROMPT { || cFile } SIZE nWd - 440, 26 PIXEL CENTER OF oDlg ;
+      COLOR CLR_BLACK, oBrw:nRecSelColor
+
+   @ 50,420 GET oGet VAR cText MEMO SIZE nWd - 440, 530 PIXEL OF oDlg FONT oFixed
+
+   ACTIVATE DIALOG oDlg CENTERED ;
+      ON INIT LocateFunction( aFunc[ 1, 2 ], cText, cUpper, oGet )
+   RELEASE FONT oFont, oFixed
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function ReadFuncs()
+
+   local cText, aLines, cLine, cFunc, cFunc1, cFunc2, n, i
+   local cModule  := ""
+   local aFunc    := {}
+
+   if !lIsDir( cBccFolder )
+      MsgStop( cBccFolder + " not found" )
+      return nil
+   endif
+
+   if !File( "fiveh.lst" )
+     WaitRun( cBccFolder + "bin\tlib.exe ..\lib\fiveh.lib, fiveh.lst" )
+     SysWait( .2 )
+   endif
+   cText    := MemoRead( "fiveh.lst" )
+   aLines   := HB_ATokens( cText, CRLF )
+
+   if !File( "fivehc.lst" )
+      WaitRun( cBccFolder + "bin\tlib.exe ..\lib\fivehc.lib, fivehc.lst" )
+      SysWait( .2 )
+   endif
+   cText    := MemoRead( "fivehc.lst" )
+   aLines   := AMERGE( aLines, HB_ATokens( cText, CRLF ) )
+
+   for n := 2 to Len( aLines )
+      cLine    := aLines[ n ]
+      if Empty( cLine )
+         LOOP
+      endif
+      if Left( cLine, 1 ) == Chr( 9 )
+         for i := 1 to 2
+            cFunc    := TOKEN( cLine, , i )
+            if cFunc = "_HB_FUN_"
+               AAdd( aFunc, { cModule, AFTERATNUM( "_HB_FUN_", cFunc ) } )
+            else
+               EXIT
+            endif
+         next
+      else
+         cModule  := AllTrim( TOKEN( cLine,,1 ) )
+      endif
+   next
+
+   ASort( aFunc, , , { |x,y| If( x[ 1 ] == y[ 1 ], x[ 2 ] &lt; y[ 2 ], x[ 1 ] &lt; y[ 1 ] ) } )
+
+return aFunc
+
+//----------------------------------------------------------------------------//
+
+static function ModuleToFile( cModule )
+
+   local cSpec := "..\source\" + cModule + ".*"
+   local cFile := ""
+   local aDir
+
+   aDir     := DirectoryRecurse( TrueName( cSpec ) )
+   if !Empty( aDir )
+      cFile    := aDir[ 1, 1 ]
+   endif
+
+return cFile
+
+//----------------------------------------------------------------------------//
+
+static function LocateFunction( cFunc, cText, cUpper, oGet )
+
+   local nRow     := 1
+   local aSeek    := {}
+   local nPos
+
+   if !Empty( cText )
+
+      DEFAULT cUpper  := Upper( cText )
+
+      aSeek    := {  "FUNCTION " + cFunc + "(", ;
+                     "FUNCTION " + cFunc + " ", ;
+                     "CLASS " + cFunc, ;
+                     "HB_FUNC( " + cFunc + " )", ;
+                     "HB_FUNC (" + cFunc + ")" }
+
+      nPos     := AAT( aSeek, cUpper )
+
+      if nPos &gt; 0
+         nRow     := OCCURS( CRLF, LEFT( cText, nPos ) )
+      endif
+
+      GetSetTopRow( oGet, nRow )
+
+   endif
+
+return nRow
+
+//----------------------------------------------------------------------------//
+
+static function GetSetTopRow( oGet, nRow )
+
+   local nTopRow     := oGet:SendMsg( EM_GETFIRSTVISIBLELINE )
+
+   oGet:SendMsg( EM_LINESCROLL, 0, nRow - nTopRow )
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+<a href="https://imageshack.com/i/pl8DC3iLp" rel="noopener"><img src="https://imagizer.imageshack.com/v2/xq90/921/8DC3iL.png" alt="" loading="lazy"></a><br>
+<br>
+Building the program:<br>
+1. Copy the program to your \fwh\samples folder. This program runs from samples folder only.<br>
+2. By default, cBccFolder is set to &quot;c:\bcc7\&quot;. If it is different in your case, please change the static variable cBccFolder<br>
+3. If you are using an older version of FWH that does not support lSeekBar of XBrowse, please comment out the line &quot;:lSeekBar := .t.&quot;<br>
+4. Build with buildh.bat or buildx.bat.<br>
+<br>
+Notes:<br>
+Some functions displayed by the program may be functions that are internally used and not intended to be used directly in the applications and they may change or be dropped in subsequent versions. Some functions may be obsolete and superseded by later versions.</div>
+    </div>
+  </div>
+  <div class="post" id="p218107">
+    <div class="poster">
+      <div class="name" style="color:#105289">hua</div>
+      <div class="rank">Posts: 1096</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 28, 2005 02:27 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Fri Jan 04, 2019 02:14 AM
+      </div>
+      <div class="content"><p>Bravo! Thanks Rao</p></div>
+    </div>
+  </div>
+  <div class="post" id="p218112">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Fri Jan 04, 2019 10:00 AM
+      </div>
+      <div class="content"><p>Thank you very much !</p></div>
+    </div>
+  </div>
+  <div class="post" id="p218113">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Fri Jan 04, 2019 10:11 AM
+      </div>
+      <div class="content"><p>Very helpfull indeed.</p>
+<p>Before Mr. Rao also gave the foundation for a nice program to search the forum (enhanced by Mr. Uwe)</p>
+<p>Imagen a button into this new program that when pressed, searches de forum for the occurence of that function.  On the forum, many functions are used with real situations and variables.</p>
+<p>This combination would give a very good alternative for updated functions.</p>
+<p>(I have idea's, but not the skills to make what I ask here, sorry... <!-- s:oops: --><img src="{SMILIES_PATH}/icon_redface.gif" alt=":oops:" title="Embarassed" /><!-- s:oops: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p218126">
+    <div class="poster">
+      <div class="name" style="color:#105289">byte-one</div>
+      <div class="rank">Posts: 1048</div>
+      <img class="avatar avatar-img" src="avatars/210.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 24, 2005 09:54 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Fri Jan 04, 2019 03:34 PM
+      </div>
+      <div class="content"><p>Mr. Rao, the static &quot;c:\bcc7\&quot; should be able to override with a parameter for the ??.exe. And please provide the compiled ??.exe!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p218153">
+    <div class="poster">
+      <div class="name" style="color:#105289">shri_fwh</div>
+      <div class="rank">Posts: 336</div>
+      <div class="avatar"></div>
+      Joined: Mon Dec 07, 2009 02:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Sun Jan 06, 2019 06:58 AM
+      </div>
+      <div class="content">Dear Rao Sir , <br>
+<br>
+  I have tried to modify the program to run for FWH64 but I could not get success. <br>
+<br>
+  <br>
+ as given below<br>
+<br>
+   <div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   if !File( "fiveh.lst" )
+     WaitRun( cBccFolder + "bin\tdump64.exe ..\lib\Five64.a, fiveh.lst" )
+     SysWait( .2 )
+   endif
+   cText    := MemoRead( "fiveh.lst" )
+   aLines   := HB_ATokens( cText, CRLF )
+
+   if !File( "fivehc.lst" )
+      WaitRun( cBccFolder + "bin\tdump64.exe ..\lib\FiveC64.a, fivehc.lst" )
+      SysWait( .2 )
+   endif</code></pre></div><br>
+<br>
+Thanks<br>
+Shridhar</div>
+    </div>
+  </div>
+  <div class="post" id="p230459">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Wed Mar 18, 2020 09:44 AM
+      </div>
+      <div class="content"><blockquote><cite>nageswaragunupudi wrote:</cite>Many but not all functions provided by FWH are listed in the Wiki. Newly added functions from time to time are announced in whatsnew.txt.<br>
+<br>
+This program lists all functions and classes included in the installed FWH library. In addition, the program name and source code of the function/class are also displayed, except in the case of internal functions.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+#define EM_LINESCROLL           182
+#define EM_GETFIRSTVISIBLELINE  0x00CE
+
+
+//----------------------------------------------------------------------------//
+
+static cBccFolder  := "c:\bcc7\"   // your bcc folder here
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local aFunc
+   local oDlg, nWd, oFont, oFixed, oBrw, oSay, oGet
+   local cModule, cFile, cText, cUpper
+
+   SetMGetColorFocus()
+
+   aFunc := ReadFuncs()
+   if Empty( aFunc )
+      return nil
+   endif
+
+   cModule  := aFunc[ 1, 1 ]
+   cFile    := ModuleToFile( cModule )
+   cText    := If( Empty( cFile ), "", MemoRead( cFile ) )
+
+   DEFINE FONT oFont  NAME "TAHOMA" SIZE 0,-13
+   DEFINE FONT oFixed NAME "LUCIDA CONSOLE" SIZE 0,-14
+
+   nWd      := Int( ScreenWidth() * 0.9 )
+
+   DEFINE DIALOG oDlg SIZE nWd,600 PIXEL TRUEPIXEL FONT oFont ;
+      TITLE "FWH Functions"
+
+   @ 20,20 XBROWSE oBrw SIZE 400,-20 PIXEL OF oDlg ;
+      DATASOURCE aFunc COLUMNS 1,2 ;
+      HEADERS "MODULE", "FUNCTION" ;
+      COLSIZES "BBBBBBBBBB" ;
+      CELL LINES NOBORDER FOOTERS AUTOSORT
+
+   WITH OBJECT oBrw
+      :bRecSelData   := { || oBrw:KeyNo }
+      :nRecSelWidth  := "9999"
+      :bRecSelHeader := { || "SlNo" }
+      :bRecSelFooter := { || oBrw:nLen }
+
+      :lHScroll      := .f.
+      :lSeekBar      := .t.
+      :bClrEdits     := { || { CLR_HRED, CLR_YELLOW } }
+      :lSeekWild     := .t.
+      :nStretchCol   := 2
+
+      :bChange       := &lt;||
+         if !( cModule == oBrw:aRow[ 1 ] )
+            cModule  := oBrw:aRow[ 1 ]
+            cFile    := ModuleToFile( cModule )
+            if Empty( cFile )
+               cText := ""
+            else
+               cText := MemoRead( cFile )
+            endif
+            cUpper   := Upper( cText )
+            oSay:Refresh()
+            oGet:Refresh()
+         endif
+         LocateFunction( oBrw:aRow[ 2 ], cText, cUpper, oGet )
+         return nil
+         &gt;
+
+      :CreateFromCode()
+   END
+
+   @ 20,420 SAY oSay PROMPT { || cFile } SIZE nWd - 440, 26 PIXEL CENTER OF oDlg ;
+      COLOR CLR_BLACK, oBrw:nRecSelColor
+
+   @ 50,420 GET oGet VAR cText MEMO SIZE nWd - 440, 530 PIXEL OF oDlg FONT oFixed
+
+   ACTIVATE DIALOG oDlg CENTERED ;
+      ON INIT LocateFunction( aFunc[ 1, 2 ], cText, cUpper, oGet )
+   RELEASE FONT oFont, oFixed
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function ReadFuncs()
+
+   local cText, aLines, cLine, cFunc, cFunc1, cFunc2, n, i
+   local cModule  := ""
+   local aFunc    := {}
+
+   if !lIsDir( cBccFolder )
+      MsgStop( cBccFolder + " not found" )
+      return nil
+   endif
+
+   if !File( "fiveh.lst" )
+     WaitRun( cBccFolder + "bin\tlib.exe ..\lib\fiveh.lib, fiveh.lst" )
+     SysWait( .2 )
+   endif
+   cText    := MemoRead( "fiveh.lst" )
+   aLines   := HB_ATokens( cText, CRLF )
+
+   if !File( "fivehc.lst" )
+      WaitRun( cBccFolder + "bin\tlib.exe ..\lib\fivehc.lib, fivehc.lst" )
+      SysWait( .2 )
+   endif
+   cText    := MemoRead( "fivehc.lst" )
+   aLines   := AMERGE( aLines, HB_ATokens( cText, CRLF ) )
+
+   for n := 2 to Len( aLines )
+      cLine    := aLines[ n ]
+      if Empty( cLine )
+         LOOP
+      endif
+      if Left( cLine, 1 ) == Chr( 9 )
+         for i := 1 to 2
+            cFunc    := TOKEN( cLine, , i )
+            if cFunc = "_HB_FUN_"
+               AAdd( aFunc, { cModule, AFTERATNUM( "_HB_FUN_", cFunc ) } )
+            else
+               EXIT
+            endif
+         next
+      else
+         cModule  := AllTrim( TOKEN( cLine,,1 ) )
+      endif
+   next
+
+   ASort( aFunc, , , { |x,y| If( x[ 1 ] == y[ 1 ], x[ 2 ] &lt; y[ 2 ], x[ 1 ] &lt; y[ 1 ] ) } )
+
+return aFunc
+
+//----------------------------------------------------------------------------//
+
+static function ModuleToFile( cModule )
+
+   local cSpec := "..\source\" + cModule + ".*"
+   local cFile := ""
+   local aDir
+
+   aDir     := DirectoryRecurse( TrueName( cSpec ) )
+   if !Empty( aDir )
+      cFile    := aDir[ 1, 1 ]
+   endif
+
+return cFile
+
+//----------------------------------------------------------------------------//
+
+static function LocateFunction( cFunc, cText, cUpper, oGet )
+
+   local nRow     := 1
+   local aSeek    := {}
+   local nPos
+
+   if !Empty( cText )
+
+      DEFAULT cUpper  := Upper( cText )
+
+      aSeek    := {  "FUNCTION " + cFunc + "(", ;
+                     "FUNCTION " + cFunc + " ", ;
+                     "CLASS " + cFunc, ;
+                     "HB_FUNC( " + cFunc + " )", ;
+                     "HB_FUNC (" + cFunc + ")" }
+
+      nPos     := AAT( aSeek, cUpper )
+
+      if nPos &gt; 0
+         nRow     := OCCURS( CRLF, LEFT( cText, nPos ) )
+      endif
+
+      GetSetTopRow( oGet, nRow )
+
+   endif
+
+return nRow
+
+//----------------------------------------------------------------------------//
+
+static function GetSetTopRow( oGet, nRow )
+
+   local nTopRow     := oGet:SendMsg( EM_GETFIRSTVISIBLELINE )
+
+   oGet:SendMsg( EM_LINESCROLL, 0, nRow - nTopRow )
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+<a href="https://imageshack.com/i/pl8DC3iLp" rel="noopener"><img src="https://imagizer.imageshack.com/v2/xq90/921/8DC3iL.png" alt="" loading="lazy"></a><br>
+<br>
+Building the program:<br>
+1. Copy the program to your \fwh\samples folder. This program runs from samples folder only.<br>
+2. By default, cBccFolder is set to &quot;c:\bcc7\&quot;. If it is different in your case, please change the static variable cBccFolder<br>
+3. If you are using an older version of FWH that does not support lSeekBar of XBrowse, please comment out the line &quot;:lSeekBar := .t.&quot;<br>
+4. Build with buildh.bat or buildx.bat.<br>
+<br>
+Notes:<br>
+Some functions displayed by the program may be functions that are internally used and not intended to be used directly in the applications and they may change or be dropped in subsequent versions. Some functions may be obsolete and superseded by later versions.</blockquote><br>
+<br>
+I can't convert this small program just to read my personel program directory  (c:\marc\) and scan for the prg file and take all functions out of it like this program does.<br>
+Can we addapt it for this functionality ?<br>
+So we can have a privat collection of private functions that we have made during time.<br>
+Maybe the file location can be added.</div>
+    </div>
+  </div>
+  <div class="post" id="p230468">
+    <div class="poster">
+      <div class="name" style="color:#105289">Enrrique Vertiz</div>
+      <div class="rank">Posts: 582</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Wed Mar 18, 2020 07:57 PM
+      </div>
+      <div class="content">Hello Mr. Rao<br>
+<br>
+I already created the EXE but it doesn't show the contents of the functions / classes, only when I run the EXE it shows the function ATT (), when I go down to the next line it doesn't show anything anymore<br>
+<br>
+<img src="http://www.consorcioinformatico.net/lisfc.jpg" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p230638">
+    <div class="poster">
+      <div class="name" style="color:#105289">Enrrique Vertiz</div>
+      <div class="rank">Posts: 582</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Tue Mar 24, 2020 08:17 AM
+      </div>
+      <div class="content"><p>Hello Mr. Rao, </p>
+<p>Any ideas  ??</p>
+<p>Thanks</p></div>
+    </div>
+  </div>
+  <div class="post" id="p230639">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Tue Mar 24, 2020 08:46 AM
+      </div>
+      <div class="content"><p>Enrique,</p>
+<p>Please run the EXE from FWH\samples</p>
+<p>If not, then adjust this line:<br>
+   local cSpec := &quot;..\source\&quot; + cModule + &quot;.*&quot;</p></div>
+    </div>
+  </div>
+  <div class="post" id="p230666">
+    <div class="poster">
+      <div class="name" style="color:#105289">Enrrique Vertiz</div>
+      <div class="rank">Posts: 582</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Wed Mar 25, 2020 08:54 AM
+      </div>
+      <div class="content"><p>Gracias Antonio</p>
+<p>Lo compile con xHb y nada ..., y recorde que ustedes recomiendan Hb, lo compile y funciono !!</p>
+<p>Esta linea es la que da resultados distintos en xHb y Hb (al parecer)</p>
+<p>aDir     := DirectoryRecurse( TrueName( cSpec ) )</p></div>
+    </div>
+  </div>
+  <div class="post" id="p230675">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Wed Mar 25, 2020 01:17 PM
+      </div>
+      <div class="content"><p>muy bien! <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p230739">
+    <div class="poster">
+      <div class="name" style="color:#105289">Willi Quintana</div>
+      <div class="rank">Posts: 1053</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Thu Mar 26, 2020 09:21 PM
+      </div>
+      <div class="content"><p>Hola,,, me sale este error:<br>
+Error: Unresolved external '_hb_vmPushSize' referenced from D:\SOFT\FWXH1906\FWH\LIB\FIVEHC.LIB|FFDLGPRC<br>
+Error: Unresolved external '_hb_partdt' referenced from D:\SOFT\FWXH1906\FWH\LIB\FIVEHX.LIB|VALTOSTT</p></div>
+    </div>
+  </div>
+  <div class="post" id="p230740">
+    <div class="poster">
+      <div class="name" style="color:#105289">Willi Quintana</div>
+      <div class="rank">Posts: 1053</div>
+      <div class="avatar"></div>
+      Joined: Sun Oct 09, 2005 10:41 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: List all functions and classes in FWH library</span><br>
+        Posted: Thu Mar 26, 2020 11:43 PM
+      </div>
+      <div class="content"><p>Error en Ejecución  FW1507<br>
+Application<br>
+===========<br>
+   Path and name: D:\SOFT\FWXH1507\FWH\samples\func.exe (32 bits)<br>
+   Size: 2,827,776 bytes<br>
+   Compiler version: xHarbour build 1.2.1 Intl. (SimpLex) (Rev. 9445)<br>
+   FiveWin  Version: FWHX 15.07<br>
+   Windows version: 6.2, Build 9200 </p>
+<p>Time from start: 0 hours 0 mins 0 secs <br>
+   Error occurred at: 03/26/20, 18:42:36<br>
+   Error description: Error BASE/1073  Argument error: &lt;<br>
+   Args:<br>
+     [   1] = C   BBBBBBBBBB<br>
+     [   2] = N   0</p>
+<h1>Stack Calls</h1>
+<p>Called from: .\source\classes\XBROWSE.PRG =&gt; XBROWSENEW( 13196 )<br>
+   Called from: func.prg =&gt; MAIN( 42 )</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

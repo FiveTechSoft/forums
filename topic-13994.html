@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>MicroSoft Flight Simulator and FSUIPC - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-13994">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> MicroSoft Flight Simulator and FSUIPC</div>
+  <div class="post" id="p71956">
+    <div class="poster">
+      <div class="name" style="color:#105289">alvaro533</div>
+      <div class="rank">Posts: 230</div>
+      <div class="avatar"></div>
+      Joined: Sat Apr 19, 2008 10:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">MicroSoft Flight Simulator and FSUIPC</span><br>
+        Posted: Wed Dec 17, 2008 11:35 PM
+      </div>
+      <div class="content">Hello,<br>
+<br>
+I would like to make a small program for Flight Simulator 2004 (FS2004). I need to be able to read some flight parameters like airspeed, altitude, position, etc. from FS2004.<br>
+<br>
+<!-- m --><a class="postlink" href="http://www.schiratti.com/dowson.html">http://www.schiratti.com/dowson.html</a><!-- m --><br>
+<br>
+In the previous link, the page of  FSUIPC by Peter Dowson, there is a SDK to connect with FS2004 using "IPC" (Inter Process Communication). The SDK provides functions for MSVC/C++, Delphi, Java, Visual Basic and other languages, but I would like to make the program in FWH.<br>
+<br>
+I have tried connecting with the server using DDEClient and DDEMLClient, but no success.<br>
+<br>
+My doubt is if the connection is to be made using:<br>
+<br>
+1. DDEClient or DDEMLClient<br>
+2. Loading the C library during runtime and using C functions.<br>
+3. Writting a the functions in FWS and linking to the C library.<br>
+<br>
+Please, find below the code of the C's funtions included in the SDK I mentioned before. There is one to connect to the server, another to read a value, other to write a value and one to end the connection. Maybe someone has already written the functions in FWH. FS2004 has thousands of users around the world and most likely Pete Dowson would include the FWH conection in the SDK if I manage to conect them.<br>
+Thank you very much.<br>
+<br>
+Alvaro<br>
+<br>
+<br>
+<br>
+/* IPCUSER.C User interface library for FSUIPC<br>
+*******************************************************************************<br>
+<br>
+Started: 28th November 2000<br>
+<br>
+With acknowledgements to Adam Szofran (author of original FS6IPC).<br>
+<br>
+******************************************************************************/<br>
+<br>
+#define LIB_VERSION 2002 // 2.002<br>
+#define MAX_SIZE 0x7F00 // Largest data (kept below 32k to avoid<br>
+// any possible 16-bit sign problems)<br>
+<br>
+#include "IPCuser.h"<br>
+<br>
+/******************************************************************************<br>
+IPC client stuff<br>
+******************************************************************************/<br>
+<br>
+DWORD FSUIPC_Version = 0;<br>
+DWORD FSUIPC_FS_Version = 0;<br>
+DWORD FSUIPC_Lib_Version = LIB_VERSION;<br>
+<br>
+static HWND m_hWnd = 0; // FS6 window handle<br>
+static UINT m_msg = 0; // id of registered window message<br>
+static ATOM m_atom = 0; // global atom containing name of file-mapping object<br>
+static HANDLE m_hMap = 0; // handle of file-mapping object<br>
+static BYTE* m_pView = 0; // pointer to view of file-mapping object<br>
+static BYTE* m_pNext = 0;<br>
+<br>
+/******************************************************************************<br>
+FSUIPC_Close<br>
+******************************************************************************/<br>
+<br>
+// Stop the client<br>
+void FSUIPC_Close(void)<br>
+{ m_hWnd = 0;<br>
+m_msg = 0;<br>
+<br>
+if (m_atom)<br>
+{ GlobalDeleteAtom(m_atom);<br>
+m_atom = 0;<br>
+}<br>
+<br>
+if (m_pView)<br>
+{ UnmapViewOfFile((LPVOID)m_pView);<br>
+m_pView = 0;<br>
+}<br>
+<br>
+if (m_hMap)<br>
+{ CloseHandle(m_hMap);<br>
+m_hMap = 0;<br>
+}<br>
+}<br>
+<br>
+/******************************************************************************<br>
+FSUIPC_Open<br>
+******************************************************************************/<br>
+<br>
+// Start the client<br>
+// return: TRUE if successful, FALSE otherwise<br>
+BOOL FSUIPC_Open(DWORD dwFSReq, DWORD *pdwResult)<br>
+{ char szName[MAX_PATH];<br>
+static int nTry = 0;<br>
+BOOL fWideFS = FALSE;<br>
+int i = 0;<br>
+<br>
+// abort if already started<br>
+if (m_pView)<br>
+{ *pdwResult = FSUIPC_ERR_OPEN;<br>
+return FALSE;<br>
+}<br>
+<br>
+// Clear version information, so know when connected<br>
+FSUIPC_Version = FSUIPC_FS_Version = 0;<br>
+<br>
+// Connect via FSUIPC, which is known to be FSUIPC's own<br>
+// and isn't subject to user modificiation<br>
+m_hWnd = FindWindowEx(NULL, NULL, "UIPCMAIN", NULL);<br>
+if (!m_hWnd)<br>
+{ // If there's no UIPCMAIN, we may be using WideClient<br>
+// which only simulates FS98<br>
+m_hWnd = FindWindowEx(NULL, NULL, "FS98MAIN", NULL);<br>
+fWideFS = TRUE;<br>
+if (!m_hWnd)<br>
+{ *pdwResult = FSUIPC_ERR_NOFS;<br>
+return FALSE;<br>
+}<br>
+}<br>
+<br>
+// register the window message<br>
+m_msg = RegisterWindowMessage(FS6IPC_MSGNAME1);<br>
+if (m_msg == 0)<br>
+{ *pdwResult = FSUIPC_ERR_REGMSG;<br>
+return FALSE;<br>
+}<br>
+<br>
+// create the name of our file-mapping object<br>
+nTry++; // Ensures a unique string is used in case user closes and reopens<br>
+wsprintf(szName, FS6IPC_MSGNAME1 ":%X:%X", GetCurrentProcessId(), nTry);<br>
+<br>
+// stuff the name into a global atom<br>
+m_atom = GlobalAddAtom(szName);<br>
+if (m_atom == 0)<br>
+{ *pdwResult = FSUIPC_ERR_ATOM;<br>
+FSUIPC_Close();<br>
+return FALSE;<br>
+}<br>
+<br>
+// create the file-mapping object<br>
+m_hMap = CreateFileMapping(<br>
+(HANDLE)0xFFFFFFFF, // use system paging file<br>
+NULL, // security<br>
+PAGE_READWRITE, // protection<br>
+0, MAX_SIZE+256, // size<br>
+szName); // name<br>
+<br>
+if ((m_hMap == 0) || (GetLastError() == ERROR_ALREADY_EXISTS))<br>
+{ *pdwResult = FSUIPC_ERR_MAP;<br>
+FSUIPC_Close();<br>
+return FALSE;<br>
+}<br>
+<br>
+// get a view of the file-mapping object<br>
+m_pView = (BYTE*)MapViewOfFile(m_hMap, FILE_MAP_WRITE, 0, 0, 0);<br>
+if (m_pView == NULL)<br>
+{ *pdwResult = FSUIPC_ERR_VIEW;<br>
+FSUIPC_Close();<br>
+return FALSE;<br>
+}<br>
+<br>
+// Okay, now determine FSUIPC version AND FS type<br>
+m_pNext = m_pView;<br>
+<br>
+// Try up to 5 times with a 100mSec rest between each<br>
+// Note that WideClient returns zeroes initially, whilst waiting<br>
+// for the Server to get the data<br>
+while ((i++ &lt; 5) &amp;&amp; ((FSUIPC_Version == 0) || (FSUIPC_FS_Version == 0)))<br>
+{ // Read FSUIPC version<br>
+if (!FSUIPC_Read(0x3304, 4, &amp;FSUIPC_Version, pdwResult))<br>
+{ FSUIPC_Close();<br>
+return FALSE;<br>
+}<br>
+<br>
+// and FS version and validity check pattern<br>
+if (!FSUIPC_Read(0x3308, 4, &amp;FSUIPC_FS_Version, pdwResult))<br>
+{ FSUIPC_Close();<br>
+return FALSE;<br>
+}<br>
+<br>
+// Write our Library version number to a special read-only offset<br>
+// This is to assist diagnosis from FSUIPC logging<br>
+// But only do this on first try<br>
+if ((i &lt; 2) &amp;&amp; !FSUIPC_Write(0x330a, 2, &amp;FSUIPC_Lib_Version, pdwResult))<br>
+{ FSUIPC_Close();<br>
+return FALSE;<br>
+}<br>
+<br>
+// Actually send the requests and get the responses ("process")<br>
+if (!FSUIPC_Process(pdwResult))<br>
+{ FSUIPC_Close();<br>
+return FALSE;<br>
+}<br>
+<br>
+// Maybe running on WideClient, and need another try<br>
+Sleep(100); // Give it a chance<br>
+}<br>
+<br>
+// Only allow running on FSUIPC 1.998e or later<br>
+// with correct check pattern 0xFADE<br>
+if ((FSUIPC_Version &lt; 0x19980005) || ((FSUIPC_FS_Version &amp; 0xFFFF0000L) != 0xFADE0000))<br>
+{ *pdwResult = fWideFS ? FSUIPC_ERR_RUNNING : FSUIPC_ERR_VERSION;<br>
+FSUIPC_Close();<br>
+return FALSE;<br>
+}<br>
+<br>
+FSUIPC_FS_Version &amp;= 0xffff; // Isolates the FS version number<br>
+if (dwFSReq &amp;&amp; (dwFSReq != FSUIPC_FS_Version)) // Optional user specific FS request<br>
+{ *pdwResult = FSUIPC_ERR_WRONGFS;<br>
+FSUIPC_Close();<br>
+return FALSE;<br>
+}<br>
+<br>
+*pdwResult = FSUIPC_ERR_OK;<br>
+return TRUE;<br>
+}<br>
+<br>
+/******************************************************************************<br>
+FSUIPC_Process<br>
+******************************************************************************/<br>
+<br>
+BOOL FSUIPC_Process(DWORD *pdwResult)<br>
+{ DWORD dwError;<br>
+DWORD *pdw;<br>
+FS6IPC_READSTATEDATA_HDR *pHdrR;<br>
+FS6IPC_WRITESTATEDATA_HDR *pHdrW;<br>
+int i = 0;<br>
+<br>
+if (!m_pView)<br>
+{ *pdwResult = FSUIPC_ERR_NOTOPEN;<br>
+return FALSE;<br>
+}<br>
+<br>
+if (m_pView == m_pNext)<br>
+{ *pdwResult = FSUIPC_ERR_NODATA;<br>
+return FALSE;<br>
+}<br>
+<br>
+ZeroMemory(m_pNext, 4); // Terminator<br>
+m_pNext = m_pView;<br>
+<br>
+// send the request (allow up to 9 tries)<br>
+while ((++i &lt; 10) &amp;&amp; !SendMessageTimeout(<br>
+m_hWnd, // FS6 window handle<br>
+m_msg, // our registered message id<br>
+m_atom, // wParam: name of file-mapping object<br>
+0, // lParam: offset of request into file-mapping obj<br>
+SMTO_BLOCK, // halt this thread until we get a response<br>
+2000, // time out interval<br>
+&amp;dwError)) // return value<br>
+{ Sleep(100); // Allow for things to happen<br>
+}<br>
+<br>
+if (i &gt;= 10) // Failed all tries?<br>
+{ *pdwResult = GetLastError() == 0 ? FSUIPC_ERR_TIMEOUT : FSUIPC_ERR_SENDMSG;<br>
+return FALSE;<br>
+}<br>
+<br>
+if (dwError != FS6IPC_MESSAGE_SUCCESS)<br>
+{ *pdwResult = FSUIPC_ERR_DATA; // FSUIPC didn't like something in the data!<br>
+return FALSE;<br>
+}<br>
+<br>
+// Decode and store results of Read requests<br>
+pdw = (DWORD *) m_pView;<br>
+<br>
+while (*pdw)<br>
+{ switch (*pdw)<br>
+{ case FS6IPC_READSTATEDATA_ID:<br>
+pHdrR = (FS6IPC_READSTATEDATA_HDR *) pdw;<br>
+m_pNext += sizeof(FS6IPC_READSTATEDATA_HDR);<br>
+if (pHdrR-&gt;pDest &amp;&amp; pHdrR-&gt;nBytes)<br>
+CopyMemory(pHdrR-&gt;pDest, m_pNext, pHdrR-&gt;nBytes);<br>
+m_pNext += pHdrR-&gt;nBytes;<br>
+break;<br>
+<br>
+case FS6IPC_WRITESTATEDATA_ID:<br>
+// This is a write, so there's no returned data to store<br>
+pHdrW = (FS6IPC_WRITESTATEDATA_HDR *) pdw;<br>
+m_pNext += sizeof(FS6IPC_WRITESTATEDATA_HDR) + pHdrW-&gt;nBytes;<br>
+break;<br>
+<br>
+default:<br>
+// Error! So terminate the scan<br>
+*pdw = 0;<br>
+break;<br>
+}<br>
+<br>
+pdw = (DWORD *) m_pNext;<br>
+}<br>
+<br>
+m_pNext = m_pView;<br>
+*pdwResult = FSUIPC_ERR_OK;<br>
+return TRUE;<br>
+}<br>
+<br>
+/******************************************************************************<br>
+FSUIPC_Read<br>
+******************************************************************************/<br>
+<br>
+BOOL FSUIPC_Read(DWORD dwOffset, DWORD dwSize, void *pDest, DWORD *pdwResult)<br>
+{ FS6IPC_READSTATEDATA_HDR *pHdr = (FS6IPC_READSTATEDATA_HDR *) m_pNext;<br>
+<br>
+// Check link is open<br>
+if (!m_pView)<br>
+{ *pdwResult = FSUIPC_ERR_NOTOPEN;<br>
+return FALSE;<br>
+}<br>
+<br>
+// Check have space for this request (including terminator)<br>
+if (((m_pNext - m_pView) + 4 + (dwSize + sizeof(FS6IPC_READSTATEDATA_HDR))) &gt; MAX_SIZE)<br>
+{ *pdwResult = FSUIPC_ERR_SIZE;<br>
+return FALSE;<br>
+}<br>
+<br>
+// Initialise header for read request<br>
+pHdr-&gt;dwId = FS6IPC_READSTATEDATA_ID;<br>
+pHdr-&gt;dwOffset = dwOffset;<br>
+pHdr-&gt;nBytes = dwSize;<br>
+pHdr-&gt;pDest = (BYTE *) pDest;<br>
+<br>
+// Zero the reception area, so rubbish won't be returned<br>
+if (dwSize) ZeroMemory(&amp;m_pNext[sizeof(FS6IPC_READSTATEDATA_HDR)], dwSize);<br>
+<br>
+// Update the pointer ready for more data<br>
+m_pNext += sizeof(FS6IPC_READSTATEDATA_HDR) + dwSize;<br>
+<br>
+*pdwResult = FSUIPC_ERR_OK;<br>
+return TRUE;<br>
+}<br>
+<br>
+/******************************************************************************<br>
+FSUIPC_Write<br>
+******************************************************************************/<br>
+<br>
+BOOL FSUIPC_Write(DWORD dwOffset, DWORD dwSize, void *pSrce, DWORD *pdwResult)<br>
+{ FS6IPC_WRITESTATEDATA_HDR *pHdr = (FS6IPC_WRITESTATEDATA_HDR *) m_pNext;<br>
+<br>
+// check link is open<br>
+if (!m_pView)<br>
+{ *pdwResult = FSUIPC_ERR_NOTOPEN;<br>
+return FALSE;<br>
+}<br>
+<br>
+// Check have spce for this request (including terminator)<br>
+if (((m_pNext - m_pView) + 4 + (dwSize + sizeof(FS6IPC_WRITESTATEDATA_HDR))) &gt; MAX_SIZE)<br>
+{ *pdwResult = FSUIPC_ERR_SIZE;<br>
+return FALSE;<br>
+}<br>
+<br>
+// Initialise header for write request<br>
+pHdr-&gt;dwId = FS6IPC_WRITESTATEDATA_ID;<br>
+pHdr-&gt;dwOffset = dwOffset;<br>
+pHdr-&gt;nBytes = dwSize;<br>
+<br>
+// Copy in the data to be written<br>
+if (dwSize) CopyMemory(&amp;m_pNext[sizeof(FS6IPC_WRITESTATEDATA_HDR)], pSrce, dwSize);<br>
+<br>
+// Update the pointer ready for more data<br>
+m_pNext += sizeof(FS6IPC_WRITESTATEDATA_HDR) + dwSize;<br>
+<br>
+*pdwResult = FSUIPC_ERR_OK;<br>
+return TRUE;<br>
+}<br>
+<br>
+/******************************************************************************<br>
+End of IPCuser module<br>
+******************************************************************************/</div>
+    </div>
+  </div>
+  <div class="post" id="p72060">
+    <div class="poster">
+      <div class="name" style="color:#105289">alvaro533</div>
+      <div class="rank">Posts: 230</div>
+      <div class="avatar"></div>
+      Joined: Sat Apr 19, 2008 10:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">MicroSoft Flight Simulator and FSUIPC</span><br>
+        Posted: Fri Dec 19, 2008 03:38 AM
+      </div>
+      <div class="content"><p>I made the functions in FWH. If someone is interested I can share it.<br>
+Regards,</p>
+<p>Alvaro</p>
+<p>// ---------------------------------------------------------------------------------- //<br>
+HB_FUNC (FS_READ )<br>
+{<br>
+DWORD *pdwResult;<br>
+DWORD valor;<br>
+DWORD fsoffset;<br>
+DWORD fslenth;</p>
+<p>hb_reta( 2 );</p>
+<p>fsoffset = hb_parnd(1);<br>
+fslenth = hb_parni(2);</p>
+<p>if (!FSUIPC_Read(fsoffset, fslenth, &amp;valor, pdwResult))<br>
+        {<br>
+        hb_storni( <em>pdwResult , -1, 1);<br>
+        hb_storni( 0 , -1, 2);<br>
+        }<br>
+else<br>
+{<br>
+if (!FSUIPC_Process(pdwResult))<br>
+        {   FSUIPC_Close();<br>
+        hb_storni( </em>pdwResult , -1, 1);<br>
+        hb_storni( 0 , -1, 2);    <br>
+        }<br>
+else<br>
+{     <br>
+ valor &amp;= 0xffff; <br>
+        hb_storni( *pdwResult , -1, 1);<br>
+        hb_storni( valor , -1, 2);<br>
+}<br>
+}<br>
+}</p>
+<p>etc. ...<br>
+similar for OPEN, WRITE and CLOSE</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

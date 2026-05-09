@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>How to write NULL to a Sql table - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-15339">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> How to write NULL to a Sql table</div>
+<div class="pagination">Page: <a href="topic-15339.html">1</a> <a href="topic-15339-page-2.html">2</a> <strong>3</strong> (37 posts)</div>  <div class="post" id="p79788">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to write NULL to a Sql table</span><br>
+        Posted: Sat Apr 25, 2009 07:44 PM
+      </div>
+      <div class="content"><p>I have tested on MSSql Server 2000 ( thats what is available  to me now ).<br>
+The table is :<br>
+CountryID  CountryName Population<br>
+IT            Italy             58800000<br>
+...<br>
+...<br>
+After<br>
+oRs:Fields( 'Population' ):Value := nil,<br>
+the Population is now 0  not NULL.</p>
+<p>If we link with my modified win32ole.prg or if we write ....Value := VTWrapper( 1, nil ), the updated value is NULL not 0.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p79791">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to write NULL to a Sql table</span><br>
+        Posted: Sat Apr 25, 2009 08:03 PM
+      </div>
+      <div class="content"><p>Sorry, I don't know how to explain that difference.</p>
+<p>EMG</p></div>
+    </div>
+  </div>
+  <div class="post" id="p79799">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to write NULL to a Sql table</span><br>
+        Posted: Sun Apr 26, 2009 08:21 AM
+      </div>
+      <div class="content">The real problem is when we need to pass NULL value to a parameter of a ServerSide procedure or function.<br>
+<br>
+For example, this is a function stored on the MSSQL server.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CREATE FUNCTION nulltest( @nVar Int )
+RETURNING Int
+AS
+BEGIN
+DECLARE @RetVal Int
+IF @nVar Is Null
+   @RetVal = -1
+ELSE
+   @RetVal = 2 * @nVar
+
+RETURN @RetVal
+END</code></pre></div><br>
+<br>
+When an Integer is passed as parameter, this function returns twice the parameter; when NULL is passed, it returns -1 and when a value of any other datatype is passed the server complains data type mismatch.<br>
+<br>
+Here is the xHarbour implementation of calling this function and retrieving the return value.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Function Main()
+   local oCn, oCmd, oParam
+   local cConStr  := &lt;our connection string to mssql server&gt;
+
+   oCn      := TOleAuto():new( "ADODB.Connection" )
+   with object oCn
+      :ConnectionString := cConStr
+      :Open()
+   end
+   oCn:CursorLocation   := adUseClient
+   oCmd     := TOleAuto():New( 'ADODB.Command' )
+   with object oCmd
+      :ActiveConnection := oCn
+      :CommandText      := 'nulltest'
+      :CommandType      := adCmdStoredProc
+      :Prepared         := .t.
+   end
+
+   oParam   := oCmd:CreateParameter( 'retval', adInteger, adParamReturnValue )
+   oCmd:Parameters:Append( oParam )
+   oParam   := oCmd:CreateParameter( 'nval',   adInteger, adParamInput )
+   oCmd:Parameters:Append( oParam )
+
+   MsgInfo( ExecCmd( oCmd, 10 ) )         // result 20 : Correct
+   MsgInfo( ExecCmd( oCmd, VTWrapper( 1, nil ) ) ) // result -1 : Correct
+   MsgInfo( ExecCmd( oCmd, nil ) )   // should result in -1 but generates error
+
+   oCn:Close()
+
+return nil
+
+//--------------------------------------------------------------//
+static function ExecCmd( oCmd, uInput )
+
+   local nRet
+
+   oCmd:Parameters( 1 ):Value    := uInput
+   TRY
+      oCmd:Execute()
+      nRet     := oCmd:Parameters( 0 ):Value
+   CATCH
+      ShowAdoError( oCmd:ActiveConnection )
+   END
+
+return nRet
+//--------------------------------------------------------------//
+static function ShowAdoError( oCon )
+
+   local oErr, nErr, cErr
+
+   nErr   := oCon:Errors:Count()
+
+   if nErr &gt; 0
+      oErr   := oCon:Errors[ nErr - 1 ]
+      cErr   := "Description : "    + oErr:Description
+      cErr   += CRLF + "SubCode : " + cValToChar( oErr:NativeError )
+      cErr   += CRLF + "Source : "  + oErr:Source
+      MsgInfo( cErr )
+   else
+      MsgInfo( 'No Ado Error' )
+   endif
+
+return nil
+//---------------------------------------------------------------//</code></pre></div><br>
+<br>
+It can be seen that only when we pass VTWrapper( 1, nil ), the parameter value is passed as NULL and when NIL is not taken as NULL and runtime error occurs.<br>
+<blockquote><br>
+Procedure ‘nulltest’ expects parameter @nVar which was not supplied.<br>
+</blockquote><br>
+<br>
+The modification I made to win32ole.prg line 904 is :<br>
+Instead of <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//pVariant-&gt;n1.n2.vt = VT_EMPTY;</code></pre></div><br>
+Substituted<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">pVariant-&gt;n1.n2.vt = VT_NULL;</code></pre></div><br>
+<br>
+<br>
+<br>
+With the patch I suggested above, assigning NIL to a parameter value is passed on as NULL to the background function or procedure.</div>
+    </div>
+  </div>
+  <div class="post" id="p79802">
+    <div class="poster">
+      <div class="name" style="color:#105289">Rick Lipkin</div>
+      <div class="rank">Posts: 2706</div>
+      <img class="avatar avatar-img" src="avatars/35.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:50 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to write NULL to a Sql table</span><br>
+        Posted: Sun Apr 26, 2009 11:53 AM
+      </div>
+      <div class="content"><p>Rao</p>
+<p>Just wanted those following this thread to know you modification to WinOle32 workes perfect. Hopefully you will be able to contribute your fix to the xHarb project.</p>
+<p>Rick Lipkin</p></div>
+    </div>
+  </div>
+  <div class="post" id="p79812">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to write NULL to a Sql table</span><br>
+        Posted: Sun Apr 26, 2009 03:02 PM
+      </div>
+      <div class="content"><p>&gt;<br>
+Hopefully you will be able to contribute your fix to the xHarb project.<br>
+&gt;<br>
+What should I do for this? I posted the fix here. I would like xHarbour team to examine this modification and incorporate if they consider it suitable. I do not know how to bring it to their notice. I would welcome if any of our colleagues is kind enough to take the trouble of suggesting this to the xHarbour team.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p79818">
+    <div class="poster">
+      <div class="name" style="color:#105289">Rick Lipkin</div>
+      <div class="rank">Posts: 2706</div>
+      <img class="avatar avatar-img" src="avatars/35.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:50 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to write NULL to a Sql table</span><br>
+        Posted: Sun Apr 26, 2009 04:18 PM
+      </div>
+      <div class="content"><p>Rao</p>
+<p>Here is the link to the xHarb NG on Google .. you will see the thread I started and the discussions from other interested users with the same problem</p>
+<!-- m -->
+<p><a class="postlink" href="http://groups.google.com/group/comp.lang.xharbour/topics">http://groups.google.com/group/comp.lan ... our/topics</a></p>
+<p>Rick</p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p79825">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to write NULL to a Sql table</span><br>
+        Posted: Sun Apr 26, 2009 07:35 PM
+      </div>
+      <div class="content">At times we need to assign NULL value to a parameter. Some other times we need to skip a parameter, leaving it empty and allowing the server-side procedure / function to substitute the skipped parameter with its default value. Both are different. I have found a way to accomplish both which I explain here.  I have tested this with functions on Oracle and MSSql servers.<br>
+<br>
+Oracle Server function<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CREATE OR REPLACE FUNCTION nulltest( nVar AS NUMBER DEFAULT -2 )
+RETURN NUMBER
+AS
+   RetVal NUMBER;
+BEGIN
+   IF nVar IS NULL THEN
+      RetVal := -1;
+   ELSE
+      RetVal := 2 * nVar;
+   END IF;
+   RETURN RetVal;
+END nulltest;
+/</code></pre></div>MSSQL Server Function<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">CREATE FUNCTION dbo.nulltest( @nval Int = -2 )
+RETURNS int 
+AS  
+BEGIN 
+DECLARE @retval Int
+IF @nval Is Null
+   SET @retval = -1
+ELSE
+   SET @retval = @nval * 2
+
+RETURN @retval
+END</code></pre></div><br>
+Both the functions are identical in functionality. If a number is passed as parameter the function returns twice that number. If NULL is passed as parameter it returns -1. If no parameter is passed, its value defaults to -2 and return value is -4.<br>
+<br>
+My xHarbour code ( Same code works for both Oracle or MSSql depending on the connection string )<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include 'fivewin.ch'
+
+#xtranslate NULL =&gt; VTWrapper( 1 )  // 1 = VT_NULL from vt.ch
+#xtranslate EMPTY_ARG =&gt; VTWrapper( 0 ) // 0 = VT_EMPTY from vt.ch
+
+Function Main()
+   local oCn, oCmd, oParam
+   local cConStr  := &lt;our connection string to mssql server&gt; // works both for Oracle and MSSql
+
+      oCn      := TOleAuto():new( "ADODB.Connection" )
+   with object oCn
+      :ConnectionString := cConStr
+      :Open()
+   end
+   oCn:CursorLocation   := adUseClient
+   oCmd     := TOleAuto():New( 'ADODB.Command' )
+   with object oCmd
+      :ActiveConnection := oCn
+      :CommandText      := 'nulltest'
+      :CommandType      := adCmdStoredProc
+      :Prepared         := .t.
+   end
+
+   oParam   := oCmd:CreateParameter( 'retval', adInteger, adParamReturnValue )
+   oCmd:Parameters:Append( oParam )
+   oParam   := oCmd:CreateParameter( 'nval',   adInteger, adParamInput )
+   oCmd:Parameters:Append( oParam )
+
+   MsgInfo( ExecCmd( oCmd, 10 ) )         // result 20
+   MsgInfo( ExecCmd( oCmd, NULL ) ) // result -1
+   MsgInfo( ExeCCmd( oCmd, EMPTY_ARG ) ) // result -4
+   MsgInfo( ExecCmd( oCmd, nil ) )   // should result in -1 but generates error
+
+   oCn:Close()
+
+return nil
+
+//--------------------------------------------------------------//
+static function ExecCmd( oCmd, uInput )
+
+   local nRet
+
+   oCmd:Parameters( 1 ):Value    := uInput
+   TRY
+      oCmd:Execute()
+      nRet     := oCmd:Parameters( 0 ):Value
+   CATCH
+      ShowAdoError( oCmd:ActiveConnection )
+   END
+
+return nRet
+//--------------------------------------------------------------//
+static function ShowAdoError( oCon )
+
+   local oErr, nErr, cErr
+
+   nErr   := oCon:Errors:Count()
+
+   if nErr &gt; 0
+      oErr   := oCon:Errors[ nErr - 1 ]
+      cErr   := "Description : "    + oErr:Description
+      cErr   += CRLF + "SubCode : " + cValToChar( oErr:NativeError )
+      cErr   += CRLF + "Source : "  + oErr:Source
+      MsgInfo( cErr )
+   else
+      MsgInfo( 'No Ado Error' )
+   endif
+
+return nil
+//---------------------------------------------------------------//</code></pre></div><br>
+I have gone through the xHarbour forum's thread Mr Rick has provided. As suggested there, OleDetaultArg() does not work. It gives runtime error. Instead VTWrapper( 0 ) works for skipped arguments.<br>
+<br>
+Above translate for NULL becomes unnecessary and assigning NIL will pass proper NULL if the following small modification is made to win32ole.prg ( line 904 )<br>
+Instead of <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//pVariant-&gt;n1.n2.vt = VT_EMPTY;</code></pre></div><br>
+ Substitute<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">pVariant-&gt;n1.n2.vt = VT_NULL;</code></pre></div></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-15339.html">1</a> <a href="topic-15339-page-2.html">2</a> <strong>3</strong> (37 posts)</div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

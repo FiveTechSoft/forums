@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-32791">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-32791-page-2.html">2</a> <a href="topic-32791-page-3.html">3</a> <a href="topic-32791-page-4.html">4</a> (49 posts)</div>  <div class="post" id="p192859">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Sat Aug 06, 2016 05:00 AM
+      </div>
+      <div class="content"><span style="color:#FF0000">(Note: Enhancements and additions in FWH16.08 are noted in Red Color in this post)</span><br>
+<br>
+FWMariaConnection object provides 3 methods for backup and restore operations. As already mentioned, all features of FWH co-exist with other libraries like TMySql, TDolphin, etc and also ADO. Applications mainly relying on other libs can also use these methods for backup and restore.<br>
+<br>
+For using these features we need to obtain a new FWH connection and close after use. In case the application is already connected using TMySql or ADO, it is very easy to open FWH Connection without providing user credentials again.<br>
+<br>
+oFWCon := mysql_Connect( oAdoConObject ) // from ADO<br>
+or<br>
+oFWCon := mysql_Connect( oMySql ) // from TMySql <br>
+or use the standard method of providing host,database,username,password<br>
+<br>
+The backup/restore functions properly handle all types of fields, eg timestamps, autoincrement fields, memo fields with embedded CRLF and special characters, binary data like images, etc properly.<br>
+<br>
+Sample table backed up and restored:<br>
+<a href="https://imageshack.com/i/pmwH40YEp" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/922/wH40YE.png" alt="" loading="lazy"></a><br>
+<br>
+METHODS: <span style="color:#FF0000">(updated)</span><br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD BackUp( [source], [dest], [bProgress], [nRecsInBatch], [nMaxBufperSQL] ) 
+       --&gt; cBackUpFileName
+METHOD BackupIndex( cBackUpFileName, [lView] ) --&gt; aIndex
+METHOD Restore( cBackupFile, [aTables], [bProgress], [cNewDB] ) --&gt; nil  // cNewDB added FWH16.08
+METHOD RestoreFromSqlDump( cFile, bProgress ) // New in FWH 16.08</code></pre></div><br>
+<br>
+<strong>METHOD BackUp()</strong> // all parameters are optional.<br>
+<br>
+<strong>Param-1: Source</strong>:<br>
+(a) Defaults to current database. Full database will be backedup<br>
+(b) cDataBasename:  If the parameter is a character value, it is considered as Database name and the full database is backedup.<br>
+    eg: oCn:BackUp( &quot;fwh&quot; )<br>
+(c) aTables: If the parameter is an array, it is treated as list of tables in the current database and all the tables in the array are backedup.<br>
+<br>
+<strong>Param-2: Destination</strong><br>
+(a) Defaults to current folder<br>
+(b) cFolderName: If the parameter is a character value without extension or terminated with '\', it is considered as folder name. The folder is created if it does not exist.<br>
+(c) cFileName: If the parameter is a character value with extension, it is considered a file name. The file is created if does not exist and is overwritten if exists.<br>
+<br>
+Notes:<br>
+(a) &amp; (b): Saving to folder.<br>
+The system is primarily designed for silent scheduled backups overnight. Depending on the date and time of backup, a sub-folder with the name of the weekday is created and the backup is saved with the name of the database and extention &quot;.sql&quot;.<br>
+Example:<br>
+  oCn:Backup( &quot;fwh&quot;, &quot;c:\mybackups&quot; ) --&gt; cBackupFilename<br>
+  Assuming that this command is executed silently every night, each day the backups are created as:<br>
+  c:\mybackups\sunday\fwh.sql<br>
+  c:\mybackups\monday\fwh.sql, etc.<br>
+  After one complete week, the previous week's file is overwritten. In other words, we always have one week's backup at any time. Since it is the general practice to run such a backup routine in the midnight around 00:00 hours or early small hours, the weekday name corresponds to the day before midnight.<br>
+  Eg: Backup created at 5th August 2016 11:00 pm and also 6th August 2016 04:00 am are both saved to &quot;friday&quot; folder, indicating that the data is at the end of friday.<br>
+(c) Saving to a filename:<br>
+This option is suited for adhoc backups of selected tables.<br>
+  Eg: oCn:Backup( { &quot;states&quot;, &quot;customer&quot; }, &quot;c:\mybackups\adhoc\stcust.bkp&quot; )<br>
+<br>
+<strong>Param-3: bProgress (optional)</strong><br>
+If provided, this codeblck is evaluated for every table with table-name, serial-number, total-number-of-tables, time-in-seconds-from-start. It is generally not recommended to use this parameter since it only delays the process. On local host, even one million records table is saved within 5 seconds.<br>
+<br>
+<strong>Param-4: Number of records per SQL</strong>. Optional. Default = 100 records.<br>
+<strong>Param-5: Maximum bytes in single SQL statement:</strong> Optional. Default = 4 MB.<br>
+<br>
+Notes: These two parameters may be used keeping in view the max_packet_size permitted for the connection.<br>
+In case the table contains a blob or text (large memo) field, the number of records per sql is internally reduced to only 1 and this can not be changed.<br>
+<br>
+<strong>METHOD BackupIndex( cBackupFile, [lView] ) </strong>--&gt; aIndex // for information only<br>
+<br>
+Every backup file contains an index of the tables saved. The information can be obtained and viewed using this method. If the optional second parameter is .t., the information is displayed in a browse.<br>
+<br>
+Sample Browse:<br>
+<a href="https://imageshack.com/i/plW9BXZ0p" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/921/W9BXZ0.png" alt="" loading="lazy"></a><br>
+<br>
+<strong>METHOD Restore( cBackUpFile, [ aTables ], [bProgress], <span style="color:#FF0000">[cNewDB]</span> ) </strong>--&gt; nil<br>
+<br>
+<strong>Param-1: Backup file name. </strong>This parameter is necessary<br>
+This file should be a valid backup file created by METHOD Backup (upto FWH 16.06)<br>
+<span style="color:#FF0000">If this file is a valid MySQLDump file, this method calls the method RestorefromSqlDump( cBackupFile, [bProgress] ) // 16.08<br>
+</span><br>
+<strong>Param-2: One table name or an array of table names. </strong>Optional.<br>
+<br>
+(a) If the second parameter is ommitted:<br>
+  (i) If the backup file is for a full database, the entire database is created if does not exist on the server and all the tables are created/overwritten in that database.<br>
+ (ii) If the backup file is for some tables only, all these tables are created/overwritten in the currently selected database on the server.<br>
+(b) If the second parameter is supplied:<br>
+    All the tables specified, if exist in the backupfile, are created/overwritten in the currently selected database on the server.<br>
+<br>
+<strong>Param-3: bProgress</strong>. Optional<br>
+   If specified, this codeblock is evaluated with each table name.<br>
+<br>
+<span style="color:#FF0000"><strong>Param-4: cNewDB</strong> Optional. Added in FWH 16.08<br>
+   If specified for a full database backup, the backup will be restored with new database name : cNewDB. This parameter enables duplication of an existing database.</span><br>
+<br>
+<strong>Explanation</strong>:<br>
+<br>
+1) When cBackUpFile is Full Database Backup and 2nd and 4th parameters are omitted, full database and tables are restored to the same database from which the backup was made.<br>
+2) When cBackUpFile is Full Database Backup and 4th parameter is specified, new database cNewDB is created and all tables are restored to cNewDB.<br>
+3) If 2nd parameter is specified, table[s] named in the 2nd parameter are restored to the Currently logged in database, irrespective of the database from which the backup was made.<br>
+<br>
+This enables copying some table[s] from one database to other database.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oCn:SelectDB( "db1" )
+oCn:BackUp( { "table1", "table2" }, "temp.sql" )
+oCn:SelectDB( "db2" )
+oCn:Restore( "temp.sql", { "table1" } )</code></pre></div><br>
+In the above example, table1 of db1 is copied as table1 in db2.<br>
+ <br>
+<span style="color:#FF0000"><strong><span style="text-decoration:underline">METHOD RestoreFromSqlDump( cFile, bProgress )</span></strong> // New in FWH 16.08<br>
+<br>
+This method enables restoring from a MySqlDump file.<br>
+</span></div>
+    </div>
+  </div>
+  <div class="post" id="p193083">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore</span><br>
+        Posted: Mon Aug 15, 2016 05:21 PM
+      </div>
+      <div class="content">Main purpose of backup/restore is to backup all objects of database with the ability to reconstruct the full database in case of need.<br>
+<br>
+FWH's backup/restore feature is greatly enhanced to meet this requirement fully.  <br>
+<br>
+Backup of full database backsup Tables, Views, Triggers, Functions and Procedures. Restoring restores all these objects in proper order making it on par with other professional backup/restore tools.<br>
+<br>
+<a href="https://imageshack.com/i/pm9wV3hXp" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/922/9wV3hX.png" alt="" loading="lazy"></a><br>
+<br>
+This enhancement is available in the next build due for release any time now.</div>
+    </div>
+  </div>
+  <div class="post" id="p193094">
+    <div class="poster">
+      <div class="name" style="color:#105289">Baxajaun</div>
+      <div class="rank">Posts: 988</div>
+      <img class="avatar avatar-img" src="avatars/177.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 19, 2005 02:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore</span><br>
+        Posted: Tue Aug 16, 2016 06:01 AM
+      </div>
+      <div class="content"><p>Mr. Rao,</p>
+<p>Great job !!!</p>
+<p>Thanks in advance.</p>
+<p>Best regards,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p194409">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Fri Sep 30, 2016 11:10 AM
+      </div>
+      <div class="content">FWH 16.08<br>
+<br>
+Added:<br>
+Facility to Restore a database backup with a different databasename<br>
+and<br>
+Facility to Restore a regular MySqlDump file.<br>
+<br>
+Please see the revisions noted with <span style="color:#FF0000">Red color</span> in the first post of this thread.</div>
+    </div>
+  </div>
+  <div class="post" id="p194971">
+    <div class="poster">
+      <div class="name" style="color:#105289">vmarimon</div>
+      <div class="rank">Posts: 8</div>
+      <div class="avatar"></div>
+      Joined: Thu Feb 01, 2007 11:59 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Tue Oct 25, 2016 01:32 PM
+      </div>
+      <div class="content"><p>Hi, is it possible to hide msginfo messages for the 'backup' method? In other words, bypass msginfo messages for any error.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p195085">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Sat Oct 29, 2016 04:35 PM
+      </div>
+      <div class="content"><p>Mr vmarimon</p>
+<p>This is the change implemented in FWH 16.09:</p>
+<p>METHOD BackUp() is now made silent by default. In case of<br>
+  error, oCn:nError is set to non-zero value, oCn:cError<br>
+  is set with error information and returns .F.. </p>
+<p>If oCn:lLog or oCn:lLogErr is set to .T., the error is <br>
+  logged to the default log file( oCn:cLogFile )</p>
+<p>If oCn:lShowErrors or oCn:lShowMessages is set to .T., <br>
+  the error is displayed.</p>
+<p>Does this meet your requirement?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p195130">
+    <div class="poster">
+      <div class="name" style="color:#105289">vmarimon</div>
+      <div class="rank">Posts: 8</div>
+      <div class="avatar"></div>
+      Joined: Thu Feb 01, 2007 11:59 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Mon Oct 31, 2016 04:26 PM
+      </div>
+      <div class="content"><p>Does Restore method a SET_FOREIGN_KEY_CHECKS=0 command before execute sql file? I have several errors with foreign keys index executing sql from heidysql, and Restore method don't restore database.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p195133">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Mon Oct 31, 2016 05:01 PM
+      </div>
+      <div class="content"><p>Yes <br>
+Please try restoring a full database with a different name and let us have your feed back.</p>
+<p>Take backup <br>
+oCn:BackUp( cDatabase, cBackupFile )</p>
+<p>Restore by database by other name</p>
+<p>oCn:Restore( cBackUpFile, nil, nil, cOtherDB )</p></div>
+    </div>
+  </div>
+  <div class="post" id="p195181">
+    <div class="poster">
+      <div class="name" style="color:#105289">vmarimon</div>
+      <div class="rank">Posts: 8</div>
+      <div class="avatar"></div>
+      Joined: Thu Feb 01, 2007 11:59 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Wed Nov 02, 2016 07:56 AM
+      </div>
+      <div class="content"><p>Restore method dont restore using alternate database name, same issue. On both questions about creation and Use i answer YES, method restore return EMPTY (no NIL) and dont restore database.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p195183">
+    <div class="poster">
+      <div class="name" style="color:#105289">vmarimon</div>
+      <div class="rank">Posts: 8</div>
+      <div class="avatar"></div>
+      Joined: Thu Feb 01, 2007 11:59 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Wed Nov 02, 2016 08:59 AM
+      </div>
+      <div class="content"><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   HB_LangSelect("ES")
+   HB_CDPSelect("ESWIN")
+   FWSetLanguage( 2 )
+
+   oCn := mysql_Connect( cHost, cUsr, cPsw)
+   ? cResult:=oCn:Backup('prova','c:\pp\prova.sql')
+   ? oCn:Restore("c:\pp\prova.sql",NIL,NIL,"prueba")</code></pre></div><br>
+<br>
+Windows 10 client<br>
+Mariadb 5.5.51<br>
+FW1608<br>
+<br>
+<img src="http://i63.tinypic.com/6p21li.png" alt="" loading="lazy"><br>
+<img src="http://i64.tinypic.com/11sds9j.png" alt="" loading="lazy"><br>
+<img src="http://i67.tinypic.com/2hn8aat.png" alt="" loading="lazy"><br>
+<img src="http://i66.tinypic.com/2enmb2x.png" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p195232">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Fri Nov 04, 2016 03:44 AM
+      </div>
+      <div class="content">Method BackUp() returns backup file name.<br>
+Method Restore() was returning NIL. Now modified to return .T. on success and .f. on failure.<br>
+<br>
+During development, we kept some msgyesno() for testing. We regret that we forgot to remove them. Now we removed these messages.<br>
+<br>
+Some more enhancements have been made after release of FWH 16.10. Backup/Restrore now handles :<br>
+1) Tables with calculated virtual columns.<br>
+2) Tables with fields of type geometry.<br>
+<br>
+Binary Data:<br>
+Backup/Restore system works perfectly as long as binary data (like images, documents, etc) is stored in BLOB fields but not in TEXT fields. Storing binary data in text fields is not a good practice, though this might seem be working in some cases. Before using backup/restore, please ensure that binary data is not stored in TEXT fields.<br>
+<br>
+TEST:<br>
+In case of full installation of recent versions of MySql, with examples, a sample database by name `sakila` is also automatically installed. This database contains tables, views, triggers, stored procedures and functions. <br>
+<br>
+This is a fully normalized database and consequently many tables reference others by foreign keys. In one case there is even mutual referencing. This database is a good example how to normalize our databases.<br>
+<br>
+This database, with all its complexities, is ideal for testing FWH BackUp and Restore functionality.<br>
+<br>
+We executed the following code to backup the database `sakila` and then restore it with another name `sakira`.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function TestBackUpRestore()
+
+   local cBackFile, cOldDb, cNewDB
+
+   oCn:SelectDB( "fwh" )
+   cBackFile   := "c:\tests\sakila.sql"
+   ? "Backup Start"
+   ? oCn:BackUp( "sakila", cBackFile )
+
+   oCn:BackUpIndex( cBackFile, .t. )
+
+   ? "Restore Start"
+   ? oCn:Restore( cBackFile, nil, nil, "sakira" )
+
+   xbrowser oCn:ListTables() title oCn:CurrentDB()
+
+return nil</code></pre></div><br>
+<br>
+Now we compare the tables of the original database `sakila` with restored database `sakira`.<br>
+We used this code to compare the tables. This code can be used to compare other cases also.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function DbCompare( db1, db2 )
+
+   local aTable1, aTable2
+
+   aTable1  := TableInfo( db1 )
+   aTable2  := TableInfo( db2 )
+   AEval( aTable2, { |a| AAdd( aTable1, a ) } )
+   ASort( aTable1, nil, nil, { |x,y| x[ 2 ] + x[ 1 ] &lt; y[ 2 ] + y[ 1 ] } )
+
+   xbrowser aTable1 autofit SETUP XBrSetup( oBrw )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function XBrSetup( oBrw )
+
+   oBrw:cHeaders := { "DB","TABLE","ROWS","REFERENCES","REFERENCED-BY" }
+   oBrw:bClrStd  := { || { CLR_BLACK, If( oBrw:KeyNo % 2 == 0, RGB(160,225,255), CLR_WHITE ) } }
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function TableInfo( db )
+
+   local aTables  := {}
+   local n, tmp
+
+   AEval( oCn:ListBaseTables( nil, db ), { |c| ;
+      AAdd( aTables, { db, c, ;
+         oCn:QueryResult( "SELECT COUNT(*) FROM " + db + "." + c ), ;
+         "", "" } ) } )
+
+   AEval( aTables, { |a| a[ 4 ] := FW_ArrayAsList( oCn:FKReferencedTables( a[ 1 ] + "." + a[ 2 ] ) ) } )
+   for n := 1 to Len( aTables )
+      tmp   := oCn:FKReferencedBy( aTables[ n, 2 ], aTables[ n, 1 ] )
+      if ! Empty( tmp )
+         tmp         := ArrTranspose( tmp )[ 1 ]
+         AEval( tmp, { |c,i| tmp[ i ] := AfterAtNum( ".", c ) } )
+         aTables[ n, 5 ]   := FW_ArrayAsList( tmp )
+      endif
+   next
+
+return aTables</code></pre></div><br>
+<br>
+Result of comparison<br>
+<br>
+<a href="https://imageshack.com/i/plbawAGPp" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/921/bawAGP.png" alt="" loading="lazy"></a><br>
+<br>
+White lines belong to the original database and the blue lines refer to the restored database. This table compares the foreign key relationships also in the original and restored databases.<br>
+<br>
+It may be seen that the tables `store` and `staff` reference each other. Also, the table `address` has a field `location` which is of type &quot;geometry&quot;.<br>
+<br>
+After tables, we now compare all other objects with this code.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function DbCompare2( db1, db2 )
+
+   local aCmp  := {}
+
+   ObjComp( "VIEW",      db1, db2, oCn:ListViews(      nil, db1, .t. ), oCn:ListViews(      nil, db2, .t. ), aCmp )
+   ObjComp( "TRIGGER",   db1, db2, oCn:ListTriggers(   nil, db1, .t. ), oCn:ListTriggers(   nil, db2, .t. ), aCmp )
+   ObjComp( "PROCEDURE", db1, db2, oCn:ListProcedures( nil, db1, .t. ), oCn:ListProcedures( nil, db2, .t. ), aCmp )
+   ObjComp( "FUNCTION",  db1, db2, oCn:ListFunctions(  nil, db1, .t. ), oCn:ListFunctions(  nil, db2, .t. ), aCmp )
+
+   xbrowser aCmp SETUP ( oBrw:cHeaders := { "OBJECT", "NAME", "TABLE", db1 + "==" + db2 + "?" } ) ;
+      TITLE "COMPARE OBJECTS"
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function ObjComp( cObj, db1, db2, a1, a2, aCmp )
+
+   local nAt, n, c, aa
+   local nCol  := If( cObj == "TRIGGER", 3, 2 )
+
+   for n := 1 to Len( a1 )
+      aa    := { cObj, a1[ n, 1 ], "", .f. }
+      nAt   := AScan( a2, { |a| a[ 1 ] == a1[ n, 1 ] } )
+      if nAt &gt; 0
+         if nCol &gt; 2
+            aa[ 3 ] := a1[ nAt, 2 ]
+         endif
+         c        := StrTran( a2[ nAt, nCol ], db2, db1 )
+         aa[ 4 ]  := ( a1[ n, nCol ] == c )
+      endif
+      AAdd( aCmp, aa )
+   next
+
+return aCmp</code></pre></div><br>
+<br>
+This code compares whether all objects are restored or not and also whether the text restored is identical to the original or not.<br>
+<br>
+Result:<br>
+<a href="https://imageshack.com/i/pm0Orqusp" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/922/0Orqus.png" alt="" loading="lazy"></a><br>
+<br>
+These tests on a complex database like `sakila` indicate satisfactory functioning of FWH's Backup/Restore feature.<br>
+<br>
+We welcome more and more tests and feedback. <br>
+<br>
+Note: This functionality is available in the revised build soon to be published.</div>
+    </div>
+  </div>
+  <div class="post" id="p195236">
+    <div class="poster">
+      <div class="name" style="color:#105289">jose_murugosa</div>
+      <div class="rank">Posts: 1278</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 06, 2006 04:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Fri Nov 04, 2016 01:56 PM
+      </div>
+      <div class="content"><strong>I'm testing a backup of our database (about 2.4 millon records) and I get this error:</strong><br>
+<br>
+Estoy probando respaldar nuestra base de datos ( aprox. 2.4 millones de registros) y estoy obteniendo este error.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Application
+===========
+   Path and name: D:\backupsql\SqlBackup.exe (32 bits)
+   Size: 3,644,928 bytes
+   Compiler version: xHarbour 1.2.3 Intl. (SimpLex) (Build 20150603)
+   FiveWin  Version: FWHX 16.10
+   Windows version: 6.1, Build 7601 Service Pack 1
+
+   Time from start: 0 hours 1 mins 1 secs 
+   Error occurred at: 04/11/2016, 10:41:31
+   Error description: Error BASE/1068  Error de argumento: acceso al array
+   Args:
+     [   1] = L   .F.
+     [   2] = N   2
+
+Stack Calls
+===========
+   Called from: .\source\internal\FWMARIA.PRG =&gt; FWMARIACONNECTION:BACKUP( 5400 )
+   Called from: sqlbackup.prg =&gt; RBD( 63 )
+   Called from: sqlbackup.prg =&gt; (b)RESPALDOBD( 51 )
+   Called from: .\source\function\MSGRUN.PRG =&gt; (b)MSGRUN( 37 )
+   Called from: .\source\classes\DIALOG.PRG =&gt; (b)TDIALOG:TDIALOG( 95 )
+   Called from:  =&gt; TDIALOG:DISPLAY( 0 )
+   Called from: .\source\classes\DIALOG.PRG =&gt; TDIALOG:HANDLEEVENT( 901 )
+   Called from:  =&gt; DIALOGBOXINDIRECT( 0 )
+   Called from: .\source\classes\DIALOG.PRG =&gt; TDIALOG:ACTIVATE( 296 )
+   Called from: .\source\function\MSGRUN.PRG =&gt; MSGRUN( 42 )
+   Called from: sqlbackup.prg =&gt; RESPALDOBD( 51 )
+   Called from: sqlbackup.prg =&gt; (b)CREAMENU( 29 )
+   Called from: .\source\classes\MENU.PRG =&gt; TMENU:COMMAND( 1212 )
+   Called from: .\source\classes\WINDOW.PRG =&gt; TWINDOW:COMMAND( 1086 )
+   Called from:  =&gt; TWINDOW:HANDLEEVENT( 0 )
+   Called from: .\source\classes\WINDOW.PRG =&gt; _FWH( 3305 )
+   Called from:  =&gt; WINRUN( 0 )
+   Called from: .\source\classes\WINDOW.PRG =&gt; TWINDOW:ACTIVATE( 1042 )
+   Called from: sqlbackup.prg =&gt; SQLBACKUP( 18 )
+
+System
+======
+   CPU type: Intel(R) Core(TM) i7-4770 CPU @ 3.40GHz 3392 Mhz
+   Hardware memory: 7870 megs
+
+   Free System resources: 90 %
+        GDI    resources: 90 %
+        User   resources: 90 %
+
+   Windows total applications running: 5
+      1 ,                                                                                                     
+      2 , D:\backupsql\SqlBackup.exe                                                                          
+      3 DDE Server Window, C:\Windows\syswow64\OLE32.DLL                                                                       
+      4 GDI+ Window, C:\Windows\WinSxS\x86_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.7601.19061_none_72d6d48d866497 
+      5 MCI command handling window, C:\Windows\system32\WINMM.DLL                                                                       
+
+Variables in use
+================
+   Procedure     Type   Value
+   ==========================
+   FWMARIACONNECTION:BACKUP
+     Param   1:    A    Len:   27
+     Param   2:    C    "D:\backupsql\stock2.sql"
+     Local   1:    U    
+     Local   2:    U    
+     Local   3:    U    
+     Local   4:    O    Class: FWMARIACONNECTION
+     Local   5:    C    "stock2"
+     Local   6:    U    
+     Local   7:    U    
+     Local   8:    U    
+     Local   9:    N    38433.11
+     Local  10:    U    
+     Local  11:    N    584
+     Local  12:    N    32
+     Local  13:    N    31
+     Local  14:    U    
+     Local  15:    U    
+     Local  16:    A    Len:   27
+     Local  17:    L    .T.
+     Local  18:    L    .F.
+     Local  19:    N    2
+     Local  20:    U    
+     Local  21:    A    Len:   27
+   RBD
+   (b)RESPALDOBD
+     Param   1:    O    Class: TDIALOG
+   (b)MSGRUN
+     Param   1:    U    
+   (b)TDIALOG:TDIALOG
+     Param   1:    O    Class: TDIALOG
+   TDIALOG:DISPLAY
+   TDIALOG:HANDLEEVENT
+     Param   1:    N    15
+     Param   2:    N    0
+     Param   3:    N    0
+     Local   1:    O    Class: TDIALOG
+   DIALOGBOXINDIRECT
+     Param   1:    N    4194304
+     Param   2:    C    "€         Ãÿàÿo      R e s p a l d o   M y s q l / M a r i a D B   "
+     Param   3:    N    3672556
+     Param   4:    O    Class: TDIALOG
+   TDIALOG:ACTIVATE
+     Param   1:    U    
+     Param   2:    U    
+     Param   3:    B    {|| ... }
+     Param   4:    L    .T.
+     Param   5:    U    
+     Param   6:    L    .T.
+     Param   7:    U    
+     Param   8:    U    
+     Param   9:    U    
+     Param  10:    U    
+     Param  11:    U    
+     Local   1:    O    Class: TDIALOG
+     Local   2:    N    3672556
+     Local   3:    U    
+     Local   4:    U    
+     Local   5:    U    
+     Local   6:    O    Class: TDIALOG
+   MSGRUN
+     Param   1:    C    "Inicia Respaldo de Datos"
+     Param   2:    C    "Respaldo Mysql/MariaDB"
+     Param   3:    B    {|| ... }
+     Local   1:    O    Class: TDIALOG
+     Local   2:    N    221
+     Local   3:    U    
+   RESPALDOBD
+   (b)CREAMENU
+     Param   1:    O    Class: TMENUITEM
+   TMENU:COMMAND
+     Param   1:    N    20001
+     Local   1:    O    Class: TMENU
+     Local   2:    O    Class: TMENUITEM
+   TWINDOW:COMMAND
+     Param   1:    N    20001
+     Param   2:    N    0
+     Local   1:    O    Class: TWINDOW
+     Local   2:    N    0
+     Local   3:    N    20001
+     Local   4:    N    0
+     Local   5:    U    
+   TWINDOW:HANDLEEVENT
+     Param   1:    N    273
+     Param   2:    N    20001
+     Param   3:    N    0
+   _FWH
+     Param   1:    N    0
+     Param   2:    N    273
+     Param   3:    N    20001
+     Param   4:    N    0
+     Param   5:    N    1
+     Local   1:    O    Class: TWINDOW
+   WINRUN
+     Param   1:    N    3672556
+   TWINDOW:ACTIVATE
+     Param   1:    C    "NORMAL"
+     Param   2:    U    
+     Param   3:    U    
+     Param   4:    U    
+     Param   5:    U    
+     Param   6:    U    
+     Param   7:    U    
+     Param   8:    U    
+     Param   9:    U    
+     Param  10:    U    
+     Param  11:    U    
+     Param  12:    U    
+     Param  13:    U    
+     Param  14:    U    
+     Param  15:    U    
+     Param  16:    U    
+     Param  17:    U    
+     Param  18:    U    
+     Param  19:    U    
+     Param  20:    L    .T.
+     Local   1:    O    Class: TWINDOW
+     Local   2:    U    
+     Local   3:    U    
+   SQLBACKUP
+
+Linked RDDs
+===========
+   DBF
+   DBFFPT
+   DBFBLOB
+   DBFCDX
+   DBFNTX
+
+DataBases in use
+================
+
+Classes in use:
+===============
+     1 ERROR
+     2 HASHENTRY
+     3 HBCLASS
+     4 HBOBJECT
+     5 TWINDOW
+     6 TMENU
+     7 TMENUITEM
+     8 TREG32
+     9 TBRUSH
+    10 TFONT
+    11 TRECT
+    12 TDIALOG
+    13 FWMARIACONNECTION
+    14 TSTRUCT
+
+Memory Analysis
+===============
+      377 Static variables
+
+   Dynamic memory consume:
+      Actual  Value:          0 bytes
+      Highest Value:          0 bytes</code></pre></div><br>
+<br>
+I export this data to a sql script with other software without problems<br>
+Exporto estos datos a un script sql con  otro programa sin problemas.<br>
+<br>
+Thanks,<br>
+Gracias</div>
+    </div>
+  </div>
+  <div class="post" id="p195239">
+    <div class="poster">
+      <div class="name" style="color:#105289">Armando</div>
+      <div class="rank">Posts: 3354</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 08:20 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Fri Nov 04, 2016 03:29 PM
+      </div>
+      <div class="content"><p>José/Mr. Nages:</p>
+<p>Cuando soluciones los errores podrías compartir qué tan rápido es para<br>
+restaurar un respaldo?</p>
+<p>Saludos</p>
+<p>Mr. Nages, How fast is the restore ?, do you have a TEST?</p>
+<p>Regards</p></div>
+    </div>
+  </div>
+  <div class="post" id="p195242">
+    <div class="poster">
+      <div class="name" style="color:#105289">jose_murugosa</div>
+      <div class="rank">Posts: 1278</div>
+      <div class="avatar"></div>
+      Joined: Mon Feb 06, 2006 04:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Fri Nov 04, 2016 05:36 PM
+      </div>
+      <div class="content"><p>Yes Armando, of course, results of transfering to dbf are extremely quick, but backup restore for this tables I don't know, but I'm working on it.<br>
+Si Armando, por supuesto, los resultados de transferir e importar de dbf son extremadamente rápidos, pero backup/restore aún no lo he podido probar con grandes tablas por el error que comento, les tendré al tanto.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p195246">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH 16.06: MariaDb/MySql Backup and Restore (Updated 16.08)</span><br>
+        Posted: Sat Nov 05, 2016 02:54 AM
+      </div>
+      <div class="content"><p>Mr Jose</p>
+<p>The reason must be that the first table in the array of tables does not exist in the database. Please check all table names and try again.</p>
+<p>Now we modified the library to skip such invalid table names instead of resulting in run-time error. We'll send you revised libs for testing.</p>
+<p>We shall be glad to have feedback on comparison of speeds with other tools using identical  tables/database. Feedback we got so far is encouraging. Speeds for  tables containing blobs and large memos can be slower and that is intentional.</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-32791-page-2.html">2</a> <a href="topic-32791-page-3.html">3</a> <a href="topic-32791-page-4.html">4</a> (49 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

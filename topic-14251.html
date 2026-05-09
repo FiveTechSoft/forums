@@ -1,0 +1,1036 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>ToCalc() Method to transfer xBrowse Data to OpenOffice Calc - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-14251">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> ToCalc() Method to transfer xBrowse Data to OpenOffice Calc</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-14251-page-2.html">2</a> <a href="topic-14251-page-3.html">3</a> <a href="topic-14251-page-4.html">4</a> <a href="topic-14251-page-5.html">5</a> (63 posts)</div>  <div class="post" id="p73500">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">ToCalc() Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Tue Jan 13, 2009 11:00 AM
+      </div>
+      <div class="content">Hi,<br>
+<br>
+<span style="color:#FF0000">I have edited this post on 28-Jan-2009<br>
+The below given code is updated with the new changes</span><br>
+<br>
+Here is the new method to transfer xBrowse Data to OpenOffice Calc (Equivalent to MS Excel). <br>
+This code is in a very preliminary stage, but definitely it transfers data from xBrowse to OpenOffice Calc.<br>
+<br>
+Anybody here interested in this piece of code can modify and add more functionalities and share it here. It is even possible to transfer xBrowse data to <strong>PDF</strong> format by adding a new parameter and few lines of code to this method. Will be useful for clients who wants to use OpenSource and there by reduce the cost on MS Office.<br>
+<br>
+<span style="color:#FF0000">ToCalc() can Export xBrowse Data to PDF,MS Excel and HTML formats as of now</span><br>
+<br>
+Compared to the Method ToExcel(), the following are the limitations <span style="text-decoration:underline"><strong>as of now</strong></span><br>
+<br>
+<strong>1)</strong> Group totals not implemented. <span style="color:#FF0000">(Implemented Now)</span><br>
+<strong>2)</strong> Another drawback is that OpenOffice Calc is showing a dialog while pasting data from clipboard to calc. User has to click on the OK button of that Dialog to proceed with the data transfer. As of now I don't know how to avoid that dialog but definitlely there will be an option to bypass this.  <span style="color:#FF0000">( I have implemeted 2 different ways for transfering Data from XBrowse to OpenOffice Calc. User now have the option to choose the which method to be used for the transfer. Method 2 is the default, but method 1 is found to be much faster, but this method will bring a popup dialog as I said) </span>  <br>
+<strong>3)</strong> Date format technique needs to be modified. ( Done )<br>
+<strong>4</strong> Multi Language support added <br>
+<br>
+Please add the following code to your xBrowse.Prg<br>
+Method ToCalc(bProgress, nGroupBy, nPasteMode, aSaveAs)<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//----------------------------------------------------------------------------//
+METHOD ToCalc( bProgress, nGroupBy, nPasteMode, aSaveAs ) CLASS TXBrowse
+
+   local oCalc, oDeskTop,oBook, oSheet, oWin, oLocal, oDispatcher
+   local nCol, nXCol, oCol, cType, uValue
+   local uBookMark, nRow
+   local nDataRows
+   local aCols
+   local oClip, cText, nPasteRow, nStep, cFormat,cFileName,cURL,i
+   local aTotals  := {}, lAnyTotals := .f. , aProp:={} , aOOFilters:={} , nPos, oCharLocale
+   DEFAULT nPasteMode:=1
+   DEFAULT aSaveAs:={}
+
+   aOOFilters:={ {"PDF","calc_pdf_Export"},{"XLS","MS Excel 97"},{"HTML","XHTML Calc File"} }
+
+   nDataRows   := EVAL( ::bKeyCount )
+   if nDataRows == 0
+     return nil
+   endif
+
+   aCols         := ::GetVisibleCols()
+
+   if Empty( aCols )
+     return nil
+   endif
+
+   #ifdef __XHARBOUR__
+
+      TRY
+         oCalc   := GetActiveObject( "com.sun.star.ServiceManager" )
+      CATCH
+         TRY
+            oCalc   := CreateObject( "com.sun.star.ServiceManager" )
+         CATCH
+            MsgAlert( "Open Office Calc not installed" )
+            return Self
+         END
+      END
+
+   #else
+      oCalc   := TOLEAuto():New( "com.sun.star.ServiceManager" )
+   #endif
+
+   lxlEnglish:=.T.
+
+   oDesktop := oCalc:CreateInstance( "com.sun.star.frame.Desktop" )
+
+   // Create OpenOffice Calc Instance with the Window Hidden Property
+   aProp:={}
+   AAdd(aProp,GetPropertyValue(oCalc, "Hidden", .T. )  )
+   oBook    := oDesktop:LoadComponentFromURL( "private:factory/scalc", "_blank", 0, aProp )
+   oSheet   := oBook:GetSheets():GetByIndex( 0 )
+   oDispatcher:= oCalc:CreateInstance( "com.sun.star.frame.DispatchHelper" )
+
+   // Object to handle OpenOffice Language
+   oCharLocale = oBook:GetPropertyValue("CharLocale")
+   IF oCharLocale:Language == "de"  // German
+      cxlSum:="=SUMME("
+   ELSEIF oCharLocale:Language == "fr"  // French
+      cxlSum:="=SOMME("
+   ELSEIF oCharLocale:Language == "es"  // Spanish
+      cxlSum:="=SUMA("
+   ELSEIF oCharLocale:Language == "pt"  // Portugese
+      cxlSum:="=SOMA("
+   ELSEIF oCharLocale:Language == "it"  // Italian
+      cxlSum:="=SOMMA("
+   ELSE
+      cxlSum:="=SUM("
+   ENDIF
+
+
+   // This routine blocks screen updating and therefore allows faster macro execution
+   oBook:addActionLock()
+   oBook:LockControllers()
+
+   uBookMark   := EVAL( ::bBookMark )
+
+   nRow   := 1
+   nCol   := 0
+   for nXCol := 1 TO Len( aCols )
+     oCol   := aCols[ nXCol ]
+
+     nCol ++
+
+     oSheet:GetCellByPosition( nCol-1, nRow-1 ):SetString = oCol:cHeader
+     cType      := oCol:cDataType
+
+     DO CASE
+        CASE cType == 'N'
+
+           cFormat     := If( lThouSep, If( lxlEnglish, "#,##0", "#.##0" ), "0" )
+           if oCol:cEditPicture != nil .AND. "." $ oCol:cEditPicture
+              cFormat  += If( lxlEnglish, ".00", ",00"  )
+           endif
+           oSheet:GetColumns():GetByIndex( nCol-1 ):NumberFormat:=GetNumberFormatId(oBook, cFormat, cType)
+           oSheet:GetColumns():GetByIndex( nCol-1 ):HoriJustify = 3  // 3 Right Alignement
+
+        CASE cType == 'D'
+           if lxlEnglish
+             if ValType( oCol:cEditPicture ) == 'C' .and. !( oCol:cEditPicture = '@' )
+                oSheet:GetColumns():GetByIndex( nCol-1 ):NumberFormat:=GetNumberFormatId(oBook,  oCol:cEditPicture, oCol:cHeader, cType )
+             else
+                oSheet:GetColumns():GetByIndex( nCol-1 ):NumberFormat:=GetNumberFormatId(oBook,   Set( _SET_DATEFORMAT ), oCol:cHeader, cType  )
+             endif
+             oSheet:GetColumns():GetByIndex( nCol-1 ):HoriJustify = 3   // 3 Right Alignment
+           endif
+        CASE cType == 'L'
+           // leave as general format
+        OTHERWISE
+            oSheet:GetColumns():GetByIndex( nCol-1 ):NumberFormat:= "@"
+     ENDCASE
+
+   Next nXCol
+
+   oBook:CurrentController:select( oSheet:GetCellRangeByPosition( 0, 0, Len( aCols )-1,0 ) )
+   oSheet:getCellByPosition(0,0):Rows:Height=750   //1000 = 1cm
+
+
+   // Draw Bottom Border Line on the Header Row
+   aProp:={}
+   AAdd(aProp,GetPropertyValue(oCalc, "OuterBorder.BottomBorder", {0,0,2,0}  )        )
+   oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:SetBorderStyle", "", 0, aProp)
+
+   // Make Header Row Font Bold
+   aProp:={}
+   AAdd(aProp,GetPropertyValue(oCalc, "Bold", .T.  )        )
+   oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:Bold", "", 0, aProp)
+
+   // Make Setting for Paste Tab Delimited Text
+   aProp:={}
+   AAdd(aProp,GetPropertyValue(oCalc,  "FilterName", "Text" ) )
+   AAdd(aProp,GetPropertyValue(oCalc, "FilterOptions", "9,,MS_1257,0,2/2/2/2/2/2/2/2/2/2/2/2/2/2/2/2"   )        )
+
+    if Empty( ::aSelected ) .or. Len( ::aSelected ) == 1
+
+      Eval( ::bGoTop )
+      if ::oRs != nil .AND. Len( aCols ) == ::oRs:Fields:Count()
+            ::oRs:MoveFirst()
+            nRow   := oSheet:GetCellByPosition( 2, 1 ):CopyFromRecordSet( ::oRs )
+            ::oRs:MoveFirst()
+         nRow   += 2
+      else
+
+         if bProgress == nil
+            if ::oWnd:oMsgBar == nil
+               bProgress := { || nil }
+            else
+               bProgress := { | n, t | ::oWnd:SetMsg( "To Calc  : " + Ltrim( Str( n ) ) + "/" + Ltrim( Str( t ) ) ) }
+            endif
+         endif
+
+         nRow      := 2
+         nPasteRow := 2
+         nStep     := Max( 1, Min( 100, Int( nDataRows / 100 ) ) )
+         cText     := ""
+         oClip := TClipBoard():New()
+         if oClip:Open()
+
+            Eval( bProgress, 0, nDataRows )
+            do while nRow &lt;= ( nDataRows + 1 )
+               if ! Empty( cText )
+                  cText += CRLF
+               endif
+               cText    += ::ClpRow( .t. )
+
+               ::Skip( 1 )             // Eval( ::bSkip, 1 )
+               nRow ++
+
+               if Len( cText ) &gt; 16000
+                  oClip:SetText( cText )
+                  oBook:CurrentController:select( oSheet:GetCellByPosition( 0,nPasteRow-1 ) )
+                  IF nPasteMode == 2
+                     oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:Paste", "", 0, aProp)
+                  else
+                     PasteUnformattedText(oCalc,oBook,oSheet,aCols)
+                  Endif
+                  oClip:Clear()
+                  cText       := ""
+                  nPasteRow   := nRow
+               endif
+
+               If ( nRow - 2 ) % nStep == 0
+                  if Eval( bProgress, nRow - 2, nDataRows ) == .f.
+                     Exit
+                  endif
+                  SysRefresh()
+               endif
+
+            enddo
+            if ! Empty( cText )
+               oClip:SetText( cText )
+               oBook:CurrentController:select( oSheet:GetCellByPosition( 0,nPasteRow-1 ) )
+               IF nPasteMode == 2
+                  oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:Paste", "", 0, aProp)
+               else
+                  PasteUnformattedText(oCalc,oBook,oSheet,aCols)
+               Endif
+               oClip:Clear()
+               cText    := ""
+            endif
+            oClip:Close()
+
+            Eval( bProgress, nDataRows, nDataRows )
+            SysRefresh()
+
+         endif
+         oClip:End()
+      endif
+    else
+      ::Copy()
+      oBook:CurrentController:select( oSheet:GetCellByPosition( 2,1 ) )
+      IF nPasteMode == 2
+         oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:Paste", "", 0, aProp)
+      else
+         PasteUnformattedText(oCalc,oBook,oSheet,aCols)
+      Endif
+      nRow := Len( ::aSelected ) + 2
+   ENDIF
+
+   nCol   := 0 ; nRow:=nRow-2
+   oBook:CurrentController:select( oSheet:GetCellRangeByPosition( 0, nRow, Len( aCols )-1,nRow ) )
+
+   // Draw Bottom Border Line on the Bottom Row
+   aProp:={}
+   AAdd(aProp,GetPropertyValue(oCalc, "OuterBorder.BottomBorder", {1,1,2,1}  )        )
+   oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:SetBorderStyle", "", 0, aProp)
+
+   if ValType( nGroupBy ) == 'N'
+      for nxCol := 1 TO Len( aCols )
+         if aCols[ nxCol ]:lTotal
+            AAdd( aTotals, nxCol )
+         endif
+      next
+      if ! Empty( aTotals )
+         CalcSubTotal(oCalc,oBook,oSheet,nGroupBy,aTotals,nRow,Len(aCols)-1)
+      Endif
+   else
+
+       // If lTotal is .T. for any column then create the formula to Show the Column Total
+      for nXCol := 1 TO Len ( aCols )
+         oCol   := aCols[ nXCol ]
+         nCol ++
+         if oCol:lTotal
+            oBook:CurrentController:select( oSheet:GetCellByPosition( nCol-1,nRow+1 ) )
+            aProp:={}
+            *AAdd(aProp,GetPropertyValue(oCalc, "StringName","=SUM("+ oSheet:getColumns():getByIndex(nCol)+"2:"+oSheet:getColumns():getByIndex(nCol)+LTrim(Str(nRow+1))+")"  )    )
+            AAdd(aProp,GetPropertyValue(oCalc, "StringName",cxlSum+ MakeColAlphabet(nCol)+"2:"+MakeColAlphabet(nCol)+LTrim(Str(nRow+1))+")"  )  )
+            oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:EnterString", "", 0, aProp)
+            lAnyTotals := .t.
+         endif
+      next nXCol
+      if lAnyTotals
+         oBook:CurrentController:select( oSheet:GetCellRangeByPosition( 0, nRow+1, Len( aCols )-1,nRow+1 ) )
+         // Draw Bottom Border Line on the Total Line Row
+         aProp:={}
+         AAdd(aProp,GetPropertyValue(oCalc, "OuterBorder.BottomBorder", {1,1,2,1}  )        )
+         oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:SetBorderStyle", "", 0, aProp)
+
+         // Make the Total Line Bold
+         aProp:={}
+         AAdd(aProp,GetPropertyValue(oCalc, "Bold", .T.  )        )
+         oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:Bold", "", 0, aProp)
+      ENDIF
+   Endif
+
+   oBook:CurrentController:select( oSheet:GetCellByPosition( 1,1 ) )
+
+   for nCol := 1 to Len( aCols )
+     oSheet:GetColumns():GetByIndex( nCol-1 ):OptimalWidth = .T.
+   next
+
+   oBook:CurrentController:select( oSheet:GetCellByPosition( 0,1 ) )
+   oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:FreezePanes", "", 0, {})
+
+   Eval( ::bBookMark, uBookMark )
+   ::Refresh()
+   ::SetFocus()
+
+   // This routine allows screen updating
+   oBook:UnlockControllers()
+   oBook:removeActionLock()
+
+
+   // If you want to convert this to other formats like PDF format or MS Excel
+   IF Len(aSaveAs) &gt; 0
+      FOR I:=1 TO Len(aSaveAs)
+         cFormat:=Upper(aSaveAs[i][1])
+         cFileName:=aSaveAs[i][2]
+         * Ensure leading slash.
+         IF LEFT( cFilename, 1 ) != "/"
+            cFileName:= "/" + cFileName
+         ENDIF
+
+         cURL:= StrTran( cFilename, "\", "/" )   // change backslashes to forward slashes.
+         cURL = "file://" + cURL
+
+         aProp:={} ; nPos:=0
+         nPos:=AScan(aOOFilters,{ |x| x[1] == cFormat})
+         IF nPos &gt; 0
+            AAdd(aProp,GetPropertyValue(oCalc, "FilterName", aOOFilters[nPos][2])  )
+            cURL:=cURL+"."+cFormat
+            oBook:StoreToURL( cURL, aProp )
+         Endif
+
+      Next
+   ENDIF
+   oBook:GetCurrentController():GetFrame():GetContainerWindow():SetVisible(.T.)
+   oBook:CurrentController:select( oSheet:GetCellByPosition( 0,0 ) )
+*   oBook:Close(1)  // To Close OpenOffice Calc
+
+Return Self
+
+//----------------------------------------------------------------------------//
+STATIC Function MakeColAlphabet(nCol)
+  LOCAL aColumns:={"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R",;
+                      "S","T","U","V","W","X","Y","Z"}
+  LOCAL cColAphabet,nInt
+
+  IF nCol &lt;= 26
+     cColAphabet:=aColumns[nCol]
+  ELSEif nCol &lt;= 676
+     nInt:=Int(nCol/26)
+     cColAphabet:=aColumns[nCol]
+     cColAphabet+=aColumns[nCol-(nInt*26)]
+  Endif
+RETURN cColAphabet
+
+//----------------------------------------------------------------------------//
+
+STATIC FUNCTION GetPropertyValue(oService, cName, xValue )
+   LOCAL oArg
+   oArg := oService:Bridge_GetStruct( "com.sun.star.beans.PropertyValue" )
+   oArg:Name  := cName
+   oArg:Value := xValue
+RETURN oArg
+
+//----------------------------------------------------------------------------//
+
+STATIC Function GetNumberFormatId(oBook, cNumberFormat, cColHeader, cDataType)
+  LOCAL cCharLocale,nFormatId
+  cCharLocale = oBook:GetPropertyValue("CharLocale")
+  IF cDataType == "D"  // Date
+      cNumberFormat:=Upper(cNumberFormat)
+      IF cCharLocale:Language == "es" .or. cCharLocale:Language == "pt" .or. cCharLocale:Language == "it"  // Spanish,Portuguese,Italian,French
+        cNumberFormat:=StrTran(cNumberFormat,"Y","A")  // All Y should be replaced to A
+      ELSEIF cCharLocale:Language == "de"  // German
+         cNumberFormat:=StrTran(cNumberFormat,"D","T")  // All D should be replaced to T
+         cNumberFormat:=StrTran(cNumberFormat,"Y","J")  // All Y should be replaced to J
+      elseif cCharLocale:Language == "fr"  // French
+         cNumberFormat:=StrTran(cNumberFormat,"D","J")  // All D should be replaced to J
+         cNumberFormat:=StrTran(cNumberFormat,"Y","A")  // All Y should be replaced to A
+      Endif
+  Endif
+  nFormatId = oBook:GetNumberFormats:QueryKey(cNumberFormat, cCharLocale, .F.)
+  IF nFormatId = -1 // 'Format is not yet defined
+     TRY
+        nFormatId = oBook:GetNumberFormats:AddNew(cNumberFormat, cCharLocale)
+     CATCH
+        MsgInfo("Could not set the format "+cNumberFormat+" to column "+cColHeader)
+        IF cDataType == "D"  // Date
+           nFormatId:=37
+        Endif
+     END
+  ENDIF
+
+RETURN nFormatId
+
+//----------------------------------------------------------------------------//
+
+STATIC FUNCTION CalcSubTotal(oCalc,oBook,oSheet,nGroupBy,aTotals,nRow,nCol)
+
+   LOCAL oRange, oSubTotDesc,oColumns,aArg:={},nCount
+
+   FOR nCount:=1 TO Len(aTotals)
+      oColumns := oCalc:Bridge_GetStruct( "com.sun.star.sheet.SubTotalColumn" )
+      //Description by columns : sum of 4th col should be 3, for 2 it should be 1
+      oColumns:Column  := aTotals[nCount]-1
+      oColumns:Function :=2 // com.sun.star.sheet.GeneralFunction.SUM
+      AAdd(aArg,oColumns)
+   Next
+
+   oRange:= oSheet:getCellRangeByPosition( 0, 0, nCol,nRow )
+   oSubTotDesc:=oRange:createSubTotalDescriptor(.T.)  // true  creates an empty descriptor. false previous settings
+
+   //Group by: nGroupBy col-1
+   oSubTotDesc:addNew(aArg, nGroupBy-1)
+   oRange:applySubTotals(oSubTotDesc, .T.)   // true = replaces previous subtotal
+Return NIL
+
+//----------------------------------------------------------------------------//
+
+STATIC Function PasteUnformattedText(oCalc,oBook,oSheet,aCols)
+  LOCAL oClipContType,oClipContent,oClip,cStr,i,nClipColNo
+  LOCAL lFound,nRow,nCol,k,oCol
+
+  oClip = oCalc:CreateInstance("com.sun.star.datatransfer.clipboard.SystemClipboard")
+  oClipContType = oClip:Contents:getTransferDataFlavors
+
+  lFound = .F. ;   i:= 1
+
+  DO while i &lt;= Len(oClipContType) .AND. !lFound
+    if oClipContType[i]:HumanPresentableName = "OEM/ANSI Text"
+      lFound = .T.
+      k:=i
+    else
+      i:=i + 1
+    endif
+  Enddo
+
+  if lFound
+
+    nRow   = oBook:CurrentSelection:getRangeAddress():startrow
+    oClipContent:=oClip:Contents:getTransferData( oClipContType[k] )
+
+    i:=1 ;  cStr:="" ; nCol:=0
+
+    DO while i &lt;= Len(oClipContent)
+       if oClipContent[i] = 0 .OR. oClipContent[i] = 13 .OR. oClipContent[i] = 10
+        i=i+2 ; nRow:=nRow + 1 ; cStr:="" ;  nCol:=0
+     ELSEIF oClipContent[i] = 9  // Tab
+        oCol:=aCols[nCol+1]
+
+        IF oCol:cDataType == "C"
+            oSheet:getCellByposition(nCol,nRow):SetString(cStr)
+        ELSEIF oCol:cDataType == "N"
+            oSheet:getCellByposition(nCol,nRow):SetValue(cStr)
+        ELSEIF oCol:cDataType == "D"
+           oSheet:getCellByposition(nCol,nRow):SetFormula(cStr)
+        ELSE
+           oSheet:getCellByposition(nCol,nRow):SetString(cStr)
+        Endif
+        nCol:=nCol+1 ; cStr:="" ; i:=i+1
+      else
+        cStr:=cStr + chr(oClipContent[i])
+        i:=i+1
+      endif
+    Enddo
+
+  endif
+RETURN NIL
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+Regards<br>
+<br>
+Anser</div>
+    </div>
+  </div>
+  <div class="post" id="p73648">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 08:24 AM
+      </div>
+      <div class="content">Hi,<br>
+<br>
+Anybody here tried to copy a Tab Delimited text from NotePad to OpenOffice Calc. The calc will open a Popup Dialog named &quot;Text Import&quot;.<br>
+<br>
+I understand If we provide proper parameter along with the Paste command then we can avoid that Popup dialog.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oDispatcher:ExecuteDispatch(oBook:GetCurrentController():GetFrame(), ".uno:Paste", "", 0, {})</code></pre></div><br>
+<br>
+The last parameter in the above code ie <strong>{ }</strong> is the slot for sending parameters for the command executed ie Paste<br>
+<br>
+I have Googled a lot to find a solution to avoid the Dialog but not yet successful. <br>
+<br>
+Anybody here tried something similiar.<br>
+<br>
+The alternative method is to Read the data one by one and paste it on each cell, which I have found is very inefficient and time consuming.<br>
+<br>
+Regards<br>
+<br>
+Anser</div>
+    </div>
+  </div>
+  <div class="post" id="p73655">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 09:50 AM
+      </div>
+      <div class="content"><p>Anser,</p>
+<p>many thanks for your OpenOffice support for XBrowse contribution <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p73657">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 10:47 AM
+      </div>
+      <div class="content">I think you can create also a pdf from openoffice<br>
+ocalc:SaveToPDF( &quot;c:\test.pdf&quot; ) <br>
+but I think you must call the function fron your method<br>
+<br>
+<br>
+and U can set cell properties<br>
+<br>
+xCellRange = xSpreadsheet.getCellRangeByPosition(start_col, start_row, end_col, end_row);<br>
+<br>
+xPropertySet = (XPropertySet) UnoRuntime.queryInterface(XPropertySet.class, xCellRange);<br>
+<br>
+//bold<br>
+xPropertySet.setPropertyValue(&quot;CharWeight&quot;, new Float(com.sun.star.awt.FontWeight.BOLD));<br>
+<br>
+//italic<br>
+xPropertySet.setPropertyValue(&quot;CharPosture&quot;, com.sun.star.awt.FontSlant.ITALIC);<br>
+<br>
+//underline<br>
+xPropertySet.setPropertyValue(&quot;CharUnderline&quot;, new Short(com.sun.star.awt.FontUnderline.SINGLE));<br>
+<br>
+//fontname<br>
+xPropertySet.setPropertyValue(&quot;CharFontName&quot;, &quot;Times&quot; );<br>
+<br>
+//fontsize<br>
+xPropertySet.setPropertyValue(&quot;CharHeight&quot;, new Float(12.0) );<br>
+<br>
+//Horizantal Alignment<br>
+xPropertySet.setPropertyValue(&quot;HoriJustify&quot;, com.sun.star.table.CellHoriJustify.LEFT);<br>
+<br>
+//Vertical Alignment<br>
+xPropertySet.setPropertyValue(&quot;VertJustify&quot;, com.sun.star.table.CellVertJustify.CENTER);<br>
+<br>
+//Cell Background Color<br>
+xPropertySet.setPropertyValue(&quot;CellBackColor&quot;, new Integer(65281));<br>
+<br>
+//Cell Foreground Color<br>
+xPropertySet.setPropertyValue(&quot;CharColor&quot;, new Integer(16777216));<br>
+<br>
+<br>
+<strong>REFERENCE</strong><br>
+<strong>PROGRAMATION GUIDE</strong>  <!-- m --><a class="postlink" href="ftp://docs-pdf.sun.com/817-1826/817-1826.pdf">ftp://docs-pdf.sun.com/817-1826/817-1826.pdf</a><!-- m --><br>
+<strong>FORUM </strong> <!-- m --><a class="postlink" href="http://www.oooforum.org/forum">http://www.oooforum.org/forum</a><!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p73658">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 10:51 AM
+      </div>
+      <div class="content"><strong>new function </strong><br>
+<br>
+<br>
+  STAT  FUN Dispatcher( oDispatcher,oBook, cMethod, aArgs ) <br>
+   DEFAULT aArgs := {}<br>
+   IF ValType( aArgs ) == &quot;O&quot;; aArgs := { aArgs }; ENDIF<br>
+   RETURN oDispatcher:ExecuteDispatch( oBook:GetCurrentController():GetFrame(), &quot;.uno:&quot; + cMethod, &quot;&quot;, 0, aArgs )<br>
+<br>
+<br>
+SAMPLE :<br>
+   Dispatcher(&quot;Bold&quot;)<br>
+<br>
+<br>
+DO U LIKE IT ?</div>
+    </div>
+  </div>
+  <div class="post" id="p73661">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 11:00 AM
+      </div>
+      <div class="content">Dear Mr.Silvio,<br>
+<br>
+Thanks for the information.<br>
+<br>
+<blockquote>I think you can create also a pdf from openoffice<br>
+ocalc:SaveToPDF( &quot;c:\test.pdf&quot; ) <br>
+</blockquote><br>
+I have plans to include the option to Save the xBrowse Data as a PDF file<br>
+<br>
+The array aArg is where I am struck. I don't know the right parameters to be sent along with the Dispatcher.Execute command <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">".Uno:Paste "</code></pre></div><br>
+<br>
+or<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">".Uno:PasteSpecial"</code></pre></div><br>
+<br>
+aArgs should contain the right parameters saying that the text in the clipboard is Tab Delimited so that I can avoid the &quot;Text Import&quot; Dialog. <br>
+<br>
+Something similiar to<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   oArg := oService:Bridge_GetStruct( "com.sun.star.beans.PropertyValue" )
+   oArg:Name  := "Format"
+   oArg:Value := 10</code></pre></div><br>
+<br>
+Regards<br>
+<br>
+Anser</div>
+    </div>
+  </div>
+  <div class="post" id="p73662">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 11:20 AM
+      </div>
+      <div class="content">Anser have you saw my function ?<br>
+<br>
+<br>
+STAT FUN Dispatcher( oDispatcher,oBook, cMethod, aArgs ) <br>
+DEFAULT aArgs := {}<br>
+IF ValType( aArgs ) == &quot;O&quot;; aArgs := { aArgs }; ENDIF<br>
+RETURN oDispatcher:ExecuteDispatch( oBook:GetCurrentController():GetFrame(), &quot;.uno:&quot; + cMethod, &quot;&quot;, 0, aArgs )<br>
+<br>
+<br>
+SAMPLE :<br>
+<br>
+Dispatcher(&quot;Bold&quot;)<br>
+or<br>
+Dispatcher( &quot;PrintPreview&quot; )<br>
+or<br>
+Dispatcher( &quot;Print&quot; )<br>
+or<br>
+Dispatcher( &quot;Copy&quot; )<br>
+or<br>
+Dispatcher( &quot;Paste&quot; )<br>
+<br>
+<br>
+<br>
+<strong>to save it on pdf </strong><br>
+oBook:storeToURL( &quot;file:///&quot; + ConvertToURL( cFile ),{ GetPropertyValue( &quot;FilterName&quot;, &quot;calc_pdf_Export&quot; ) } )<br>
+<br>
+<strong>another function </strong><br>
+stat function ConvertToURL( cFile )<br>
+ LOCAL nFor, nLen := Len( cFile )<br>
+   FOR nFor := 1 TO nLen<br>
+      IF cFile[ nFor ] == &quot;\&quot;<br>
+         cFile[ nFor ] := &quot;/&quot;<br>
+      ENDIF<br>
+   NEXT<br>
+   RETURN cFile<br>
+<br>
+<br>
+<strong>to SaveTo XLS</strong><br>
+<br>
+oBook:storeToURL( &quot;file:///&quot; + ConvertToURL( cFile ),{ GetPropertyValue( &quot;FilterName&quot;, &quot;MS Excel 97&quot; ) } )</div>
+    </div>
+  </div>
+  <div class="post" id="p73665">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 11:36 AM
+      </div>
+      <div class="content"><p>Anser can you send me the test sample to try the method calc </p>
+<p>We can work together to the sametest sample ( prg and dbf )</p>
+<p>thanks</p></div>
+    </div>
+  </div>
+  <div class="post" id="p73674">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 12:55 PM
+      </div>
+      <div class="content"><blockquote>Anser can you send me the test sample to try the method calc<br>
+We can work together to the sametest sample ( prg and dbf )<br>
+</blockquote><br>
+You are welcome   <br>
+<br>
+<blockquote>Anser have you saw my function ?</blockquote><br>
+I saw your functions. AS of now all those part are working clear in the Method which I have posted above. The only problem is the nagging dialog appearing while the Paste command is executed<br>
+<br>
+<blockquote>Anser can you send me the test sample to try the method calc </blockquote><br>
+You just have to add the code which I have posted in the starting post of this thread to your xBrowse.Prg.<br>
+METHOD ToCalc( bProgress ) CLASS TXBrowse<br>
+STATIC FUNCTION GetPropertyValue(oService, cName, xValue )<br>
+<br>
+If you want you can download my xMate project file and the required DBF and Test PRG's from the link here.<br>
+<br>
+<a href="http://rapidshare.com/files/183719982/xBrowseOpen.zip" rel="noopener">http&#58;//rapidshare&#46;com/files/183719982/xBrowseOpen&#46;zip</a><br>
+<br>
+Please note the ToCalc() code is really wierd as of now because I am playing around with different possible option to Paste the contents without the &quot;Text Import&quot; dialog. If u have any doubt regarding my code, please let me know.<br>
+<br>
+Regards<br>
+<br>
+Anser</div>
+    </div>
+  </div>
+  <div class="post" id="p73690">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 03:01 PM
+      </div>
+      <div class="content"><p>OK BUT U GIVE ME TIME BECAUSE I HAVE ANOTHER VERSION OF xBROWSE<br>
+I WAS WORKING TO ANOTHER PROJECT...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p73693">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 03:07 PM
+      </div>
+      <div class="content"><blockquote><cite>Silvio wrote:</cite>OK BUT U GIVE ME TIME BECAUSE I HAVE ANOTHER VERSION OF xBROWSE<br>
+I WAS WORKING TO ANOTHER PROJECT...</blockquote><br>
+<br>
+I believe that this code should work with recent  versions of xbrowse. I have not touched any other Methods or DATA in the xBrowse. ToCalc() is a new method.<br>
+<br>
+Regards<br>
+<br>
+Anser</div>
+    </div>
+  </div>
+  <div class="post" id="p73712">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 04:27 PM
+      </div>
+      <div class="content"><p>YES <br>
+Also I have a recent version 8.12 but I add a new method for create multiheader xbrowses .</p>
+<p>for the Tocalc method  I add it to my source<br>
+when I run it I see a dialog  to Import data <br>
+it must not be showed<br>
+How I can make it ?<br>
+we  must study</p></div>
+    </div>
+  </div>
+  <div class="post" id="p73720">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Thu Jan 15, 2009 05:28 PM
+      </div>
+      <div class="content"><p>Now run Ok <br>
+I not see the import dialog<br>
+your  PasteUnformattedText(oCalc,oBook) function run good !!</p>
+<p>Have you made the Totals ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p73754">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Fri Jan 16, 2009 04:37 AM
+      </div>
+      <div class="content">Dear Silvio,<br>
+<br>
+<blockquote>I not see the import dialog<br>
+your PasteUnformattedText(oCalc,oBook) function run good !!</blockquote><br>
+<br>
+Calc is showing the Dialog while trying to paste the Tab delimited text from the clipboard. That's why I tried another alternative way thru the function PasteUnformattedText(oCalc,oBook).<br>
+<br>
+But I prefer to use the Paste technique after finding a way to avoid the dialog. PasteUnformattedText consumes more time than the Paste technique.<br>
+<br>
+<blockquote>Have you made the Totals ?</blockquote><br>
+No. On the way I got struck with the paste problem. This can be implemented.<br>
+<br>
+Regards<br>
+<br>
+Anser</div>
+    </div>
+  </div>
+  <div class="post" id="p73762">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">anserkk</div>
+      <div class="rank">Posts: 1335</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 13, 2008 11:04 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Method to transfer xBrowse Data to OpenOffice Calc</span><br>
+        Posted: Fri Jan 16, 2009 10:00 AM
+      </div>
+      <div class="content">Date Format Problem Solved<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">if ValType( oCol:cEditPicture ) == 'C' .and. !( oCol:cEditPicture = '@' )
+   oSheet:GetColumns():GetByIndex( nCol-1 ):NumberFormat:=GetNumberFormatId(oBook,  oCol:cEditPicture  )
+else
+    oSheet:GetColumns():GetByIndex( nCol-1 ):NumberFormat:=GetNumberFormatId(oBook,  Set( _SET_DATEFORMAT )  )
+Endif
+
+//----------------------------------------------------------------------------//
+STATIC Function GetNumberFormatId(oBook, cNumberFormat)
+LOCAL cCharLocale,nFormatId
+cCharLocale = oBook:GetPropertyValue("CharLocale")
+nFormatId = oBook:GetNumberFormats:QueryKey(cNumberFormat, cCharLocale, .F.)
+
+IF nFormatId = -1 // 'Format is not yet defined
+   nFormatId = oBook:GetNumberFormats:AddNew(cNumberFormat, cCharLocale)
+Endif
+RETURN nFormatId</code></pre></div><br>
+<br>
+Regards<br>
+<br>
+Anser</div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-14251-page-2.html">2</a> <a href="topic-14251-page-3.html">3</a> <a href="topic-14251-page-4.html">4</a> <a href="topic-14251-page-5.html">5</a> (63 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

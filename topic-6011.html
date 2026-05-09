@@ -1,0 +1,1735 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cliente Telnet - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-6011">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Cliente Telnet</div>
+  <div class="post" id="p26869">
+    <div class="poster">
+      <div class="name" style="color:#105289">Biel EA6DD</div>
+      <div class="rank">Posts: 682</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 14, 2006 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Sat Feb 17, 2007 07:47 PM
+      </div>
+      <div class="content"><p>Alguien tiene desarrollado algo con sockets para usar como cliente telnet.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p26902">
+    <div class="poster">
+      <div class="name" style="color:#105289">Rochinha</div>
+      <div class="rank">Posts: 310</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 08, 2006 10:09 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Sun Feb 18, 2007 07:26 PM
+      </div>
+      <div class="content"><p>Biel</p>
+<p>You can try modify a FTP Class inputing de Telnet commands.</p>
+<p>See this page with telnet commands explanation:</p>
+<!-- m -->
+<p><a class="postlink" href="http://www.math.utah.edu/computing/unix/unix-commands.html">http://www.math.utah.edu/computing/unix ... mands.html</a></p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p26933">
+    <div class="poster">
+      <div class="name" style="color:#105289">Biel EA6DD</div>
+      <div class="rank">Posts: 682</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 14, 2006 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Mon Feb 19, 2007 02:21 PM
+      </div>
+      <div class="content"><p>Rochinha, thanks for your answer. I will take a look to the FTP class and the link you have  sended.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p26964">
+    <div class="poster">
+      <div class="name" style="color:#105289">Rochinha</div>
+      <div class="rank">Posts: 310</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 08, 2006 10:09 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Mon Feb 19, 2007 09:32 PM
+      </div>
+      <div class="content">Biel,<br>
+<br>
+The class below is more complete:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Original work from Alex Shaft &amp; Peter Kohler, with mods by Byron Hopp, Rimantas Usevicius
+// Modified by Luis Krause May 10, 2003, Optimized and cleaned up code
+//                                       Fixed ::Retr() &amp; ::Dir() bugs
+//                                       added progress bar capability
+//                                       Made socket calls compatible with modified TSocket class (TSmtp, etc.)
+//                                       Added a timeout to escape from ::DoWait() to avoid hanging up the system
+//                                       Added Proxy support (needs more testing)
+//                     October 14, 2003, Optimized ::Retr() &amp; ::Dir() more - much faster now
+//                                       ::oTrnSocket wasn't being properly released. Fixed!
+//                     May 8, 2003       More fixes to ::Retr???() methods
+//                                       Fixed ::Stor(), added IVAR nDelay to allow upload to work
+// Entries in log file use the following codes:
+//   "E:"  an error occurred; description follows
+//   "I:"  info about the current operation executed
+//   "S:"  data/action sent to the ftp server
+//   "R:"  reply/response returned by ftp server
+
+#include "FiveWin.ch"
+#include "Directry.ch"
+
+#ifndef __CLIPPER__
+#xtranslate Memory(&lt;n&gt;) =&gt;                       // only needed with Clipper, not Harbour
+#endif
+
+#define BLOCK_SIZE 10240
+
+#define ST_CLOSED     0
+#define ST_CONNECTING 1
+#define ST_CONNECTED  2
+#define ST_CONNECTERR 3
+
+#define ST_DOCWD      4
+#define ST_DONECWD    5
+#define ST_CWDERROR   6
+
+#define ST_DOTYPE     7
+#define ST_TYPEOK     8
+#define ST_TYPEBAD    9
+
+#define ST_DOPORT     10
+#define ST_PORTOK     11
+#define ST_PORTBAD    12
+
+#define ST_DOSTOR     13
+#define ST_STOROK     14
+#define ST_STORBAD    15
+#define ST_STORDONE   16
+
+#define ST_DOPASV     17
+#define ST_PASVOK     18
+#define ST_PASVBAD    19
+
+#define ST_DOQUIT     20
+#define ST_QUITOK     21
+#define ST_QUITBAD    22
+
+#define ST_DODIR      23
+#define ST_DIROK      24
+#define ST_DIRBAD     25
+#define ST_DIRDONE    26
+#define ST_DIRREADY   126
+
+#define ST_DOPWD      27
+#define ST_DONEPWD    28
+#define ST_PWDERROR   29
+
+#define ST_DORENFROM  30
+#define ST_RENFROMOK  31
+#define ST_RENFROMBAD 32
+#define ST_DORENTO    33
+#define ST_RENTOOK    34
+#define ST_RENTOBAD   35
+
+#define ST_DODELETE   36
+#define ST_DELETEOK   37
+#define ST_DELETEBAD  38
+
+#define ST_DOMKDIR    39
+#define ST_MKDIROK    40
+#define ST_MKDIRBAD   41
+
+#define ST_DORETR     42
+#define ST_RETROK     43
+#define ST_RETRBAD    44
+#define ST_RETRDONE   45
+
+#define ST_DOABOR     46
+#define ST_ABOROK     47
+#define ST_ABORBAD    48
+
+#define ST_DORMDIR    49
+#define ST_RMDIROK    50
+#define ST_RMDIRBAD   51
+
+#define NTRIM(n)    ( LTrim( Str( n ) ) )
+
+/*
+Function Main()
+
+  local oWin
+
+  DEFINE WINDOW oWin ;
+   TITLE "FTP Test"
+
+  ACTIVATE WINDOW oWin ;
+   ON INIT FTPTest()
+
+return nil
+
+Static Function FTPTest()
+
+  local oFTP
+
+  Ferase("logftp.txt")
+
+  oFTP := qFTPClient():New("10.1.1.2", 21, {|cMessage| Logfile("logftp.txt", {cMessage})},, ;
+      "alex", "secret")
+
+  // oFTP:bAbort := {|| oApp():oFrmmain:lFormClosed}
+  oFTP:lPassive := .T.
+  if oFTP:Connect()
+    MsgInfo("Connection successful to " + oFTP:cServer + CRLF + oFTP:cServerIP + CRLF + oFTP:oSocket:ClientIP())
+
+    if oFTP:Cd("/home/alex")
+      MSginfo("Successfully changed dir to /pub")
+
+      if oFTP:Dir()
+        Msginfo("Got directory listing")
+        //Aeval(oFTP:acDir, {| cDir, nCount | Msginfo(Str(nCount) + " " + cDir)})
+        oFTP:Retr("/etc/hosts", "hosts.txt")
+        oFTP:Del("hosts.backup")
+        oFTP:Stor("hosts.txt", "hosts.txt")
+        oFTP:Rename("hosts.txt", "hosts.backup")
+        oFTP:Quit()
+        oFTP:End()
+        Msginfo("Done")
+      else
+        Msginfo("Directory listing failed!")
+        oFTP:Quit()
+        oFTP:End()
+      endif
+    else
+      Msginfo("CD to /pub failed!")
+      oFTP:Quit()
+      oFTP:End()
+    endif
+  else
+    Msginfo("Connect failed!")
+  endif
+
+return nil
+
+*/
+
+CLASS qFTPClient
+
+   #ifdef __CLIPPER__
+   DATA oSocket, oTrnSocket, oProxy              AS OBJECT, NIL
+   #else
+   DATA oSocket, oTrnSocket, oProxy              AS OBJECT INIT Nil
+   #endif
+
+   DATA cServer, cServerIP, cUser, cPass, cBuffer, cLastCmd, cReply, cDirBuffer, ;
+        cDataIP                                  AS String INIT ""
+
+   DATA nPort, nDataPort                         AS NUMERIC INIT 21
+
+   DATA nStatus, nRetrHandle                     AS NUMERIC INIT 0
+
+   DATA bResolving, bResolved, bDump, bAbort, bStorProgress ;
+                                                 AS Codeblock INIT Nil
+
+   DATA lResolved, lConnected, lClosed, lSent, lSendFile, lPassive, lSentUser ;
+                                                 AS Logical Init .F.
+
+   DATA acDir, acReply                           AS Array
+
+   DATA nRetrFSize, nRetrBRead                   AS NUMERIC INIT 0
+
+   // allow a small delay when uploading (STOR command) data if there's no way to get an acknowledgment from server
+   DATA nDelay                                   AS NUMERIC INIT 1
+
+   // allow 30 seconds before we bump out of ::DoWait() to avoid hanging up the system
+   // set to 0 if you're pretty confident this won't happen to you :o)
+   DATA nTimeOut                                 AS NUMERIC INIT 30
+
+
+   Method New( cServer, nPort, bDump, bAbort, cUser, cPass, cProxyIP, nProxyPort, cProxyLog ) Constructor
+
+   Method End()
+
+   Method Connect()
+
+   Method OnConnect( oSocket, nWSAError )
+   Method OnRead( oSocket, nWSAError )
+   Method OnClose( oSocket, nWSAError )
+
+   Method Port( oTransSocket )
+
+   Method CD( cPath )
+
+   Method Pwd()
+
+   Method XfrType( cType )
+
+   Method Stor( cLocal, cRemote, bStorProgess, oMeter, oText )
+   Method StorAccept( opSocket, nWSAError, cFile, oMeter, oText ) Hidden
+   Method StorClose( oSocket, nWSAError, cFile, oMeter, oText ) Hidden
+
+   Method Dir( cLoc )
+   Method DirAccept( opSocket, nWSAError ) Hidden
+   Method DirRead( oSocket, nWSAError ) Hidden
+   Method DirClose( oSocket, nWSAError ) Hidden
+
+   Method Dump( cMsg )
+
+   Method Quit()
+   Method Bye() Inline ::Quit()
+
+   Method DoWait( nState ) Hidden
+
+   Method Del( cFile )
+
+   Method Rename( cFrom, cTo )
+
+   Method MkDir( cDir )
+
+   Method RmDir( cDir )
+
+   Method Retr( cRemote, cLocal, oMeter, oText )
+   Method RetrAccept( opSocket, nWSAError, cFile, oMeter, oText ) Hidden
+   Method RetrRead( oSocket, nWSAError, cFile, oMeter, oText ) Hidden
+   Method RetrClose( oSocket, nWSAError, cFile, oMeter, oText ) Hidden
+
+   Method Abort()
+
+   Method Pasv()
+
+EndClass
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Creates FTP Object
+
+   Parameters : cServer    : Servername e.g. ftp.microsoft.com or 207.46.133.140
+                nPort      : Server FTP Port. Defaults to 21
+                bDump      : Codeblock to send all commands sent, and replies received to. Useful for logging, etc.
+                bAbort     : Codeblock, which if eval's to True, will abort any current waiting process.
+                cUser      : User name to log-in with
+                cPass      : Password to log-in with
+                cProxyIP   : Optional Proxy IP Address
+                nProxyPort : Optional Proxy Port No.
+                cProxyLog  : Optional Proxy Logfile
+*/
+Method New( cServer, nPort, bDump, bAbort, cUser, cPass, ;
+   cProxyIP, nProxyPort, cProxyLog ) Class qFTPClient
+
+   Default cServer := "10.1.1.2", ;
+      nPort  := 21, ;
+      bAbort := {|| .F. }, ;
+      cUser  := "anonymous", ;
+      cPass  := "fwuser@fivetech.com", ;
+      cProxyIP := "0.0.0.0", ;
+      nProxyPort := 0
+
+   ::cServer := cServer
+   ::nPort   := nPort
+   ::bAbort  := bAbort
+   ::bDump   := bDump
+
+   ::acDir   := {}
+   ::acReply := {}
+
+   ::cUser   := cUser
+   ::cPass   := cPass
+
+   If Val( cProxyIP ) &gt; 0 .and. nProxyPort &gt; 0
+      ::oProxy := TProxy():New( nProxyPort, cProxyIP )
+      ::oProxy:lDebug := bDump # Nil
+      If cProxyLog # Nil
+         ::oProxy:cLogFile := cProxyLog
+      Endif
+      ::oProxy:Activate()
+   Endif
+
+Return Self
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to give feedback to caller
+*/
+Method Dump( cMsg ) Class qFTPClient
+
+   If ValType( ::bDump ) == "B" .and. ValType( cMsg ) == "C"
+      Eval( ::bDump, cMsg )
+   Endif
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Logs into the FTP Server, using parameters specified with New Method.
+   Returns True or False based on connection success
+*/
+Method Connect() Class qFTPClient
+   Local nReturn
+   Local lOK := .F.                              // was .T. - Thanks to Roberto Chiaiese
+
+   ::lResolved := .F.
+
+   ::oSocket := TSocket():New(0)
+
+   If ValType( ::bResolving ) == "B"
+      Eval( ::bResolving, Self )
+   Endif
+
+   If IsAlpha( ::cServer )
+      ::cServerIP := GetHostByName( AllTrim( ::cServer ) )  // PK Note this hogs the pc for up to 35 seconds if it cannot be resolved
+   Else
+      ::cServerIP := ::cServer
+   Endif
+
+   If ::lResolved := Val( ::cServerIP ) &gt; 0
+
+      ::oSocket:bConnect := {|o,n| ::OnConnect( o, n ) }  // lkm - see adjustment to TSocket class
+      ::oSocket:bRead    := {|o,n| ::OnRead( o, n ) }
+      ::oSocket:bClose   := {|o,n| ::OnClose( o, n ) }
+
+      ::nStatus := ST_CONNECTING
+      Memory(-1)                                 // cleanup memory when connecting frequently
+      ::oSocket:Connect( ::cServerIP, ::nPort )
+
+      ::DoWait( ST_CONNECTING )
+
+      lOK := ::nStatus == ST_CONNECTED
+      If ValType( ::bResolved ) == "B"
+         Eval( ::bResolved, Self )
+      Endif
+
+   Endif
+
+Return lOk
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to handle connection established.
+   Note it only checks for a bad connection. The rest is done by OnRead
+*/
+Method OnConnect( oSocket, nWSAError ) Class qFTPClient
+
+   If Val( oSocket:ClientIP() ) == 0
+      ::lConnected := .F.
+      ::nStatus := ST_CONNECTERR
+   Endif
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to handle data received by control socket
+*/
+Method OnRead( oSocket, nWSAError ) Class qFTPClient
+   Local cData := ""
+   Local nPos  := 0, nPos1, nPos2
+   Local cCmd  := ""
+
+   cData := oSocket:GetData()
+
+   ::cBuffer += cData
+
+   Do While ( nPos := At( CRLF, ::cBuffer ) ) &gt; 0 .and. ! Eval( ::bAbort )
+      AAdd( ::acReply, Left( ::cBuffer, nPos - 1 ) )
+      ::cBuffer := SubStr( ::cBuffer, nPos + 2 )
+   Enddo
+
+   AEval( ::acReply, {|cReply| ::Dump( "R:" + NTRIM( ::nStatus ) + ":" + cReply ) } )
+   If Len( ::acReply ) &gt; 0 .and. ;
+         Val( Left( ATail( ::acReply ), 3 ) ) &gt; 0 .and. ;  // i.e. skip stuff like:
+         SubStr( ATail( ::acReply ), 4, 1 ) == " "         // "230-" or " ***"
+
+      // Full reply received
+      ::cReply := ATail( ::acReply )
+      cCmd := Left( ::cReply, 3 )                // Left( ::acReply[1], 3 ) &lt;&lt;- caused a ton of problems!
+
+      Do Case
+      Case cCmd == "530" .or. ;                  // Login incorrect. [or other error]
+            ::nStatus == ST_CLOSED .or. ::nStatus == ST_CONNECTERR
+         ::nStatus := ST_DOQUIT
+         ::lConnected := .F.
+
+      Case ::nStatus == ST_CONNECTING
+         Do Case
+         Case cCmd == "220"                      // Ready for user| ProFTPD 1.2.2rc1 Server (ProFTPD) [n.n.n.n]
+            ::Dump( "S:" + NTRIM( ::nStatus ) + ":USER *************" )  // + AllTrim( ::cUser )
+            oSocket:SendData( "USER " + AllTrim( ::cUser ) + CRLF )
+            ::lSentUser := .T.
+         Case cCmd == "331"                      // Password required for ::cUser.
+            ::Dump( "S:" + NTRIM( ::nStatus ) + ":PASS *************" )
+            oSocket:SendData( "PASS " + AllTrim( ::cPass ) + CRLF )
+         Case cCmd == "230"                      // User ::cUser logged in.
+            ::nStatus := ST_CONNECTED
+            ::lConnected := .T.
+         Otherwise
+            ::nStatus := ST_CONNECTERR
+         EndCase
+
+      Case ::nStatus == ST_DOCWD
+         Do Case
+         Case cCmd == "250"                      // CWD command successful.
+            ::nStatus := ST_DONECWD
+         Otherwise
+            ::nStatus := ST_CWDERROR
+         EndCase
+
+      Case ::nStatus == ST_DOQUIT
+         ::lConnected := .F.
+         Do Case
+         Case cCmd == "221" .or. cCmd == "530"   // Goodbye.
+            ::nStatus := ST_QUITOK
+         Otherwise
+            ::nStatus := ST_QUITBAD
+         EndCase
+
+      Case ::nStatus == ST_DODELETE
+         Do Case
+         Case cCmd == "250"                      // DEL command successful.
+            ::nStatus := ST_DELETEOK
+         Otherwise
+            ::nStatus := ST_DELETEBAD
+         EndCase
+
+      Case ::nStatus == ST_DOPWD
+         Do Case
+         Case cCmd == "257"                      // PWD command successful.
+            ::nStatus := ST_DONEPWD
+         Otherwise
+            ::nStatus := ST_PWDERROR
+         EndCase
+
+      Case ::nStatus == ST_DOPORT
+         Do Case
+         Case cCmd == "200"                      // OK
+            ::nStatus := ST_PORTOK
+         Otherwise
+            ::nStatus := ST_PORTBAD
+         EndCase
+
+      Case ::nStatus == ST_DOTYPE
+         Do Case
+         Case cCmd == "200"                      // Type set to x.
+            ::nStatus := ST_TYPEOK
+         Otherwise
+            ::nStatus := ST_TYPEBAD
+         EndCase
+
+      Case ::nStatus == ST_DOSTOR
+         Do Case
+         Case cCmd == "150"
+            ::nStatus := ST_STOROK
+            ::lSendFile := .T.
+         Otherwise
+            ::nStatus := ST_STORBAD
+         EndCase
+
+      Case ::nStatus == ST_STOROK
+         Do Case
+         Case cCmd == "226"                      // OK
+            ::nStatus := ST_STORDONE
+         Otherwise
+            ::nStatus := ST_STORBAD
+         EndCase
+
+      Case ::nStatus == ST_DOPASV
+         Do Case
+         Case cCmd == "227"                      // Entering Passive Mode (n,n,n,n,m,m).
+            ::nStatus := ST_PASVOK
+         Otherwise
+            ::nStatus := ST_PASVBAD
+         EndCase
+
+      Case ::nStatus == ST_DODIR
+         Do Case
+         Case cCmd == "150"                      // Opening ASCII mode data connection for [file list]
+            ::nStatus := ST_DIROK
+         Case cCmd == "125"                      // Data connection already open; Transfer starting.
+            ::nStatus := ST_DIROK                // some ftp servers return 125 instead of 150
+         Otherwise
+            ::nStatus := ST_DIRBAD
+         EndCase
+
+      Case ::nStatus == ST_DIROK .or. ::nStatus == ST_DIRREADY
+         Do Case
+         Case cCmd == "226"                      // Transfer complete.
+            ::nStatus := ST_DIRDONE
+         Otherwise
+            ::nStatus := ST_DIRBAD
+         EndCase
+
+      Case ::nStatus == ST_DORETR
+         Do Case
+         Case cCmd == "150"                      // Opening BINARY mode data connection for cFile (nnnnn bytes).
+            If ::nRetrBRead == 0                 // in case it jumped the gun (with small files sometimes ST_RETRDONE jumps the gun and file has already arrived!)
+               nPos1 := At( "(", ::cReply )
+               nPos2 := At( " bytes)", ::cReply )
+               ::nRetrFSize := Val( SubStr( ::cReply, nPos1 + 1, nPos2 - nPos1 - 1 ) )
+            Endif
+            ::nStatus := ST_RETROK
+         Case cCmd == "125"                      // command 150 never received, therefore we don't know the size of the file being retrieved
+            If ::nRetrFSize == 0                 // horrible hack, but it's the only
+               ::nRetrFSize := 1                 // way around this (for the time being)
+            Endif
+            ::nStatus := ST_RETROK
+         Otherwise                               // a 550 means No such file or directory
+            ::nStatus := ST_RETRBAD
+         EndCase
+
+      Case ::nStatus == ST_RETROK .or. ::nStatus == ST_RETRDONE
+         Do Case
+         Case cCmd == "226"                      // Transfer complete.
+            ::nStatus := ST_RETRDONE
+         Otherwise
+            ::nStatus := ST_RETRBAD
+         EndCase
+
+      Case ::nStatus == ST_DORENFROM
+         Do Case
+         Case cCmd == "350"
+            ::nStatus := ST_RENFROMOK
+         Otherwise
+            ::nStatus := ST_RENFROMBAD
+         EndCase
+
+      Case ::nStatus == ST_DORENTO
+         Do Case
+         Case cCmd == "250"
+            ::nStatus := ST_RENTOOK
+         Otherwise
+            ::nStatus := ST_RENTOBAD
+         EndCase
+
+      Case ::nStatus == ST_DOMKDIR
+         Do Case
+         Case cCmd == "257"                      // OK
+            ::nStatus := ST_MKDIROK
+         Otherwise
+            ::nStatus := ST_MKDIRBAD
+         EndCase
+
+      Case ::nStatus == ST_DOABOR
+         Do Case
+         Case cCmd == "426"                      // Data connection closed, file transfer cFile aborted.
+            ::nStatus := ST_DOABOR               // stay put for successful reply from server
+         Case cCmd == "225" .or. cCmd == "226"   // ABOR command successful.
+            ::nStatus := ST_ABOROK
+         Otherwise
+            ::nStatus := ST_ABORBAD
+         EndCase
+
+      Case ::nStatus == ST_DORMDIR
+         Do Case
+         Case cCmd == "250"                      // OK
+            ::nStatus := ST_RMDIROK
+         Otherwise
+            ::nStatus := ST_RMDIRBAD
+         EndCase
+
+      Otherwise
+         ::Dump( "E:" + NTRIM( ::nStatus ) + ":Unknown exception on cmd " + ::cReply )
+
+      EndCase
+
+   Endif
+   ::acReply := {}
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Used to get directory listing.
+   cLoc Parameter gives dir spec.
+   Returns true or false based on success
+   When True. Data var acDir will hold dir listing as returned by server.
+*/
+Method Dir( cLoc ) CLASS qFTPClient
+   Local lOK       := .T.
+   Local cPort     := ""
+   Local nPos      := 0
+   Local cLine     := ""
+   Local cSepChar  := ""
+
+   Default cLoc := ""
+
+   ::acDir := {}
+   ::cDirBuffer := ""
+
+   ::oTrnSocket := TSocket():New(0)
+
+   If ! ::lPassive
+      cPort := ::Port( ::oTrnSocket )
+
+      ::oTrnSocket:bAccept := {|o,n| ::DirAccept( o, n ) }
+      ::oTrnSocket:Listen()
+
+      ::Dump( "I:" + NTRIM( ::nStatus ) + ":Listening on port " + NTRIM( ::oTrnSocket:nPort ) )
+
+      ::nStatus := ST_DOPORT
+      ::Dump( "S:" + NTRIM( ::nStatus ) + ":" + cPort )
+      ::oSocket:SendData( cPort + CRLF )
+
+      ::DoWait( ST_DOPORT )
+      lOK := ::nStatus == ST_PORTOK
+   Else
+      If ::Pasv()
+         If lOK := ::nDataPort &gt; 0
+            ::oTrnSocket:bConnect := {|o,n| ::DirAccept( o, n ) }
+            ::oTrnSocket:bRead    := {|o,n| ::DirRead( o, n ) }
+            ::oTrnSocket:bClose   := {|o,n| ::DirClose( o, n ) }
+            ::Dump( "I:" + NTRIM( ::nStatus ) + ":Connecting on IP:port " + ::cDataIP + ":" + NTRIM( ::nDataPort ) )
+            Memory(-1)                           // cleanup memory when connecting frequently
+            ::oTrnSocket:Connect( ::cDataIP, ::nDataPort )
+         Endif
+      Endif
+   Endif
+
+   If lOK
+      ::nStatus := ST_DODIR
+      ::Dump( "S:" + NTRIM( ::nStatus ) + ":LIST " + AllTrim( cLoc ) )
+      ::oSocket:SendData( "LIST " + AllTrim( cLoc ) + CRLF )
+
+      ::DoWait( ST_DODIR )
+      ::DoWait( ST_DIROK )
+
+      If lOK := ::nStatus == ST_DIRDONE
+         ::Dump( "I:" + NTRIM( ::nStatus ) + ":Interpreting dir listing" )
+         cSepChar := CRLF
+         nPos := At( cSepChar, ::cDirBuffer )
+         If nPos == 0
+            If ! Empty( ::cDirBuffer )  // single line, just one file, THEREFORE there won't be any CRLF's!
+               ::cDirBuffer += CRLF
+            Else
+               cSepChar := Chr(10)
+            Endif
+            nPos := At( cSepChar, ::cDirBuffer )
+         Endif
+         ::acDir := {}
+         Do While nPos &gt; 0 .and. ! Eval( ::bAbort )
+            cLine := AllTrim( Left( ::cDirBuffer, nPos - 1 ) )
+            ::cDirBuffer := SubStr( ::cDirBuffer, nPos + Len( cSepChar ) )
+            cLine := AllTrim( StrTran( cLine, Chr(0), "" ) )
+
+            If( ! Empty( cLine ), AAdd( ::acDir, cLine ), Nil )
+
+            nPos := At( cSepChar, ::cDirBuffer )
+            SysRefresh()
+         Enddo
+         lOk := ! Empty( ::acDir )
+         ::nStatus := ST_DIRREADY
+         SysWait( ::nDelay )                     // allow time for server to respond
+      Else
+         ::Abort()
+      Endif
+   Endif
+
+   If ::oTrnSocket # Nil
+      ::oTrnSocket:End()
+      ::oTrnSocket := Nil
+   Endif
+
+Return lOK
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to manage directory socket
+*/
+Method DirAccept( opSocket, nWSAError ) Class qFTPClient
+   Local oSocket
+
+   If ! ::lPassive
+      oSocket := TSocket():Accept( opSocket:nSocket )
+      oSocket:bRead  := {|o,n| ::DirRead( o, n ) }
+      oSocket:bClose := {|o,n| ::DirClose( o, n ) }
+   Endif
+   ::Dump( "I:" + NTRIM( ::nStatus ) + ":LIST data connection established" )
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to manage directory socket
+*/
+Method DirRead( oSocket, nWSAError ) Class qFTPClient
+   Local cData := oSocket:GetData()
+
+   ::cDirBuffer += cData
+   ::Dump( "I:" + NTRIM( ::nStatus ) + ":LIST data received" )
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to manage directory socket
+*/
+Method DirClose( oSocket, nWSAError ) Class qFTPClient
+
+   ::Dump( "I:" + NTRIM( ::nStatus ) + ":LIST data socket closed:" + CRLF + ::cDirBuffer )
+   oSocket:Close()
+   ::nStatus := ST_DIRDONE
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to handle socket closed by server
+*/
+Method OnClose( oSocket, nWSAError ) Class qFTPClient
+
+   ::Dump( "I:" + NTRIM( ::nStatus ) + ":Server closed down" )
+   ::lClosed := .T.
+   ::nStatus := ST_CLOSED
+   If ValType( ::oSocket ) == "O"
+      ::oSocket:Close()
+      ::oSocket := Nil
+   Endif
+
+   If ValType( ::oTrnSocket ) == "O"
+      ::oTrnSocket:Close()
+      ::oTrnSocket := Nil
+   Endif
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+ Kills connections
+*/
+Method End() Class qFTPClient
+
+   If ValType( ::oSocket ) == "O"
+      ::oSocket:End()
+      ::oSocket := Nil
+   Endif
+
+   If ValType( ::oTrnSocket ) == "O"
+      ::oTrnSocket:End()
+      ::oTrnSocket := Nil
+   Endif
+
+   If ValType( ::oProxy ) == "O"
+      ::oProxy:End()
+      ::oProxy := Nil
+   Endif
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to obtain unused port no. for data connections.
+*/
+METHOD Port( oTransSocket ) Class qFTPClient
+   Local cIP := GetIP( ::oSocket:nSocket )
+   Local nPort
+   Local cPort
+   Local cComplement
+
+   BindToPort( oTransSocket:nSocket, 0 )         // Get a free port from 1024 - 5000
+
+   nPort       := GetPort( oTransSocket:nSocket )
+   cPort       := AllTrim( Str( Int( nPort / 256 ), 3 ) )
+   cComplement := AllTrim( Str( Int( nPort % 256 ), 3 ) )
+
+   oTransSocket:nPort := nPort
+
+Return "PORT " + StrTran( AllTrim( StrTran( cIP, ".", "," ) ) + ;
+   "," + cPort + "," + cComplement, " ", "" )
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Change directory on FTP Server.
+   Returns True or False based on success
+*/
+Method CD( cPath ) Class qFTPClient
+   Local lOK := .T.
+
+   ::nStatus := ST_DOCWD
+   ::Dump( "S:" + NTRIM( ::nStatus ) + ":CWD " + cPath )
+   ::oSocket:SendData( "CWD " + cPath + CRLF )
+   ::DoWait( ST_DOCWD )
+
+   lOK := ::nStatus == ST_DONECWD
+
+Return lOK
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Used internally to set Binary transfer mode for transfers
+*/
+Method XfrType( cType ) Class qFTPClient
+   Local lOK := .T.
+
+   Default cType := "I"
+
+   ::nStatus := ST_DOTYPE
+   ::Dump( "S:" + NTRIM( ::nStatus ) + ":TYPE " + cType )
+   ::oSocket:SendData( "TYPE " + cType + CRLF )
+   ::DoWait( ST_DOTYPE )
+
+   lOK := ::nStatus == ST_TYPEOK
+
+Return lOK
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Used to store files on server.
+   Parameters : cLocal        : Local File to send
+                cRemote       : Location to store file remotely
+                bStorProgess  : Codeblock to get percent complete
+                oMeter        : Meter object progress bar [optional]
+                oText         : Say object used with meter object to display bytes processed [optional]
+   Returns True or False based on success
+*/
+Method Stor( cLocal, cRemote, bStorProgress, oMeter, oText ) Class qFTPClient
+   Local cRemFile  := ""
+   Local nPos      := 0
+   Local cPort     := ""
+   Local lOK       := .T.
+
+   Default cRemote := "", ;
+           bStorProgress := {|| Nil }
+
+   ::bStorProgress := bStorProgress
+
+   ::lSendFile := .F.
+   If Empty( cRemote )
+      If ( nPos := RAt( "\", cLocal ) ) &gt; 0
+         cRemFile := SubStr( cLocal, nPos + 1 )
+      Else
+         cRemFile := cLocal
+      Endif
+   Else
+      cRemFile := cRemote
+   Endif
+
+   If oMeter # Nil
+      oMeter:cargo := .T.                        // cancel button available while download in progress
+      oMeter:oWnd:AEvalWhen()
+   Endif
+
+   ::XfrType( "I" )
+   ::DoWait( ST_DOTYPE )
+
+   ::oTrnSocket := TSocket():New(0)
+
+   If lOK := ::nStatus == ST_TYPEOK
+
+      If ! ::lPassive
+         cPort := ::Port( ::oTrnSocket )
+         ::oTrnSocket:bAccept := {|o,n| ::StorAccept( o, n, cLocal, oMeter, oText ) }
+         ::oTrnSocket:Listen()
+         ::Dump( "I:" + NTRIM( ::nStatus ) + ":Listening on port " + NTRIM( ::oTrnSocket:nPort ) )
+
+         ::nStatus := ST_DOPORT
+         ::Dump( "S:" + NTRIM( ::nStatus ) + ":" + cPort )
+         ::oSocket:SendData( cPort + CRLF )
+
+         ::DoWait( ST_DOPORT )
+         lOK := ::nStatus == ST_PORTOK
+      Else
+         If ::Pasv()
+            If lOK := ::nDataPort &gt; 0
+               ::oTrnSocket:bConnect := {|o,n| ::StorAccept( o, n, cLocal, oMeter, oText ) }
+               ::oTrnSocket:bClose   := {|o,n| ::StorClose( o, n, cLocal, oMeter, oText ) }
+               ::Dump( "I:" + NTRIM( ::nStatus ) + ":Connecting on IP:port " + ::cDataIP + ":" + NTRIM( ::nDataPort ) )
+               Memory(-1)                        // cleanup memory when connecting frequently
+               ::oTrnSocket:Connect( ::cDataIP, ::nDataPort )
+            Endif
+         Endif
+      Endif
+   Endif
+
+   If lOk
+      ::nStatus := ST_DOSTOR
+      ::Dump( "S:" + NTRIM( ::nStatus ) + ":STOR " + cRemFile )
+      ::oSocket:SendData( "STOR " + cRemFile + CRLF )
+
+      ::DoWait( ST_DOSTOR )
+      ::DoWait( ST_STOROK )
+
+      lOK := ::nStatus == ST_STORDONE
+   Endif
+
+   If ::oTrnSocket # Nil
+      ::oTrnSocket:End()
+      ::oTrnSocket := Nil
+   Endif
+
+Return lOK
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to manage file store socket
+*/
+Method StorAccept( opSocket, nWSAError, cFile, oMeter, oText ) Class qFTPClient
+   Local oSocket
+   Local hFile   := 0
+   Local cBuffer := ""
+   Local nSent   := 0
+   Local nTotal  := 0
+   Local lClosed := .F.
+   Local nNow    := 0
+   Local nSize
+
+   If ! ::lPassive
+      oSocket := TSocket():Accept( opSocket:nSocket )
+      oSocket:bClose := {|o,n| ::StorClose( o, n, cFile, oMeter, oText ), lClosed := .T. }
+   Else
+      oSocket := opSocket
+   Endif
+
+   Do While ! ::lSendFile .and. ! ::lClosed .and. ! Eval( ::bAbort )
+      SysRefresh()
+   Enddo
+
+   If ::lSendFile
+      ::Dump( "I:" + NTRIM( ::nStatus ) + ":STOR data connection established" )
+
+      nNow := Seconds()
+      If ( hFile := FOpen( cFile ) ) &gt; 0
+         nSize := Directory( cFile )[1,F_SIZE]
+         ::Dump( "I:" + NTRIM( ::nStatus ) + ":Uploading " + cFile + ", " + NTRIM( nSize ) + " bytes in size" )
+         If oMeter # Nil
+            oMeter:Set(0)                        // reset
+            oMeter:SetTotal( nSize )             // set bar length
+         Endif
+         cBuffer := Space( BLOCK_SIZE )
+         Do While .T.
+            nSent := FRead( hFile, @cBuffer, BLOCK_SIZE )
+            oSocket:SendData( Left( cBuffer, nSent ) )
+            nTotal += nSent
+            If ::nDelay &gt; 0
+               SysWait( ::nDelay )               // this is trial and error... I'm using 0.5 to 1.5; default is 1.0
+            Endif
+
+            Eval( ::bStorProgress, Round( nTotal / nSize * 100, 2 ) )  // left for compatibility with original class
+            If( oMeter # Nil, oMeter:Set( nTotal ), Nil )
+            If( oText # Nil, oText:SetText( cFile + ": " + NTRIM( nTotal ) + " bytes uploaded..." ), Nil )
+
+            If nSent &lt; BLOCK_SIZE .or. lClosed .or. ::nStatus == ST_STORBAD .or. Eval( ::bAbort )
+               Exit
+            Endif
+            If ::nDelay == 0
+               SysRefresh()
+            Endif
+
+         Enddo
+         FClose( hFile )
+         ::Dump( "I:" + NTRIM( ::nStatus ) + ":" + NTRIM( nTotal ) + " bytes of file sent in " + LTrim( Str( Seconds() - nNow, 16, 2 ) ) + " seconds" )
+         ::Dump( "I:" + NTRIM( ::nStatus ) + ":Waiting for acknowledgement" )
+
+         oSocket:Close()
+      Else
+         oSocket:Close()
+         oSocket:End()
+         ::Dump( "E:" + NTRIM( ::nStatus ) + ":FOpen() failed with file " + cFile + " DOS Error #" + NTRIM( FError() ) )
+      Endif
+      SysRefresh()
+   Endif
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to manage file store socket
+*/
+Method StorClose( oSocket, nWSAError, cFile, oMeter, oText ) Class qFTPClient
+
+   If oMeter # Nil
+      oMeter:cargo := .F.                        // cancel button not available anymore
+      oMeter:oWnd:AEvalWhen()
+   Endif
+   ::lSendFile := .F.
+   oSocket:Close()
+   If ::nStatus == ST_DOABOR .or. ::nStatus == ST_ABOROK .or. ;
+         ::nStatus == ST_ABORBAD .or. ::nStatus == ST_STORBAD
+      ::Dump( "I:" + NTRIM( ::nStatus ) + ":STOR data aborted" )
+   Else
+      ::Dump( "I:" + NTRIM( ::nStatus ) + ":STOR data completed :-)" )
+      ::nStatus := ST_STORDONE
+   Endif
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Close FTP Connection
+*/
+Method Quit() Class qFTPClient
+
+   ::nStatus := ST_DOQUIT
+   ::Dump( "S:" + NTRIM( ::nStatus ) + ":QUIT" )
+   ::oSocket:SendData( "QUIT" + CRLF )
+
+   ::DoWait( ST_DOQUIT )
+
+Return .T.
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Get current directory on FTP Server
+   Returns True or False based on success
+*/
+Method Pwd() Class qFTPClient
+   Local cRetVal := ""
+   Local nPos := ""
+   Local cReply
+
+   ::nStatus := ST_DOPWD
+   ::Dump( "S:" + NTRIM( ::nStatus ) + ":PWD" )
+   ::oSocket:SendData( "PWD" + CRLF )
+
+   ::DoWait( ST_DOPWD )
+
+   cReply := ::cReply
+   nPos := At( '"', cReply )
+   cReply := SubStr( cReply, nPos + 1 )
+
+   nPos := At( '"', cReply )
+   cReply := SubStr( cReply, 1, nPos - 1 )
+   cRetVal := cReply
+
+Return cRetVal
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Delete file (cFile of server)
+   Will return Success True or False
+*/
+Method Del( cFile ) Class qFTPClient
+   Local lOK := .T.
+
+   Default cFile := ""
+
+   ::nStatus := ST_DODELETE
+
+   If lOK := ! Empty( cFile )
+      ::Dump( "S:" + NTRIM( ::nStatus ) + ":DELE " + cFile )
+      ::oSocket:SendData( "DELE " + cFile + CRLF )
+
+      ::DoWait( ST_DODELETE )
+
+      lOK := ::nStatus == ST_DELETEOK
+   Endif
+
+Return lOK
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Rename file on server
+   Parameters : cFrom  : Source file
+                cTo    : Target file
+   Will return Success True or False
+*/
+Method Rename( cFrom, cTo ) Class qFTPClient
+   Local lOK := .F.
+
+   Default cFrom := "", ;
+           cTo   := ""
+
+   If lOK := ! Empty( cFrom ) .and. ! Empty( cTo )
+      ::nStatus := ST_DORENFROM
+      ::Dump( "S:" + NTRIM( ::nStatus ) + ":RNFR " + cFrom )
+      ::oSocket:SendData( "RNFR " + cFrom + CRLF )
+
+      ::DoWait( ST_DORENFROM )
+
+      If lOK := ::nStatus == ST_RENFROMOK
+         ::nStatus := ST_DORENTO
+         ::Dump( "S:" + NTRIM( ::nStatus ) + ":RNTO " + cTo )
+         ::oSocket:SendData( "RNTO " + cTo + CRLF )
+
+         ::DoWait( ST_DORENTO )
+
+         lOK := ::nStatus == ST_RENTOOK
+      Endif
+   Endif
+
+Return lOk
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Create a directory
+*/
+Method MkDir( cDir ) Class qFTPClient
+   Local lOK := .T.
+
+   ::nStatus := ST_DOMKDIR
+   ::Dump( "S:" + NTRIM( ::nStatus ) + ":MKD " + cDir )
+   ::oSocket:SendData( "MKD " + cDir + CRLF )
+
+   ::DoWait( ST_DOMKDIR )
+
+   lOK := ::nStatus == ST_MKDIROK
+
+Return lOK
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Remove a directory
+*/
+Method RmDir( cDir ) Class qFTPClient
+   Local lOK := .T.
+
+   ::nStatus := ST_DORMDIR
+   ::Dump( "S:" + NTRIM( ::nStatus ) + ":RMD " + cDir )
+   ::oSocket:SendData( "RMD " + cDir + CRLF )
+
+   ::DoWait( ST_DORMDIR )
+
+   lOK := ::nStatus == ST_RMDIROK
+
+Return lOK
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Retrieve file from server.
+   Parameters : cRemote  : Remote file name
+                cLocal   : Local file name
+                oMeter   : Meter object progress bar [optional]
+                oText    : Say object used with meter object to display bytes processed [optional]
+*/
+Method Retr( cRemote, cLocal, oMeter, oText ) Class qFTPClient
+   Local lOK   := .T.
+   Local cPort := ""
+   Local nPos  := 0
+   Local cLine := ""
+   Local nNow  := 0
+
+   nPos := RAt( "/", cRemote )
+   If nPos == 0
+      Default cLocal := cRemote
+   Else
+      Default cLocal := SubStr( cRemote, nPos + 1 )
+   Endif
+
+   If oMeter # Nil
+      oMeter:cargo := .T.                        // cancel button available while download in progress
+      oMeter:oWnd:AEvalWhen()
+   Endif
+
+   ::nRetrHandle := FCreate( cLocal )
+   If lOK := ( ::nRetrHandle &gt; 0 )
+
+      ::XfrType( "I" )
+      ::DoWait( ST_DOTYPE )
+
+      If lOK := ::nStatus == ST_TYPEOK
+         ::oTrnSocket := TSocket():New(0)
+         If ! ::lPassive
+            cPort := ::Port( ::oTrnSocket )
+
+            ::oTrnSocket:bAccept := {|o,n| ::RetrAccept( o, n, cRemote, oMeter, oText ) }
+            ::oTrnSocket:Listen()
+
+            ::Dump( "I:" + NTRIM( ::nStatus ) + ":Listening on port " + NTRIM( ::oTrnSocket:nPort ) )
+
+            ::nStatus := ST_DOPORT
+            ::Dump( "S:" + NTRIM( ::nStatus ) + ":" + cPort )
+            ::oSocket:SendData( cPort + CRLF )
+
+            ::DoWait( ST_DOPORT )
+            lOK := ::nStatus == ST_PORTOK
+         Else
+            If ::Pasv()
+               If lOK := ::nDataPort &gt; 0
+                  ::oTrnSocket:bConnect := {|o,n| ::RetrAccept( o, n, cRemote, oMeter, oText ) }
+                  ::oTrnSocket:bRead    := {|o,n| ::RetrRead( o, n, cRemote, oMeter, oText ) }
+                  ::oTrnSocket:bClose   := {|o,n| ::RetrClose( o, n, cRemote, oMeter, oText ) }
+                  ::Dump( "I:" + NTRIM( ::nStatus ) + ":Connecting on IP:port " + ::cDataIP + ":" + NTRIM( ::nDataPort ) )
+                  Memory(-1)                     // cleanup memory when connecting frequently
+                  ::oTrnSocket:Connect( ::cDataIP, ::nDataPort )
+               Endif
+            Endif
+         Endif
+      Endif
+   Else
+      ::Dump( "E:" + NTRIM( ::nStatus ) + ":FCreate() failed with file " + cLocal + " DOS Error #" + NTRIM( FError() ) )
+   Endif
+
+   If lOK
+      ::nRetrBRead := 0                          // initialize here, not in ::OnRead()
+      ::nStatus := ST_DORETR
+      ::Dump( "S:" + NTRIM( ::nStatus ) + ":RETR " + cRemote )
+      ::oSocket:SendData( "RETR " + cRemote + CRLF )
+
+      ::DoWait( ST_DORETR )
+      Do While ::nRetrBRead &lt; ::nRetrFSize .and. ;  // stay put until file fully downloaded so it won't be truncated
+            ! ::nRetrHandle == 0 .and. ! ::lClosed .and. ! Eval( ::bAbort ) .and. ;
+            ! ::nStatus == ST_RETRBAD            // this is case the file was not found: 550 ?????.???: No such file or directory
+         SysRefresh()
+      Enddo
+      ::DoWait( ST_RETROK )
+
+      lOK := ::nStatus == ST_RETRDONE
+      SysWait( ::nDelay )                        // allow time for server to respond
+   Endif
+
+   If ::oTrnSocket # Nil
+      ::oTrnSocket:End()
+      ::oTrnSocket := Nil
+   Endif
+
+Return lOK
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to manage file retrieval socket
+*/
+Method RetrAccept( opSocket, nWSAError, cFile, oMeter, oText ) Class qFTPClient
+   Local oSocket
+
+   If ! ::lPassive
+      oSocket := TSocket():Accept( opSocket:nSocket )
+      oSocket:bRead  := {|o,n| ::RetrRead( o, n, cFile, oMeter, oText ) }
+      oSocket:bClose := {|o,n| ::RetrClose( o, n, cFile, oMeter, oText ) }
+   Endif
+   ::Dump( "I:" + NTRIM( ::nStatus ) + ":RETR data connection established" )
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to manage file retrieval socket
+*/
+Method RetrRead( oSocket, nWSAError, cFile, oMeter, oText ) Class qFTPClient
+   Local cData := oSocket:GetData()
+
+   If ::nRetrHandle &gt; 0
+      If ::nRetrBRead == 0 .and. oMeter # Nil
+         oMeter:Set(0)                           // reset
+         oMeter:SetTotal( ::nRetrFSize )         // set bar length
+      Endif
+      FWrite( ::nRetrHandle, cData )
+      ::nRetrBRead += Len( cData )
+      If( oMeter # Nil, oMeter:Set( ::nRetrBRead ), Nil )
+      If( oText # Nil, oText:SetText( cFile + ": " + NTRIM( ::nRetrBRead ) + " bytes downloaded..." ), Nil )
+      //::Dump( "I:" + NTRIM( ::nStatus ) + ":Bytes retrieved " + NTRIM( ::nRetrBRead ) + " out of " + NTRIM( ::nRetrFSize ) )
+   Endif
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to manage file retrieval socket
+   Note: When retrieving very small files, the file might already be downloaded
+         before ::nRetrFSize can even be initialized (cmd 150). So it's OK if it's ZERO
+*/
+Method RetrClose( oSocket, nWSAError, cFile, oMeter, oText ) Class qFTPClient
+
+   If oMeter # Nil
+      oMeter:cargo := .F.                        // cancel button not available anymore
+      oMeter:oWnd:AEvalWhen()
+   Endif
+   FClose( ::nRetrHandle )
+   ::nRetrHandle := 0
+   oSocket:Close()
+   If ::nStatus == ST_DOABOR .or. ::nStatus == ST_ABOROK .or. ;
+         ::nStatus == ST_ABORBAD .or. ::nStatus == ST_RETRBAD
+      ::Dump( "I:" + NTRIM( ::nStatus ) + ":RETR data aborted" )
+   Else
+      ::Dump( "I:" + NTRIM( ::nStatus ) + ":RETR data completed" + If( ::nRetrBRead &lt; ::nRetrFSize, ;
+         ", but file truncated by " + NTRIM( ::nRetrFSize - ::nRetrBRead ) + " bytes :-(", " :-)" ) )
+      // this should avoid the occasional hanging in ::DoWait()
+      ::nStatus := If( ::nRetrFSize == 0 .or. ::nRetrBRead &gt;= ::nRetrFSize, ST_RETRDONE, ST_RETRBAD )
+   Endif
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Cancel any transfer/command in progress.
+   Called by class if bAbort block evals to true in wait state.
+*/
+Method Abort() Class qFTPClient
+   Local lOK := .T., nStatus := ::nStatus, bAbort := ::bAbort
+
+   ::bAbort := {|| .F. }                         // avoid nested calls to ::Abort()
+   ::nStatus := ST_DOABOR
+   ::Dump( "S:" + NTRIM( ::nStatus ) + ":ABOR while on " + NTRIM( nStatus ) )
+   ::oSocket:SendData( "ABOR" + CRLF )
+
+   ::DoWait( ST_DOABOR )
+
+   lOK := ::nStatus == ST_ABOROK
+   ::bAbort := bAbort                            // restore abort codeblock
+
+Return lOK
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Switch next transfer to passive mode
+*/
+Method Pasv() Class qFTPClient
+   Local cReply := ""
+   Local nPos   := 0
+
+   ::nStatus := ST_DOPASV
+   ::Dump( "S:" + NTRIM( ::nStatus ) + ":PASV" )
+   ::oSocket:SendData( "PASV" + CRLF )
+
+   ::DoWait( ST_DOPASV )
+
+   If ::lPassive := ::nStatus == ST_PASVOK
+      cReply := ::cReply
+      nPos := At( "(", cReply )
+      cReply := SubStr( cReply, nPos + 1 )
+
+      nPos := At( ")", cReply )
+      cReply := Left( cReply, nPos - 1 )
+
+      ::cDataIP := StrToken( cReply, 1, "," ) + "."
+      ::cDataIP += StrToken( cReply, 2, "," ) + "."
+      ::cDataIP += StrToken( cReply, 3, "," ) + "."
+      ::cDataIP += StrToken( cReply, 4, "," )
+
+      ::nDataPort := 0
+      ::nDataPort += 256 * Val( StrToken( cReply, 5, "," ) )
+      ::nDataPort += Val( StrToken( cReply, 6, "," ) )
+      ::Dump( "I:" + NTRIM( ::nStatus ) + ":Server has opened connection on port " + NTRIM( ::nDataPort ) + " - IP:" + ::cDataIP )
+   Endif
+
+Return ::lPassive
+
+//---------------------------------------------------------------------------------------------//
+/*
+   Internal method to wait for responses from server.
+*/
+Method DoWait( nState ) Class qFTPClient
+   Local nStart := Seconds()
+
+   Do While ::nStatus == nState .and. ! ::lClosed .and. ! Eval( ::bAbort )
+      If ::nTimeOut &gt; 0 .and. Seconds() - nStart &gt; ::nTimeOut
+         ::Dump( "E:" + NTRIM( ::nStatus ) + ":Timed out waiting for state " + NTRIM( nState ) + " to finish" )
+         Exit
+      Endif
+      SysRefresh()
+   Enddo
+
+   If nState # ST_DOABOR .and. Eval( ::bAbort )
+      ::Abort()
+   Endif
+
+Return Nil
+
+//---------------------------------------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p32597">
+    <div class="poster">
+      <div class="name" style="color:#105289">JmGarcia</div>
+      <div class="rank">Posts: 654</div>
+      <div class="avatar"></div>
+      Joined: Mon May 29, 2006 03:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Tue May 29, 2007 03:37 PM
+      </div>
+      <div class="content"><p>¿ Alguna clase TELNET ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p32628">
+    <div class="poster">
+      <div class="name" style="color:#105289">Biel EA6DD</div>
+      <div class="rank">Posts: 682</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 14, 2006 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Wed May 30, 2007 07:24 AM
+      </div>
+      <div class="content"><p>Hola JM, tengo una implementacion muy basica para Telnet, si no necesitas emulacion de terminal VT100 ,VTxxx puede valerte, sino tendrias que desarrollar el modulo para interpretar las secuencias de escape. <br>
+Mandame un privado si te interesa lo que tengo hecho, soy Gabriel de Mallorca.</p>
+<p>Un saludo</p></div>
+    </div>
+  </div>
+  <div class="post" id="p32635">
+    <div class="poster">
+      <div class="name" style="color:#105289">JmGarcia</div>
+      <div class="rank">Posts: 654</div>
+      <div class="avatar"></div>
+      Joined: Mon May 29, 2006 03:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Wed May 30, 2007 08:39 AM
+      </div>
+      <div class="content"><blockquote><cite>Biel EA6DD wrote:</cite>...tengo una implementacion muy basica para Telnet...</blockquote><br>
+Igual me sirve.<br>
+<br>
+No quiero un cliente telnet a lo bestia sino que me permita utilizar comandos.<br>
+Por ejemplo quiero entrar en una maquina Sun con Solaris 8 y pedirle cuales son sus interfaces de red.<br>
+Para ello me basta con ejecutar el comando <strong>ifconfig -a &gt; /tmp/Interfaces.txt</strong><br>
+Posteriormente con FTP me traigo el fichero "/tmp/Interfaces.txt".<br>
+Quien dice ese comando pues cualquier comando de Unix-Solaris 8.<br>
+Las posibilidades se me antojan infinitas... tirar procesos, arrancar servicios... etc ...<br>
+<br>
+Muchas gracias por tu ofrecimiento.</div>
+    </div>
+  </div>
+  <div class="post" id="p32701">
+    <div class="poster">
+      <div class="name" style="color:#105289">JmGarcia</div>
+      <div class="rank">Posts: 654</div>
+      <div class="avatar"></div>
+      Joined: Mon May 29, 2006 03:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Thu May 31, 2007 04:26 PM
+      </div>
+      <div class="content"><blockquote><cite>Biel EA6DD wrote:</cite>...si no necesitas emulacion de terminal VT100 ,VTxxx puede valerte...</blockquote><br>
+Pues precisamente necesito VT100.<br>
+Por lo que he podido comprobar con un cliente telnet (el de windows) y un sniffer Ethereal y Analyzer que desde que se establece la conexion TCPIP hasta que aparece la peticion de login pues hay como unos 4 o 5 mensajes de intercambio entre el cliente y el servidor con valores no ASCII y que entre ellos he visto la palabra VT100 pero el resto de cosas son indescifrables...<br>
+Lo tengo crudo... hare con el FTP lo que pueda y del TELNET pues eso... socooorrrroooooooooo...   <br>
+Gracias a todos.<br>
+Seguire dando la coña  </div>
+    </div>
+  </div>
+  <div class="post" id="p32741">
+    <div class="poster">
+      <div class="name" style="color:#105289">JmGarcia</div>
+      <div class="rank">Posts: 654</div>
+      <div class="avatar"></div>
+      Joined: Mon May 29, 2006 03:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Fri Jun 01, 2007 08:02 AM
+      </div>
+      <div class="content">Pues investigando podria salir del apuro con el RemoteShell (rsh.exe)<br>
+Puedo poner en un ventana de MS-DOS esto: <strong>rsh &lt;host&gt; -l &lt;usuario&gt; ifconfig -a</strong> y me contesta con el resultado del comando.<br>
+Pero esto es en una ventana MS-DOS.<br>
+No puedo redireccionar (&gt;) ya que eso supondria que es parte del comando unix.<br>
+¿ Hay alguna forma de hacerse con el TEXTO que hay en una ventana MS-DOS ?<br>
+¿ Tenemos alguna clase RSH (Remote Shell) ?<br>
+<br>
+Gracias.</div>
+    </div>
+  </div>
+  <div class="post" id="p32766">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marcelo Via Giglio</div>
+      <div class="rank">Posts: 1088</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 03:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Fri Jun 01, 2007 12:30 PM
+      </div>
+      <div class="content"><p>Hola,</p>
+<p>si lo que deseas es tener simplemente informacion del equipo con UNIX, crea un servidor<br>
+con PERL en el unix en un determinado puerto y los dejas como servicio del unix, luego desde tu programa en FW con socket te conectas con el y te pasa la informacion que necesitas.</p>
+<p>Claro lo complicado aqui es que tendrias que poner este servicio en cada equipo unix</p>
+<p>Solor es una idea</p>
+<p>Saludos</p>
+<p>Marcelo</p></div>
+    </div>
+  </div>
+  <div class="post" id="p32792">
+    <div class="poster">
+      <div class="name" style="color:#105289">JmGarcia</div>
+      <div class="rank">Posts: 654</div>
+      <div class="avatar"></div>
+      Joined: Mon May 29, 2006 03:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Fri Jun 01, 2007 05:43 PM
+      </div>
+      <div class="content"><blockquote><cite>Marcelo Via Giglio wrote:</cite>...Claro lo complicado aqui es que tendrias que poner este servicio en cada equipo unix...</blockquote><br>
+No solo eso, sino que no soy el "amo" de los equipos y tienen lo que tiene y solo me dan login y pass...<br>
+Con "Remote Shell" seria feliz    (remote shel de FW, jejeje)</div>
+    </div>
+  </div>
+  <div class="post" id="p32899">
+    <div class="poster">
+      <div class="name" style="color:#105289">JmGarcia</div>
+      <div class="rank">Posts: 654</div>
+      <div class="avatar"></div>
+      Joined: Mon May 29, 2006 03:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Cliente Telnet</span><br>
+        Posted: Tue Jun 05, 2007 07:29 AM
+      </div>
+      <div class="content">Bueno, pues al final lo he solucionado con el REMOTE SHELL.<br>
+Las maquinas Unix a las que "ataco" para pedir datos lo tiene activado.<br>
+Entonces con el comando <strong>rsh</strong> de windows (el MS-DOS nunca muere) y la consola <strong>cmd</strong> hago lo siguiente.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function main()
+local oShell:=TOleAuto():New("WScript.Shell")
+oShell:Run("cmd /K rsh 99.99.99.99 -l usuario ifconfig -a &gt; tmp.txt &amp; exit",0,.F.)
+MagInfo(Memoread("tmp.txt")) // Visualiza las IPs de las tarjetas de red de la maquina Unix
+return nil</code></pre></div><br>
+<br>
+Para que la pantalla de MS-DOS no aparezca al metodo :Run se le pasa los parametros "0,.T.".</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

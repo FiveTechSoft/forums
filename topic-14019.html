@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>A much faster Class TDataBase !!! - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-14019">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> A much faster Class TDataBase !!!</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-14019-page-2.html">2</a> (19 posts)</div>  <div class="post" id="p72083">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Fri Dec 19, 2008 12:59 PM
+      </div>
+      <div class="content">Jose Luis Capel from Aicom company has greatly enhanced FiveWin Class TDataBase making it around <strong>three</strong> times faster!!!<br>
+<br>
+As a special gift from Santa (thanks Jose Luis!) here you have it to start using it. It has been tested with Harbour in PC and Pocket PC. Your feedback is welcome <br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+#include "dbinfo.ch"
+
+
+function main()
+
+local o, x, nSec, n := 0, a[100], b
+
+REQUEST HB_LANG_ES // Para establecer español para Mensajes, fechas, etc..
+REQUEST HB_CODEPAGE_ESMWIN // Para establecer código de página a Español
+(Ordenación, etc..)
+REQUEST DBFCDX //&amp;&amp;,DBFCDX
+REQUEST DBFFPT
+RDDSETDEFAULT("DBFCDX")
+SET AUTOPEN OFF
+SET DELETED ON
+SET CENTURY ON
+SET EPOCH TO( Year(Date())-50 )
+SET DATE BRITISH    // Formato dd-mm-aaaa
+SET EXCLUSIVE OFF
+SET SOFTSEEK OFF
+
+HB_LangSelect('ES')
+HB_SetCodePage("ESMWIN") // Para ordenación (arrays, cadenas, etc..)
+
+msginfo("Iniciamos")
+o := xDatabase()      // Nueva clase derivada de tDatabase de fivewin
+o:New( "CLI01.dbf")
+o:lShared := .F.
+o:Open()
+o:lBuffer := .f.
+nSec := Seconds()
+// Test de velocidad en lectura de datos. Ahorro aproximado del 50%
+
+nSec := Seconds()
+for x=1 to 1000000
+ uFunc( o:Codpro )
+next
+Msginfo(Seconds()-nSec, "Test de lectura de datos")
+
+// Test de velocidad en lectura con movimientos
+nSec := Seconds()
+
+for x=1 to 10000
+ o:Gotop()
+ Do while !o:Eof()
+    uFunc( o:Codpro )
+    o:Skip()
+ Enddo
+next
+Msginfo(Seconds()-nSec, "Test de lectura")
+
+
+// Test de velocidad en Escritura
+nSec := Seconds()
+for x=1 to 10000
+ o:Gotop()
+ Do while !o:Eof()
+    o:Codpro := "Proba" + Alltrim(Str(x))
+    o:Skip()
+ Enddo
+next
+Msginfo(Seconds()-nSec, "Test de escritura")
+return NIL
+
+FUNCTION uFunc(u);Return NIL
+
+////////////////////////////////////////////////////////////////////////////
+/
+CLASS xDatabase FROM tDatabase
+    METHOD SetArea()
+    METHOD Load()
+    METHOD CancelUpdate()   INLINE ::lBuffer := .F.
+
+    MESSAGE FieldGet METHOD _FieldGet( nField )
+    MESSAGE FieldPut METHOD _FieldPut( nField, uVal )
+
+    METHOD Blank()
+    METHOD Modified()
+    METHOD SaveBuff()
+
+    MESSAGE OemToAnsi METHOD _OemToAnsi()
+
+    METHOD HashAddMember()
+    ERROR HANDLER ONERROR( uParam1 )
+
+ENDCLASS
+
+METHOD SetArea( nWorkArea ) CLASS xDatabase
+
+  local n, oClass, aDatas := {}, aMethods := {}
+
+
+  ::nArea     = nWorkArea
+  ::cAlias    = Alias( nWorkArea )
+  ::cFile     = Alias( nWorkArea )
+
+  if ::Used()
+     ::cFile     = ( nWorkArea )-&gt;( DbInfo( DBI_FULLPATH ) )
+     ::cDriver   = ( nWorkArea )-&gt;( RddName() )
+     ::lShared   = ( nWorkArea )-&gt;( DbInfo( DBI_SHARED ) )
+
+     #ifdef __HARBOUR__
+        ::lReadOnly = ( nWorkArea )-&gt;( DbInfo( DBI_ISREADONLY ) )
+     #else
+        DEFAULT ::lReadOnly := .f.
+     #endif
+
+     DEFAULT ::lBuffer   := .t.
+     DEFAULT ::lOemAnsi  := .f.
+
+     DEFAULT ::bNetError := { || MsgStop( "Record in use", "Please, retry"
+) }
+
+     ::aStruct   = ( ::cAlias )-&gt;( DbStruct() )
+     ::aFldNames = {}
+     ::aBuffer := hb_HSetCaseMatch( hb_Hash(), .F. )
+
+     for n = 1 to ( ::cAlias )-&gt;( FCount() )
+        AAdd( ::aFldNames, ( ::cAlias )-&gt;( FieldName( n ) ) )
+        ::HashAddMember( {( ::cAlias )-&gt;( FieldName( n ) )},;
+                          ( ::cAlias )-&gt;( FieldType( n ) ),;
+                          ( ::cAlias )-&gt;( FieldGet( n ) ),;
+                          ::aBuffer )
+     next
+     hb_HSetAutoAdd( ::aBuffer, .f. )
+     if ::lOemAnsi
+        ::OemToAnsi()
+     endif
+     #ifdef __XPP__
+        if ClassObject( Alias() ) == nil
+           ClassCreate( Alias(), { TDataBase() }, aDatas, aMethods )
+        // else
+        //   ::this = Self
+        endif
+     #endif
+  endif
+
+return Self
+
+METHOD _FieldGet( nPos ) CLASS xDataBase
+
+  if ::lBuffer
+     //return ::aBuffer[ nPos ]
+     Return HB_HVALUEAT( ::aBuffer, nPos )
+  else
+     return ( ::nArea )-&gt;( FieldGet( nPos ) )
+  endif
+
+return nil
+//--------------------------------------------------------------------------
+-//
+
+METHOD _FieldPut( nPos, uValue ) CLASS xDataBase
+
+  local lLocked  := .f.
+
+  if ::lBuffer
+     //::aBuffer[ nPos ] := uValue
+     HB_HVALUEAT( ::aBuffer, nPos, uValue )
+  else
+     if ::lShared
+        if ! ::lReadOnly
+           if ::IsRecLocked( ::RecNo() ) .or. ( lLocked := ::RecLock(
+::RecNo() ) )
+              ( ::nArea )-&gt;( FieldPut( nPos, uValue ) )
+              if lLocked
+                 ::Commit()
+                 ::RecUnLock( ::RecNo() )
+              endif
+           else
+              if ! Empty( ::bNetError )
+                 return Eval( ::bNetError, Self )
+              endif
+           endif
+        endif
+     else
+        ( ::nArea )-&gt;( FieldPut( nPos, uValue ) )
+     endif
+  endif
+
+return nil
+
+METHOD Load() CLASS xDataBase
+
+  local n
+
+  if ::lBuffer
+     for n = 1 to ( ::cAlias )-&gt;( FCount() )
+        ::aBuffer[ ::aFldNames[n] ] := ( ::cAlias )-&gt;( FieldGet( n ) )
+     next
+
+     if ::lOemAnsi
+        ::OemToAnsi()
+     endif
+  endif
+
+return nil
+
+//--------------------------------------------------------------------------
+--//
+
+METHOD Modified() CLASS XDataBase
+
+  local n
+
+  if ::lBuffer
+     for n := 1 to Len( ::aFldNames )
+
+        if ! ( ::cAlias )-&gt;( FieldGet( n ) ) == ::aBuffer[ ::aFldNames[n] ]
+           return .t.
+        endif
+     next
+  endif
+
+return .f.
+
+METHOD Blank() CLASS XDataBase
+
+  LOCAL a := HB_HKEYS( ::aBuffer )
+  if ::lBuffer
+     AEval( a, { |u,i| HB_HVALUEAT( ::aBuffer, i, uValBlank( u )) } )
+  endif
+
+return .f.
+
+METHOD _OemToAnsi() CLASS XDataBase
+
+  local n
+
+  for n = 1 to Len( ::aFldNames )
+     if ValType( ::aBuffer[ ::aFldNames[n] ] ) == "C"
+        ::aBuffer[ ::aFldNames[n] ] := OemToAnsi( ::aBuffer[ ::aFldNames[n]
+] )
+     endif
+  next
+
+return nil
+
+METHOD SaveBuff() CLASS XDataBase
+
+  local n
+
+  if ::lBuffer
+     for n := 1 to Len( ::aFldNames )
+        if ::lOemAnsi .and. ValType( ::aBuffer[ ::aFldNames[n] ] ) == "C"
+           ( ::nArea )-&gt;( FieldPut( n, AnsiToOem( ::aBuffer[ ::aFldNames[n]
+] ) ) )
+        else
+           ( ::nArea )-&gt;( FieldPut( n, ::aBuffer[ ::aFldNames[n] ] ) )
+        endif
+     next
+  endif
+
+return nil
+
+
+****************************************************************************
+************************************
+* Descripción :
+* Parámetros  : Ninguno
+* Fecha       : 06/21/06
+* Autor       : Equipo de desarrollo de Aicom
+****************************************************************************
+************************************
+  METHOD HashAddMember( aName, cType, uInit, oObj ) CLASS xDataBase
+//--------------------------------------------------------------------------
+------------------------------------
+  local cName
+
+  if !( cType == nil )
+
+     switch Upper( Left( cType, 1 ) )
+
+        case "S" // STRING
+
+             if uInit == nil
+                uInit := ""
+             endif
+
+             exit
+
+        case "N" // NUMERIC
+
+             if uInit == nil
+                uInit := 0
+             endif
+
+             exit
+
+        case "L" // LOGICAL
+
+             if uInit == nil
+                uInit := .f.
+             endif
+
+             exit
+
+        case "D" // DATE
+
+             if uInit == nil
+                uInit := CtoD( "" )
+             endif
+
+             exit
+
+        case "C" // CODEBLOCK
+
+             if uInit == nil
+                uInit := { || nil }
+             endif
+
+             exit
+
+        case "A" // ARRAY
+
+             if uInit == nil
+                uInit := {}
+             endif
+
+             exit
+
+     end switch
+
+  endif
+
+return NIL
+
+
+#pragma BEGINDUMP
+
+#include "windows.h"
+#include "hbapi.h"
+#include "hbapierr.h"
+#include "hbapiitm.h"
+#include "hbapicls.h"
+#include "hbvm.h"
+#include "hbdate.h"
+#include "hboo.ch"
+#include "hbapirdd.h"
+#include "hbstack.h"
+#include "hbapilng.h"
+
+char * AicomGetmessage();
+
+HB_FUNC_STATIC( XDATABASE_ONERROR )
+{
+
+
+       char * cMessage       = AicomGetmessage() ;
+       PHB_ITEM pSelf        = hb_stackSelfItem();
+       BOOL bBuffer          = hb_itemGetL( hb_objSendMsg(pSelf, "LBUFFER",
+0) );
+       PHB_ITEM pValue       = hb_param(1,HB_IT_ANY);
+       const char *cKey      = ( *cMessage == '_'  ?  (cMessage+1) :
+cMessage ) ;
+
+
+       if( bBuffer)
+       {
+              PHB_ITEM pHash = hb_objSendMsg(pSelf,"ABUFFER",0);
+              PHB_ITEM pKey  = hb_itemPutC( hb_itemNew(NULL), cKey );
+
+               if( *cMessage == '_' )
+               {
+       // Con esto asignamos un valor al buffer
+                       if( pHash &amp;&amp; pKey &amp;&amp; pValue )
+                       {
+                               hb_hashAdd( pHash, pKey, pValue );
+                               hb_itemRelease( pKey );
+                       }
+                       else
+                           hb_errRT_BASE( EG_ARG, 1123, NULL,
+HB_ERR_FUNCNAME, HB_ERR_ARGS_BASEPARAMS );
+               } else
+               {
+                       // Esto devuelve el valor del buffer
+                       PHB_ITEM pDest = hb_hashGetItemPtr( pHash, pKey,
+HB_HASH_AUTOADD_ACCESS );
+                       hb_itemRelease( pKey );
+                       if(pDest)
+                           hb_itemReturn(pDest);
+                       else
+                           hb_errRT_BASE( EG_BOUND, 1132, NULL,
+hb_langDGetErrorDesc( EG_ARRACCESS ), 2, pHash, pValue );
+               }
+       }
+       else
+       {
+               int iAreaAnt    = hb_rddGetCurrentWorkAreaNumber();
+// Area anterior
+               int iAreaAct    = hb_itemGetNI( hb_objSendMsg(pSelf,
+"NAREA", 0 ) );    // Buscamos actual
+               AREAP pArea     = ( AREAP )
+hb_rddGetCurrentWorkAreaPointer();              // Necesitamos pArea
+               USHORT uiField  = hb_rddFieldIndex( pArea, cKey );
+// FieldPos ( cFieldName )
+               hb_rddSelectWorkAreaNumber( iAreaAct ) ;
+// Seleccionamos area actual
+
+               if(uiField)
+               {
+                       if( *cMessage == '_' )
+                       {
+                       // Asignamos el valor
+                               if( pValue &amp;&amp; !HB_IS_NIL( pValue ) )
+                               {
+                                       if( SELF_PUTVALUE( pArea, uiField,
+pValue ) == SUCCESS )
+                                       {
+                                               hb_itemReturn( pValue );
+                                       }
+                               }
+                       } else
+                       {
+                       // Devolvemos el valor del campo
+                               PHB_ITEM pItem = hb_itemNew( NULL );
+                               if( pArea ) // &amp;&amp; uiField )
+                               {
+                                       SELF_GETVALUE( pArea, uiField, pItem
+);
+                               }
+                               hb_itemReturnRelease( pItem );
+                       }
+                       hb_rddSelectWorkAreaNumber( iAreaAnt ) ;
+// Seleccionamos area anterior
+               } else
+               {
+                       hb_errRT_DBCMD(( *cMessage == '_' ? 1005 : 1004 ),
+0, "Field not found", cKey );
+               }
+
+       }
+}
+
+char * AicomGetmessage()
+{
+ // Thanks to Przemek
+ long lOffset = hb_stackBaseProcOffset( 0 );  
+ char * cMessage =  (char *)hb_itemGetSymbol( hb_stackItem( lOffset ) )-&gt;szName;  
+return cMessage ; 
+}</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p72120">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Fri Dec 19, 2008 08:35 PM
+      </div>
+      <div class="content"><p>Antonio,</p>
+<p>I am getting the errors below when I try to compile the test program. I am using FWH 8.08/xHarbour (the xHarbour that came with FWH).</p>
+<p>I don't seem to have the file hbapicls.h on my computer (I did a search to make sure it wasn't a path issue).</p>
+<p>Regards,<br>
+James</p>
+<p>Borland C++ 5.5.1 for Win32 Copyright (c) 1993, 2000 Borland<br>
+XDbase.c:<br>
+Error E2209 XDbase.prg 353: Unable to open include file 'hbapicls.h'<br>
+Warning W8065 XDbase.prg 367: Call to function 'AicomGetmessage' with no prototype in function HB_FUN_XDATABASE_ONERROR<br>
+Warning W8065 XDbase.prg 386: Call to function 'hb_hashAdd' with no prototype in function HB_FUN_XDATABASE_ONERROR<br>
+Error E2451 XDbase.prg 390: Undefined symbol 'HB_ERR_FUNCNAME' in function HB_FUN_XDATABASE_ONERROR<br>
+Error E2451 XDbase.prg 394: Undefined symbol 'HB_HASH_AUTOADD_ACCESS' in function HB_FUN_XDATABASE_ONERROR<br>
+Warning W8065 XDbase.prg 394: Call to function 'hb_hashGetItemPtr' with no prototype in function HB_FUN_XDATABASE_ONERROR<br>
+Warning W8069 XDbase.prg 394: Nonportable pointer conversion in function HB_FUN_XDATABASE_ONERROR<br>
+Warning W8065 XDbase.prg 446: Call to function 'hb_stackBaseProcOffset' with no prototype in function AicomGetmessage<br>
+*** 3 errors in Compile ***<br>
+Turbo Incremental Link 5.00 Copyright (c) 1997, 2000 Borland<br>
+Fatal: Unable to open file 'XDBASE.OBJ'</p></div>
+    </div>
+  </div>
+  <div class="post" id="p72121">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Fri Dec 19, 2008 08:44 PM
+      </div>
+      <div class="content"><p>Antonio,</p>
+<p>It seems there were lots of wordwraps put into the code when it was posted in the message. I can fix most of them, but I am not sure about the C syntax. Can you email me a zipped copy of the original PRG?</p>
+<p>Regards,<br>
+James</p></div>
+    </div>
+  </div>
+  <div class="post" id="p72135">
+    <div class="poster">
+      <div class="name" style="color:#105289">fraxzi</div>
+      <div class="rank">Posts: 811</div>
+      <div class="avatar"></div>
+      Joined: Tue May 06, 2008 04:28 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Sat Dec 20, 2008 01:30 AM
+      </div>
+      <div class="content"><p>Mr. Antonio,</p>
+<p>I suggest that this class be included/updated with FHW8.11 so I (we) can start downloading the 8.11....</p>
+<p>2Cents!</p>
+<p>P.S.<br>
+        - ....before my 2 months update expires   <!-- s:lol: --><img src="{SMILIES_PATH}/icon_lol.gif" alt=":lol:" title="Laughing" /><!-- s:lol: -->  <!-- s:lol: --><img src="{SMILIES_PATH}/icon_lol.gif" alt=":lol:" title="Laughing" /><!-- s:lol: -->  <!-- s:lol: --><img src="{SMILIES_PATH}/icon_lol.gif" alt=":lol:" title="Laughing" /><!-- s:lol: --> </p>
+<p>Happy Holidays!</p>
+<p>Regards,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p72136">
+    <div class="poster">
+      <div class="name" style="color:#105289">fraxzi</div>
+      <div class="rank">Posts: 811</div>
+      <div class="avatar"></div>
+      Joined: Tue May 06, 2008 04:28 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Sat Dec 20, 2008 01:53 AM
+      </div>
+      <div class="content">I have this error during compilation using xMate:<br>
+<br>
+<img src="http://i208.photobucket.com/albums/bb82/fraxzi/FWxHarbour/xDataBase.jpg" alt="" loading="lazy"><br>
+<br>
+<br>
+Also, I can't find some files like "hbapicls.h" on my development directory...<br>
+<br>
+<br>
+Regards,</div>
+    </div>
+  </div>
+  <div class="post" id="p72137">
+    <div class="poster">
+      <div class="name" style="color:#105289">ukoenig</div>
+      <div class="rank">Posts: 4043</div>
+      <img class="avatar avatar-img" src="avatars/1257.jpg" alt="" loading="lazy">
+      Joined: Wed Dec 19, 2007 06:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Include file : hbapicls.h</span><br>
+        Posted: Sat Dec 20, 2008 02:03 AM
+      </div>
+      <div class="content"><p>Hello,</p>
+<p>this file You can find in =&gt;  HARBOUR/include ( not xHARBOUR )</p>
+<p>/<em><br>
+ * $Id: hbapicls.h 8359 2008-04-22 02:51:18Z druzus $<br>
+</em>/</p>
+<p>/<em><br>
+ * Harbour Project source code:<br>
+ *    Harbour class API<br>
+ *<br>
+ * Copyright 2006 Przemyslaw Czerpak &lt;druzus / at / priv.onet.pl&gt;<br>
+ * www - <!-- m --><a class="postlink" href="http://www.harbour-project.org">http://www.harbour-project.org</a><!-- m --><br>
+ *<br>
+ * This program is free software; you can redistribute it and/or modify<br>
+ * it under the terms of the GNU General Public License as published by<br>
+ * the Free Software Foundation; either version 2, or (at your option)<br>
+ * any later version.<br>
+ *<br>
+ * This program is distributed in the hope that it will be useful,<br>
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of<br>
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the<br>
+ * GNU General Public License for more details.<br>
+ *<br>
+ * You should have received a copy of the GNU General Public License<br>
+ * along with this software; see the file COPYING.  If not, write to<br>
+ * the Free Software Foundation, Inc., 59 Temple Place, Suite 330,<br>
+ * Boston, MA 02111-1307 USA (or visit the web site <!-- m --><a class="postlink" href="http://www.gnu.org/">http://www.gnu.org/</a><!-- m -->).<br>
+ *<br>
+ * As a special exception, the Harbour Project gives permission for<br>
+ * additional uses of the text contained in its release of Harbour.<br>
+ *<br>
+ * The exception is that, if you link the Harbour libraries with other<br>
+ * files to produce an executable, this does not by itself cause the<br>
+ * resulting executable to be covered by the GNU General Public License.<br>
+ * Your use of that executable is in no way restricted on account of<br>
+ * linking the Harbour library code into it.<br>
+ *<br>
+ * This exception does not however invalidate any other reasons why<br>
+ * the executable file might be covered by the GNU General Public License.<br>
+ *<br>
+ * This exception applies only to the code released by the Harbour<br>
+ * Project under the name Harbour.  If you copy code from other<br>
+ * Harbour Project or Free Software Foundation releases into a copy of<br>
+ * Harbour, as the General Public License permits, the exception does<br>
+ * not apply to the code that you add in this way.  To avoid misleading<br>
+ * anyone as to the status of such modified files, you must delete<br>
+ * this exception notice from them.<br>
+ *<br>
+ * If you write modifications of your own for Harbour, it is your choice<br>
+ * whether to permit this exception to apply to your modifications.<br>
+ * If you do not wish that, delete this exception notice.<br>
+ *<br>
+</em>/</p>
+<p>....<br>
+....</p>
+<p>Regards<br>
+Uwe <!-- s:lol: --><img src="{SMILIES_PATH}/icon_lol.gif" alt=":lol:" title="Laughing" /><!-- s:lol: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p72138">
+    <div class="poster">
+      <div class="name" style="color:#105289">fraxzi</div>
+      <div class="rank">Posts: 811</div>
+      <div class="avatar"></div>
+      Joined: Tue May 06, 2008 04:28 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Sat Dec 20, 2008 02:13 AM
+      </div>
+      <div class="content"><p>Dear Uwe,</p>
+<p>Sorry for that. I'm using xHarbour only.  <!-- s8) --><img src="{SMILIES_PATH}/icon_cool.gif" alt="8)" title="Cool" /><!-- s8) --> </p>
+<p>Is there a way to compile this class using xHarbour (build.6195 from Fivetech)  <!-- s:?: --><img src="{SMILIES_PATH}/icon_question.gif" alt=":?:" title="Question" /><!-- s:?: --> </p>
+<p>Regards,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p72164">
+    <div class="poster">
+      <div class="name" style="color:#105289">ukoenig</div>
+      <div class="rank">Posts: 4043</div>
+      <img class="avatar avatar-img" src="avatars/1257.jpg" alt="" loading="lazy">
+      Joined: Wed Dec 19, 2007 06:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Testing</span><br>
+        Posted: Sat Dec 20, 2008 12:20 PM
+      </div>
+      <div class="content"><p>Hello &lt; fraxzi &gt;<br>
+It seems, that it is not working with XHARBOUR.</p>
+<p>Antonio's description :<br>
+As a special gift from Santa (thanks Jose Luis!) here you have it to start using it. It has been tested with </p>
+<h2>Harbour in PC and Pocket PC.</h2>
+<p>Your feedback is welcome.</p>
+<p>Regards<br>
+Uwe <!-- s:lol: --><img src="{SMILIES_PATH}/icon_lol.gif" alt=":lol:" title="Laughing" /><!-- s:lol: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p72169">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Sat Dec 20, 2008 02:47 PM
+      </div>
+      <div class="content">James, Uwe, Frances,<br>
+<br>
+I have not tested this code myself yet. But reviewing it, I see that it uses hashes to avoid the AScan that we do from the method OnError().<br>
+<br>
+For xHarbour users, we could test these improvements:<br>
+<br>
+To avoid the AScan(), we can do instead of:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">         if ( nField := AScan( ::aFldNames,;
+                             { | cField | SubStr( cMsg, 2 ) == ;
+                                 RTrim( SubStr( cField, 1, 9 ) ) } ) ) != 0
+            ::FieldPut( nField, uParam1 )</code></pre></div><br>
+this code:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">         if ( nField := ::FieldPos( SubStr( cMsg, 2 ) ) ) != 0
+            ::FieldPut( nField, uParam1 )</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p72170">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Sat Dec 20, 2008 02:50 PM
+      </div>
+      <div class="content"><p>Also, I wonder if hashes are faster than calling FieldPos().</p>
+<p>I guess that FieldPos() may be quite similar in speed as hashes.</p>
+<p>Of course we could also get speed improvement porting OnError() to C code as Jose Luis does.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p72174">
+    <div class="poster">
+      <div class="name" style="color:#105289">jlcapel</div>
+      <div class="rank">Posts: 229</div>
+      <img class="avatar avatar-img" src="avatars/123.jpg" alt="" loading="lazy">
+      Joined: Wed Oct 12, 2005 05:32 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Sat Dec 20, 2008 07:14 PM
+      </div>
+      <div class="content"><p>Hi to all,</p>
+<p>Well... this class was only created and tested in Harbour for PPC.</p>
+<p>Let me explain a little what this class do.</p>
+<p>We have done two type of enhancements.  First we have changed arrays from abuffer to hashes.  This change allow eliminate all ascans (which normally slow down performance).  The second change is about error handler.   Error handler is now in low level, that is, in C.  </p>
+<p>In our tests we have noticed that in assigning and setting values to/from now are about 4 or 5 times faster than with original tDatabase.</p>
+<p>For example, this test:</p>
+<p>FOR x := 1 TO 50000<br>
+   oDb:MyField := "somevalue"<br>
+NEXT</p>
+<p>in original tdatabase needs 35 seconds to complete whilst with new class it only needs 9 seconds (tests done on PPC emulator)</p>
+<p>The rest of the class remains unchanged.  As you can see, this class inherits from tDatabase.  This is because for testing purposes it is easier to change from xDatabase to tDatabase instead of changing .mak files.  </p>
+<p>And about xHarbour... well I shall take a look next week (if I have time enought).  </p>
+<p>I hope you'll enjoy it.</p>
+<p>Regards,<br>
+José Luis Capel</p></div>
+    </div>
+  </div>
+  <div class="post" id="p72228">
+    <div class="poster">
+      <div class="name" style="color:#105289">Maurizio</div>
+      <div class="rank">Posts: 842</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Mon Dec 22, 2008 08:40 AM
+      </div>
+      <div class="content">Hi <br>
+<br>
+Work directly on the DBF is  4/5 time faster that work with TDATABSE .<br>
+I use this function ( with xHarbour ) for load and save the date in a hash .<br>
+<br>
+Regards Maurizio <br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//--------------------------------------------------------------------------
+
+Function MAin()
+Local aVArs 
+USE "CLI01.dbf"
+aVars := LoadDbf() 
+
+aVars:CODPRO := "ABCD" 
+
+SaveDbf(aVars)
+use 
+Return nil 
+
+ Function LoadDbf()  // Scatter()
+  Local  aVars := {=&gt;}
+  LOcal nField := FCount()
+  LOcal nX := 1
+  FOR nX  := 1 TO  nField
+      aVars[FIELDNAME(nX)] := FieldGet(nX)
+  NEXT
+ 
+ Return aVars
+ 
+//--------------------------------------------------------------------------
+Function  SaveDbf(aVArs)     //Gather(aVars)
+    lOCAL Nx  := 1
+    FOR Nx  := 1 TO  LEN(aVars)
+            FieldPut(nX,aVArs[FIELDNAME(nX)]  )
+    NEXT
+Return TRUE
+ 
+//--------------------------------------------------------------------------
+ Function  Blank(aVars)  
+   local i,nX
+   i := len(aVars)
+   for nX :=1 to i
+     do case
+        case valtype(aVars[FIELDNAME(nX)]) == "C" ; aVars[FIELDNAME(nX)] := space(len(aVars[FIELDNAME(nX)]))
+        case valtype(aVars[FIELDNAME(nX)]) == "N" ; aVars[FIELDNAME(nX)] := 0
+        case valtype(aVars[FIELDNAME(nX)]) == "D" ; aVars[FIELDNAME(nX)] := CTOD("00-00-00")
+        case valtype(aVars[FIELDNAME(nX)]) == "M" ; aVars[FIELDNAME(nX)] := space(200)
+        case valtype(aVars[FIELDNAME(nX)]) == "L" ; aVars[FIELDNAME(nX)] := .F.
+     endcase
+   next
+  Return  aVars</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p72231">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Mon Dec 22, 2008 10:23 AM
+      </div>
+      <div class="content"><p>Maurizio,</p>
+<p>Very good example, thanks <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p72243">
+    <div class="poster">
+      <div class="name" style="color:#105289">demont frank</div>
+      <div class="rank">Posts: 167</div>
+      <div class="avatar"></div>
+      Joined: Thu Mar 22, 2007 11:24 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Mon Dec 22, 2008 12:33 PM
+      </div>
+      <div class="content"><blockquote><cite>Maurizio wrote:</cite>Hi <br>
+<br>
+Work directly on the DBF is  4/5 time faster that work with TDATABSE .<br>
+I use this function ( with xHarbour ) for load and save the date in a hash .<br>
+<br>
+Regards Maurizio <br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//--------------------------------------------------------------------------
+
+Function MAin()
+Local aVArs 
+USE "CLI01.dbf"
+aVars := LoadDbf() 
+
+aVars:CODPRO := "ABCD" 
+
+SaveDbf(aVars)
+use 
+Return nil 
+
+ Function LoadDbf()  // Scatter()
+  Local  aVars := {=&gt;}
+  LOcal nField := FCount()
+  LOcal nX := 1
+  FOR nX  := 1 TO  nField
+      aVars[FIELDNAME(nX)] := FieldGet(nX)
+  NEXT
+ 
+ Return aVars
+ 
+//--------------------------------------------------------------------------
+Function  SaveDbf(aVArs)     //Gather(aVars)
+    lOCAL Nx  := 1
+    FOR Nx  := 1 TO  LEN(aVars)
+            FieldPut(nX,aVArs[FIELDNAME(nX)]  )
+    NEXT
+Return TRUE
+ 
+//--------------------------------------------------------------------------
+ Function  Blank(aVars)  
+   local i,nX
+   i := len(aVars)
+   for nX :=1 to i
+     do case
+        case valtype(aVars[FIELDNAME(nX)]) == "C" ; aVars[FIELDNAME(nX)] := space(len(aVars[FIELDNAME(nX)]))
+        case valtype(aVars[FIELDNAME(nX)]) == "N" ; aVars[FIELDNAME(nX)] := 0
+        case valtype(aVars[FIELDNAME(nX)]) == "D" ; aVars[FIELDNAME(nX)] := CTOD("00-00-00")
+        case valtype(aVars[FIELDNAME(nX)]) == "M" ; aVars[FIELDNAME(nX)] := space(200)
+        case valtype(aVars[FIELDNAME(nX)]) == "L" ; aVars[FIELDNAME(nX)] := .F.
+     endcase
+   next
+  Return  aVars</code></pre></div></blockquote><br>
+<br>
+Maybe <br>
+  Local  aVars := {=&gt;}<br>
+<br>
+Better is <br>
+  LOCAL aVars := TAssociativeArray()<br>
+<br>
+Then we can use fieldname OR fieldnumber<br>
+<br>
+aVars:CODPRO := "ABCD" <br>
+<br>
+Can also written as <br>
+<br>
+aVars["CODPRO"] := "ABCD" <br>
+// didn't know your syntax<br>
+<br>
+OR<br>
+<br>
+aVars[1] := "ABCD" supposing it is the first field<br>
+ <br>
+<br>
+Frank</div>
+    </div>
+  </div>
+  <div class="post" id="p72258">
+    <div class="poster">
+      <div class="name" style="color:#105289">StefanHaupt</div>
+      <div class="rank">Posts: 824</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 13, 2005 07:39 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">A much faster Class TDataBase !!!</span><br>
+        Posted: Mon Dec 22, 2008 04:09 PM
+      </div>
+      <div class="content">Hi,<br>
+<br>
+I´m using a similar method for reading dbf´s, but I additionally check the type of each field to get a default values and to resize teh len of of the arrayelement to the size of the field.  For every array element there is a define<br>
+<br>
+Maybe it´s usefull for somebody<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#define C_STATUS 1
+....
+::aStruct := (::cAlias)-&gt;(dbStruct())
+
+
+METHOD ReadData (lNew) CLASS TComputer
+
+LOCAL aData := Array(Len(::aStruct))
+LOCAL i := 1
+
+DEFAULT lNew := .F.
+
+IF lNew
+
+  FOR i := 1 TO LEN (::aStruct)
+    DO CASE
+    CASE ::aStruct[i,DBS_TYPE]=="N"
+      aData[i] := 0
+    CASE ::aStruct[i,DBS_TYPE]=="C"
+      aData[i] := SPACE (::aStruct[i,DBS_LEN])
+    CASE ::aStruct[i,DBS_TYPE]=="L"
+      aData[i] := .F.
+    CASE ::aStruct[i,DBS_TYPE]=="D"
+      aData[i] := CTOD ("  .  .    ")
+    CASE ::aStruct[i,DBS_TYPE]=="M"
+      aData[i] := SPACE (1024)
+    OTHERWISE
+      aData[i] := SPACE (10)
+    ENDCASE
+  NEXT
+  aData[C_STATUS] := 1  // bei Neueinträgen immer active
+ELSE
+
+  FOR i := 1 TO LEN (::aStruct)
+    IF ::aStruct[i,DBS_TYPE]=="M"
+      aData[i] := PADR ( (::cAlias)-&gt;(FIELDGET(i)),1024)
+    ELSE
+      aData[i] := IIF (::aStruct[i,DBS_TYPE]=="C",;
+                       PADR ( (::cAlias)-&gt;(FIELDGET(i)),::aStruct[i,DBS_LEN]),;
+                       (::cAlias)-&gt;(FIELDGET(i)) )
+    ENDIF
+  NEXT
+
+  aData[C_TYP]+=1
+
+ENDIF
+
+
+RETURN (aData)</code></pre></div></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-14019-page-2.html">2</a> (19 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>FWH: Parent Child RowSets (MySql/MariaDB) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-32736">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> FWH: Parent Child RowSets (MySql/MariaDB)</div>
+  <div class="post" id="p192368">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Thu Jul 21, 2016 07:52 AM
+      </div>
+      <div class="content">On many occassions we need to create parent-child relationships between tables and browse them. In case of RDD, using scoped relations make this very easy. <br>
+<br>
+(cParentAlias)-&gt;( OrdSetRelation( cChild, bRelation, cRelation ) )<br>
+or <br>
+SET RELATION TO &lt;expr&gt; INTO &lt;child&gt; SCOPED.<br>
+This relation is equivalent to setting Scope on the child. This can also be achieved by setting filter on the child. We need to keep updating the scope or filter everytime we move the record pointer of the parent.<br>
+<br>
+In case of ADO, the &quot;DATA SHAPING&quot; feature makes this job a *breeze*. This Data Shaping is a feature of ADO but not a native feature of any SQL. So, there is no way to achieve the same result using normal SQL.<br>
+<br>
+RowSet object has methods to do this job extremely easy and as easy as ADO datashaping and even more flexible than that.<br>
+<br>
+We agree that there are definitely othe ways of doing this and we all had done this many times. But this feature takes away all the tedium, makes the process very simple, less error prone, stable with easy to maintain code.<br>
+<br>
+The entire process requires usage of only two methods and one data:<br>
+<br>
+1) oParent:AddChild( ...  ) // establish parent child relationship<br>
+2) oParent:SyncChild()  // Call whenever we want to sync the child with parent. <br>
+<br>
+DATA oParent:oChild //refers to the child rowset.<br>
+<br>
+//Example usage in Parent-child browse:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oParentBrw:bChange := { || oParentRs:SyncChild(), oChildBrw:Refresh() }</code></pre></div><br>
+<br>
+Note: We did not make SyncChild() automatic when parent's record pointer is moved for performance reasons. we need to call the SyncChild() method explicitly.<br>
+<br>
+This is all the work we need to do as a programmer.<br>
+<br>
+Two alternative methods are provided, similar to DataShaping of ADO.<br>
+<br>
+Method-1:<br>
+Read only that subset of child table's records from the server that match the defined relationship and keep reading and refreshing whenever the parent skips and resync is called.<br>
+<br>
+PROS: Not necessary to read entire child table to start with.<br>
+CONS: Each resync takes time to read the new data from the server.<br>
+<br>
+Method-2:<br>
+<br>
+Read the entire (or expected portion of ) child table into a rowset.<br>
+Filter only the records respecting the relation when oParent:SyncChild() is called.<br>
+<br>
+PROS: Syncing the child is fast.<br>
+CONS: Initially the entire (or a major portion) of the child table needs to be read.<br>
+<br>
+On localhost and local area networks and high speed WANS both offer the same performance.<br>
+<br>
+Specifying the parent and child relationship: We show examples here based on two tables states and customer with structures same as fwh\samples\customer.dbf and fwh\samples\states.dbf. Field &quot;state&quot; in customer table is related to field &quot;code&quot; in states table.<br>
+<br>
+METHOD-1<br>
+<br>
+First open rowset of parent:<br>
+oStates := oCn:RowSet( &quot;states&quot; )<br>
+<br>
+There are 3 alternative syntaxes:<br>
+a) oStates:AddChild( &quot;select * from customer where state = ?&quot;, { &quot;code&quot; } ) <br>
+b) oStates:AddChild( &quot;select * from customer where state = states.code&quot; )<br>
+c) This applies where a forein-key relationship is defined when creating customer table (explained later)<br>
+   oStates:AddChild( &quot;customer&quot; )<br>
+or oStates:AddChile( &quot;select &lt;fieldlist&gt; from customer&quot; )<br>
+<br>
+METHOD-2:<br>
+<br>
+Open both rowsets of parent and child&gt;<br>
+oStates := oCn:RowSet( &quot;states&quot; )<br>
+oCust   := oCn:RowSet( &quot;customer&quot; )<br>
+<br>
+Alternative syntaxes:<br>
+a) oStates:AddChild( oCust, &quot;state == ?&quot;, { &quot;code&quot; } )<br>
+b) oStates:AddChild( oCust, &quot;state == states.code&quot; )<br>
+c) oStates:OrdSetRelation( oCust, &quot;state == states.code&quot; ) // comaptibility with DBF syntax<br>
+d) This applies where a forein-key relationship is defined when creating customer table (explained later)<br>
+   oStates:AddChild( oCust )<br>
+<br>
+Notes: <br>
+i) Alternate syntaxes (a) and (b) in Method-1 are functionally identical. Same way alternative syntaxes (a),(b) and (c) in Method-2 are identical. Which syntax to use depends only on the individual taste of the programmer.<br>
+ii) In Method-1, the relation uses SQL syntax of Where clause. In Method-2, the condition uses DBF syntax for filters.<br>
+iii) Present limitation is that one parent can have only one child. But a child can have another child and so on.<br>
+iv) Calling AddChild() again with another table/rowset cancels previous relationship and sets a new child and new relationship<br>
+<br>
+FOREIGN KEYS:<br>
+Defining foreign key relationships is an essential part of good database design, next only to having primary keys for every table.<br>
+Connection Object's CreateTable() method makes it very easy to define foreign key relationships.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oCn:CreateTable( "customer", { ;
+      { "first", 'C', 20, 0 }, ;
+      // other fields
+      { "state", "REFERENCES states(code)" }, ;
+      // remaining fields } )</code></pre></div><br>
+It is desirable to define this relationship at the time of creation of the table than adding the constraint later, because column definition should exactly match the column definition in the parent table. CreateTable() method takes the trouble of picking up the column definition from the referred table and incorporate in the child table so that any errors are avoided.<br>
+<br>
+When a FK relationship is already defined, as is the case with all well designed databases, setting parent child relationships is very easy.<br>
+<br>
+Eg:<br>
+oStates:AddChild( &quot;customer&quot; ) // customer table<br>
+oStates:AddChild( oCust )  // RowSet where customer table is the only table or main table.<br>
+<br>
+RowSet object searches the database for the relevant FK relationship and builds appropriate Where clause or Filter condition. This approach is the best.<br>
+<br>
+Some samples:<br>
+Main function:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+static ocn
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oStates
+
+   if ConnectToServer()
+
+      oStates  := oCn:RowSet( "states" )
+      oStates:AddChild( "select * from customer where state = states.code" )  // syntax 1
+
+      BrowseParentChild( oStates )
+
+      ocn:close()
+
+   endif
+
+return nil</code></pre></div><br>
+Supporting functions for connecting to server and browsing the results<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//----------------------------------------------------------------------------//
+
+function ConnectToServer()
+
+   local cHost      := "localhost"
+   local cUser      := "root"
+   local cPassword  := nil
+   local cDb        := nil
+
+   EDITVARS cHost, cUser, cPassword, cDB
+
+   FWCONNECT oCn HOST cHost USER cUser PASSWORD cPassword DATABASE cDB
+
+   if oCn == nil
+      ? "Connect Fail"
+      return .f.
+   endif
+
+   if Empty( oCn:CurrentDB() )
+      oCn:CreateDB( "fwh" )
+      oCn:SelectDB( "fwh" )
+   endif
+
+   if ! oCn:TableExists( "customer" )
+      oCn:ImportFromDBF( "\fwh\samples\customer.dbf" )
+   endif
+   if ! oCn:TableExists( "states" )
+      oCn:ImportFromDBF( "\fwh\samples\states.dbf" )
+   endif
+
+return .t.
+
+//----------------------------------------------------------------------------//
+
+function BrowseParentChild( oStates )
+
+   local oBrwParent, oBrwChild, oDlg, oFont
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-14
+   DEFINE DIALOG oDlg SIZE 900,400 PIXEL TRUEPIXEL ;
+      FONT oFont ;
+      TITLE "FWH MYSQL PARENT CHILD ROWSET"
+
+   @ 20,20 XBROWSE oBrwParent SIZE 250,-20 PIXEL OF oDlg ;
+      DATASOURCE oStates ;
+      COLUMNS "Code", "Name" ;
+      CELL LINES NOBORDER
+
+   WITH OBJECT oBrwParent
+      :bChange    := { || oStates:SyncChild(), oBrwChild:GoTop(), oBrwChild:Refresh() }
+      :CreateFromCode()
+   END
+
+   @ 20,270 XBROWSE oBrwChild SIZE -20,-20 PIXEL OF oDlg ;
+      DATASOURCE oStates:oChild ;
+      COLUMNS "First", "City", "State", "Salary" ;
+      CELL LINES NOBORDER
+
+   WITH OBJECT oBrwChild
+      :CreateFromCode()
+   END
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oFont
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+For the sake of record let us have here all alternatives<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">      oStates  := oCn:RowSet( "states" )
+
+      // MEHOD-1
+      oStates:AddChild( "select * from customer where state = states.code" )  // syntax 1
+      //oStates:AddChild( "select * from customer where state = ?", { "code" } ) // syntax 2
+
+      // METHOD-2
+      //oStates:AddChild( oCn:RowSet( "customer" ), "state = states.code" )  // syntax 1
+      //oStates:AddChild( oCn:RowSet( "customer" ), "state = ?", { "code" } )  // syntax 2</code></pre></div><br>
+<br>
+Result:<br>
+<a href="https://imageshack.com/i/pmXDJRHVp" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/922/XDJRHV.png" alt="" loading="lazy"></a><br>
+<br>
+Next let us look at making parent child relationships between different subsets of the same table.<br>
+Here is a table of codes. We want to set relationship between different levels of codes:<br>
+<a href="https://imageshack.com/i/pmll7WxCp" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/922/ll7WxC.png" alt="" loading="lazy"></a><br>
+<br>
+Main Program:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+static ocn
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oCodes
+
+   if ConnectToServer()
+
+      oCodes   := oCn:RowSet( "select * from testcodes where level = 1" )
+      oCodes:AddChild( "select * from testcodes where level = 2 and substring( code, 1, 1 ) = ?", { "code" } )
+      oCodes:oChild:AddChild( "select * from testcodes where level = 3 and substring( code, 1, 2 ) = ?", { "code" } )
+
+      BrowseCodes( oCodes )
+
+      ocn:close()
+   endif
+
+return nil</code></pre></div><br>
+Supporting functions for connecting to server, browse, etc<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">//----------------------------------------------------------------------------//
+
+function ConnectToServer()
+
+   local cHost      := "localhost"
+   local cUser      := "root"
+   local cPassword  := ""
+   local cDb        := ""
+
+   EDITVARS cHost, cUser, cPassword, cDB
+
+   FWCONNECT oCn HOST cHost USER cUser PASSWORD cPassword DATABASE cDB
+
+   if oCn == nil
+      ? "Connect Fail"
+      return .f.
+   endif
+
+   if Empty( oCn:CurrentDB() )
+      oCn:CreateDB( "fwh" )
+      oCn:SelectDB( "fwh" )
+   endif
+
+   CreateTable()
+
+return .t.
+
+//----------------------------------------------------------------------------//
+
+function BrowseCodes( oCodes )
+
+   local oDlg, oFont, oBrwCodes, oBrwGroups, oBrwSubGr
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-14
+   DEFINE DIALOG oDlg SIZE 790,250 PIXEL TRUEPIXEL ;
+      FONT oFont ;
+      TITLE "FWH MYSQL PARENT CHILD GRAND CHILD ROWSET"
+
+   @ 20,20 XBROWSE oBrwCodes SIZE 250,-20 PIXEL OF oDlg ;
+      DATASOURCE oCodes ;
+      COLUMNS "Code", "Name" ;
+      CELL LINES NOBORDER
+
+   WITH OBJECT oBrwCodes
+      :SetGroupHeader( "MAJOR CODES" )
+      :bChange    := { || oCodes:SyncChild(), oBrwGroups:GoTop(), oBrwGroups:Refresh() }
+      :CreateFromCode()
+   END
+
+   @ 20,270 XBROWSE oBrwGroups SIZE 250,-20 PIXEL OF oDlg ;
+      DATASOURCE oCodes:oChild ;
+      COLUMNS "Code", "Name" ;
+      CELL LINES NOBORDER
+
+   WITH OBJECT oBrwGroups
+      :SetGroupHeader( "GROUP CODES" )
+      :bChange    := { || oCodes:oChild:SyncChild(), oBrwSubGr:GoTop(), oBrwSubGr:Refresh() }
+      :CreateFromCode()
+   END
+
+   @ 20,520 XBROWSE oBrwSubGr SIZE 250,-20 PIXEL OF oDlg ;
+      DATASOURCE oCodes:oChild:oChild ;
+      COLUMNS "Code", "Name" ;
+      CELL LINES NOBORDER
+
+   WITH OBJECT oBrwSubGr
+      :SetGroupHeader( "SUB GROUPS" )
+      :CreateFromCode()
+   END
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oFont
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function CreateTable()
+
+   local aData := {}
+   local i,j,k,c,c2
+
+   for i := ASC('A') to ASC('E')
+      c  := CHR(i)
+      AAdd( aData, { c, 1, RandomStr() } )
+      for j := ASC('A') to ASC('E')
+         c2 := c + CHR( j )
+         AAdd( aData, { c2, 2, RandomStr() } )
+         for k := ASC('A') to ASC('E')
+            AAdd( aData, { c2 + CHR(k), 3, RandomStr() } )
+         next
+      next
+   next
+
+   oCn:DropTable( "testcodes" )
+   oCn:CreateTable( "testcodes", { ;
+      { "code",  "C",  3, 0, "PRI" }, ;
+      { "level", "N",  1, 0 }, ;
+      { "name",  "C", 20, 0 } }, .f. )
+
+   oCn:Insert( "testcodes", "code,level,name", aData )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function RandomStr()
+
+   local cStr  := Chr( HB_RandomInt( ASC( 'A' ), ASC( 'Z' ) ) )
+   local nLen  := HB_RandomInt( 5, 19 )
+   local n, c
+
+   for n := 1 to nLen
+      if HB_RandomInt( 1, 10 ) == 3
+         c  := ' '
+      else
+         c  := Chr( HB_RandomInt( Asc( 'a' ), Asc( 'z' ) ) )
+      endif
+      cStr  += c
+   next
+
+return cStr
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+<br>
+Result:<br>
+<a href="https://imageshack.com/i/po2xu5wVp" rel="noopener"><img src="http://imagizer.imageshack.us/v2/xq90/924/2xu5wV.png" alt="" loading="lazy"></a><br>
+<br>
+<br>
+Note: This feature is available in the latest version about to be released soon.</div>
+    </div>
+  </div>
+  <div class="post" id="p213099">
+    <div class="poster">
+      <div class="name" style="color:#105289">fraxzi</div>
+      <div class="rank">Posts: 811</div>
+      <div class="avatar"></div>
+      Joined: Tue May 06, 2008 04:28 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Wed Jun 20, 2018 06:10 AM
+      </div>
+      <div class="content"><p>Mr. Rao,</p>
+<p>How to do it with one-parent having two-children.. ?</p>
+<p>I understand having a parent-&gt;a child-&gt;a grand child relationship.. but how to do it properly with single parent having two or more children using Mariadb RowSets?</p>
+<!-- s:idea: -->
+<p><img src="{SMILIES_PATH}/icon_idea.gif" alt=":idea:" title="Idea" /><!-- s:idea: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p215188">
+    <div class="poster">
+      <div class="name" style="color:#105289">Horizon</div>
+      <div class="rank">Posts: 1387</div>
+      <div class="avatar"></div>
+      Joined: Fri May 23, 2008 01:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Wed Sep 19, 2018 05:56 PM
+      </div>
+      <div class="content"><blockquote><cite>fraxzi wrote:</cite>Mr. Rao,<br>
+<br>
+How to do it with one-parent having two-children.. ?<br>
+<br>
+I understand having a parent-&gt;a child-&gt;a grand child relationship.. but how to do it properly with single parent having two or more children using Mariadb RowSets?<br>
+<br>
+ </blockquote><br>
+<br>
++1</div>
+    </div>
+  </div>
+  <div class="post" id="p215202">
+    <div class="poster">
+      <div class="name" style="color:#105289">Horizon</div>
+      <div class="rank">Posts: 1387</div>
+      <div class="avatar"></div>
+      Joined: Fri May 23, 2008 01:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Thu Sep 20, 2018 08:13 AM
+      </div>
+      <div class="content"><p>Hi Mr. Rao,</p>
+<p>Is it possible? </p>
+<p>Thanks</p></div>
+    </div>
+  </div>
+  <div class="post" id="p215204">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Thu Sep 20, 2018 08:39 AM
+      </div>
+      <div class="content"><p>We provided this feature for single child rowset only.</p>
+<p>If you want to manage two or more child rowsets you need to do it yourself, the same way as you would with tmysql or tdolphin.</p>
+<p>Open three tables ( master and two child ) separately and setup browses for the three rowsets. In the browse of the master rowset, set oBrw:bChange to apply suitable filters on the two child rowsets and refresh the two child browses.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p215205">
+    <div class="poster">
+      <div class="name" style="color:#105289">Horizon</div>
+      <div class="rank">Posts: 1387</div>
+      <div class="avatar"></div>
+      Joined: Fri May 23, 2008 01:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Thu Sep 20, 2018 08:58 AM
+      </div>
+      <div class="content"><blockquote><cite>nageswaragunupudi wrote:</cite>We provided this feature for single child rowset only.<br>
+<br>
+If you want to manage two or more child rowsets you need to do it yourself, the same way as you would with tmysql or tdolphin.<br>
+<br>
+Open three tables ( master and two child ) separately and setup browses for the three rowsets. In the browse of the master rowset, set oBrw:bChange to apply suitable filters on the two child rowsets and refresh the two child browses.</blockquote><br>
+<br>
+Can you please give an example?<br>
+<br>
+Thank you.</div>
+    </div>
+  </div>
+  <div class="post" id="p215219">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Thu Sep 20, 2018 05:25 PM
+      </div>
+      <div class="content"><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// parent and 2 childs
+
+#include "fivewin.ch"
+
+function Main()
+
+   local oCn
+   local oRsState, oRsCity, oRsCust
+   local oBrwState, oBrwCity, oBrwCust
+   local oDlg, oFont
+
+   oCn   := FW_DemoDB()
+
+   MsgRun( "Reading tables", "Please Wait...", ;
+   &lt;||
+      oRsState := oCn:RowSet( "SELECT * FROM states ORDER BY name" )
+      oRsCity  := oCn:RowSet( "SELECT id, state, city FROM customer ORDER BY state, city" )
+      oRsCust  := oCn:RowSet( "SELECT id, state, CONCAT_WS( ', ', first, last ) AS Name FROM customer ORDER by state,Name" )
+      oRsCity:SetFilter( "STATE = ?", { oRsState:code } )
+      oRsCust:SetFilter( "STATE = ?", { oRsState:code } )
+      return nil
+   &gt; )
+
+   DEFINE FONT oFont NAME "Segoe UI" SIZE 0,-10 PTS
+   DEFINE DIALOG oDlg SIZE 700,600 PIXEL TRUEPIXEL FONT oFont ;
+      TITLE "MARIADB - PARENT WITH TWO CHILD TABLES"
+   RELEASE FONT oFont
+
+   @ 20,20 XBROWSE oBrwState SIZE 300,-20 PIXEL OF oDlg DATASOURCE oRsState ;
+      COLUMNS "NAME","CODE" CELL LINES NOBORDER
+
+   WITH OBJECT oBrwState
+      :SetGroupHeader( "PARENT", 1, 2 )
+      :nStretchCol   := 1
+      :lHScroll      := .f.
+      :bChange       := &lt;||
+                        oRsCity:ReFilter( { oRsState:code } )
+                        oRsCust:ReFilter( { oRsState:code } )
+                        oBrwCity:Refresh()
+                        oBrwCust:Refresh()
+                        return nil
+                        &gt;
+      :CreateFromCode()
+   END
+
+   @ 20,300 XBROWSE oBrwCity SIZE 400,260 PIXEL OF oDlg DATASOURCE oRsCity ;
+      COLUMNS "STATE","CITY" CELL LINES NOBORDER
+
+   WITH OBJECT oBrwCity
+      :SetGroupHeader( "CHILD-1", 1, 2 )
+      :nStretchCol   := 2
+      :lHScroll      := .f.
+      :CreateFromCode()
+   END
+
+   @ 280,300 XBROWSE oBrwCust SIZE 400,-20 PIXEL OF oDlg DATASOURCE oRsCust ;
+      COLUMNS "STATE","NAME" CELL LINES NOBORDER
+
+   WITH OBJECT oBrwCust
+      :SetGroupHeader( "CHILD-2", 1, 2 )
+      :nStretchCol   := 2
+      :lHScroll      := .f.
+      :CreateFromCode()
+   END
+
+   ACTIVATE DIALOG oDlg CENTERED
+   oCn:Close()
+
+return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p215224">
+    <div class="poster">
+      <div class="name" style="color:#105289">Horizon</div>
+      <div class="rank">Posts: 1387</div>
+      <div class="avatar"></div>
+      Joined: Fri May 23, 2008 01:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Thu Sep 20, 2018 08:52 PM
+      </div>
+      <div class="content"><p>Thank you Mr. Rao.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p215292">
+    <div class="poster">
+      <div class="name" style="color:#105289">fraxzi</div>
+      <div class="rank">Posts: 811</div>
+      <div class="avatar"></div>
+      Joined: Tue May 06, 2008 04:28 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Tue Sep 25, 2018 12:41 AM
+      </div>
+      <div class="content"><p>Hi Rao,</p>
+<p>Thanks for the sample .. like the old-ways.<br>
+I wish in the future there would be like oRs:AddChild( 'table_1' ), oRs:AddChild( 'table_2' ) ...</p>
+<p>Anyhow, it's the same results with your sample.</p>
+<!-- s:wink: -->
+<p><img src="{SMILIES_PATH}/icon_wink.gif" alt=":wink:" title="Wink" /><!-- s:wink: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p215294">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Tue Sep 25, 2018 06:03 AM
+      </div>
+      <div class="content"><blockquote><cite>fraxzi wrote:</cite>Hi Rao,<br>
+<br>
+Thanks for the sample .. like the old-ways.<br>
+I wish in the future there would be like oRs:AddChild( 'table_1' ), oRs:AddChild( 'table_2' ) ...<br>
+<br>
+Anyhow, it's the same results with your sample.<br>
+<br>
+ </blockquote><br>
+Old ways. Still, the power of filters in fwhmarialib makes this very fast which is not possible with other libraries.</div>
+    </div>
+  </div>
+  <div class="post" id="p215318">
+    <div class="poster">
+      <div class="name" style="color:#105289">fraxzi</div>
+      <div class="rank">Posts: 811</div>
+      <div class="avatar"></div>
+      Joined: Tue May 06, 2008 04:28 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Wed Sep 26, 2018 12:13 AM
+      </div>
+      <div class="content"><blockquote> Old ways. Still, the power of filters in fwhmarialib makes this very fast which is not possible with other libraries.</blockquote><br>
+<br>
+Indeed! amazing power of fwhmarialib filters ... this is now my new BFF ...       <br>
+<br>
+Great job Mr. Rao!! ... How to be you ...      </div>
+    </div>
+  </div>
+  <div class="post" id="p215947">
+    <div class="poster">
+      <div class="name" style="color:#105289">fraxzi</div>
+      <div class="rank">Posts: 811</div>
+      <div class="avatar"></div>
+      Joined: Tue May 06, 2008 04:28 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Tue Oct 16, 2018 06:17 AM
+      </div>
+      <div class="content"><p>Hi Mr. Rao,</p>
+<p>if I do oParent:Save() ... will it save oParent:oChild and oParent:oChild:oChild as well??</p>
+<!-- s:?: -->
+<p><img src="{SMILIES_PATH}/icon_question.gif" alt=":?:" title="Question" /><!-- s:?: --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p215955">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FWH: Parent Child RowSets (MySql/MariaDB)</span><br>
+        Posted: Tue Oct 16, 2018 10:25 AM
+      </div>
+      <div class="content"><blockquote><cite>fraxzi wrote:</cite>Hi Mr. Rao,<br>
+<br>
+if I do oParent:Save() ... will it save oParent:oChild and oParent:oChild as well??<br>
+<br>
+ </blockquote><br>
+No.</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

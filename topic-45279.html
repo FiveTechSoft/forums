@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>OpenAI vision API from FWH - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-45279">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> OpenAI vision API from FWH</div>
+  <div class="post" id="p276754">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">OpenAI vision API from FWH</span><br>
+        Posted: Fri Jan 03, 2025 09:51 PM
+      </div>
+      <div class="content"><r>Working fine! <E>:-)</E><br/><br>
+<br/><br>
+Using <URL url="https://platform.openai.com/docs/guides/vision"><s><a href="</s>https://platform.openai.com/docs/guides/vision<e>" rel="noopener"></s>https://platform.openai.com/docs/guides/vision<e></a></e></URL> examples.<br/><br>
+<br/><br>
+openai1.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+#include "c:\harbour\contrib\hbcurl\hbcurl.ch"
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+    local oChatgpt := TOpenAI():New()
+
+    oChatgpt:SendImageURL( "https://forums.fivetechsupport.com/styles/prosilver/imageset/site_logo.gif" )
+
+    MsgInfo( oChatgpt:GetValue() )
+
+    oChatgpt:End()
+
+return nil    
+
+//----------------------------------------------------------------------------//
+
+CLASS TOpenAI
+    
+    DATA   cKey   INIT ""
+    DATA   cModel INIT "gpt-4o-mini"
+    DATA   cResponse
+    DATA   cUrl
+    DATA   hCurl
+    DATA   nError INIT 0
+    DATA   nHttpCode INIT 0
+
+    METHOD New( cKey, cModel )
+    METHOD SendImageURL( cImageUrl )
+    METHOD End()    
+    METHOD GetValue( cHKey )    
+
+ENDCLASS        
+
+//----------------------------------------------------------------------------//
+
+METHOD New( cKey, cModel ) CLASS TOpenAI
+
+    if Empty( cKey )
+       ::cKey = GetEnv( "OPENAI_API_KEY" )
+    endif
+
+    if ! Empty( cModel )
+       ::cModel = cModel
+    endif
+    
+    ::cUrl = "https://api.openai.com/v1/chat/completions"
+    ::hCurl = curl_easy_init()
+    
+return Self    
+
+//----------------------------------------------------------------------------//
+
+METHOD End() CLASS TOpenAI
+
+    curl_easy_cleanup( ::hCurl )
+    ::hCurl = nil
+
+return nil    
+
+//----------------------------------------------------------------------------//
+
+METHOD GetValue( cHKey ) CLASS TOpenAI
+
+    local aKeys := hb_AParams(), cKey
+    local uValue := hb_jsonDecode( ::cResponse )
+
+    hb_default( @cHKey, "content" )
+
+    if cHKey == "content"
+       uValue = uValue[ "choices" ][ 1 ][ "message" ][ "content" ]
+    endif
+
+    TRY
+       for each cKey in aKeys
+          if ValType( uValue[ cKey ] ) == "A"
+             uValue = uValue[ cKey ][ 1 ][ "choices" ][ 1 ][ "message" ][ "content" ]
+          else
+             uValue = uValue[ cKey ]
+          endif
+       next
+    CATCH
+       XBrowser( uValue )
+    END
+
+return uValue
+
+//----------------------------------------------------------------------------//
+
+METHOD SendImageURL( cImageUrl ) CLASS TOpenAI
+
+    local aHeaders, cJson, hRequest := { =&gt; }, hMessage := { =&gt; }
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POST, .T. )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_URL, ::cUrl )
+
+    aHeaders := { "Content-Type: application/json", ;
+                  "Authorization: Bearer " + ::cKey }
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_HTTPHEADER, aHeaders )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_USERNAME, "" )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_DL_BUFF_SETUP )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_SSL_VERIFYPEER, .F. )
+
+    hb_HSet( hRequest, "model", ::cModel )
+    hb_HSet( hMessage, "role", "user" )
+
+    hb_HSet( hMessage, "content", { ;
+        { "type" =&gt; "text", "text" =&gt; "What's in this image?" }, ;
+        { "type" =&gt; "image_url", "image_url" =&gt; { "url" =&gt; cImageUrl } } } )
+
+    hRequest[ "messages" ] = { hMessage }
+
+    cJson = hb_jsonEncode( hRequest )
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POSTFIELDS, cJson )
+
+    ::nError = curl_easy_perform( ::hCurl )
+    curl_easy_getinfo( ::hCurl, HB_CURLINFO_RESPONSE_CODE, @::nHttpCode )
+
+    if ::nError == HB_CURLE_OK
+       ::cResponse = curl_easy_dl_buff_get( ::hCurl )
+    else
+       ::cResponse := "Error code " + Str( ::nError )
+    endif
+
+return ::cResponse
+
+//----------------------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p276755">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OpenAI vision API from FWH</span><br>
+        Posted: Fri Jan 03, 2025 10:21 PM
+      </div>
+      <div class="content"><r>Class TOpenAI Method SendImage( cImageFileName )     // Please notice <B><s><strong></s>BMPs are not allowed<e></strong></e></B><br/><br>
+<br/><br>
+openai1.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+#include "c:\harbour\contrib\hbcurl\hbcurl.ch"
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+    local oChatgpt := TOpenAI():New()
+
+    // oChatgpt:SendImageURL( "https://forums.fivetechsupport.com/styles/prosilver/imageset/site_logo.gif" )
+    oChatgpt:SendImage( "../bitmaps/logo/fivepowergm5.jpg" )
+
+    MsgInfo( oChatgpt:GetValue() )
+
+    oChatgpt:End()
+
+return nil    
+
+//----------------------------------------------------------------------------//
+
+CLASS TOpenAI
+    
+    DATA   cKey   INIT ""
+    DATA   cModel INIT "gpt-4o-mini"
+    DATA   cResponse
+    DATA   cUrl
+    DATA   hCurl
+    DATA   nError INIT 0
+    DATA   nHttpCode INIT 0
+
+    METHOD New( cKey, cModel )
+    METHOD SendImage( cImageFileName )    
+    METHOD SendImageURL( cImageUrl )
+    METHOD End()    
+    METHOD GetValue( cHKey )    
+
+ENDCLASS        
+
+//----------------------------------------------------------------------------//
+
+METHOD New( cKey, cModel ) CLASS TOpenAI
+
+    if Empty( cKey )
+       ::cKey = GetEnv( "OPENAI_API_KEY" )
+    endif
+
+    if ! Empty( cModel )
+       ::cModel = cModel
+    endif
+    
+    ::cUrl = "https://api.openai.com/v1/chat/completions"
+    ::hCurl = curl_easy_init()
+    
+return Self    
+
+//----------------------------------------------------------------------------//
+
+METHOD End() CLASS TOpenAI
+
+    curl_easy_cleanup( ::hCurl )
+    ::hCurl = nil
+
+return nil    
+
+//----------------------------------------------------------------------------//
+
+METHOD GetValue( cHKey ) CLASS TOpenAI
+
+    local aKeys := hb_AParams(), cKey
+    local uValue := hb_jsonDecode( ::cResponse )
+
+    hb_default( @cHKey, "content" )
+
+    if cHKey == "content"
+       uValue = uValue[ "choices" ][ 1 ][ "message" ][ "content" ]
+    endif
+
+    TRY
+       for each cKey in aKeys
+          if ValType( uValue[ cKey ] ) == "A"
+             uValue = uValue[ cKey ][ 1 ][ "choices" ][ 1 ][ "message" ][ "content" ]
+          else
+             uValue = uValue[ cKey ]
+          endif
+       next
+    CATCH
+       XBrowser( uValue )
+    END
+
+return uValue
+
+//----------------------------------------------------------------------------//
+
+METHOD SendImage( cImageFileName ) CLASS TOpenAI
+
+    local aHeaders, cJson, cBase64Image, hMessage := { =&gt; }
+
+    if ! File( cImageFileName )
+       MsgAlert( "Image " + cImageFileName + " not found" )
+       return nil
+    endif
+
+    cBase64Image := hb_base64Encode( memoRead( cImageFileName ) )
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POST, .T. )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_URL, "https://api.openai.com/v1/chat/completions" )
+
+    aHeaders := { "Content-Type: application/json", ;
+                  "Authorization: Bearer " + ::cKey }
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_HTTPHEADER, aHeaders )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_USERNAME, "" )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_DL_BUFF_SETUP )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_SSL_VERIFYPEER, .F. )
+
+    hb_HSet( hMessage, "role", "user" )
+    hb_HSet( hMessage, "content", { ;
+        { "type" =&gt; "text", "text" =&gt; "What is in this image?" }, ;
+        { "type" =&gt; "image_url", ;
+          "image_url" =&gt; { "url" =&gt; "data:image/jpeg;base64," + cBase64Image } } } )
+
+    cJson := hb_jsonEncode( { "model" =&gt; ::cModel, ;
+                              "messages" =&gt; { hMessage } } )
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POSTFIELDS, cJson )
+
+    ::nError = curl_easy_perform( ::hCurl )
+    curl_easy_getinfo( ::hCurl, HB_CURLINFO_RESPONSE_CODE, @::nHttpCode )
+
+    if ::nError == HB_CURLE_OK
+       ::cResponse = curl_easy_dl_buff_get( ::hCurl )
+    else
+       ::cResponse := "Error code " + Str( ::nError )
+    endif
+
+return ::cResponse
+
+//----------------------------------------------------------------------------//
+
+METHOD SendImageURL( cImageUrl ) CLASS TOpenAI
+
+    local aHeaders, cJson, hRequest := { =&gt; }, hMessage := { =&gt; }
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POST, .T. )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_URL, ::cUrl )
+
+    aHeaders := { "Content-Type: application/json", ;
+                  "Authorization: Bearer " + ::cKey }
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_HTTPHEADER, aHeaders )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_USERNAME, "" )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_DL_BUFF_SETUP )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_SSL_VERIFYPEER, .F. )
+
+    hb_HSet( hRequest, "model", ::cModel )
+    hb_HSet( hMessage, "role", "user" )
+
+    hb_HSet( hMessage, "content", { ;
+        { "type" =&gt; "text", "text" =&gt; "What's in this image?" }, ;
+        { "type" =&gt; "image_url", "image_url" =&gt; { "url" =&gt; cImageUrl } } } )
+
+    hRequest[ "messages" ] = { hMessage }
+
+    cJson = hb_jsonEncode( hRequest )
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POSTFIELDS, cJson )
+
+    ::nError = curl_easy_perform( ::hCurl )
+    curl_easy_getinfo( ::hCurl, HB_CURLINFO_RESPONSE_CODE, @::nHttpCode )
+
+    if ::nError == HB_CURLE_OK
+       ::cResponse = curl_easy_dl_buff_get( ::hCurl )
+    else
+       ::cResponse := "Error code " + Str( ::nError )
+    endif
+
+return ::cResponse
+
+//----------------------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p276756">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OpenAI vision API from FWH</span><br>
+        Posted: Fri Jan 03, 2025 10:43 PM
+      </div>
+      <div class="content"><r><B><s><strong></s>METHOD Send( cPrompt ) CLASS TOpenAI<e></strong></e></B> implemented<br/><br>
+<br/><br>
+Before running this example please set your OpenAI user key from your CMD window:<br/><br>
+set OPENAI_API_KEY=sk-...<br/><br>
+<br/><br>
+openai1.prg<br>
+<CODE lang="fw"><s><div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;#include "FiveWin.ch"
+#include "c:\harbour\contrib\hbcurl\hbcurl.ch"
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+    local oChatgpt := TOpenAI():New()
+
+    // oChatgpt:SendImageURL( "https://forums.fivetechsupport.com/styles/prosilver/imageset/site_logo.gif" )
+    // oChatgpt:SendImage( "../bitmaps/logo/fivepowergm5.jpg" )
+    oChatgpt:Send( "What is the capital of France ?" )
+
+    MsgInfo( oChatgpt:GetValue() )
+
+    oChatgpt:End()
+
+return nil    
+
+//----------------------------------------------------------------------------//
+
+CLASS TOpenAI
+    
+    DATA   cKey   INIT ""
+    DATA   cModel INIT "gpt-4o-mini"
+    DATA   cResponse
+    DATA   cUrl
+    DATA   hCurl
+    DATA   nError INIT 0
+    DATA   nHttpCode INIT 0
+
+    METHOD New( cKey, cModel )
+    METHOD Send( cPrompt )    
+    METHOD SendImage( cImageFileName )    
+    METHOD SendImageURL( cImageUrl )
+    METHOD End()    
+    METHOD GetValue( cHKey )    
+
+ENDCLASS        
+
+//----------------------------------------------------------------------------//
+
+METHOD New( cKey, cModel ) CLASS TOpenAI
+
+    if Empty( cKey )
+       ::cKey = GetEnv( "OPENAI_API_KEY" )
+    endif
+
+    if ! Empty( cModel )
+       ::cModel = cModel
+    endif
+    
+    ::cUrl = "https://api.openai.com/v1/chat/completions"
+    ::hCurl = curl_easy_init()
+    
+return Self    
+
+//----------------------------------------------------------------------------//
+
+METHOD End() CLASS TOpenAI
+
+    curl_easy_cleanup( ::hCurl )
+    ::hCurl = nil
+
+return nil    
+
+//----------------------------------------------------------------------------//
+
+METHOD GetValue( cHKey ) CLASS TOpenAI
+
+    local aKeys := hb_AParams(), cKey
+    local uValue := hb_jsonDecode( ::cResponse )
+
+    hb_default( @cHKey, "content" )
+
+    if cHKey == "content"
+       uValue = uValue[ "choices" ][ 1 ][ "message" ][ "content" ]
+    endif
+
+    TRY
+       for each cKey in aKeys
+          if ValType( uValue[ cKey ] ) == "A"
+             uValue = uValue[ cKey ][ 1 ][ "choices" ][ 1 ][ "message" ][ "content" ]
+          else
+             uValue = uValue[ cKey ]
+          endif
+       next
+    CATCH
+       XBrowser( uValue )
+    END
+
+return uValue
+
+//----------------------------------------------------------------------------//
+
+METHOD Send( cPrompt ) CLASS TOpenAI 
+
+    LOCAL aHeaders, cJson, hRequest := { =&gt; }, hMessage := { =&gt; }
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POST, .T. )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_URL, ::cUrl )
+
+    aHeaders := { "Content-Type: application/json", ;
+                  "Authorization: Bearer " + ::cKey }
+
+    curl_easy_setopt(::hCurl, HB_CURLOPT_HTTPHEADER, aHeaders)
+    curl_easy_setopt(::hCurl, HB_CURLOPT_USERNAME, '')
+    curl_easy_setopt(::hCurl, HB_CURLOPT_DL_BUFF_SETUP)
+    curl_easy_setopt(::hCurl, HB_CURLOPT_SSL_VERIFYPEER, .F.)
+
+    hb_HSet( hRequest, "model", ::cModel )
+    hb_HSet( hMessage, "role", "user" )
+    hb_HSet( hMessage, "content", cPrompt )
+
+    hRequest[ "messages" ] = { hMessage }
+    cJson = hb_jsonEncode( hRequest )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POSTFIELDS, cJson )
+    ::nError = curl_easy_perform( ::hCurl )
+    curl_easy_getinfo( ::hCurl, HB_CURLINFO_RESPONSE_CODE, @::nHttpCode )
+
+    if ::nError == HB_CURLE_OK
+       ::cResponse = curl_easy_dl_buff_get( ::hCurl )
+    else
+       ::cResponse := "Error code " + Str( ::nError )
+    endif
+ 
+return ::cResponse
+
+//----------------------------------------------------------------------------//
+
+METHOD SendImage( cImageFileName ) CLASS TOpenAI
+
+    local aHeaders, cJson, cBase64Image, hMessage := { =&gt; }
+
+    if ! File( cImageFileName )
+       MsgAlert( "Image " + cImageFileName + " not found" )
+       return nil
+    endif
+
+    cBase64Image := hb_base64Encode( memoRead( cImageFileName ) )
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POST, .T. )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_URL, "https://api.openai.com/v1/chat/completions" )
+
+    aHeaders := { "Content-Type: application/json", ;
+                  "Authorization: Bearer " + ::cKey }
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_HTTPHEADER, aHeaders )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_USERNAME, "" )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_DL_BUFF_SETUP )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_SSL_VERIFYPEER, .F. )
+
+    hb_HSet( hMessage, "role", "user" )
+    hb_HSet( hMessage, "content", { ;
+        { "type" =&gt; "text", "text" =&gt; "What is in this image?" }, ;
+        { "type" =&gt; "image_url", ;
+          "image_url" =&gt; { "url" =&gt; "data:image/jpeg;base64," + cBase64Image } } } )
+
+    cJson := hb_jsonEncode( { "model" =&gt; ::cModel, ;
+                              "messages" =&gt; { hMessage } } )
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POSTFIELDS, cJson )
+
+    ::nError = curl_easy_perform( ::hCurl )
+    curl_easy_getinfo( ::hCurl, HB_CURLINFO_RESPONSE_CODE, @::nHttpCode )
+
+    if ::nError == HB_CURLE_OK
+       ::cResponse = curl_easy_dl_buff_get( ::hCurl )
+    else
+       ::cResponse = "Error code " + Str( ::nError )
+    endif
+
+return ::cResponse
+
+//----------------------------------------------------------------------------//
+
+METHOD SendImageURL( cImageUrl ) CLASS TOpenAI
+
+    local aHeaders, cJson, hRequest := { =&gt; }, hMessage := { =&gt; }
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POST, .T. )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_URL, ::cUrl )
+
+    aHeaders := { "Content-Type: application/json", ;
+                  "Authorization: Bearer " + ::cKey }
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_HTTPHEADER, aHeaders )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_USERNAME, "" )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_DL_BUFF_SETUP )
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_SSL_VERIFYPEER, .F. )
+
+    hb_HSet( hRequest, "model", ::cModel )
+    hb_HSet( hMessage, "role", "user" )
+
+    hb_HSet( hMessage, "content", { ;
+        { "type" =&gt; "text", "text" =&gt; "What's in this image?" }, ;
+        { "type" =&gt; "image_url", "image_url" =&gt; { "url" =&gt; cImageUrl } } } )
+
+    hRequest[ "messages" ] = { hMessage }
+
+    cJson = hb_jsonEncode( hRequest )
+
+    curl_easy_setopt( ::hCurl, HB_CURLOPT_POSTFIELDS, cJson )
+
+    ::nError = curl_easy_perform( ::hCurl )
+    curl_easy_getinfo( ::hCurl, HB_CURLINFO_RESPONSE_CODE, @::nHttpCode )
+
+    if ::nError == HB_CURLE_OK
+       ::cResponse = curl_easy_dl_buff_get( ::hCurl )
+    else
+       ::cResponse = "Error code " + Str( ::nError )
+    endif
+
+return ::cResponse
+
+//----------------------------------------------------------------------------//&lt;e&gt;</code></pre></div></e></CODE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p276757">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OpenAI vision API from FWH</span><br>
+        Posted: Fri Jan 03, 2025 10:48 PM
+      </div>
+      <div class="content"><r><B><s><strong></s>Next<e></strong></e></B>: our <B><s><strong></s>first AI Agent<e></strong></e></B> demo <E>;-)</E></r></div>
+    </div>
+  </div>
+  <div class="post" id="p276760">
+    <div class="poster">
+      <div class="name" style="color:#105289">Carles</div>
+      <div class="rank">Posts: 1283</div>
+      <div class="avatar"></div>
+      Joined: Fri Feb 10, 2006 02:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OpenAI vision API from FWH</span><br>
+        Posted: Mon Jan 06, 2025 08:12 AM
+      </div>
+      <div class="content"><p><t>Hi,<br/><br>
+<br/><br>
+Great ! <br/><br>
+<br/><br>
+C.</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p276766">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OpenAI vision API from FWH</span><br>
+        Posted: Mon Jan 06, 2025 09:32 AM
+      </div>
+      <div class="content"><p><t>Dear Antonio,  <br/><br>
+<br/><br>
+Thank you very much for your research work.  <br/><br>
+<br/><br>
+A few days ago, I saw an advertisement for the Jetson Nano Orin. Do you think it would be possible to use this hardware to run a custom LMM and then send requests using FIVEWIN?  <br/><br>
+<br/><br>
+For example:  <br/><br>
+<br/><br>
+Emails are read via a local tool (e.g., Outlook or a custom email parser) and provided in a structured form (e.g., text files or via an API).  <br/><br>
+<br/><br>
+<strong>Summary:</strong>  <br/><br>
+The language model analyzes the content of the emails and generates a short summary (e.g., "New reservation for room 12 from January 10th to 12th.").  <br/><br>
+<br/><br>
+<strong>Presentation:</strong>  <br/><br>
+The summarized information could be displayed in a user-friendly interface, e.g., in a FIVEWIN application.  <br/><br>
+<br/><br>
+<strong>Additional Features:</strong>  <br/><br>
+- <strong>Keyword Detection:</strong> Highlighting important terms such as names, reservation dates, or invoice inquiries.  <br/><br>
+- <strong>Categorization:</strong> Sorting emails by topics (e.g., bookings, complaints, inquiries).  <br/><br>
+<br/><br>
+Best regards,<br/><br>
+Otto</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p276767">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OpenAI vision API from FWH</span><br>
+        Posted: Mon Jan 06, 2025 10:16 AM
+      </div>
+      <div class="content"><r>Dear Otto,<br/><br>
+<br/><br>
+Nvidia's Jetson Nano Orin uses Linux (a special ubuntu version) so I have just asked copilot if ollama may be installed on it:<br/><br>
+<br>
+<QUOTE><s><blockquote></s>Yes, it is possible to use Ollama on the Jetson Nano Orin. Ollama is an open-source tool that allows you to run large language models (LLMs) locally on Jetson devices, including the Jetson Nano Orin.<br/><br>
+<br/><br>
+To install Ollama on your Jetson Nano Orin, you can follow these steps:<br/><br>
+<br/><br>
+1. **Preparation**:<br/><br>
+   - Ensure you have JetPack 6.0 installed on your device.<br/><br>
+   - Download the SD card image from the official NVIDIA website.<br/><br>
+<br/><br>
+2. **Native Installation**:<br/><br>
+   - Use the official Ollama installer:<br/><br>
+     ```bash<br/><br>
+     curl -fsSL <URL url="https://ollama.com/install.sh">https://ollama.com/install.sh</URL> | sh<br/><br>
+     ```<br/><br>
+   - This will create a service to run `ollama serve` at startup, allowing you to use the `ollama` command immediately.<br/><br>
+<br/><br>
+3. **Using Docker Containers**:<br/><br>
+   - You can run Ollama inside a Docker container to avoid changes to your existing system:<br/><br>
+     ```bash<br/><br>
+     docker run --runtime nvidia --rm --network=host -v ~/ollama:/ollama -e OLLAMA_MODELS=/ollama dustynv/ollama:r36.2.0<br/><br>
+     ```<br/><br>
+<br/><br>
+By following these steps, you can fully utilize the capabilities of your Jetson Nano Orin to run large language models efficiently.<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+We can use ollama from Harbour  <E>:)</E></r></div>
+    </div>
+  </div>
+  <div class="post" id="p276768">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OpenAI vision API from FWH</span><br>
+        Posted: Mon Jan 06, 2025 10:19 AM
+      </div>
+      <div class="content"><p><r><URL url="https://forums.fivetechsupport.com/viewtopic.php?t=44848"><LINK_TEXT text="https://forums.fivetechsupport.com/view ... hp?t=44848">https://forums.fivetechsupport.com/viewtopic.php?t=44848</LINK_TEXT></URL></r></p></div>
+    </div>
+  </div>
+  <div class="post" id="p276797">
+    <div class="poster">
+      <div class="name" style="color:#105289">Eroni</div>
+      <div class="rank">Posts: 114</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 21, 2006 07:15 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OpenAI vision API from FWH</span><br>
+        Posted: Tue Jan 07, 2025 12:38 PM
+      </div>
+      <div class="content"><r>Hello all.<br/><br>
+<br/><br>
+I am trying build exe from openai1.prg but experiencing I am linking errors: (unresolved external)<br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;i&gt;
+&lt;/i&gt;openai1.obj : error LNK2001: símbolo externo não resolvido _HB_FUN_CURL_EASY_INIT
+openai1.obj : error LNK2001: símbolo externo não resolvido _HB_FUN_CURL_EASY_CLEANUP
+openai1.obj : error LNK2001: símbolo externo não resolvido _HB_FUN_CURL_EASY_SETOPT
+openai1.obj : error LNK2001: símbolo externo não resolvido _HB_FUN_CURL_EASY_PERFORM
+openai1.obj : error LNK2001: símbolo externo não resolvido _HB_FUN_CURL_EASY_GETINFO
+openai1.obj : error LNK2001: símbolo externo não resolvido _HB_FUN_CURL_EASY_DL_BUFF_GET
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+Harbour 32 and MSVC 2022.<br/><br>
+<br/><br>
+Which libs is missing?<br/><br>
+<br/><br>
+Thanks in advance.</r></div>
+    </div>
+  </div>
+  <div class="post" id="p276799">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OpenAI vision API from FWH</span><br>
+        Posted: Tue Jan 07, 2025 02:16 PM
+      </div>
+      <div class="content"><p><t>hbcurl.lib and libcurl.lib</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p276828">
+    <div class="poster">
+      <div class="name" style="color:#105289">Eroni</div>
+      <div class="rank">Posts: 114</div>
+      <div class="avatar"></div>
+      Joined: Fri Jul 21, 2006 07:15 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: OpenAI vision API from FWH</span><br>
+        Posted: Wed Jan 08, 2025 12:49 PM
+      </div>
+      <div class="content"><r><QUOTE author="Antonio Linares" post_id="276799" time="1736259377" user_id="2"><s>[quote="Antonio Linares" post_id=276799 time=1736259377 user_id=2]</s><br>
+hbcurl.lib and libcurl.lib<br>
+<e></blockquote></e></QUOTE><br>
+<br>
+Thanks!</r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

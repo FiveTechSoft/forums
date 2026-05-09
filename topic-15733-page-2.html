@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Codejock Calendar Samples? - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-15733">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Codejock Calendar Samples?</div>
+<div class="pagination">Page: <a href="topic-15733.html">1</a> <strong>2</strong> <a href="topic-15733-page-3.html">3</a> <a href="topic-15733-page-4.html">4</a> <a href="topic-15733-page-5.html">5</a> <a href="topic-15733-page-6.html">6</a> <a href="topic-15733-page-7.html">7</a> <a href="topic-15733-page-8.html">8</a> (117 posts)</div>  <div class="post" id="p109614">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Sun Jan 16, 2011 04:58 PM
+      </div>
+      <div class="content">Hi.<br>
+<br>
+I've been asked by a few people for a short .prg that shows how to use codejock extreme calendar with dbfcdx.<br>
+<br>
+Below is a single short .prg that syncs &quot;events&quot; on the calendar to a dbf/fpt/cdx.  I'm trying to keep the sample short.  Keep in mind that each event on the calendar may have as many fields as you'd like for things such as &quot;recurring&quot;, &quot;reminder&quot;, &quot;send email alert&quot;, &quot;email address&quot;, &quot;medical record&quot;, etc... each of these fields would be kept on each event as a custom property.  On this short sample I'm implementing only a single custom property &quot;id&quot; to keep the corresponding primary key on file for each event on the calendar.<br>
+<br>
+I hope it helps, but if there are more questions; please feel free to ask, I'm more than willing to help.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*----------------------------------------------------------------------------*/
+#include "fivewin.ch"
+//---------- theme constants
+#define xtpCalendarThemeOffice2000  0
+#define xtpCalendarThemeOfficeXP        1
+#define xtpCalendarThemeOffice2003  2
+#define xtpCalendarThemeOffice2007  3
+
+//----------- views
+#define xtpCalendarDayView      0
+#define xtpCalendarWorkWeekView     1
+#define xtpCalendarWeekView     2
+#define xtpCalendarMonthView    3
+
+static cAlias 
+
+*--------------------------------------------------------------------------
+function Main()
+
+    create_dbf()
+    
+    MpCal():New()
+
+    (cAlias)-&gt;( dbCloseArea() )
+    
+return nil
+
+//---------------------------------------------------//
+static function create_dbf()
+
+    local astruc := { { "id", "C", 12, 0 },;
+                        { "starttime"   , "C", 18, 0 },;
+                        { "endtime"     , "C", 18, 0 },;
+                        { "subject"     , "C", 50, 0 },;
+                        { "body"            , "M", 10, 0 } }
+                            
+    cAlias := "Calendar" 
+        
+    if !file( "calendar.dbf")
+        
+        dbcreate( cAlias, aStruc, "DBFCDX", .t., cAlias )
+    
+        (cAlias)-&gt;( OrdCreate( cAlias, "id", "id" ) )
+        (cAlias)-&gt;( OrdCreate( cAlias, "starttime", "starttime" ) )
+    else
+    
+        dbuseArea( .t., "DBFCDX", cAlias, cAlias, .t. )
+    endif
+
+    (cAlias)-&gt;( OrdListAdd( cAlias ) )
+        
+Return Nil
+    
+
+//---------------------------------------------------//
+
+CLASS MpCal
+
+   DATA dCurrentDate AS DATE INIT Date()
+   
+   DATA oCalex, oCalexCapBar
+   DATA oDtPick
+   DATA oExBar   
+   DATA oPanelExplorer
+   DATA oPanelCalex
+   DATA oWnd
+   
+   METHOD New()
+
+   METHOD BuildCalex()
+   METHOD BuildDatePicker()
+   METHOD BuildPanels()
+   METHOD SetSize( nType, nWidth, nHeight )
+   
+    METHOD xTrmCalTriggeredEvents( Event, Parms )   
+    METHOD RetrieveDayEvents( aParms )
+    METHOD InsertEvent( oEvent )
+    METHOD UpdateEvent( oEvent )
+    METHOD DeleteEvent( oEvent )
+
+ENDCLASS
+
+//---------------------------------------------------//
+
+METHOD New() CLASS MpCal
+   
+   local oMenu
+   local oSelf := Self
+   
+   MENU oMenu
+   ENDMENU
+
+    DEFINE WINDOW ::oWnd MDI MENU oMenu Title "CodeJock Xtrme Calendar FWH Sample"
+
+   ::BuildPanels()          //two panels -left and right
+   ::BuildCalex()               //CodeJock calendar on the right
+   ::BuildDatePicker()      //CodeJock DatePicker on the left
+
+   ACTIVATE WINDOW ::oWnd MAXIMIZED;
+            ON RESIZE oSelf:SetSize( nSizeType, nWidth, nHeight )
+            
+RETURN Self
+
+//-----------------------------------------------------------------------------------------------------//
+METHOD xTrmCalTriggeredEvents( Event, aParms ) CLASS MpCal
+
+    if valType( Event ) == "C"
+
+        Do Case
+
+        Case Event == "DoRetrieveDayEvents"         
+            ::RetrieveDayEvents( aParms )
+
+        case Event == "EventAddedEx"
+            ::InsertEvent( aParms[ 1 ] )
+
+        case Event == "EventChangedEx" .and. aParms[ 1 ]:CustomProperties:Property( "id" ) != Nil
+            ::UpdateEvent( aParms[ 1 ] )
+
+        case Event == "EventDeletedEx" .and. aParms[ 1 ]:CustomProperties:Property( "id" ) != Nil
+            ::DeleteEvent( aParms[ 1 ] )
+            
+/*      other useful triggered events that may be catched.
+        Case Event == "DblClick"
+        Case Event == "MouseMove"
+        Case Event == "MouseDown" 
+        case Event == "KeyDown"
+        case Event == "IsEditOperationDisabled"
+        case Event == "IsEditOperationDisabledV"
+        case Event == "DoUpdateEvent"
+        case Event == "BeforeEditOperation"
+            Return ::BeforeEditOperation( aParms[ 1 ] )
+
+        otherwise
+            Logfile( "trace.log", { EventInfo( event, aParms ) } ) */
+            
+        End 
+
+    endif
+    
+Return nil
+
+//-----------------------------------------------------------------------------------------------------//
+METHOD InsertEvent( oEvent ) CLASS MpCal
+
+    local cId := GetUniqueId()
+
+    (cAlias)-&gt;( dbappend() )
+    (cAlias)-&gt;( rLock() )
+    
+    (cAlias)-&gt;id            := cId 
+    (cAlias)-&gt;Subject   := oEvent:Subject()
+    (cAlias)-&gt;StartTime := Left( TtoS( oEvent:StartTime() ), 14 )
+    (cAlias)-&gt;EndTime       := Left( TtoS( oEvent:EndTime() ), 14 )
+    (cAlias)-&gt;body          := oEvent:Body()
+
+    (cAlias)-&gt;( dbrUnlock() )
+
+    //load custom property for the newly created event with a unique id that will 
+    //match field "id" on calendar.dbf
+    oEvent:CustomProperties:Property( "id", cId )
+
+    //every time a new appointment is added on the calendar control
+    //you could expand appntmnt details with a custom form where you may pickup 
+    //other values.
+    //::EventDetails( oEvent )
+        
+Return oEvent
+
+//-----------------------------------------------------------------------------------------------------//
+METHOD UpdateEvent( oEvent ) CLASS MpCal
+
+    local cid := oEvent:CustomProperties:Property( "id" )
+
+    (cAlias)-&gt;( OrdSetFocus( "id" ) )
+    (cAlias)-&gt;( dbseek( cId ) )
+   
+    if (cAlias)-&gt;( found() ) .and. (cAlias)-&gt;( rLock() )
+    
+        (cAlias)-&gt;Subject := oEvent:Subject()
+        (cAlias)-&gt;StartTime := Left( TtoS( oEvent:StartTime() ),14 )
+        (cAlias)-&gt;EndTime := Left( TtoS( oEvent:EndTime() ), 14 )
+        (cAlias)-&gt;body := oEvent:body
+        
+        (cAlias)-&gt;( dbrUnlock() )
+        
+    endif
+
+    //if there is more data that's being pickedup as part of the calendar appointment   
+    //then call that screen to allow modification of those values also
+    //::EventDetails( oEvent )
+
+return oEvent
+
+//-----------------------------------------------------------------------------------------------------//
+METHOD DeleteEvent( oEvent ) CLASS MpCal
+                    
+    local cid := oEvent:CustomProperties:Property( "id" )
+
+    (cAlias)-&gt;( OrdSetFocus( "id" ) )
+    (cAlias)-&gt;( dbseek( cId ) )
+
+    if (cAlias)-&gt;( found() ) .and. (cAlias)-&gt;( rLock() )
+        (cAlias)-&gt;( delete() )
+    endif
+    
+return oEvent
+
+//-----------------------------------------------------------------------------------------------------//
+//aParms[ 1 ] contains a datetime value. This function should return all the events found on 
+//calendar.dbf for that date.  To extract only the date portion, we convert the datetime 
+//value to string and then pullout the first 8 chars asin YYYYMMDD.
+//keep in mind that the control calls this function each time the control changes dates,
+//or changes views or just about any time the control feels it needs to load data from 
+//file.  So it gets called a lot!
+
+METHOD RetrieveDayEvents( aParms ) CLASS MpCal
+
+    local oEvents := aParms[ 2 ] 
+    local oEvent
+    local cDate     := Left( TtoS( aParms[ 1 ] ), 8 )
+
+    (cAlias)-&gt;( OrdSetFocus( "StartTime" ) )
+    (cAlias)-&gt;( dbSeek( cDate ) )
+
+    While !(cAlias)-&gt;( eof() ) .and. left( (cAlias)-&gt;StartTime, 8 ) == cDate
+    
+        oEvent := ::oCalex:DataProvider:CreateEvent()
+        
+        With Object oEvent
+            :Subject := (cAlias)-&gt;Subject
+            :StartTime := StoT( (cAlias)-&gt;StartTime )
+            :EndTime := StoT( (cAlias)-&gt;EndTime )
+            :body := (cAlias)-&gt;body
+
+            //custom property "id" will hold the contents of field "id" on calendar.dbf
+            //to help us match each event displayed on the calendar to a unique record 
+            //on the calendar table. 
+            :CustomProperties:Property( "id", (cAlias)-&gt;id )
+
+        End
+    
+        oEvents:add( oEvent )
+        (cAlias)-&gt;( dbSkip() )
+
+    end
+    
+Retur Nil
+                
+//---------------------------------------------------------------------------------------------------//
+METHOD BuildCalex() CLASS MpCal
+local oErr
+local cIni          := "patients.ini"
+
+    TRY     
+        ::oCalex := tActiveX():New( ::oPanelCalex, "Codejock.CalendarControl.13.4.2" )
+    CATCH oErr
+        MsgStop( "Missing installation Components", "Aborting" )
+        Quit
+    END 
+    
+    with object ::oCalex
+    
+        :VisualTheme( xtpCalendarThemeOffice2007 )
+        :bOnEvent = { | event, aParms | ::xTrmCalTriggeredEvents( Event, aParms ) }
+        
+        :SetDataProvider( "Provider=custom" )
+        :DataProvider:open()
+
+        :ShowCaptionBar( .t. )
+        :ShowCaptionBarSwitchViewButtons( .t. ) //switch from day, week, month view on capbar
+    
+        :ViewType( xtpCalendarDayView )
+
+        :DayView:TimeScaleMinTime( [8:00:00 AM] )
+        :DayView:TimeScaleMaxTime( [6:00:00 PM] )
+        :DayView:TimeScale( 15 )
+        :DayView:ScrollToWorkDayBegin()     //scroll the view to the work day starting time
+
+        :Options:DayViewTimeScaleShowMinutes( .t. )
+
+    end
+
+   ::oPanelCalex:oClient = ::oCalex
+
+Return Nil
+
+//---------------------------------------------------//
+METHOD BuildDatePicker() CLASS MpCal
+local nTmp
+local oPanel, oErr, oWnd
+
+    TRY
+        ::oDtPick := tActiveX():New( ::oPanelExplorer,"Codejock.DatePicker.13.4.2" )
+        
+        With Object ::oDtPick
+            :Enabled( .t. )
+            :ShowWeekNumbers( .t. )
+            :VisualTheme( xtpCalendarThemeOffice2007 )
+            :AttachToCalendar( TOleAuto():New( ActXPdisp( ::oCalex:hActiveX ) ) )
+        End 
+        
+        ::oPanelExplorer:oClient := ::oDtPick
+
+    CATCH oErr
+    
+    END 
+    
+RETURN nil
+
+//---------------------------------------------------//
+
+METHOD BuildPanels() CLASS MpCal
+local oBrush
+local nHeight := ::oWnd:nHeight
+
+   ::oPanelCalex    = TPanel():New( 0, 175, nHeight, ::oWnd:nWidth, ::oWnd:oWndClient )
+   ::oPanelExplorer = TPanel():New( 0, 0, nHeight, ::oPanelCalex:nLeft, ::oWnd:oWndClient )
+   
+RETURN nil
+
+//---------------------------------------------------//
+
+METHOD SetSize( nType, nWidth, nHeight ) CLASS MpCal
+
+   if nWidth != nil 
+      ::oPanelExplorer:Move( , , , nHeight )
+      ::oPanelCalex:Move( , , nWidth - ::oPanelExplorer:nRight, nHeight )
+   endif
+   
+RETURN nil
+
+*-------------------------------------------------------------------------------------------------------------------------------
+procedure RddInit()
+
+
+    Set Century     On
+    Set Deleted     On
+    Set SoftSeek    On
+    Set Date Format "MM/DD/YYYY"
+    set epoch to 1950
+
+    rddsetdefault( "ADS" )
+    REQUEST HB_LANG_EN
+    REQUEST DBFCDX, DBFFPT
+    
+return
+
+*-------------------------------------------------------------------------------------------------------------------------------
+//I would recommend a better unique value to id each event saved to calendar.dbf
+//A better choice of unique Id would be ADS's field defaulting to NewIdString( 'M' )
+//but this will do for the this short sample
+//
+static Function GetUniqueId()
+local cJulian   := StrZero( DoY( date() ), 3 )
+Local cId       := Right( StrZero( Year( Date() ), 4 ), 2 ) + cJulian + StrTran( StrZero( Seconds(), 7, 1 ), ".", "" )
+
+Return ( cId )</code></pre></div><br>
+<br>
+Regards;<br>
+<br>
+<br>
+Reinaldo.</div>
+    </div>
+  </div>
+  <div class="post" id="p109619">
+    <div class="poster">
+      <div class="name" style="color:#105289">Richard Chidiak</div>
+      <div class="rank">Posts: 946</div>
+      <img class="avatar avatar-img" src="avatars/3.png" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 07:05 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Mon Jan 17, 2011 07:56 AM
+      </div>
+      <div class="content"><p>Reinaldo</p>
+<p>Thanks for sharing the code, this is very helpful</p>
+<p>Can  this control be used in a network environment ?</p>
+<p>Richard</p></div>
+    </div>
+  </div>
+  <div class="post" id="p109628">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Mon Jan 17, 2011 02:45 PM
+      </div>
+      <div class="content"><p>Richard;</p>
+<p>In a network environment you'd have to find when a new appointment (&quot;event&quot;) has been saved to disk in order update (refresh()) the calendar on alll the other workstations.  Many SQLs have configurable services that may broadcast a message to all clients connected.  The message could inform that a new appointment has been added/changed or deleted.  You'd have to have a loop that processes messages and act accordingly.</p>
+<p>ADS has such service so that when something is added/updated/deleted on a table, it broadcasts a message (in ADS nomenclature: &quot;event notification&quot;) to all clients connected to the table with information about the event.  With out this, you'd have to implement your own messaging system.  As you see, it is a little bit tricky -not impossible, but tricky and it has little to do with the calendar control it self.  </p>
+<p>You could also have a timer to &quot;poll&quot; the table or poll a messages table and force a refresh.  But still... I don't see a simpler way of doing it than the centralized notification system on the SQL engine itself -which you find in ADS starting with version 9.</p>
+<p>In the absence of ADS, maybe someone has a better idea.  I hope this helps.</p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p109630">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Mon Jan 17, 2011 03:40 PM
+      </div>
+      <div class="content"><p>Richard;</p>
+<p>Another thought; you could periodically call the method <!-- s:P --><img src="{SMILIES_PATH}/icon_razz.gif" alt=":P" title="Razz" /><!-- s:P -->opulate() to force a sync between the data source (dbfs) and the calendar.  That should work, but again not as efficient has a notification from the sql engine itself.</p>
+<p>Just another idea.</p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p109632">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Mon Jan 17, 2011 09:19 PM
+      </div>
+      <div class="content">I highly recommend this control.<br>
+<br>
+Just another screen shot:<br>
+<img src="http://ssfl.dynalias.com/temp_files/2011-01-17_1614.png" alt="" loading="lazy"><br>
+<br>
+<img src="http://ssfl.dynalias.com/temp_files/2011-01-17_1618.png" alt="" loading="lazy"><br>
+<br>
+Reinaldo.</div>
+    </div>
+  </div>
+  <div class="post" id="p109646">
+    <div class="poster">
+      <div class="name" style="color:#105289">MdaSolution</div>
+      <div class="rank">Posts: 401</div>
+      <img class="avatar avatar-img" src="avatars/1858.jpg" alt="" loading="lazy">
+      Joined: Tue Jan 05, 2010 02:33 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Tue Jan 18, 2011 10:18 AM
+      </div>
+      <div class="content"><p>ON YOUR CLASS <br>
+HOW CREATE EXPLORER CONTROL  CAN i SEE THE TEST SOURCE ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p109663">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Tue Jan 18, 2011 03:08 PM
+      </div>
+      <div class="content"><p>MdaSolution;</p>
+<p>The source is on this same thread, read 4 or 5 messages above.    It is a reduced sample, but it does contain the code that creates the explorer control exactly as you see on the images.  </p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p109710">
+    <div class="poster">
+      <div class="name" style="color:#105289">Massimo Linossi</div>
+      <div class="rank">Posts: 512</div>
+      <img class="avatar avatar-img" src="avatars/163.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 10:38 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Wed Jan 19, 2011 02:39 PM
+      </div>
+      <div class="content"><p>Hi Reinaldo.<br>
+2 little questions.<br>
+Is this control available in Italian language ?<br>
+If you want to distribute an application that is using this control, how can you make the installation<br>
+registering the component ?<br>
+Thanks a lot.<br>
+Massimo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p109715">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Wed Jan 19, 2011 03:09 PM
+      </div>
+      <div class="content"><p>Massimo;</p>
+<p>There is very little fixed text on the control.  They call it &quot;Labels&quot;.  All labels have a property where you can set the text that should be displayed and it can change at any time.  I'm not sure if labels are predefined in other languages, I think you should email CodeJock sales people with that question.</p>
+<p>Regarding the auto-installation of the OCX, CodeJock has a few sample codes that shows how to automate the OCX registration.  I haven't looked into that just yet, since I'm confident that it will not be an issue.  At this moment I'm trying to learn how to use their other controls such as the Grid and report control which just looks fantastic!</p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p109717">
+    <div class="poster">
+      <div class="name" style="color:#105289">Massimo Linossi</div>
+      <div class="rank">Posts: 512</div>
+      <img class="avatar avatar-img" src="avatars/163.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 10:38 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Wed Jan 19, 2011 03:13 PM
+      </div>
+      <div class="content"><p>Thanks Reinaldo for your answer.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p109722">
+    <div class="poster">
+      <div class="name" style="color:#105289">richard-service</div>
+      <div class="rank">Posts: 866</div>
+      <img class="avatar avatar-img" src="avatars/1193.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 16, 2007 08:57 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Wed Jan 19, 2011 04:03 PM
+      </div>
+      <div class="content"><blockquote><cite>Massimo Linossi wrote:</cite>Thanks Reinaldo for your answer.</blockquote><br>
+You can use this code below:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oBF:GlobalSettings:ResourceFile:= "SuitePro.ResourceIt.dll"</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p109772">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Thu Jan 20, 2011 10:37 PM
+      </div>
+      <div class="content">Reinaldo,<br>
+<br>
+Perdón por el castellano.. pero me interesaba comentarle una cosa.<br>
+Én general, fuera del tema del Calendar, el tema del envio de mensajes o eventos sobre la modificacion de datos, a mi modo de ver es intesante pero más allá de la modificación de datos.<br>
+Eventos ejemplo que pueden ser enviados a otros usuarios:<br>
+<br>
+- Usuario ingresado (programa abierto)<br>
+- Usuario dado de baja<br>
+- usuario haciendo proceso exclusivo<br>
+- Usuario quiere hace proceso exclusivo<br>
+- Documento (ejemplo factura) creada: Un documento puede estar compuesto de mas de una tabla y solamente se notificara la creacion del documento una vez finalizado.<br>
+<br>
+- etc...<br>
+<br>
+No se que le parecerá todo esto que comento... pienso que se puede programar todo esto con codigo .prg..<br>
+<br>
+Saludos<br>
+<br>
+<blockquote><cite>reinaldocrespo wrote:</cite>Richard;<br>
+<br>
+In a network environment you'd have to find when a new appointment (&quot;event&quot;) has been saved to disk in order update (refresh()) the calendar on alll the other workstations.  Many SQLs have configurable services that may broadcast a message to all clients connected.  The message could inform that a new appointment has been added/changed or deleted.  You'd have to have a loop that processes messages and act accordingly.<br>
+<br>
+ADS has such service so that when something is added/updated/deleted on a table, it broadcasts a message (in ADS nomenclature: &quot;event notification&quot;) to all clients connected to the table with information about the event.  With out this, you'd have to implement your own messaging system.  As you see, it is a little bit tricky -not impossible, but tricky and it has little to do with the calendar control it self.  <br>
+<br>
+You could also have a timer to &quot;poll&quot; the table or poll a messages table and force a refresh.  But still... I don't see a simpler way of doing it than the centralized notification system on the SQL engine itself -which you find in ADS starting with version 9.<br>
+<br>
+In the absence of ADS, maybe someone has a better idea.  I hope this helps.<br>
+<br>
+<br>
+Reinaldo.</blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p109778">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Thu Jan 20, 2011 11:45 PM
+      </div>
+      <div class="content"><p>hmpaquito;</p>
+<p>Realmente aqui hablo de notifiaciones y se trata de notificaciones que el ADS ya envia sin que tengas que programar nada de .prg.  O sea, si quieres saber cuando una factura se crea; solo tienes que decir a ADS que genere una notificación cuando la tabla de factura recibe un &quot;Insert&quot;.  Igual puedes pedir a ADS que envie notificaciones cuando algo cambia en una tabla, cuando se borra algo, cuando se añade algo, cuando un usuario se logea, cuando se des-logea...  Cuando cualquiera de estas cosas suceda, entonces ADS (el server) envia la notificacion al respecto a todos los clientes (aplicaciones) conectados al server.  Nada que programar.  Y funciona muy bien.</p>
+<p>Por ejemplo yo tengo un server que envia una notificacion cada vez que una habitacion del hospital es ocupada o desocupada y de esta manera las aplicaciones saben que habitaciones ofrecer a una nueva admision o transferencia de habitacion.</p>
+<p>Espero se entienda.</p>
+<p>Un saludo,</p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p109814">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Fri Jan 21, 2011 02:57 PM
+      </div>
+      <div class="content"><p>Reinaldo,</p>
+<p>Solamente planteaba algo ya ya tiempo me ronda la cabeza y que me lo recordó su comentario: un sistema de eventos o notificaciones que una aplicación puede enviar a sus aplicaciones &quot;hermanas&quot; de la red. Las notificaciones pueden ser diversas y no solamente por modificaciones en los datos. En cualquier caso, no se como funciona en ADS las notificaciones, pero si por ejemplo</p>
+<p>// Incio de documento<br>
+SELECT Factura<br>
+APPEND BLANK</p>
+<p>Otra codigo</p>
+<p>SELECT OtroFichero<br>
+APPEND BLANK           // ADS aqui ??</p>
+<p>// fin de documento</p>
+<p>Seria en // fin de documento donde se tendria que realizar la notificacion de nuevo documento. ADS lo haria, segun entiendo, mal.</p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p109816">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Codejock Calendar Samples?</span><br>
+        Posted: Fri Jan 21, 2011 04:06 PM
+      </div>
+      <div class="content"><p>hmpaquito;</p>
+<p>Let's move this thread over to the spanish forum.  ...y evitamos incomodar a los que no entienden.  In the mean while; please excuse me for answering in English. </p>
+<p>I will attempt to explain ADS Notifications:</p>
+<p>Notifications provide a mechanism for communicating to a client that something has occurred.  For example, notifications can be used to inform a client application that data in a critical table has changed.  The client application can then use this information to refresh() an xbrowse (or some other control) of that table and thus provide the user with more up to date information (without having to &quot;poll&quot; the table).</p>
+<p>A Notification might be used to signal a client that a record has been added to a special table created for purpose of communicating messages from the system administrator to the end users.  The client application can then read the latest message and display it within its interface.</p>
+<p>A Notification might be used to signal a client that a record has changed.  The client app my make a decision based on what changed on that particular record.  Perhaps create an entry on a queue to send some information via email.  Then a client app listening for such notifications can take care of sending the email.  </p>
+<p>These are all typical situations where an ADS Notification might be used.  No coding.  No .prg.  ADS provides an API to create a notification, to listen for notifications, to know if a notification has been issued while the app was not listening.  etc...</p>
+<p>Specifically ADS API provides &quot;sp_SignalEvent()&quot; to create a Notification based on some condition.  That part can be stored on the ADS Data Dictionary as a trigger so that you never have to tell the server again to issue a Notification based on that condition.  The server always knows because you saved that as a &quot;trigger&quot; info on the Data Dictionary.  Then API function &quot;sp_WaitForEvent()&quot; will inform the client application if an event has occurred. </p>
+<p>On a single threaded app, you test for notifications by using a repeated periodic call with short timeouts -i.e. &quot;polling&quot;.  But not polling the table but rather polling for the event notification.  Due to its nature, polling will not actually notify the client app when a change has occurred, but rather notifies the client that a change HAS occurred sometime between now and the last check.  But that works just fine.</p>
+<p>So, In essence, with ADS notifications you take care of &quot;events&quot; on any table without having to write or &quot;invent the wheel&quot;.  The wheel is already invented and running smoothly.  For more information about ADS notifications; please visit <!-- m --><a class="postlink" href="http://devzone.advantagedatabase.com">http://devzone.advantagedatabase.com</a><!-- m -->.</p>
+<p>Hope that helps,</p>
+<p>Reinaldo.</p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-15733.html">1</a> <strong>2</strong> <a href="topic-15733-page-3.html">3</a> <a href="topic-15733-page-4.html">4</a> <a href="topic-15733-page-5.html">5</a> <a href="topic-15733-page-6.html">6</a> <a href="topic-15733-page-7.html">7</a> <a href="topic-15733-page-8.html">8</a> (117 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

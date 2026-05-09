@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>This is the code behind that community post. You know the one. - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46433">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> This is the code behind that community post. You know the one.</div>
+  <div class="post" id="p284554">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">This is the code behind that community post. You know the one.</span><br>
+        Posted: Thu Mar 26, 2026 07:54 AM
+      </div>
+      <div class="content"><r><p>Hello friends,</p><br>
+<br>
+<p>Reading Benjamin's list made me think. Not because the projects aren't impressive – they are. But because most of us have built similar things, separately, and never connected the dots.</p><br>
+<br>
+<p>So instead of another list of projects, here is a pattern that came out of the last few months of work. Something everyone here can actually use.</p><br>
+<br>
+<HR>---</HR><br>
+<br>
+<p><STRONG><s>**</s>The core idea: one adapter, one service<e>**</e></STRONG></p><br>
+<br>
+<p>Most of us are connecting FiveWin to external systems – Oracle, SAT, ContPAQ, REST APIs of all kinds. And most of us are solving that problem differently every single time.</p><br>
+<br>
+<p>What if we had a common base?</p><br>
+<br>
+<p>The architecture is simple:</p><br>
+<br>
+<CODE><s>```</s><i><br>
+</i>FiveWin (UI + Business Logic)<br>
+    ↓<br>
+Universal JSON Adapter<br>
+    ↓<br>
+Microservice (your own small Harbour server)<br>
+    ↓<br>
+External systems: Oracle, SAT, APIs, DB...<i><br>
+</i><e>```</e></CODE><br>
+<br>
+<p>Two parts. Clear responsibilities.</p><br>
+<br>
+<HR>---</HR><br>
+<br>
+<p><STRONG><s>**</s>Part 1: The JSON Adapter (FiveWin side)<e>**</e></STRONG></p><br>
+<br>
+<p>The adapter has one job: talk JSON, know endpoints, nothing else.</p><br>
+<br>
+<CODE lang="harbour"><s>```harbour</s><i><br>
+</i>// -----------------------------------------------------------------------<br>
+// Universal JSON Adapter – FiveWin side<br>
+// -----------------------------------------------------------------------<br>
+FUNCTION ApiRequest( cEndpoint, hData )<br>
+   LOCAL hConfig, cUrl, cResponse<br>
+<br>
+   // Load endpoint config from JSON file<br>
+   hConfig  = LoadEndpoint( cEndpoint )<br>
+   cUrl     = hConfig["base_url"] + hConfig["path"]<br>
+<br>
+   // HTTP call (WinHttp / Curl / whatever you use)<br>
+   cResponse = HttpPost( cUrl, hb_jsonEncode( hData ), hConfig["headers"] )<br>
+<br>
+   RETURN hb_jsonDecode( cResponse )<br>
+<br>
+RETURN NIL<br>
+<br>
+// -----------------------------------------------------------------------<br>
+// Example: Create an order<br>
+// -----------------------------------------------------------------------<br>
+FUNCTION CreateOrderInERP()<br>
+   LOCAL hOrder, hResponse, cOrderId<br>
+<br>
+   hOrder = hb_Hash()<br>
+   hOrder["order_number"] = "INV-2026-0001"<br>
+   hOrder["customer_id"]  = 12345<br>
+   hOrder["total"]        = 299.99<br>
+   hOrder["currency"]     = "EUR"<br>
+<br>
+   hOrder["items"] = { ;<br>
+      { "sku" =&gt; "A100", "qty" =&gt; 1, "price" =&gt; 199.99 }, ;<br>
+      { "sku" =&gt; "B200", "qty" =&gt; 2, "price" =&gt; 50.00 } ;<br>
+   }<br>
+<br>
+   hResponse = ApiRequest( "orders_create", hOrder )<br>
+<br>
+   IF ! Empty( hResponse )<br>
+      cOrderId = hb_HGet( hResponse, "id" )<br>
+      MsgInfo( "Order created: " + cOrderId, "Success" )<br>
+   ELSE<br>
+      MsgStop( "Transfer failed", "Error" )<br>
+   ENDIF<br>
+<br>
+RETURN NIL<i><br>
+</i><e>```</e></CODE><br>
+<br>
+<p>FiveWin knows nothing about Oracle. Nothing about SAT. Just: send this, get that back.</p><br>
+<br>
+<HR>---</HR><br>
+<br>
+<p><STRONG><s>**</s>Part 2: The Endpoint configuration<e>**</e></STRONG></p><br>
+<br>
+<p>Instead of hardcoding URLs and auth into your code, define each endpoint in a simple JSON file:</p><br>
+<br>
+<CODE lang="json"><s>```json</s><i><br>
+</i>{<br>
+  "name":     "orders_create",<br>
+  "base_url": "http://localhost:8080",<br>
+  "path":     "/api/orders",<br>
+  "method":   "POST",<br>
+  "headers":  { "Authorization": "Bearer YOUR_TOKEN" },<br>
+  "timeout":  30<br>
+}<i><br>
+</i><e>```</e></CODE><br>
+<br>
+<p>Three practical options for managing these configs:</p><br>
+<br>
+<p><STRONG><s>**</s>Hash in code<e>**</e></STRONG> – fast to start, not scalable. Fine for version 1.</p><br>
+<br>
+<p><STRONG><s>**</s>JSON files<e>**</e></STRONG> (recommended to start) – one file per endpoint: <C><s>`</s>oracle_orders.json<e>`</e></C>, <C><s>`</s>sat_diot.json<e>`</e></C>, <C><s>`</s>oxxo.json<e>`</e></C>. Easy to change without recompile. AI can generate them directly.</p><br>
+<br>
+<p><STRONG><s>**</s>Database<e>**</e></STRONG> – dynamic, multi-user, more complex. A topic for phase 2.</p><br>
+<br>
+<HR>---</HR><br>
+<br>
+<p><STRONG><s>**</s>Part 3: The Microservice (Harbour server side)<e>**</e></STRONG></p><br>
+<br>
+<p>This is where things get interesting. The microservice is not a big system. It is a small Harbour server that exposes clean endpoints and handles all the complexity that does not belong in FiveWin.</p><br>
+<br>
+<CODE lang="harbour"><s>```harbour</s><i><br>
+</i>// -----------------------------------------------------------------------<br>
+// Mini Harbour Microservice – example endpoints<br>
+// -----------------------------------------------------------------------<br>
+FUNCTION HandleRequest( cPath, cMethod, cBody )<br>
+   LOCAL hData := hb_jsonDecode( cBody )<br>
+<br>
+   DO CASE<br>
+   CASE cPath == "/api/health"<br>
+      RETURN JsonOk( { "status" =&gt; "ok" } )<br>
+<br>
+   CASE cPath == "/api/orders" .AND. cMethod == "POST"<br>
+      RETURN ProcessOrder( hData )<br>
+<br>
+   CASE cPath == "/api/diot" .AND. cMethod == "POST"<br>
+      RETURN ProcessDiot( hData )<br>
+<br>
+   OTHERWISE<br>
+      RETURN JsonError( "Unknown endpoint" )<br>
+   ENDCASE<br>
+<br>
+RETURN NIL<br>
+<br>
+// -----------------------------------------------------------------------<br>
+FUNCTION ProcessOrder( hData )<br>
+   // Here: connect to Oracle, ContPAQ, whatever you need<br>
+   // FiveWin never sees this complexity<br>
+   LOCAL hResult := hb_Hash()<br>
+   hResult["id"]     = "ORD-001"<br>
+   hResult["status"] = "created"<br>
+RETURN JsonOk( hResult )<br>
+<br>
+// -----------------------------------------------------------------------<br>
+FUNCTION JsonOk( hData )<br>
+   hData["success"] = .T.<br>
+RETURN hb_jsonEncode( hData )<br>
+<br>
+FUNCTION JsonError( cMsg )<br>
+RETURN hb_jsonEncode( { "success" =&gt; .F., "error" =&gt; cMsg } )<i><br>
+</i><e>```</e></CODE><br>
+<br>
+<p>The microservice handles: business logic, API integration, authentication, data transformation. FiveWin handles none of that. It just calls <C><s>`</s>ApiRequest()<e>`</e></C> and gets an answer.</p><br>
+<br>
+<HR>---</HR><br>
+<br>
+<p><STRONG><s>**</s>Why this matters – and why Functions, not Classes<e>**</e></STRONG></p><br>
+<br>
+<p>Notice what is not here: no class hierarchy, no factory, no inheritance chain. Just functions with clear inputs and outputs.</p><br>
+<br>
+<p>That is intentional. For this kind of integration work, functions are the right tool:</p><br>
+<br>
+<LIST><LI><s>- </s>You see exactly what goes in and comes out</LI><br>
+<LI><s>- </s>AI generates them reliably and correctly</LI><br>
+<LI><s>- </s>You can open the code two years later and still understand it</LI><br>
+<LI><s>- </s>The microservice pattern works <EM><s>*</s>because<e>*</e></EM> each function does one thing</LI></LIST><br>
+<br>
+<p>Classes have their place. But for connecting systems, moving data, and building integrations – functions win every time.</p><br>
+<br>
+<HR>---</HR><br>
+<br>
+<p><STRONG><s>**</s>The connection to AI<e>**</e></STRONG></p><br>
+<br>
+<p>This architecture works especially well with AI assistance because:</p><br>
+<br>
+<p>Ask ChatGPT or Claude: <EM><s>*</s>"generate a JSON endpoint config for Oracle order API"<e>*</e></EM> → you get a working file in seconds.</p><br>
+<br>
+<p>Ask ChatGPT or Claude: <EM><s>*</s>"write a Harbour function that processes a DIOT request"<e>*</e></EM> → clean, testable function, immediately usable.</p><br>
+<br>
+<p>The adapter stays the same. Only the endpoint config and the service logic change per project. That is the real productivity gain – not magic, just a reusable structure.</p><br>
+<br>
+<HR>---</HR><br>
+<br>
+<p><STRONG><s>**</s>One more thought – where this architecture leads<e>**</e></STRONG></p><br>
+<br>
+<p>Once the adapter and microservice are in place, something interesting becomes possible.</p><br>
+<br>
+<p>Right now, FiveWin calls a service and gets data back. Clean, simple, useful. But the next logical step in this architecture is not just getting data – it is getting <EM><s>*</s>reasoning<e>*</e></EM>.</p><br>
+<br>
+<p>Instead of:</p><br>
+<br>
+<CODE><s>```</s><i><br>
+</i>FiveWin → asks for data → gets answer<i><br>
+</i><e>```</e></CODE><br>
+<br>
+<p>imagine:</p><br>
+<br>
+<CODE><s>```</s><i><br>
+</i>FiveWin → describes a situation → service thinks → returns decision<i><br>
+</i><e>```</e></CODE><br>
+<br>
+<p>The microservice does not just fetch an Oracle record. It reasons about it. Checks availability, cross-references bookings, weighs options – and returns a structured answer that FiveWin can act on directly.</p><br>
+<br>
+<p>The technical foundation for this already exists in the community. The jump from "adapter calls API" to "adapter calls reasoning engine" is smaller than it looks – and the same JSON structure handles both.</p><br>
+<br>
+<p>For our kind of business software – hotel systems, ERP, inventory, billing – this would change what "integration" means entirely.</p><br>
+<br>
+<p>Worth a separate thread when we have the adapter basics sorted.</p><br>
+<br>
+<HR>---</HR><br>
+<br>
+<p><STRONG><s>**</s>What I would find interesting to discuss here<e>**</e></STRONG></p><br>
+<br>
+<p>We all have experience with pieces of this. Oracle connections, SAT integrations, REST calls. Nobody has put it together as a shared base yet.</p><br>
+<br>
+<p>Some open questions worth discussing:</p><br>
+<br>
+<LIST><LI><s>- </s>How are others handling authentication (Bearer tokens, OAuth) in Harbour?</LI><br>
+<LI><s>- </s>JSON file vs. database for endpoint configs – what works in practice?</LI><br>
+<LI><s>- </s>How does this connect to the reasoning loop work already happening in the community?</LI></LIST><br>
+<br>
+<p>Happy to share more code if there is interest.</p><br>
+<br>
+<p><B><s><strong></s>Drop your experiences below – sharing the patterns behind them benefits all of us, especially by learning from each other’s experience.<e></strong></e></B></p><br>
+<br>
+<p>Best regards,<br/><br>
+Otto</p></r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>How to read data from a serial port ? - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-40657">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> How to read data from a serial port ?</div>
+  <div class="post" id="p242965">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">How to read data from a serial port ?</span><br>
+        Posted: Tue Jul 20, 2021 05:20 PM
+      </div>
+      <div class="content">Hi Guys,<br>
+I'm trying to read data from a serial port using this code bellow:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">hb_comOpen(4)        
+hb_comInit( 4, 9600, "N", 8, 1,132  ) 
+nLen := hb_comInputCount(4)
+cRet  := Space(nLen)
+hb_comRecv(4, @cRet) 
+hb_comClose(4)</code></pre></div><br>
+There is no error, but only the begin of the data is read. Do you know why ?</div>
+    </div>
+  </div>
+  <div class="post" id="p242968">
+    <div class="poster">
+      <div class="name" style="color:#105289">Marc Venken</div>
+      <div class="rank">Posts: 1487</div>
+      <div class="avatar"></div>
+      Joined: Tue Jun 14, 2016 07:51 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to read data from a serial port ?</span><br>
+        Posted: Tue Jul 20, 2021 07:16 PM
+      </div>
+      <div class="content">I have this code in my archieves, but can't be sure if they work.  Long time ago :<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function fReadData
+local cDcb, lError, nError
+
+cPort  :='COM1'
+gcPort := val(right(cPort,1))
+cRate  := '2400'    // baud rate
+cErrCode := space( 16 )
+
+   if !( gnComm := OpenComm( cPort, 1024, 10 ) ) == 0
+
+      if !BuildCommDcb( cPort+":"+cRate+",N,8,1", @cDcb )
+         nError := GetCommError( gnComm, @cErrCode )
+
+         MsgAlert( "Error "+ str( nError ) + CRLF + cErrCode, "Build error " )
+         RETURN( .f. )
+      endif
+
+      if !SetCommState( @cDcb )
+         nError := GetCommError( gnComm, @cErrCode )
+         MsgAlert( "Error "+ str( nError ) + CRLF + cErrCode, "Set Comm error " )
+         RETURN( .f. )
+      endif
+   endif
+   cBlock=space(1024)
+   nTry=0
+   do while nTry&lt;500
+     if ( nBytes := readComm( gnComm, @cBlock) ) &gt; 0
+       msgwait('Reading ... '+str(nTry,5),'',1)
+       exit
+     else
+       nTry++
+       msgwait(str(nTry,5),'',1)
+     endif
+   enddo
+   msgstop(substr(alltrim(cblock),5,10),'Data Read')
+
+   if FlushComm( gnComm, 0 ) != 0
+      nError = GetCommError( gnComm )
+      Msgwait( 'FlushComm Error:' ,'',.01 )
+   endif
+
+   if ! CloseComm( gnComm )
+      nError = GetCommError( gnComm )
+      Msgwait( 'CloseComm Error: ' ,'',.01 )
+   endif
+
+RETURN( .t. )
+
+function Serial(x0,x1,x2,x3,x4,x5)
+   local cDcb, nBytes
+   local nComm := OpenComm( alltrim(x1),x2, 128 )
+   local nError
+
+   x3=padl(left(x3,20),20,' ')
+   x4=padl(left(x4,20),20,' ')
+   cNxLine=CHR(13)
+   if ! BuildCommDcb( alltrim(x1)+":"+str(x2,4)+",n,8,1", @cDcb )
+     nError = GetCommError( nComm )
+     Msgwait( x0+" : BuildCommDcb Error: " + Str( nError ),'',.3 )
+   endif
+   if ! SetCommState( cDcb )
+     nError = GetCommError( nComm )
+     Msgwait( "SetCommState Error: " + Str( nError ),'',.3 )
+     return .t.
+   endif
+
+   if !empty(x5)
+     for iii=1 to len(x5)
+       if ( nBytes := WriteComm( nComm, x5[iii]) ) &lt; 0
+         nError = GetCommError( nComm )
+         Msgwait( "WriteComm Error: " + Str( nError ),'',.1 )
+       else
+         Msgwait( x0+' : Ok','',.1 )
+       endif
+     next
+   else
+     if ( nBytes := WriteComm( nComm, x3+cNxLine ) ) &lt; 0
+       nError = GetCommError( nComm )
+       Msgwait( "WriteComm Error: " + Str( nError ),'',.1 )
+     else
+       Msgwait( x0+' : Ok','',.1 )   // important, do not change the delay
+     endif
+     if !empty(x4)
+       if ( nBytes := WriteComm( nComm, x4+cNxLine ) ) &lt; 0
+         nError = GetCommError( nComm )
+         Msgwait( "WriteComm Error: " + Str( nError ),'',.1 )
+       else
+         Msgwait( x0+' : Ok','',.1 )
+       endif
+     endif
+   endif
+
+   if FlushComm( nComm, 0 ) != 0
+      nError = GetCommError( nComm )
+      Msgwait( x0+" : FlushComm Error: " + Str( nError ),'',.01 )
+   endif
+
+   if ! CloseComm( nComm )
+      nError = GetCommError( nComm )
+      Msgwait( "CloseComm Error: " + Str( nError ),'',.01 )
+   endif
+
+return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p242970">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to read data from a serial port ?</span><br>
+        Posted: Tue Jul 20, 2021 07:50 PM
+      </div>
+      <div class="content"><p>Thank you Marc,<br>
+I have tested with your code, but the problem happened again - Only the begin of the data is read !!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p242972">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cmsoft</div>
+      <div class="rank">Posts: 1344</div>
+      <img class="avatar avatar-img" src="avatars/294.jpg" alt="" loading="lazy">
+      Joined: Wed Nov 16, 2005 09:14 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to read data from a serial port ?</span><br>
+        Posted: Tue Jul 20, 2021 08:30 PM
+      </div>
+      <div class="content">Hola Vilian:<br>
+I have a very old code that communicated with some registers.<br>
+They had a round trip communication with the PC. They expected that after an operation, an end-of-block code would be sent to send another.<br>
+I'll give you the code, it can help you there.<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FUNCTION  creanom(xnombre)
+LOCAL tabla_asc,tabla_ecr,nomreg,i,j,letra
+tabla_asc := {" ","1","2","3","4","5","6","7","8","9",;
+              "A","B","C","D","E","F","G","H","I","J",;
+              "K","L","M","N","P","Q","R","S","T","U",;
+              "V","W","X","Y","Z","0","@","%","&amp;","+",;
+              "-"," ","*","!","#",":"," ","$"," ","'",;
+              "/",",",",","^","O"}
+
+tabla_ecr := {"20","31","32","33","34","35","36","37","38","39",;
+              "41","42","43","44","45","46","47","48","49","4A",;
+              "4B","4C","4D","4E","50","51","52","53","54","55",;
+              "56","57","58","59","5A","30","40","25","26","2B",;
+              "2D","20","2A","21","23","3A","20","24","20","27",;
+              "2F","2C","2C","5E","4F"}
+nomreg = ""
+FOR i = 1 TO LEN(xnombre)
+    letra = SUBSTR(xnombre,i,1)
+    j = ASCAN(tabla_asc,letra)
+    IF j = 0
+       j = 1
+    ENDIF
+    nomreg = nomreg + tabla_ecr[j]
+NEXT
+RETURN LEFT(nomreg,36)
+
+FUNCTION crearbcc(p1)
+LOCAL bcc,i
+bcc = CHR(0)
+FOR i = 1 TO LEN(p1)
+    bcc := charxor(bcc,SUBSTR(p1,i,1))
+NEXT
+RETURN bcc
+
+FUNCTION abrirport(n)
+LOCAL IdPort,cDcb,nError
+IdPort := OpenComm("COM"+STR(n,1),1024,256)
+IF IdPort &lt;= 0
+   nError = GetCommError( IdPort)
+   MsgInfo( "Error al abrir: " + Str( nError ) )
+   ELSE
+   MsgRun("Puerto abierto como " + STR(IdPort))
+ENDIF
+IF ! BuildCommDcb("COM"+STR(n,1)+":9600,n,8,1" , @cDcb)
+   nError = GetCommError( IdPort)
+   MsgInfo( "Error al Configurar: " + Str( nError ) )
+   RETURN 0
+   ELSE
+   MsgRun("Puerto Configurado")
+ENDIF
+IF ! SetCommState( IdPort, cDcb )
+   nError = GetCommError( IdPort)
+   MsgInfo( "Error al setear: " + Str( nError ) )
+   RETURN 0
+   ELSE
+   MsgRun("Puerto Seteado")
+ENDIF
+RETURN IdPort
+
+PROCEDURE mandar(port,string)
+LOCAL nBytes
+IF (nBytes := WriteComm( port,string) ) &lt; 0
+   MsgAlert("Mando mal string")
+ENDIF
+RETURN
+
+FUNCTION leer_ack(port)
+LOCAL fallo, ack := " ", nBytes,i := 1
+fallo = .t.
+DO WHILE .t.
+   MsgWait("Leyendo Ack ","Espere",.15)
+   nBytes := ReadComm( port,@ack)
+   i++
+   IF i &gt; 20 .or. ack &lt;&gt; " "
+      EXIT
+   ENDIF
+ENDDO
+IF ack &lt;&gt; ""
+   fallo = .f.
+   MsgInfo(asc(ack),memvar-&gt;musuanom)
+ENDIF
+RETURN fallo
+
+FUNCTION  leer_enq(port)
+LOCAL fallo,enq:=" ",nBytes,i := 1
+fallo = .t.
+DO WHILE .t.
+   MsgWait("Leyendo Enq","Espere",.3)
+   nBytes := ReadComm( port,@enq)
+   i++
+   IF i &gt; 20 .or. enq &lt;&gt; " "
+      EXIT
+   ENDIF
+ENDDO
+IF enq &lt;&gt; ""
+   fallo = .f.
+   MsgInfo(asc(enq),memvar-&gt;musuanom)
+ENDIF
+RETURN fallo
+
+FUNCTION  leer_eot(port)
+LOCAL fallo,eot := " " ,nBytes,i := 1
+fallo = .t.
+DO WHILE .t.
+   MsgWait("Leyendo EoT","Espere",.3)
+   nBytes := ReadComm( port,@eot)
+   i++
+   IF eot = CHR(6)
+      MsgWait("Esperando por EoT","Espere",5)
+      LOOP
+   ENDIF
+   IF i &gt; 20 .or. eot &lt;&gt; " "
+      EXIT
+   ENDIF
+ENDDO
+IF eot &lt;&gt; ""
+   fallo = .f.
+   MsgInfo(asc(eot),memvar-&gt;musuanom)
+ENDIF
+RETURN fallo
+
+PROCEDURE mandar_eot(port)
+LOCAL nBytes
+*IF ( nBytes := WriteComm( port, "" )) &lt;= 0
+IF ( nBytes := WriteComm( port, CHR(4) )) &lt;= 0
+   MsgAlert("Mando mal EOT")
+ENDIF
+RETURN
+
+FUNCTION mandar_enq(port)
+LOCAL mcont,retorno,nBytes
+retorno = .t.
+FOR mcont := 1 TO 10
+*   IF ( nBytes := WriteComm( port, "" )) &lt;= 0
+    IF ( nBytes := WriteComm( port, CHR(5))) &lt;= 0
+       MsgAlert("Mando mal ENQ")
+       retorno := .f.
+       ELSE
+       retorno := .t.
+       EXIT
+    ENDIF
+    MsgWait("Enviando datos...","Aguarde",1)
+NEXT
+RETURN retorno
+
+PROCEDURE mandar_ack(port)
+LOCAL nBytes
+*IF ( nBytes := WriteComm( port, "" )) &lt;= 0
+IF ( nBytes := WriteComm( port, CHR(6))) &lt;= 0
+   MsgAlert("Mando mal ACK")
+ENDIF
+RETURN
+
+FUNCTION  leer_bloque(port,n)
+LOCAL bloque:= SPACE(n),bcc1,nBytes,i:=1
+DO WHILE .t.
+   *MsgWait(bloque,"Espere",.2)
+   nBytes := ReadComm( port,@bloque)
+   i++
+   IF EMPTY(bloque)
+      MsgWait("Esperando ENQ","Espere",3)
+      mandar_enq(port)
+      LOOP
+   ENDIF
+   *bloque := IF(EMPTY(bloque),"",bloque)
+   IF i &gt; 20 .or. bloque &lt;&gt; SPACE(n)
+      EXIT
+   ENDIF
+ENDDO
+bcc1 = crearbcc(SUBSTR(bloque,2,LEN(bloque)-2))
+IF RIGHT(bloque,1) &lt;&gt; bcc1 .and. !(""$bloque)
+   *MsgAlert(OemtoAnsi(bloque),STR(ASC(bcc1))+" &lt;&gt; "+STR(ASC(RIGHT(bloque,1))))
+   MEMVAR-&gt;falla = .t.
+ENDIF
+RETURN bloque
+
+FUNCTION bloqueaECR(mport,ecr)
+LOCAL stx,mark,id,tarea,fecha,etx,bcc,tipo,desde,hasta,omitir,salida,ack,;
+      responde
+salida = .t.
+stx    = ""
+mark   = "S"
+id     = "01"
+tarea  = "&lt;"
+tipo   = "0"
+desde  = "0000000000000"
+hasta  = "0000000000000"
+omitir = "0"
+fecha  = STRTRAN(STR(DAY(DATE()),2)+STR(MONTH(DATE()),2)+SUBSTR(STR(YEAR(DATE()),4),2,2)," ","0")
+etx    = ""
+bcc    := crearbcc(mark+id+ecr+tarea+tipo+desde+hasta+omitir+fecha+etx)
+mport := abrirport(mport)
+MsgWait("Aguarde","Espere",.25)
+mandar_enq(mport)
+IF !leer_ack(mport)
+   responde = MsgYesNo("Recibio mal ACK 1")
+   IF !responde
+      CloseComm(mport)
+      RETURN .F.
+   ENDIF
+ENDIF
+MsgWait("Aguarde","Espere",.25)
+mandar(mport,stx+mark+id+ecr+tarea+tipo+desde+hasta+omitir+fecha+etx+bcc)
+IF !leer_ack(mport)
+   MsgAlert("La ECR se encuentra ocupada o con error")
+   salida = .f.
+ENDIF
+mandar_eot(mport)
+CloseComm(mport)
+RETURN salida
+
+FUNCTION desbloqECR(mport,ecr)
+LOCAL stx,mark,id,tarea,fecha,etx,bcc,tipo,desde,hasta,omitir,salida,responde
+salida = .t.
+stx    = ""
+mark   = "S"
+id     = "01"
+tarea  = "&gt;"
+tipo   = "0"
+desde  = "0000000000000"
+hasta  = "0000000000000"
+omitir = "0"
+fecha  = STRTRAN(STR(DAY(DATE()),2)+STR(MONTH(DATE()),2)+SUBSTR(STR(YEAR(DATE()),4),2,2)," ","0")
+etx    = ""
+bcc    := crearbcc(mark+id+ecr+tarea+tipo+desde+hasta+omitir+fecha+etx)
+mport := abrirport(mport)
+MsgWait("Aguarde","Espere",.35)
+mandar_enq(mport)
+IF !leer_ack(mport)
+   responde = MsgYesNo("Recibio mal ACK 1")
+   IF !responde
+      CloseComm(mport)
+      RETURN .F.
+   ENDIF
+ENDIF
+MsgWait("Aguarde","Espere",.35)
+mandar(mport,stx+mark+id+ecr+tarea+tipo+desde+hasta+omitir+fecha+etx+bcc)
+IF !leer_ack(mport)
+   MsgAlert("La ECR se encuentra ocupada o con error")
+   salida = .f.
+ENDIF
+mandar_eot(mport)
+closeComm(mport)
+RETURN salida
+
+FUNCTION CharXOR(car1,car2)
+LOCAL n1:=ARRAY(8),n2:=ARRAY(8),res,i,r:=""
+n1 := DtoB(ASC(car1))
+n2 := DtoB(ASC(car2))
+FOR i = 1 to 8
+    IF SUBSTR(n1,i,1) &lt;&gt; SUBSTR(n2,i,1)
+       r := r + "1"
+       ELSE
+       r := r + "0"
+    ENDIF
+NEXT
+res = BtoD(r)
+RETURN CHR(res)
+
+FUNCTION DtoB(n)
+LOCAL arr:="",i
+FOR i = 1 to 8
+    arr := arr + STR(n % 2,1)
+    n = INT(n/2)
+NEXT
+RETURN arr
+
+FUNCTION BtoD(num)
+LOCAL res,a:=ARRAY(8),i
+FOR i = 1 to 8
+    a[9-i] := VAL(SUBSTR(num,i,1))
+NEXT i
+res := a[1]*128+a[2]*64+a[3]*32+a[4]*16+a[5]*8+a[6]*4+a[7]*2+a[8]*1
+RETURN res</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p242978">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to read data from a serial port ?</span><br>
+        Posted: Wed Jul 21, 2021 01:16 AM
+      </div>
+      <div class="content"><p>Thank you cmsoft,</p>
+<p>But i would like to do this using Harbour API <!-- s;) --><img src="{SMILIES_PATH}/icon_wink.gif" alt=";)" title="Wink" /><!-- s;) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p242993">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to read data from a serial port ?</span><br>
+        Posted: Wed Jul 21, 2021 01:57 PM
+      </div>
+      <div class="content">I changed my code to use FW functions and everythink worked. I Could read whole the text. The complete source i used is bellow:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "Fivewin.ch"
+FUNCTION MAIN()
+
+    LOCAL oDlg
+
+    LOCAL oGet, cTxt := ""
+
+    LOCAL nCom
+
+    DEFINE DIALOG oDlg;
+           SIZE 500, 500;
+           TITLE "Terminale"
+
+    @ 0, 0 GET oGet VAR cTxt MEMO READONLY
+
+    ACTIVATE DIALOG oDlg;
+             ON INIT ( oGet:AdjClient(),;
+                       nCom := APRICOM( oDlg, oGet ),;
+                       IF( nCom &lt; 0, oDlg:End(), ) );
+             CENTER
+
+    IF nCom &gt;= 0; CLOSECOMM( nCom ); ENDIF
+
+RETURN NIL
+
+STATIC FUNCTION APRICOM( oDlg, oGet )
+
+    LOCAL nCom, cDcb
+
+    BEGIN SEQUENCE
+        nCom = OPENCOMM( "COM4", 16384, 16384 )
+
+        IF nCom &lt; 0
+            ? "Errore di apertura della porta di comunicazione."
+            BREAK
+        ENDIF
+
+        BUILDCOMMDCB( "COM4:9600,N,8,1", @cDcb )
+
+        IF .NOT. SETCOMMSTATE( nCom, cDcb )
+            ? "Errore di impostazione della porta di comunicazione."
+            BREAK
+        ENDIF
+
+        oDlg:bCommNotify = { | nCom | Connect( nCom, oGet ),;
+                                      EnableCommNotification( nCom, oDlg:hWnd, 1, -1 ) }
+
+        IF !ENABLECOMMNOTIFICATION( nCom, oDlg:hWnd, 1, -1 )
+            ? "Errore di abilitazione della notifica."
+            BREAK
+        ENDIF
+    RECOVER
+        nCom = -1
+    END SEQUENCE
+
+RETURN nCom
+
+STATIC FUNCTION CONNECT( nCom, oGet )
+LOCAL cStr
+
+    ENABLECOMMNOTIFICATION( nCom, 0, 1, -1 )
+
+    cStr = RECEIVESTR( nCom )
+
+    cStr = STRTRAN( cStr, CHR( 13 ), "" )
+    cStr = STRTRAN( cStr, CHR( 10 ), CRLF )
+
+    oGet:Append( cStr )
+
+RETURN NIL
+
+STATIC FUNCTION RECEIVESTR( nCom )
+LOCAL cBuf := SPACE( 1000 )
+RETURN LEFT( cBuf, READCOMM( nCom, @cBuf ) )</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p242998">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to read data from a serial port ?</span><br>
+        Posted: Wed Jul 21, 2021 04:23 PM
+      </div>
+      <div class="content"><p>Thank you Vilian, great sharing <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p243127">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to read data from a serial port ?</span><br>
+        Posted: Tue Jul 27, 2021 06:48 PM
+      </div>
+      <div class="content"><p>Antonio,<br>
+I'm having a problem with this example. It's increasing CPU use every time the dialog is opened and when it's closed CPU Use is not released. So soon the CPU use arrives in 100%.<br>
+Do you know why?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p243150">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to read data from a serial port ?</span><br>
+        Posted: Wed Jul 28, 2021 08:14 AM
+      </div>
+      <div class="content"><p>I tried your sample, (my sample, actually <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --> ), and found no problems. The only think I've changed is COM1 instead of COM4.</p>
+<p>EMG</p></div>
+    </div>
+  </div>
+  <div class="post" id="p243164">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to read data from a serial port ?</span><br>
+        Posted: Wed Jul 28, 2021 04:57 PM
+      </div>
+      <div class="content"><p>Enrico,<br>
+IF you have COM1 in your micro, could you try this code for a COM port that doesn't exist ?<br>
+I'm having the problem when I try to  do an OpenComm( cPort, 1024, 10 ), for a COM port that doesn't exist in  my computer. The function returns -1, but each time I try, CPU use is increased quickly.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p243168">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: How to read data from a serial port ?</span><br>
+        Posted: Wed Jul 28, 2021 06:08 PM
+      </div>
+      <div class="content"><p>I tried COM4 and get the error message:</p>
+<p>&quot;Errore di impostazione della porta di comunicazione.&quot;</p>
+<p>No problem with CPU usage.</p>
+<p>EMG</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

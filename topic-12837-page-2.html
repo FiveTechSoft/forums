@@ -1,0 +1,1763 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Can raw keyboard input be implemented???? - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-12837">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Can raw keyboard input be implemented????</div>
+<div class="pagination">Page: <a href="topic-12837.html">1</a> <strong>2</strong> <a href="topic-12837-page-3.html">3</a> (35 posts)</div>  <div class="post" id="p65654">
+    <div class="poster">
+      <div class="name" style="color:#105289">Rossine</div>
+      <div class="rank">Posts: 344</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 11, 2005 11:33 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Sat Sep 27, 2008 05:02 PM
+      </div>
+      <div class="content"><p>Olá Antonio,</p>
+<p>É possível saber:</p>
+<p>1) Qual objeto esta focado na WM_INPUT ?<br>
+2) Se estou usando o teclado, qual tecla foi pressionada.<br>
+3) Se estou usando o mouse, em qual objeto cliquei.</p>
+<p>Obrigado,</p>
+<p>Rossine.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p65657">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Sat Sep 27, 2008 05:48 PM
+      </div>
+      <div class="content">Rossine,<br>
+<br>
+We are doing many tests to find the right way to use the Raw Input API. <br>
+<br>
+We think there is a mistake in Microsoft docs regarding DefRawInputProc():<br>
+<br>
+<!-- m --><a class="postlink" href="http://msdn.microsoft.com/en-us/library/ms645594(VS.85">http://msdn.microsoft.com/en-us/library/ms645594(VS.85</a><!-- m -->).aspx<br>
+<br>
+Microsoft docs says: "DefRawInputProc is called with the same parameters received by the window procedure." But thats not true according to the function prototype:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">LRESULT DefRawInputProc(      
+    PRAWINPUT *paRawInput,
+    INT nInput,
+    UINT cbSizeHeader
+);</code></pre></div><br>
+Those are not the parameters that a window procedure receives. So we need to find the right way to call DefRawInputProc().<br>
+<br>
+This is our most recent code. You will find some answers to your questions in it <br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Windows Raw Input API support demo, (c) FiveTech Software
+
+#include "FiveWin.ch"
+
+#define WM_INPUT  0x00FF
+
+function Main()
+
+   local oWnd1 := TMyWindow():New(), oWnd2 := TMyWindow():New()
+
+   oWnd1:SetText( "Mouse 1" )
+   oWnd2:SetText( "Mouse 2" )
+   
+   oWnd1:hMouse = GetRawMouse( 1 ) // Use mouse 1 only
+   oWnd2:hMouse = GetRawMouse( 2 ) // Use mouse 2 only
+   
+   RegisterRawInputDevices( oWnd1:hWnd )
+   RegisterRawInputDevices( oWnd2:hWnd )
+
+   WndTop( oWnd2:hWnd, 350 )
+   oWnd2:Show()
+   oWnd2:bLClicked = { || MsgInfo( "mouse 2 click" ) }
+
+   ACTIVATE WINDOW oWnd1 ;
+      ON CLICK MsgInfo( "mouse 1 click" )
+
+return nil
+
+CLASS TMyWindow FROM TWindow
+
+   CLASSDATA lRegistered
+   
+   DATA hMouse // handle of the mouse to use
+   DATA lProcessMouse INIT .F.
+
+   METHOD HandleEvent( nMsg, nWParam, nLParam ) 
+
+ENDCLASS
+
+METHOD HandleEvent( nMsg, nWParam, nLParam ) CLASS TMyWindow
+
+   local nButtons
+
+   if nMsg == WM_INPUT
+      ::SetText( Str( RawGetHandle( nLParam ) ) )
+      ::lProcessMouse = RawIsMouse( nLParam ) .and. RawGetHandle( nLParam ) == ::hMouse
+      return DefRawInputProc( nLParam )
+   endif   
+   
+   if nMsg == WM_LBUTTONDOWN .and. ! ::lProcessMouse
+      return nil
+   endif    
+
+return Super:HandleEvent( nMsg, nWParam, nLParam )
+
+#pragma BEGINDUMP
+
+#include &lt;hbapi.h&gt;
+#include &lt;windows.h&gt;
+
+#define RIDEV_NOLEGACY  0x00000030
+#define RIDEV_INPUTSINK 0x00000100
+
+#define RID_INPUT       0x10000003
+#define RID_HEADER      0x10000005
+
+#define RIDI_DEVICENAME 0x20000007
+#define RIDI_DEVICEINFO 0x2000000b
+
+#define RIM_TYPEMOUSE       0
+#define RIM_TYPEKEYBOARD    1
+#define RIM_TYPEHID         2
+
+#define RI_MOUSE_LEFT_BUTTON_DOWN   0x0001  // Left Button changed to down.
+#define RI_MOUSE_LEFT_BUTTON_UP     0x0002  // Left Button changed to up.
+#define RI_MOUSE_RIGHT_BUTTON_DOWN  0x0004  // Right Button changed to down.
+#define RI_MOUSE_RIGHT_BUTTON_UP    0x0008  // Right Button changed to up.
+#define RI_MOUSE_MIDDLE_BUTTON_DOWN 0x0010  // Middle Button changed to down.
+#define RI_MOUSE_MIDDLE_BUTTON_UP   0x0020  // Middle Button changed to up.
+
+typedef struct tagRAWINPUTDEVICE 
+{
+   USHORT usUsagePage;
+   USHORT usUsage;
+   DWORD dwFlags;
+   HWND hwndTarget;
+} RAWINPUTDEVICE, * PRAWINPUTDEVICE, * LPRAWINPUTDEVICE;
+
+typedef BOOL WINAPI ( * PREGISTERRAWINPUTDEVICES ) (      
+   PRAWINPUTDEVICE pRawInputDevices,
+   UINT uiNumDevices,
+   UINT cbSize
+);
+
+typedef struct tagRAWINPUTHEADER {
+    DWORD dwType;
+    DWORD dwSize;
+    HANDLE hDevice;
+    WPARAM wParam;
+} RAWINPUTHEADER, * PRAWINPUTHEADER;
+
+typedef struct tagRAWMOUSE { 
+  USHORT    usFlags; 
+  union {
+         ULONG    ulButtons;
+             struct {
+                       USHORT usButtonFlags;
+                       USHORT usButtonData;
+                       };
+  };
+  ULONG ulRawButtons;
+  LONG  lLastX;
+  LONG  lLastY;
+  ULONG ulExtraInformation;
+} RAWMOUSE, * PRAWMOUSE, * LPRAWMOUSE;
+
+typedef struct tagRAWKEYBOARD {
+    USHORT MakeCode;
+    USHORT Flags;
+    USHORT Reserved;
+    USHORT VKey;
+    UINT Message;
+    ULONG ExtraInformation;
+} RAWKEYBOARD, *PRAWKEYBOARD, *LPRAWKEYBOARD;
+
+typedef struct tagRAWHID {
+    DWORD dwSizeHid;
+    DWORD dwCount;
+    BYTE bRawData;
+} RAWHID, **LPRAWHID;
+
+typedef struct tagRAWINPUT { 
+    RAWINPUTHEADER header; 
+    union {
+       RAWMOUSE    mouse; 
+       RAWKEYBOARD keyboard; 
+       RAWHID      hid; 
+    } data;
+} RAWINPUT, * PRAWINPUT, * LPRAWINPUT;
+
+typedef UINT WINAPI ( * PGETRAWINPUTDATA ) (      
+    LPRAWINPUT hRawInput,
+    UINT uiCommand,
+    LPVOID pData,
+    PUINT pcbSize,
+    UINT cbSizeHeader
+);
+
+typedef struct tagRAWINPUTDEVICELIST {
+    HANDLE hDevice;
+    DWORD dwType;
+} RAWINPUTDEVICELIST, * PRAWINPUTDEVICELIST;
+
+typedef UINT WINAPI ( * PGETRAWINPUTDEVICELIST ) (      
+    PRAWINPUTDEVICELIST pRawInputDeviceList,
+    PUINT puiNumDevices,
+    UINT cbSize 
+);
+
+typedef struct tagRID_DEVICE_INFO_MOUSE {
+    DWORD dwId;
+    DWORD dwNumberOfButtons;
+    DWORD dwSampleRate;
+    BOOL fHasHorizontalWheel;
+} RID_DEVICE_INFO_MOUSE, * PRID_DEVICE_INFO_MOUSE;
+
+typedef struct tagRID_DEVICE_INFO_KEYBOARD {
+    DWORD dwType;
+    DWORD dwSubType;
+    DWORD dwKeyboardMode;
+    DWORD dwNumberOfFunctionKeys;
+    DWORD dwNumberOfIndicators;
+    DWORD dwNumberOfKeysTotal;
+} RID_DEVICE_INFO_KEYBOARD, * PRID_DEVICE_INFO_KEYBOARD;
+
+typedef struct tagRID_DEVICE_INFO_HID {
+    DWORD dwVendorId;
+    DWORD dwProductId;
+    DWORD dwVersionNumber;
+    USHORT usUsagePage;
+    USHORT usUsage;
+} RID_DEVICE_INFO_HID, * PRID_DEVICE_INFO_HID;
+
+typedef struct tagRID_DEVICE_INFO { 
+  DWORD    cbSize; 
+  DWORD    dwType; 
+  union { 
+      RID_DEVICE_INFO_MOUSE     mouse; 
+      RID_DEVICE_INFO_KEYBOARD  keyboard; 
+      RID_DEVICE_INFO_HID       hid; 
+  };
+} RID_DEVICE_INFO, * PRID_DEVICE_INFO, * LPRID_DEVICE_INFO;
+
+typedef UINT WINAPI ( * PGETRAWINPUTDEVICEINFO ) (      
+    HANDLE hDevice,
+    UINT uiCommand,
+    LPVOID pData,
+    PUINT pcbSize
+);
+
+typedef LRESULT WINAPI ( * PDEFRAWINPUTPROC ) (      
+    PRAWINPUT * paRawInput,
+    INT nInput,
+    UINT cbSizeHeader
+);
+
+static PREGISTERRAWINPUTDEVICES pRegisterRawInputDevices;
+static PGETRAWINPUTDEVICELIST   pGetRawInputDeviceList;
+static PGETRAWINPUTDEVICEINFO   pGetRawInputDeviceInfo;
+static PGETRAWINPUTDATA         pGetRawInputData;
+static PDEFRAWINPUTPROC         pDefRawInputProc;
+
+static void RawInit( void )
+{
+   static BOOL bInit = FALSE;
+   
+   if( ! bInit )
+   {
+      HINSTANCE hUser32 = LoadLibrary( "user32.dll" );
+
+      pRegisterRawInputDevices = ( PREGISTERRAWINPUTDEVICES ) GetProcAddress( hUser32, "RegisterRawInputDevices" );
+      pGetRawInputDeviceList   = ( PGETRAWINPUTDEVICELIST ) GetProcAddress( hUser32, "GetRawInputDeviceList" );
+      pGetRawInputDeviceInfo   = ( PGETRAWINPUTDEVICEINFO ) GetProcAddress( hUser32, "GetRawInputDeviceInfoA" );
+      pGetRawInputData         = ( PGETRAWINPUTDATA ) GetProcAddress( hUser32, "GetRawInputData" );
+      pDefRawInputProc         = ( PDEFRAWINPUTPROC ) GetProcAddress( hUser32, "DefRawInputProc" );
+      
+      FreeLibrary( hUser32 );
+      bInit = TRUE;
+   }   
+}   
+
+HB_FUNC( REGISTERRAWINPUTDEVICES )
+{
+   RAWINPUTDEVICE rid[ 2 ];
+
+   RawInit();
+   
+   rid[ 0 ].usUsagePage = 0x01;
+   rid[ 0 ].usUsage     = 0x02; // Mouse
+   rid[ 0 ].dwFlags     = RIDEV_INPUTSINK; // RIDEV_NOLEGACY;
+   rid[ 0 ].hwndTarget  = ( HWND ) hb_parnl( 1 );
+
+   rid[ 1 ].usUsagePage = 0x01;
+   rid[ 1 ].usUsage     = 0x06; // Keyboard
+   rid[ 1 ].dwFlags     = RIDEV_INPUTSINK;
+   rid[ 1 ].hwndTarget  = ( HWND ) hb_parnl( 1 );
+   
+   hb_retl( pRegisterRawInputDevices( rid, 2, sizeof( RAWINPUTDEVICE ) ) );
+}
+
+HB_FUNC( GETRAWINPUTDATA )
+{
+   UINT dwSize;
+   LPBYTE lpb;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+                     
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   hb_retnl( ( unsigned long ) lpb );                  
+}                    
+
+HB_FUNC( GETRAWINPUTDEVICELIST )
+{
+   UINT nDevices;
+   PRAWINPUTDEVICELIST pRawInputDeviceList;
+
+   RawInit();
+   
+   pGetRawInputDeviceList( NULL, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+   
+   if( nDevices )
+   {
+      UINT ui;
+      
+      pRawInputDeviceList = ( PRAWINPUTDEVICELIST ) hb_xgrab( sizeof( RAWINPUTDEVICELIST ) * nDevices );
+      
+      pGetRawInputDeviceList( pRawInputDeviceList, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+      
+      hb_reta( nDevices );
+      
+      for( ui = 0; ui &lt; nDevices; ui++ )
+      {
+         char name[ 512 ];
+         UINT uiSize = 511;
+         
+         pGetRawInputDeviceInfo( pRawInputDeviceList[ ui ].hDevice, RIDI_DEVICENAME, ( void * ) name, &amp;uiSize );
+         hb_storclen( name, uiSize, -1, ui + 1 ); 
+      } 
+      
+      hb_xfree( ( void * ) pRawInputDeviceList );
+   }   
+}
+
+HB_FUNC( GETRAWMOUSE ) // nMouse --&gt; hDevice
+{
+   UINT nDevices;
+   PRAWINPUTDEVICELIST pRawInputDeviceList;
+
+   RawInit();   
+   pGetRawInputDeviceList( NULL, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+   
+   if( nDevices )
+   {
+      UINT ui;
+      UINT uiMouses = 0;
+      
+      pRawInputDeviceList = ( PRAWINPUTDEVICELIST ) hb_xgrab( sizeof( RAWINPUTDEVICELIST ) * nDevices );
+      
+      pGetRawInputDeviceList( pRawInputDeviceList, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+      
+      for( ui = 0; ui &lt; nDevices; ui++ )
+      {
+         RID_DEVICE_INFO rdi;
+         UINT uiSize = sizeof( RID_DEVICE_INFO );       
+         UINT uiMouse = hb_parnl( 1 );
+         
+         rdi.cbSize = sizeof( RID_DEVICE_INFO );
+         
+         pGetRawInputDeviceInfo( pRawInputDeviceList[ ui ].hDevice, RIDI_DEVICEINFO, ( void * ) &amp;rdi, &amp;uiSize );
+         
+         if( rdi.dwType == RIM_TYPEMOUSE )
+         {
+            if( ++uiMouses == uiMouse )
+            {
+               hb_retnl( ( unsigned long ) pRawInputDeviceList[ ui ].hDevice );
+               hb_xfree( ( void * ) pRawInputDeviceList );
+               return;
+            }   
+         }   
+      } 
+      
+      hb_retnl( 0 );
+      hb_xfree( ( void * ) pRawInputDeviceList );
+   }   
+}
+
+HB_FUNC( GETRAWMOUSES ) // --&gt; nMouses
+{
+   UINT nDevices, uiMouses = 0;
+   PRAWINPUTDEVICELIST pRawInputDeviceList;
+
+   RawInit();   
+   pGetRawInputDeviceList( NULL, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+   
+   if( nDevices )
+   {
+      UINT ui;
+      
+      pRawInputDeviceList = ( PRAWINPUTDEVICELIST ) hb_xgrab( sizeof( RAWINPUTDEVICELIST ) * nDevices );
+      
+      pGetRawInputDeviceList( pRawInputDeviceList, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+      
+      for( ui = 0; ui &lt; nDevices; ui++ )
+      {
+         RID_DEVICE_INFO rdi;
+         UINT uiSize = sizeof( RID_DEVICE_INFO );       
+         
+         rdi.cbSize = sizeof( RID_DEVICE_INFO );
+         
+         pGetRawInputDeviceInfo( pRawInputDeviceList[ ui ].hDevice, RIDI_DEVICEINFO, ( void * ) &amp;rdi, &amp;uiSize );
+         
+         if( rdi.dwType == RIM_TYPEMOUSE )
+            uiMouses++;
+      } 
+      
+      hb_xfree( ( void * ) pRawInputDeviceList );
+   }   
+
+   hb_retnl( --uiMouses ); // Windows reports an extra mouse (?)
+}
+
+HB_FUNC( RAWISMOUSE )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   hb_retl( ( ( PRAWINPUT ) lpb )-&gt;header.dwType == RIM_TYPEMOUSE );
+   hb_xfree( ( void * ) lpb );
+}   
+
+HB_FUNC( RAWGETHANDLE )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   hb_retnl( ( unsigned long ) ( ( PRAWINPUT ) lpb )-&gt;header.hDevice );
+   hb_xfree( ( void * ) lpb );
+}   
+
+HB_FUNC( RAWBUTTONS )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   hb_retnl( ( unsigned long ) ( ( PRAWINPUT ) lpb )-&gt;data.mouse.usButtonFlags );
+   hb_xfree( ( void * ) lpb );
+}   
+
+HB_FUNC( DEFRAWINPUTPROC )
+{
+   LPRAWINPUT pri = ( LPRAWINPUT ) hb_parnl( 1 );
+
+   RawInit();
+   hb_retnl( ( unsigned long ) pDefRawInputProc( &amp;pri, 1, sizeof( RAWINPUTHEADER ) ) );
+}   
+
+#pragma ENDDUMP</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p65658">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Sat Sep 27, 2008 05:52 PM
+      </div>
+      <div class="content"><p>This is the most recent PRG and EXE:</p>
+<!-- m -->
+<p><a class="postlink" href="http://rapidshare.com/files/148882254/rawinput.zip.html">http://rapidshare.com/files/148882254/rawinput.zip.html</a></p>
+<p>We need to properly call DefRawInputProc() or the first window does not receive WM_INPUT messages.</p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p65668">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Sat Sep 27, 2008 08:23 PM
+      </div>
+      <div class="content">This is a better example that lets you select the mouse to use. Please connect several mouses to your computer and select the one to use from the main menu:<br>
+<br>
+PRG and EXE here:<br>
+<!-- m --><a class="postlink" href="http://rapidshare.com/files/148918411/rawinput.zip.html">http://rapidshare.com/files/148918411/rawinput.zip.html</a><!-- m --><br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Windows Raw Input API support demo, (c) FiveTech Software
+
+#include "FiveWin.ch"
+
+#define WM_INPUT  0x00FF
+
+function Main()
+
+   local oWnd := TMyWindow():New()
+
+   oWnd:SetText( "Raw API test" )
+   oWnd:SetMenu( BuildMenu( oWnd ) )
+   
+   oWnd:hMouse = GetRawMouse( 1 )
+   
+   RegisterRawInputDevices( oWnd:hWnd )
+
+   SET MESSAGE OF oWnd TO "Click on the window to test it" 2007
+
+   ACTIVATE WINDOW oWnd ;
+      ON CLICK MsgInfo( "mouse click" )
+
+return nil
+
+function BuildMenu( oWnd )
+
+   local oMenu, oMit1, oMit2, oMit3
+   
+   MENU oMenu
+      MENUITEM "Select Mouse"
+      MENU
+         MENUITEM oMit1 PROMPT "Mouse 1" CHECKED ACTION ( oWnd:hMouse := GetRawMouse( 1 ), oMit1:SetCheck( .T. ), oMit2:SetCheck( .F. ), oMit3:SetCheck( .F. ) ) 
+         MENUITEM oMit2 PROMPT "Mouse 2" ACTION ( oWnd:hMouse := GetRawMouse( 2 ), oMit1:SetCheck( .F. ), oMit2:SetCheck( .T. ), oMit3:SetCheck( .F. ) )  
+         MENUITEM oMit3 PROMPT "Mouse 3" ACTION ( oWnd:hMouse := GetRawMouse( 3 ), oMit1:SetCheck( .F. ), oMit2:SetCheck( .F. ), oMit3:SetCheck( .T. ) )  
+         SEPARATOR
+         MENUITEM "Exit" ACTION oWnd:End()
+      ENDMENU
+   ENDMENU
+   
+return oMenu      
+
+CLASS TMyWindow FROM TWindow
+
+   CLASSDATA lRegistered
+   
+   DATA hMouse // handle of the mouse to use
+   DATA lProcessMouse INIT .F.
+
+   METHOD HandleEvent( nMsg, nWParam, nLParam ) 
+
+ENDCLASS
+
+METHOD HandleEvent( nMsg, nWParam, nLParam ) CLASS TMyWindow
+
+   local nButtons
+
+   if nMsg == WM_INPUT
+      ::lProcessMouse = RawIsMouse( nLParam ) .and. RawGetHandle( nLParam ) == ::hMouse
+   endif   
+   
+   if nMsg == WM_LBUTTONDOWN .and. ! ::lProcessMouse
+      return nil
+   endif    
+
+return Super:HandleEvent( nMsg, nWParam, nLParam )
+
+#pragma BEGINDUMP
+
+#include &lt;hbapi.h&gt;
+#include &lt;windows.h&gt;
+
+#define RIDEV_NOLEGACY  0x00000030
+#define RIDEV_INPUTSINK 0x00000100
+
+#define RID_INPUT       0x10000003
+#define RID_HEADER      0x10000005
+
+#define RIDI_DEVICENAME 0x20000007
+#define RIDI_DEVICEINFO 0x2000000b
+
+#define RIM_TYPEMOUSE       0
+#define RIM_TYPEKEYBOARD    1
+#define RIM_TYPEHID         2
+
+#define RI_MOUSE_LEFT_BUTTON_DOWN   0x0001  // Left Button changed to down.
+#define RI_MOUSE_LEFT_BUTTON_UP     0x0002  // Left Button changed to up.
+#define RI_MOUSE_RIGHT_BUTTON_DOWN  0x0004  // Right Button changed to down.
+#define RI_MOUSE_RIGHT_BUTTON_UP    0x0008  // Right Button changed to up.
+#define RI_MOUSE_MIDDLE_BUTTON_DOWN 0x0010  // Middle Button changed to down.
+#define RI_MOUSE_MIDDLE_BUTTON_UP   0x0020  // Middle Button changed to up.
+
+typedef struct tagRAWINPUTDEVICE 
+{
+   USHORT usUsagePage;
+   USHORT usUsage;
+   DWORD dwFlags;
+   HWND hwndTarget;
+} RAWINPUTDEVICE, * PRAWINPUTDEVICE, * LPRAWINPUTDEVICE;
+
+typedef BOOL WINAPI ( * PREGISTERRAWINPUTDEVICES ) (      
+   PRAWINPUTDEVICE pRawInputDevices,
+   UINT uiNumDevices,
+   UINT cbSize
+);
+
+typedef struct tagRAWINPUTHEADER {
+    DWORD dwType;
+    DWORD dwSize;
+    HANDLE hDevice;
+    WPARAM wParam;
+} RAWINPUTHEADER, * PRAWINPUTHEADER;
+
+typedef struct tagRAWMOUSE { 
+  USHORT    usFlags; 
+  union {
+         ULONG    ulButtons;
+             struct {
+                       USHORT usButtonFlags;
+                       USHORT usButtonData;
+                       };
+  };
+  ULONG ulRawButtons;
+  LONG  lLastX;
+  LONG  lLastY;
+  ULONG ulExtraInformation;
+} RAWMOUSE, * PRAWMOUSE, * LPRAWMOUSE;
+
+typedef struct tagRAWKEYBOARD {
+    USHORT MakeCode;
+    USHORT Flags;
+    USHORT Reserved;
+    USHORT VKey;
+    UINT Message;
+    ULONG ExtraInformation;
+} RAWKEYBOARD, *PRAWKEYBOARD, *LPRAWKEYBOARD;
+
+typedef struct tagRAWHID {
+    DWORD dwSizeHid;
+    DWORD dwCount;
+    BYTE bRawData;
+} RAWHID, **LPRAWHID;
+
+typedef struct tagRAWINPUT { 
+    RAWINPUTHEADER header; 
+    union {
+       RAWMOUSE    mouse; 
+       RAWKEYBOARD keyboard; 
+       RAWHID      hid; 
+    } data;
+} RAWINPUT, * PRAWINPUT, * LPRAWINPUT;
+
+typedef UINT WINAPI ( * PGETRAWINPUTDATA ) (      
+    LPRAWINPUT hRawInput,
+    UINT uiCommand,
+    LPVOID pData,
+    PUINT pcbSize,
+    UINT cbSizeHeader
+);
+
+typedef struct tagRAWINPUTDEVICELIST {
+    HANDLE hDevice;
+    DWORD dwType;
+} RAWINPUTDEVICELIST, * PRAWINPUTDEVICELIST;
+
+typedef UINT WINAPI ( * PGETRAWINPUTDEVICELIST ) (      
+    PRAWINPUTDEVICELIST pRawInputDeviceList,
+    PUINT puiNumDevices,
+    UINT cbSize 
+);
+
+typedef struct tagRID_DEVICE_INFO_MOUSE {
+    DWORD dwId;
+    DWORD dwNumberOfButtons;
+    DWORD dwSampleRate;
+    BOOL fHasHorizontalWheel;
+} RID_DEVICE_INFO_MOUSE, * PRID_DEVICE_INFO_MOUSE;
+
+typedef struct tagRID_DEVICE_INFO_KEYBOARD {
+    DWORD dwType;
+    DWORD dwSubType;
+    DWORD dwKeyboardMode;
+    DWORD dwNumberOfFunctionKeys;
+    DWORD dwNumberOfIndicators;
+    DWORD dwNumberOfKeysTotal;
+} RID_DEVICE_INFO_KEYBOARD, * PRID_DEVICE_INFO_KEYBOARD;
+
+typedef struct tagRID_DEVICE_INFO_HID {
+    DWORD dwVendorId;
+    DWORD dwProductId;
+    DWORD dwVersionNumber;
+    USHORT usUsagePage;
+    USHORT usUsage;
+} RID_DEVICE_INFO_HID, * PRID_DEVICE_INFO_HID;
+
+typedef struct tagRID_DEVICE_INFO { 
+  DWORD    cbSize; 
+  DWORD    dwType; 
+  union { 
+      RID_DEVICE_INFO_MOUSE     mouse; 
+      RID_DEVICE_INFO_KEYBOARD  keyboard; 
+      RID_DEVICE_INFO_HID       hid; 
+  };
+} RID_DEVICE_INFO, * PRID_DEVICE_INFO, * LPRID_DEVICE_INFO;
+
+typedef UINT WINAPI ( * PGETRAWINPUTDEVICEINFO ) (      
+    HANDLE hDevice,
+    UINT uiCommand,
+    LPVOID pData,
+    PUINT pcbSize
+);
+
+typedef LRESULT WINAPI ( * PDEFRAWINPUTPROC ) (      
+    PRAWINPUT * paRawInput,
+    INT nInput,
+    UINT cbSizeHeader
+);
+
+static PREGISTERRAWINPUTDEVICES pRegisterRawInputDevices;
+static PGETRAWINPUTDEVICELIST   pGetRawInputDeviceList;
+static PGETRAWINPUTDEVICEINFO   pGetRawInputDeviceInfo;
+static PGETRAWINPUTDATA         pGetRawInputData;
+static PDEFRAWINPUTPROC         pDefRawInputProc;
+
+static void RawInit( void )
+{
+   static BOOL bInit = FALSE;
+   
+   if( ! bInit )
+   {
+      HINSTANCE hUser32 = LoadLibrary( "user32.dll" );
+
+      pRegisterRawInputDevices = ( PREGISTERRAWINPUTDEVICES ) GetProcAddress( hUser32, "RegisterRawInputDevices" );
+      pGetRawInputDeviceList   = ( PGETRAWINPUTDEVICELIST ) GetProcAddress( hUser32, "GetRawInputDeviceList" );
+      pGetRawInputDeviceInfo   = ( PGETRAWINPUTDEVICEINFO ) GetProcAddress( hUser32, "GetRawInputDeviceInfoA" );
+      pGetRawInputData         = ( PGETRAWINPUTDATA ) GetProcAddress( hUser32, "GetRawInputData" );
+      pDefRawInputProc         = ( PDEFRAWINPUTPROC ) GetProcAddress( hUser32, "DefRawInputProc" );
+      
+      FreeLibrary( hUser32 );
+      bInit = TRUE;
+   }   
+}   
+
+HB_FUNC( REGISTERRAWINPUTDEVICES )
+{
+   RAWINPUTDEVICE rid[ 2 ];
+
+   RawInit();
+   
+   rid[ 0 ].usUsagePage = 0x01;
+   rid[ 0 ].usUsage     = 0x02; // Mouse
+   rid[ 0 ].dwFlags     = RIDEV_INPUTSINK; // RIDEV_NOLEGACY;
+   rid[ 0 ].hwndTarget  = ( HWND ) hb_parnl( 1 );
+
+   rid[ 1 ].usUsagePage = 0x01;
+   rid[ 1 ].usUsage     = 0x06; // Keyboard
+   rid[ 1 ].dwFlags     = RIDEV_INPUTSINK;
+   rid[ 1 ].hwndTarget  = ( HWND ) hb_parnl( 1 );
+   
+   hb_retl( pRegisterRawInputDevices( rid, 2, sizeof( RAWINPUTDEVICE ) ) );
+}
+
+HB_FUNC( GETRAWINPUTDATA )
+{
+   UINT dwSize;
+   LPBYTE lpb;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+                     
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   hb_retnl( ( unsigned long ) lpb );                  
+}                    
+
+HB_FUNC( GETRAWINPUTDEVICELIST )
+{
+   UINT nDevices;
+   PRAWINPUTDEVICELIST pRawInputDeviceList;
+
+   RawInit();
+   
+   pGetRawInputDeviceList( NULL, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+   
+   if( nDevices )
+   {
+      UINT ui;
+      
+      pRawInputDeviceList = ( PRAWINPUTDEVICELIST ) hb_xgrab( sizeof( RAWINPUTDEVICELIST ) * nDevices );
+      
+      pGetRawInputDeviceList( pRawInputDeviceList, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+      
+      hb_reta( nDevices );
+      
+      for( ui = 0; ui &lt; nDevices; ui++ )
+      {
+         char name[ 512 ];
+         UINT uiSize = 511;
+         
+         pGetRawInputDeviceInfo( pRawInputDeviceList[ ui ].hDevice, RIDI_DEVICENAME, ( void * ) name, &amp;uiSize );
+         hb_storclen( name, uiSize, -1, ui + 1 ); 
+      } 
+      
+      hb_xfree( ( void * ) pRawInputDeviceList );
+   }   
+}
+
+HB_FUNC( GETRAWMOUSE ) // nMouse --&gt; hDevice
+{
+   UINT nDevices;
+   PRAWINPUTDEVICELIST pRawInputDeviceList;
+
+   RawInit();   
+   pGetRawInputDeviceList( NULL, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+   
+   if( nDevices )
+   {
+      UINT ui;
+      UINT uiMouses = 0;
+      
+      pRawInputDeviceList = ( PRAWINPUTDEVICELIST ) hb_xgrab( sizeof( RAWINPUTDEVICELIST ) * nDevices );
+      
+      pGetRawInputDeviceList( pRawInputDeviceList, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+      
+      for( ui = 0; ui &lt; nDevices; ui++ )
+      {
+         RID_DEVICE_INFO rdi;
+         UINT uiSize = sizeof( RID_DEVICE_INFO );       
+         UINT uiMouse = hb_parnl( 1 );
+         
+         rdi.cbSize = sizeof( RID_DEVICE_INFO );
+         
+         pGetRawInputDeviceInfo( pRawInputDeviceList[ ui ].hDevice, RIDI_DEVICEINFO, ( void * ) &amp;rdi, &amp;uiSize );
+         
+         if( rdi.dwType == RIM_TYPEMOUSE )
+         {
+            if( ++uiMouses == uiMouse )
+            {
+               hb_retnl( ( unsigned long ) pRawInputDeviceList[ ui ].hDevice );
+               hb_xfree( ( void * ) pRawInputDeviceList );
+               return;
+            }   
+         }   
+      } 
+      
+      hb_retnl( 0 );
+      hb_xfree( ( void * ) pRawInputDeviceList );
+   }   
+}
+
+HB_FUNC( GETRAWMOUSES ) // --&gt; nMouses
+{
+   UINT nDevices, uiMouses = 0;
+   PRAWINPUTDEVICELIST pRawInputDeviceList;
+
+   RawInit();   
+   pGetRawInputDeviceList( NULL, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+   
+   if( nDevices )
+   {
+      UINT ui;
+      
+      pRawInputDeviceList = ( PRAWINPUTDEVICELIST ) hb_xgrab( sizeof( RAWINPUTDEVICELIST ) * nDevices );
+      
+      pGetRawInputDeviceList( pRawInputDeviceList, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+      
+      for( ui = 0; ui &lt; nDevices; ui++ )
+      {
+         RID_DEVICE_INFO rdi;
+         UINT uiSize = sizeof( RID_DEVICE_INFO );       
+         
+         rdi.cbSize = sizeof( RID_DEVICE_INFO );
+         
+         pGetRawInputDeviceInfo( pRawInputDeviceList[ ui ].hDevice, RIDI_DEVICEINFO, ( void * ) &amp;rdi, &amp;uiSize );
+         
+         if( rdi.dwType == RIM_TYPEMOUSE )
+            uiMouses++;
+      } 
+      
+      hb_xfree( ( void * ) pRawInputDeviceList );
+   }   
+
+   hb_retnl( --uiMouses ); // Windows reports an extra mouse (?)
+}
+
+HB_FUNC( RAWISMOUSE )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   hb_retl( ( ( PRAWINPUT ) lpb )-&gt;header.dwType == RIM_TYPEMOUSE );
+   hb_xfree( ( void * ) lpb );
+}   
+
+HB_FUNC( RAWGETHANDLE )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   hb_retnl( ( unsigned long ) ( ( PRAWINPUT ) lpb )-&gt;header.hDevice );
+   hb_xfree( ( void * ) lpb );
+}   
+
+HB_FUNC( RAWBUTTONS )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   hb_retnl( ( unsigned long ) ( ( PRAWINPUT ) lpb )-&gt;data.mouse.usButtonFlags );
+   hb_xfree( ( void * ) lpb );
+}   
+
+HB_FUNC( DEFRAWINPUTPROC )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   pDefRawInputProc( ( LPRAWINPUT * ) &amp;lpb, 1, sizeof( RAWINPUTHEADER ) );
+   hb_xfree( ( void * ) lpb );
+}   
+
+#pragma ENDDUMP</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p65685">
+    <div class="poster">
+      <div class="name" style="color:#105289">Mike Buckler</div>
+      <div class="rank">Posts: 67</div>
+      <div class="avatar"></div>
+      Joined: Thu Jan 05, 2006 10:35 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Sun Sep 28, 2008 12:40 AM
+      </div>
+      <div class="content"><p>First Off Great Work Antonio<br>
+This is what I noticed.</p>
+<p>I added to  METHOD HandleEvent()<br>
+if  nMsg == WM_MOUSEMOVE<br>
+   if RawGetHandle( nLParam ) == ::hMouse <br>
+   ::MouseMove( nHiWord( nLParam ), nLoWord( nLParam ),  nWParam )<br>
+   return nil<br>
+   else<br>
+   return nil<br>
+   endif<br>
+endif</p>
+<p>And also added to the window-<br>
+oWnd:OnMouseMove:= {|SELF,X,Y,FLAGS|(oWnd:SetText( "Raw API test Mouse at"+str(x)+" "+str(y) ) ,oWnd:refresh())}</p>
+<p>When you move the mouse that is not active the mouse moves.<br>
+I there a way to fake a mouse that is only displayed on a specific monitor?<br>
+Thanks Mike</p></div>
+    </div>
+  </div>
+  <div class="post" id="p65691">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Sun Sep 28, 2008 08:31 AM
+      </div>
+      <div class="content"><p>Mike,</p>
+<p>Let me explain you what we have discovered so far:</p>
+<p>1) When we use RIDEV_INPUTSINK when we call REGISTERRAWINPUTDEVICES() then we receive standard Windows mouse and keyboard messages besides the WM_INPUT messages.</p>
+<p>2) If we use RIDEV_NOLEGACY instead of RIDEV_INPUTSINK, then Windows does not send any mouse or keyboard message at all, so it is our responsability to translate WM_INPUT messages into the WM_(mouse)... and WM_(keyb)... equivalents ones.</p>
+<p>If using 2) then we can not directly call the FWH methods as there are many processes (i.e. when you drag and move a window) that have to be managed by Windows. So basically we have to do: SendMessage( ::hWnd, WM_(proper message), proper params... )</p>
+<p>On our first tests the 2) seems more complex to be implemented, but obviously we will have full control on what it is allowed and what we don't allow.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p65793">
+    <div class="poster">
+      <div class="name" style="color:#105289">Mike Buckler</div>
+      <div class="rank">Posts: 67</div>
+      <div class="avatar"></div>
+      Joined: Thu Jan 05, 2006 10:35 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Mon Sep 29, 2008 11:36 PM
+      </div>
+      <div class="content"><p>Antonio what are your thoughts on how to move forward?<br>
+Mike</p></div>
+    </div>
+  </div>
+  <div class="post" id="p65794">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Mon Sep 29, 2008 11:59 PM
+      </div>
+      <div class="content"><p>Mike,</p>
+<p>I think that we have to go for the option 2) to have full control of the mouse and keyboard</p></div>
+    </div>
+  </div>
+  <div class="post" id="p65797">
+    <div class="poster">
+      <div class="name" style="color:#105289">Mike Buckler</div>
+      <div class="rank">Posts: 67</div>
+      <div class="avatar"></div>
+      Joined: Thu Jan 05, 2006 10:35 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Tue Sep 30, 2008 12:19 AM
+      </div>
+      <div class="content"><p>Antonio if I knew how to do c programming I would jump right in there and help you. I believe that the hardware dollar savings that an end user could realize, would make our FiveWin applications really shine over our competition.<br>
+Thanks Again <br>
+Mike</p></div>
+    </div>
+  </div>
+  <div class="post" id="p65825">
+    <div class="poster">
+      <div class="name" style="color:#105289">Rossine</div>
+      <div class="rank">Posts: 344</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 11, 2005 11:33 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Tue Sep 30, 2008 02:10 PM
+      </div>
+      <div class="content"><p>Hello Antonio,</p>
+<p>I find this important and very interesting matter.</p>
+<p>Congratulations,</p>
+<p>Rossine.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p65888">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Wed Oct 01, 2008 07:53 AM
+      </div>
+      <div class="content">In this example we try to analize all mouse input that we receive. If you run this example you will see that we get all the mouse activity. We need to find a way to select just the messages for the used window:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Windows Raw Input API support demo, (c) FiveTech Software
+
+#include "FiveWin.ch"
+
+#define WM_INPUT  0x00FF
+
+#define RI_MOUSE_LEFT_BUTTON_DOWN   0x0001  // Left Button changed to down.
+#define RI_MOUSE_LEFT_BUTTON_UP     0x0002  // Left Button changed to up.
+#define RI_MOUSE_RIGHT_BUTTON_DOWN  0x0004  // Right Button changed to down.
+#define RI_MOUSE_RIGHT_BUTTON_UP    0x0008  // Right Button changed to up.
+#define RI_MOUSE_MIDDLE_BUTTON_DOWN 0x0010  // Middle Button changed to down.
+#define RI_MOUSE_MIDDLE_BUTTON_UP   0x0020  // Middle Button changed to up.
+
+function Main()
+
+   local oWnd := TMyWindow():New()
+
+   oWnd:SetText( "Raw API test" )
+   oWnd:SetMenu( BuildMenu( oWnd ) )
+   
+   oWnd:hMouse = GetRawMouse( 1 ) // First mouse is not valid
+   
+   RegisterRawInputDevices( oWnd:hWnd )
+
+   SET MESSAGE OF oWnd TO "Click on the window to test it" 2007
+
+   ACTIVATE WINDOW oWnd ;
+      ON CLICK MsgInfo( "mouse click" )
+
+return nil
+
+function BuildMenu( oWnd )
+
+   local oMenu, oMit1, oMit2, oMit3
+   
+   MENU oMenu
+      MENUITEM "Select Mouse"
+      MENU
+         MENUITEM oMit1 PROMPT "Mouse 1" CHECKED ACTION ( oWnd:hMouse := GetRawMouse( 1 ), oMit1:SetCheck( .T. ), oMit2:SetCheck( .F. ), oMit3:SetCheck( .F. ) ) 
+         MENUITEM oMit2 PROMPT "Mouse 2" ACTION ( oWnd:hMouse := GetRawMouse( 2 ), oMit1:SetCheck( .F. ), oMit2:SetCheck( .T. ), oMit3:SetCheck( .F. ) )  
+         MENUITEM oMit3 PROMPT "Mouse 3" ACTION ( oWnd:hMouse := GetRawMouse( 3 ), oMit1:SetCheck( .F. ), oMit2:SetCheck( .F. ), oMit3:SetCheck( .T. ) )  
+         SEPARATOR
+         MENUITEM "Exit" ACTION oWnd:End()
+      ENDMENU
+   ENDMENU
+   
+return oMenu      
+
+CLASS TMyWindow FROM TWindow
+
+   CLASSDATA lRegistered
+   
+   DATA hMouse // handle of the mouse to use
+   DATA lProcessMouse INIT .F.
+
+   METHOD HandleEvent( nMsg, nWParam, nLParam ) 
+
+ENDCLASS
+
+METHOD HandleEvent( nMsg, nWParam, nLParam ) CLASS TMyWindow
+
+   local nButtons
+
+   if nMsg == WM_INPUT
+      // ::lProcessMouse = RawIsMouse( nLParam ) .and. RawGetHandle( nLParam ) == ::hMouse
+      if RawIsMouse( nLParam ) .and. RawGetHandle( nLParam ) == ::hMouse
+         nButtons = RawButtons( nLParam )
+         do case 
+            case nAnd( nButtons, RI_MOUSE_LEFT_BUTTON_DOWN ) == RI_MOUSE_LEFT_BUTTON_DOWN
+                 MsgInfo( "Left button down" )
+
+         endcase            
+      endif   
+   endif   
+   
+   if nMsg == WM_LBUTTONDOWN .and. ! ::lProcessMouse
+      return nil
+   endif    
+
+return Super:HandleEvent( nMsg, nWParam, nLParam )
+
+#pragma BEGINDUMP
+
+#include &lt;hbapi.h&gt;
+#include &lt;windows.h&gt;
+
+#define RIDEV_NOLEGACY  0x00000030
+#define RIDEV_INPUTSINK 0x00000100
+
+#define RID_INPUT       0x10000003
+#define RID_HEADER      0x10000005
+
+#define RIDI_DEVICENAME 0x20000007
+#define RIDI_DEVICEINFO 0x2000000b
+
+#define RIM_TYPEMOUSE       0
+#define RIM_TYPEKEYBOARD    1
+#define RIM_TYPEHID         2
+
+#define RI_MOUSE_LEFT_BUTTON_DOWN   0x0001  // Left Button changed to down.
+#define RI_MOUSE_LEFT_BUTTON_UP     0x0002  // Left Button changed to up.
+#define RI_MOUSE_RIGHT_BUTTON_DOWN  0x0004  // Right Button changed to down.
+#define RI_MOUSE_RIGHT_BUTTON_UP    0x0008  // Right Button changed to up.
+#define RI_MOUSE_MIDDLE_BUTTON_DOWN 0x0010  // Middle Button changed to down.
+#define RI_MOUSE_MIDDLE_BUTTON_UP   0x0020  // Middle Button changed to up.
+
+typedef struct tagRAWINPUTDEVICE 
+{
+   USHORT usUsagePage;
+   USHORT usUsage;
+   DWORD dwFlags;
+   HWND hwndTarget;
+} RAWINPUTDEVICE, * PRAWINPUTDEVICE, * LPRAWINPUTDEVICE;
+
+typedef BOOL WINAPI ( * PREGISTERRAWINPUTDEVICES ) (      
+   PRAWINPUTDEVICE pRawInputDevices,
+   UINT uiNumDevices,
+   UINT cbSize
+);
+
+typedef struct tagRAWINPUTHEADER {
+    DWORD dwType;
+    DWORD dwSize;
+    HANDLE hDevice;
+    WPARAM wParam;
+} RAWINPUTHEADER, * PRAWINPUTHEADER;
+
+typedef struct tagRAWMOUSE { 
+  USHORT    usFlags; 
+  union {
+         ULONG    ulButtons;
+             struct {
+                       USHORT usButtonFlags;
+                       USHORT usButtonData;
+                       };
+  };
+  ULONG ulRawButtons;
+  LONG  lLastX;
+  LONG  lLastY;
+  ULONG ulExtraInformation;
+} RAWMOUSE, * PRAWMOUSE, * LPRAWMOUSE;
+
+typedef struct tagRAWKEYBOARD {
+    USHORT MakeCode;
+    USHORT Flags;
+    USHORT Reserved;
+    USHORT VKey;
+    UINT Message;
+    ULONG ExtraInformation;
+} RAWKEYBOARD, *PRAWKEYBOARD, *LPRAWKEYBOARD;
+
+typedef struct tagRAWHID {
+    DWORD dwSizeHid;
+    DWORD dwCount;
+    BYTE bRawData;
+} RAWHID, **LPRAWHID;
+
+typedef struct tagRAWINPUT { 
+    RAWINPUTHEADER header; 
+    union {
+       RAWMOUSE    mouse; 
+       RAWKEYBOARD keyboard; 
+       RAWHID      hid; 
+    } data;
+} RAWINPUT, * PRAWINPUT, * LPRAWINPUT;
+
+typedef UINT WINAPI ( * PGETRAWINPUTDATA ) (      
+    LPRAWINPUT hRawInput,
+    UINT uiCommand,
+    LPVOID pData,
+    PUINT pcbSize,
+    UINT cbSizeHeader
+);
+
+typedef struct tagRAWINPUTDEVICELIST {
+    HANDLE hDevice;
+    DWORD dwType;
+} RAWINPUTDEVICELIST, * PRAWINPUTDEVICELIST;
+
+typedef UINT WINAPI ( * PGETRAWINPUTDEVICELIST ) (      
+    PRAWINPUTDEVICELIST pRawInputDeviceList,
+    PUINT puiNumDevices,
+    UINT cbSize 
+);
+
+typedef struct tagRID_DEVICE_INFO_MOUSE {
+    DWORD dwId;
+    DWORD dwNumberOfButtons;
+    DWORD dwSampleRate;
+    BOOL fHasHorizontalWheel;
+} RID_DEVICE_INFO_MOUSE, * PRID_DEVICE_INFO_MOUSE;
+
+typedef struct tagRID_DEVICE_INFO_KEYBOARD {
+    DWORD dwType;
+    DWORD dwSubType;
+    DWORD dwKeyboardMode;
+    DWORD dwNumberOfFunctionKeys;
+    DWORD dwNumberOfIndicators;
+    DWORD dwNumberOfKeysTotal;
+} RID_DEVICE_INFO_KEYBOARD, * PRID_DEVICE_INFO_KEYBOARD;
+
+typedef struct tagRID_DEVICE_INFO_HID {
+    DWORD dwVendorId;
+    DWORD dwProductId;
+    DWORD dwVersionNumber;
+    USHORT usUsagePage;
+    USHORT usUsage;
+} RID_DEVICE_INFO_HID, * PRID_DEVICE_INFO_HID;
+
+typedef struct tagRID_DEVICE_INFO { 
+  DWORD    cbSize; 
+  DWORD    dwType; 
+  union { 
+      RID_DEVICE_INFO_MOUSE     mouse; 
+      RID_DEVICE_INFO_KEYBOARD  keyboard; 
+      RID_DEVICE_INFO_HID       hid; 
+  };
+} RID_DEVICE_INFO, * PRID_DEVICE_INFO, * LPRID_DEVICE_INFO;
+
+typedef UINT WINAPI ( * PGETRAWINPUTDEVICEINFO ) (      
+    HANDLE hDevice,
+    UINT uiCommand,
+    LPVOID pData,
+    PUINT pcbSize
+);
+
+typedef LRESULT WINAPI ( * PDEFRAWINPUTPROC ) (      
+    PRAWINPUT * paRawInput,
+    INT nInput,
+    UINT cbSizeHeader
+);
+
+static PREGISTERRAWINPUTDEVICES pRegisterRawInputDevices;
+static PGETRAWINPUTDEVICELIST   pGetRawInputDeviceList;
+static PGETRAWINPUTDEVICEINFO   pGetRawInputDeviceInfo;
+static PGETRAWINPUTDATA         pGetRawInputData;
+static PDEFRAWINPUTPROC         pDefRawInputProc;
+
+static void RawInit( void )
+{
+   static BOOL bInit = FALSE;
+   
+   if( ! bInit )
+   {
+      HINSTANCE hUser32 = LoadLibrary( "user32.dll" );
+
+      pRegisterRawInputDevices = ( PREGISTERRAWINPUTDEVICES ) GetProcAddress( hUser32, "RegisterRawInputDevices" );
+      pGetRawInputDeviceList   = ( PGETRAWINPUTDEVICELIST ) GetProcAddress( hUser32, "GetRawInputDeviceList" );
+      pGetRawInputDeviceInfo   = ( PGETRAWINPUTDEVICEINFO ) GetProcAddress( hUser32, "GetRawInputDeviceInfoA" );
+      pGetRawInputData         = ( PGETRAWINPUTDATA ) GetProcAddress( hUser32, "GetRawInputData" );
+      pDefRawInputProc         = ( PDEFRAWINPUTPROC ) GetProcAddress( hUser32, "DefRawInputProc" );
+      
+      FreeLibrary( hUser32 );
+      bInit = TRUE;
+   }   
+}   
+
+HB_FUNC( REGISTERRAWINPUTDEVICES )
+{
+   RAWINPUTDEVICE rid[ 2 ];
+
+   RawInit();
+   
+   rid[ 0 ].usUsagePage = 0x01;
+   rid[ 0 ].usUsage     = 0x02; // Mouse
+   rid[ 0 ].dwFlags     = RIDEV_INPUTSINK; // RIDEV_NOLEGACY;
+   rid[ 0 ].hwndTarget  = ( HWND ) hb_parnl( 1 );
+
+   rid[ 1 ].usUsagePage = 0x01;
+   rid[ 1 ].usUsage     = 0x06; // Keyboard
+   rid[ 1 ].dwFlags     = RIDEV_INPUTSINK;
+   rid[ 1 ].hwndTarget  = ( HWND ) hb_parnl( 1 );
+   
+   hb_retl( pRegisterRawInputDevices( rid, 2, sizeof( RAWINPUTDEVICE ) ) );
+}
+
+HB_FUNC( GETRAWINPUTDATA )
+{
+   UINT dwSize;
+   LPBYTE lpb;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+                     
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   hb_retnl( ( unsigned long ) lpb );                  
+}                    
+
+HB_FUNC( GETRAWINPUTDEVICELIST )
+{
+   UINT nDevices;
+   PRAWINPUTDEVICELIST pRawInputDeviceList;
+
+   RawInit();
+   
+   pGetRawInputDeviceList( NULL, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+   
+   if( nDevices )
+   {
+      UINT ui;
+      
+      pRawInputDeviceList = ( PRAWINPUTDEVICELIST ) hb_xgrab( sizeof( RAWINPUTDEVICELIST ) * nDevices );
+      
+      pGetRawInputDeviceList( pRawInputDeviceList, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+      
+      hb_reta( nDevices );
+      
+      for( ui = 0; ui &lt; nDevices; ui++ )
+      {
+         char name[ 512 ];
+         UINT uiSize = 511;
+         
+         pGetRawInputDeviceInfo( pRawInputDeviceList[ ui ].hDevice, RIDI_DEVICENAME, ( void * ) name, &amp;uiSize );
+         hb_storclen( name, uiSize, -1, ui + 1 ); 
+      } 
+      
+      hb_xfree( ( void * ) pRawInputDeviceList );
+   }   
+}
+
+HB_FUNC( GETRAWMOUSE ) // nMouse --&gt; hDevice
+{
+   UINT nDevices;
+   PRAWINPUTDEVICELIST pRawInputDeviceList;
+
+   RawInit();   
+   pGetRawInputDeviceList( NULL, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+   
+   if( nDevices )
+   {
+      UINT ui;
+      UINT uiMouses = 0;
+      
+      pRawInputDeviceList = ( PRAWINPUTDEVICELIST ) hb_xgrab( sizeof( RAWINPUTDEVICELIST ) * nDevices );
+      
+      pGetRawInputDeviceList( pRawInputDeviceList, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+      
+      for( ui = 0; ui &lt; nDevices; ui++ )
+      {
+         RID_DEVICE_INFO rdi;
+         UINT uiSize = sizeof( RID_DEVICE_INFO );       
+         UINT uiMouse = hb_parnl( 1 );
+         
+         rdi.cbSize = sizeof( RID_DEVICE_INFO );
+         
+         pGetRawInputDeviceInfo( pRawInputDeviceList[ ui ].hDevice, RIDI_DEVICEINFO, ( void * ) &amp;rdi, &amp;uiSize );
+         
+         if( rdi.dwType == RIM_TYPEMOUSE )
+         {
+            if( ++uiMouses == uiMouse )
+            {
+               hb_retnl( ( unsigned long ) pRawInputDeviceList[ ui ].hDevice );
+               hb_xfree( ( void * ) pRawInputDeviceList );
+               return;
+            }   
+         }   
+      } 
+      
+      hb_retnl( 0 );
+      hb_xfree( ( void * ) pRawInputDeviceList );
+   }   
+}
+
+HB_FUNC( GETRAWMOUSES ) // --&gt; nMouses
+{
+   UINT nDevices, uiMouses = 0;
+   PRAWINPUTDEVICELIST pRawInputDeviceList;
+
+   RawInit();   
+   pGetRawInputDeviceList( NULL, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+   
+   if( nDevices )
+   {
+      UINT ui;
+      
+      pRawInputDeviceList = ( PRAWINPUTDEVICELIST ) hb_xgrab( sizeof( RAWINPUTDEVICELIST ) * nDevices );
+      
+      pGetRawInputDeviceList( pRawInputDeviceList, &amp;nDevices, sizeof( RAWINPUTDEVICELIST ) );
+      
+      for( ui = 0; ui &lt; nDevices; ui++ )
+      {
+         RID_DEVICE_INFO rdi;
+         UINT uiSize = sizeof( RID_DEVICE_INFO );       
+         
+         rdi.cbSize = sizeof( RID_DEVICE_INFO );
+         
+         pGetRawInputDeviceInfo( pRawInputDeviceList[ ui ].hDevice, RIDI_DEVICEINFO, ( void * ) &amp;rdi, &amp;uiSize );
+         
+         if( rdi.dwType == RIM_TYPEMOUSE )
+            uiMouses++;
+      } 
+      
+      hb_xfree( ( void * ) pRawInputDeviceList );
+   }   
+
+   hb_retnl( --uiMouses ); // Windows reports an extra mouse (?)
+}
+
+HB_FUNC( RAWISMOUSE )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   hb_retl( ( ( PRAWINPUT ) lpb )-&gt;header.dwType == RIM_TYPEMOUSE );
+   hb_xfree( ( void * ) lpb );
+}   
+
+HB_FUNC( RAWGETHANDLE )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   hb_retnl( ( unsigned long ) ( ( PRAWINPUT ) lpb )-&gt;header.hDevice );
+   hb_xfree( ( void * ) lpb );
+}   
+
+HB_FUNC( RAWBUTTONS )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   hb_retnl( ( unsigned long ) ( ( PRAWINPUT ) lpb )-&gt;data.mouse.usButtonFlags );
+   hb_xfree( ( void * ) lpb );
+}   
+
+HB_FUNC( DEFRAWINPUTPROC )
+{
+   LPBYTE lpb;
+   UINT dwSize;
+
+   RawInit();
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, NULL, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );
+   lpb = ( LPBYTE ) hb_xgrab( dwSize );                  
+   pGetRawInputData( ( LPRAWINPUT ) hb_parnl( 1 ), RID_INPUT, lpb, &amp;dwSize, 
+                     sizeof( RAWINPUTHEADER ) );   
+   pDefRawInputProc( ( LPRAWINPUT * ) &amp;lpb, 1, sizeof( RAWINPUTHEADER ) );
+   hb_xfree( ( void * ) lpb );
+}   
+
+#pragma ENDDUMP</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p65981">
+    <div class="poster">
+      <div class="name" style="color:#105289">Mike Buckler</div>
+      <div class="rank">Posts: 67</div>
+      <div class="avatar"></div>
+      Joined: Thu Jan 05, 2006 10:35 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Thu Oct 02, 2008 04:23 AM
+      </div>
+      <div class="content"><p>Thanks For Your Effort Antonio<br>
+Mike</p></div>
+    </div>
+  </div>
+  <div class="post" id="p65987">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Thu Oct 02, 2008 07:25 AM
+      </div>
+      <div class="content"><p>I am googling for info about how to proceed. It looks as other programmers have our same questions:</p>
+<!-- m -->
+<p><a class="postlink" href="http://www.tech-archive.net/Archive/Development/microsoft.public.win32.programmer.ui/2008-03/msg00021.html">http://www.tech-archive.net/Archive/Dev ... 00021.html</a></p>
+<p>The problem is that WM_INPUT does not provide info about the windows handle where the event hapenned. Meanwhile I am typing this an idea arised: if our windows has the focus and we get a WM_INPUT message then it is for us. If we don't have the focus, it is not for us...</p>
+<p>Time for more tests <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p65990">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Thu Oct 02, 2008 07:41 AM
+      </div>
+      <div class="content">This line may be the missing part that we need:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">      if ::hWnd == GetFocus() .and. RawIsMouse( nLParam ) .and. RawGetHandle( nLParam ) == ::hMouse</code></pre></div><br>
+More tests... </div>
+    </div>
+  </div>
+  <div class="post" id="p65994">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Can raw keyboard input be implemented????</span><br>
+        Posted: Thu Oct 02, 2008 08:35 AM
+      </div>
+      <div class="content"><p>No, not yet.</p>
+<p>We need to keep searching how to do the right conversion from WM_INPUT to WM_(mouse) and WM_(keyb) messages.</p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-12837.html">1</a> <strong>2</strong> <a href="topic-12837-page-3.html">3</a> (35 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>DBF2SQL CONVERSION SPEED PROBLEM (SOLVED) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-16891">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> DBF2SQL CONVERSION SPEED PROBLEM (SOLVED)</div>
+  <div class="post" id="p87586">
+    <div class="poster">
+      <div class="name" style="color:#105289">RAMESHBABU</div>
+      <div class="rank">Posts: 651</div>
+      <img class="avatar avatar-img" src="avatars/190.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 21, 2005 05:54 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">DBF2SQL CONVERSION SPEED PROBLEM (SOLVED)</span><br>
+        Posted: Thu Oct 01, 2009 11:04 AM
+      </div>
+      <div class="content">Hi All,<br>
+<br>
+I started converting my existing .DBF files into MYSQL. And I am using TMysql Class for conversion.<br>
+<br>
+I don't know why, for a .DBF which is having 30 Fields and 20000 records is taking almost 30 mins.<br>
+Where as In tried to conver the same .DBF with &quot;Kleyber Derick's&quot;  DBF TO SQL Converter, it took<br>
+49 seconds.<br>
+<br>
+I am using the following code.  Can anybody help me where I am going wrong:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">*******************************************************************************
+*** FUNCTION MySqlConnect(cServer, cUser, cPassword) to Connect to MySql DB ***
+*******************************************************************************
+
+FUNCTION MySqlConnect(cServer, cUserName, cPassword)
+
+oServer := TMySQLServer():New(ALLTRIM(cServer), ALLTRIM(cUserName), ALLTRIM(cPassword))
+
+IF oServer:NetErr()
+   lConnected := .F.
+   YesNo(oServer:Error())
+ELSE
+   lConnected := .T.
+ENDIF
+
+RETURN lConnected
+
+*******************************************************************************
+**** FUNCTION AscToMySql(cDatabase,cServer,cUser,cPassword,oMeter1,nMeter1, ***
+***                      oMeter2,nMeter2) to convert ASC to MySql Db        ***
+*******************************************************************************
+
+FUNCTION AscToMySql(cDataBase, cServer, cUserName, cPassword, cPort, oMeter1, ;
+                    nMeter1, oMeter2, nMeter2, aReserved)
+
+LOCAL aDir, aFields := {}, aField, n, cField, lFound := .F.
+LOCAL cFile, aFiles1 := {}, lSelected := .F.
+
+
+oStartTime:lDisColors  := .F.
+oStartTime:nClrTextDis := CLR_BLUE
+oStartTime:Refresh()
+
+cCurrentTime := time()
+oCurrentTime:lDisColors  := .F.
+oCurrentTime:nClrTextDis := CLR_HBLUE
+oCurrentTime:Refresh()
+
+cLapsedTime := "00:00:00"
+oLapsedTime:lDisColors  := .F.
+oLapsedTime:nClrTextDis := CLR_GREEN
+oLapsedTime:Refresh()
+
+IF lExportDel
+   SET DELETED ON
+ELSE
+   SET DELETED OFF
+ENDIF
+
+cUserName := ALLTRIM(cUserName)
+cPassword := ALLTRIM(cPassword)
+
+CursorWait()
+
+IF lConnected
+   IF lDeciAsFloat
+      oServer:lDeciAsFloat := .T.
+   ELSE
+      oServer:lDeciAsFloat := .F.
+   ENDIF
+ENDIF
+
+IF oServer:DBExist( ALLTRIM(cDatabase) ) = 0     // 0 Indicates that the database does not exist
+   CursorWait()
+   oServer:CreateDatabase( ALLTRIM(cDatabase) )
+   CursorArrow()
+ELSE
+   IF lNewDatabase
+      CursorWait()
+      oServer:DeleteDatabase( ALLTRIM(cDatabase) )
+      oServer:CreateDatabase( ALLTRIM(cDatabase) )
+      CursorArrow()
+   ENDIF
+ENDIF
+
+oServer:SelectDB( ALLTRIM(cDatabase) )
+
+IF ASCAN(oTree:aSelected,{|x|x[2] = .T.}) &gt;0
+   lSelected := .T.
+ENDIF
+
+FOR n = 1 TO LEN(aFiles)
+
+    * Reconnect to Server for every 10 files
+    IF n % 10 = 0
+       oServer:End()
+       lConnected := MySqlConnect(cServer, cUserName, cPassword)
+       oServer:SelectDB( ALLTRIM(cDatabase) )
+    ENDIF
+
+    IF lSelected
+
+       IF oTree:aSelected[n,2]
+
+          cFile := UPPER(ALLTRIM(aFiles[n-1]))
+
+          IF ASCAN(aReserved, {|x|UPPER(ALLTRIM(x[2])) == cFile}) &gt;0
+             LOOP
+          ENDIF
+
+          USE &amp;cFile ALIAS cFile
+          aFields := DbStruct()
+
+          IF oServer:TableExist( STRTRAN(ALLTRIM(cFile),".ASC","") ) &gt;0
+             IF lDeleteTable
+                IF oServer:DeleteTable(STRTRAN(ALLTRIM(cFile),".ASC",""))
+                   *YesNo("Table "+ STRTRAN(ALLTRIM(cFile),".ASC","")+" Deleted successfully")
+                ELSE
+                   *YesNo(oServer:Error())
+                   RETURN nil //QUIT
+                ENDIF
+             ENDIF
+          ELSE
+             aFields := DbStruct()         // Load the structure of the dbf in an array
+             FOR EACH aField IN aFields
+                 IF HB_EnumIndex() &lt;= 2
+                    AADD( aField, .T. )    // Add a new column to the array of definitions
+                                           // of the first two fields. That it indicates
+                                           // that these columns are NOT NULL.
+                                           // This is to be able to include them like part
+                                           // of the primary key.
+                 ELSE
+                    EXIT
+                 ENDIF
+             NEXT
+          ENDIF
+
+          AADD(aFields,{"DELETED","L",1,0})
+          AADD(aFields,{"RECORD_NO","N",6,0})
+
+          IF lDeleteTable
+             CursorWait()
+             IF oServer:CreateTable(STRTRAN(ALLTRIM(cFile),".ASC",""), aFields, "RECORD_NO")
+                *YesNo("Table : "+ STRTRAN(ALLTRIM(cFile),".ASC","")+" Created successfully")
+             ELSE
+                *YesNo(oServer:Error())
+                CursorArrow()
+                RETURN nil // QUIT
+             ENDIF
+          ENDIF
+
+          CursorArrow()
+
+          IF RECCOUNT() &gt;0
+             oMeter2:SetTotal(RecCount())
+             * Table Population from .ASC file mechanism
+             PopulateTableData(cDatabase, aFields, cFile, oMeter2, nMeter2)
+          ELSE
+             oMeter2:SetTotal(100)
+             oMeter2:Set(100)
+             oMeter2:Refresh()
+          ENDIF
+          USE
+          oTree:SetCurSel(n)
+       ENDIF
+    ENDIF
+
+    nMeter1 := n
+    oMeter1:Set(nMeter1)
+    oMeter1:Refresh()
+
+NEXT
+
+I tried with/without Reconnecting the server for every 10 files and creating a new querry for every 250 records.
+without the expected result.
+
+RETURN nil
+
+*******************************************************************************
+*** FUNCTION PopulateTableData(aFields,cFile,oMeter2,nMeter2) to Pupulate   ***
+***          Every ASC file data in its MySql Table                       ***
+*******************************************************************************
+
+FUNCTION PopulateTableData(cDatabase, aFields, cFile, oMeter2, nMeter2)
+
+LOCAL i, n, nCounter := 0, nPos := 1, x, cField, lFound := .F.
+LOCAL cSource := "", oTable
+
+nMeter2 := 0
+
+cFile  := lower(STRTRAN(ALLTRIM(cFile),".ASC",""))
+oTable := oServer:Query("SELECT * FROM "+ALLTRIM(cDatabase)+"."+ALLTRIM(cFile), .F. )
+
+IF oTable:NetErr()
+   YesNo(oTable:Error())
+   RETURN nil
+ENDIF
+
+lDisConnect := .T.
+oDisConnect:Refresh()
+
+cFile-&gt;(DbGoTop())
+
+DO WHILE .NOT. cFile-&gt;(EOF())
+
+   * Create Query for every nRecsPerQuery
+   IF cFile-&gt;(RECNO()) % nRecsPerQuery = 0
+      IF VALTYPE(oTable) = "O"
+         oTable:End()
+      ENDIF
+      oTable := oServer:Query("SELECT * FROM "+ALLTRIM(cDatabase)+"."+ALLTRIM(cFile), .F. )
+      IF oTable:NetErr()
+         YesNo(oTable:Error())
+         EXIT
+      ENDIF
+   ENDIF
+
+   WITH OBJECT oTable
+
+        :GetBlankRow()
+
+        FOR n = 1 TO LEN(aFields)-2
+            oTable:FieldPut(oTable:FieldName(n),FieldGet(n))
+        NEXT
+
+        IF !oTable:Append()
+           EXIT
+        ENDIF
+
+        cCurrentTime := time()
+        oCurrentTime:Refresh()
+
+        cLapsedTime := ElapTime(cStartTime, cCurrentTime)
+        oLapsedTime:Refresh()
+
+   END
+
+   cFile-&gt;(DbSkip())
+
+   nMeter2++
+   oMeter2:Set(nMeter2)
+   oMeter2:Refresh()
+
+ENDDO
+
+cFile-&gt;(DbCloseArea())
+oTable:End()
+
+lDisConnect := .F.
+oDisConnect:Refresh()
+
+RETURN nil</code></pre></div><br>
+<br>
+Thanks,<br>
+<br>
+- Ramesh Babu P</div>
+    </div>
+  </div>
+  <div class="post" id="p87658">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DBF2SQL CONVERSION IS TAKING TOO LONG TIME</span><br>
+        Posted: Fri Oct 02, 2009 04:35 AM
+      </div>
+      <div class="content"><p>Dear Ramesh,</p>
+<p>I didn't convert existing dbf to MySql file but I use TMySql for create, update and delete table in WebSite.  For updating, I create table and insert from DBF file (on web).  MySql table with 2000 records (on web), it take about almost 1:30 mins.</p>
+<p>Regards,<br>
+Dutch</p></div>
+    </div>
+  </div>
+  <div class="post" id="p87724">
+    <div class="poster">
+      <div class="name" style="color:#105289">RAMESHBABU</div>
+      <div class="rank">Posts: 651</div>
+      <img class="avatar avatar-img" src="avatars/190.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 21, 2005 05:54 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DBF2SQL CONVERSION IS TAKING TOO LONG TIME</span><br>
+        Posted: Sat Oct 03, 2009 12:44 AM
+      </div>
+      <div class="content"><p>Dear Dutch,</p>
+<p>Ok.  Thank you very much for your answer.</p>
+<p>Regards,</p>
+<ul>
+<li>Ramesh Babu P</li>
+</ul></div>
+    </div>
+  </div>
+  <div class="post" id="p87778">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DBF2SQL CONVERSION IS TAKING TOO LONG TIME</span><br>
+        Posted: Sun Oct 04, 2009 10:50 AM
+      </div>
+      <div class="content"><p>Ramesh,</p>
+<p>I am not an experienced SQL programmer but I did do some work with SQLite a few years ago and I found that it was writing each record update back to the disk. When I changed to using BEGIN TRANSACTION/END TRANSACTION with the entire DO WHILE loop inside, it went about 100 times faster. This technique only updated the disk after all updates to the table (recordset) were completed so there was only one disk write instead of thousands.</p>
+<p>Perhaps there is a way to do this in your situation.</p>
+<p>Regards,<br>
+James</p></div>
+    </div>
+  </div>
+  <div class="post" id="p87781">
+    <div class="poster">
+      <div class="name" style="color:#105289">RAMESHBABU</div>
+      <div class="rank">Posts: 651</div>
+      <img class="avatar avatar-img" src="avatars/190.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 21, 2005 05:54 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DBF2SQL CONVERSION IS TAKING TOO LONG TIME</span><br>
+        Posted: Sun Oct 04, 2009 12:51 PM
+      </div>
+      <div class="content"><p>Dear James,</p>
+<p>Very good Idea and good reasoning too. <!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --> </p>
+<p>I will try it now and update the result.</p>
+<p>Regards,</p>
+<ul>
+<li>Ramesh Babu</li>
+</ul></div>
+    </div>
+  </div>
+  <div class="post" id="p87796">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DBF2SQL CONVERSION IS TAKING TOO LONG TIME</span><br>
+        Posted: Sun Oct 04, 2009 10:47 PM
+      </div>
+      <div class="content"><p>Use 'DATA LOAD INFILE&quot; syntax of MySql to bulk load data into my sql from flat files. Please read documentation for more details.</p>
+<p>You may also read about the built in CSV engine of MySql 5.1 beta. You can create and read CSV files directly in MySql. You can use 'SELECT ...INTO ..' syntax to transfer data from CSV file to other tables.</p>
+<p>LOAD DATA INFILE is the most popularly used command for importing external data into MySql.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p87911">
+    <div class="poster">
+      <div class="name" style="color:#105289">RAMESHBABU</div>
+      <div class="rank">Posts: 651</div>
+      <img class="avatar avatar-img" src="avatars/190.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 21, 2005 05:54 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DBF2SQL CONVERSION ... (CLOSED)</span><br>
+        Posted: Tue Oct 06, 2009 09:38 AM
+      </div>
+      <div class="content"><p>Mr.James and Mr.Nageswara Rao,</p>
+<p>Thank you both very much for your attention to my problem.</p>
+<p>I took some time to go through the MYSQL documentation and as suggested by Mr.Nageswara Rao,<br>
+I have implemented the LOAD DATA INFILE command and very drastic change in the speed.  My <br>
+data (600000 records) could be converted with in 1.39 secs.</p>
+<p>Nageswara rao gaaru, thank you very much for your suggeston to read the my sql documentation.</p>
+<p>Regards to you both</p>
+<ul>
+<li>Ramesh Babu P</li>
+</ul></div>
+    </div>
+  </div>
+  <div class="post" id="p87946">
+    <div class="poster">
+      <div class="name" style="color:#105289">dutch</div>
+      <div class="rank">Posts: 1598</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 05:56 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DBF2SQL CONVERSION SPEED PROBLEM (SOLVED)</span><br>
+        Posted: Tue Oct 06, 2009 04:35 PM
+      </div>
+      <div class="content"><p>Dear Ramesh,</p>
+<p>It's really fast, how to do it?  I've got 1.30 minute for 900 records.</p>
+<p>Regards,<br>
+Dutch</p></div>
+    </div>
+  </div>
+  <div class="post" id="p88002">
+    <div class="poster">
+      <div class="name" style="color:#105289">RAMESHBABU</div>
+      <div class="rank">Posts: 651</div>
+      <img class="avatar avatar-img" src="avatars/190.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 21, 2005 05:54 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: DBF2SQL CONVERSION SPEED PROBLEM (SOLVED)</span><br>
+        Posted: Wed Oct 07, 2009 10:04 AM
+      </div>
+      <div class="content">Dear Dutch,<br>
+<br>
+I built a small working sample for you.  Please go through it and tell me results.<br>
+<br>
+Please note just for testing you have to pass cDatabase and cDbfFile (without extension) parameters from the<br>
+command line :<br>
+<br>
+SYNTAX :  DBF2SQL &lt;cDatabase&gt;, &lt;cTable&gt;<br>
+<br>
+Also note that this prg will not upload data from memofields and to store logical fields  the table<br>
+structure for logical fields needs to be altered as CHAR(1) instead of TINYINT(1).  This because,<br>
+I have used :<br>
+<br>
+COPY TO (cTextFile) DELIMITED WITH TAB command.  <br>
+<br>
+This command will store logical values as TEXT and will ignore data from all MEMO fields.<br>
+<br>
+Regards,<br>
+<br>
+- Ramesh Babu P<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+#include "xBrowse.ch"
+
+STATIC oServer
+STATIC cReserved := " ADD ALL ALTER ANALYZE AND AS ASC ASENSITIVE AUTO_INCREMENT BDB BEFORE BERKELEYDB BETWEEN BIGINT BINARY BLOB BOTH BY CALL CASCADE CASE CHANGE CHAR CHARACTER CHECK COLLATE COLUMN COLUMNS CONDITION CONNECTION CONSTRAINT CONTINUE CREATE CROSS CURRENT_DATE CURRENT_TIME CURRENT_TIMESTAMP CURSOR DATABASE DATABASES DAY_HOUR DAY_MICROSECOND DAY_MINUTE DAY_SECOND "+;
+                     "DEC DECIMAL DECLARE DEFAULT DELAYED DELETE DESC DESCRIBE DETERMINISTIC DISTINCT DISTINCTROW DIV DOUBLE DROP ELSE ELSEIF ENCLOSED ESCAPED EXISTS EXIT EXPLAIN FALSE FETCH FIELDS FLOAT FOR FORCE FOREIGN FOUND FRAC_SECOND FROM FULLTEXT GRANT GROUP HAVING HIGH_PRIORITY HOUR_MICROSECOND HOUR_MINUTE HOUR_SECOND IF IGNORE IN INDEX INFILE INNER INNODB INOUT "     +;
+                     "INSENSITIVE INSERT INT INTEGER INTERVAL INTO IO_THREAD IS ITERATE JOIN KEY KEYS KILL LEADING LEAVE LEFT LIKE LIMIT LINES LOAD LOCALTIME  LOCALTIMESTAMP LOCK LONG LONGBLOB LONGTEXT LOOP LOW_PRIORITY MASTER_SERVER_ID MATCH MEDIUMBLOB MEDIUMINT MEDIUMTEXT IDDLEINT MINUTE_MICROSECOND MINUTE_SECOND MOD NATURAL NOT NO_WRITE_TO_BINLOG NULL NUMERIC ON OPTIMIZE " +;
+                     "OPTION OPTIONALLY OR ORDER OUT OUTER OUTFILE PRECISION PRIMARY PRIVILEGES PROCEDURE PURGE READ REAL REFERENCES REGEXP RENAME REPEAT REPLACE REQUIRE RESTRICT RETURN REVOKE RIGHT RLIKE SECOND_MICROSECOND SELECT SENSITIVE SEPARATOR SET SHOW SMALLINT SOME SONAME SPATIAL SPECIFIC SQL SQLEXCEPTION SQLSTATE SQLWARNING SQL_BIG_RESULT SQL_CALC_FOUND_ROWS "        +;
+                     "SQL_SMALL_RESULT SQL_TSI_DAY QL_TSI_FRAC_SECOND SQL_TSI_HOUR SQL_TSI_MINUTE SQL_TSI_MONTH SQL_TSI_QUARTER SQL_TSI_SECOND SQL_TSI_WEEK SQL_TSI_YEAR SSL  STARTING STRAIGHT_JOIN  STRIPED TABLE TABLES TERMINATED THEN TIMESTAMPADD TIMESTAMPDIFF TINYBLOB TINYINT TINYTEXT TO RAILING TRUE UNDO UNION UNIQUE UNLOCK UNSIGNED UPDATE USAGE USE USER_RESOURCES USING "  +;
+                     "UTC_DATE UTC_TIME UTC_TIMESTAMP VALUES ARBINARY VARCHAR VARCHARACTER VARYING WHEN WHERE WHILE WITH WRITE XOR YEAR_MONTH ZEROFILL "
+
+FUNCTION main(cDatabase, cDbfFile)
+
+LOCAL cServer      := "127.0.0.1",;
+           cPort          := 3306,;
+          cUserName  := "username",;
+          cPassword   := "password"
+LOCAL cStartTime := time()   
+
+IF PCOUNT() &lt; 2 
+   MsgInfo("SYNTAX:  Dbf2Sql &lt;cDatabse&gt;, &lt;cDbfFile&gt;"+CRLF+;
+                "Without any extension to file names.")
+   RETURN nil
+ENDIF
+
+IF .NOT. MySqlConnect(cServer, cUserName, cPassword)
+   RETURN nil
+ENDIF
+
+IF Dbf2MySql(cDatabase, cDbfFile)
+   MsgInfo("Your Table '"+ALLTRIM(cDatabase)+"."+ALLTRIM(cDbfFile)+"' has been sucessfully created and"+CRLF+;
+           "Data is populated from dBase File."+CRLF+;
+           "And the total time taken for conversion : "+ ElapTime(cStartTime,time()))
+ENDIF
+
+RETURN nil
+
+*************************************************************************************************
+*** FUNCTION Dbf2MySql(cDatabase, cTable) - Creation of Tables &amp; Conversion  ***
+*************************************************************************************************
+
+FUNCTION Dbf2MySql(cDatabase, cTable)
+
+LOCAL cApp_Path := GetModuleFileName(GetInstance()), aFields, cTextFile, cQuery, i
+
+cApp_Path := SUBSTR(cApp_Path,1,RAT("\",cApp_Path))
+
+IF FILE(cApp_Path+ALLTRIM(cTable)+".DBF")
+   USE (cTable)
+   * Load the structure of the dbf in an array
+   aFields := DbStruct()      
+   * IF Field Name is a MySql's reserved word.. save them in array and show.
+   FOR i = 1 TO LEN(aFields)
+       cField := " "+ALLTRIM(UPPER(aFields[i,1]))+" "
+       IF cField $ cReserved
+          AADD(aReserved,{i, cDatabase, cTable, cField})
+       ENDIF
+   NEXT
+
+   IF LEN(aReserved) &gt;0
+      XBROWSER aReserved TITLE "MYSQL RESERVED WORDS USED IN "+UPPER(ALLTRIM(cTable))+".DBF AS FIELD NAMES"
+      RETURN .F.
+   ENDIF
+  
+ELSE
+   MsgInfo("Sorry. Your Input file '"+UPPER(cApp_Path+ALLTRIM(cTable))+".DBF' is not present on disk.")
+   RETURN .F.
+ENDIF
+
+* MySql Database Creation
+TRY
+   IF oServer:DBExist( ALLTRIM(cDatabase) ) = 0     // 0 Indicates that the database does not exist
+      CursorWait()
+      oServer:CreateDatabase( ALLTRIM(cDatabase) )
+   ELSE
+      oServer:DeleteDatabase( ALLTRIM(cDatabase) )
+      oServer:CreateDatabase( ALLTRIM(cDatabase) )
+   ENDIF
+
+   oServer:SelectDB( ALLTRIM(cDatabase) )
+CATCH
+   MsgInfo("Sorry. Your MySql Database '"+ALLTRIM(cDatabase)+"' could no be created.")
+   RETURN .F.
+END
+
+* MySql Table Creation
+TRY
+  IF oServer:TableExist(cTable) &gt;0
+     IF oServer:DeleteTable(cTable)
+        oServer:CreateTable(cTable, aFields)
+     ENDIF
+  ELSE
+     oServer:CreateTable(cTable, aFields)
+  ENDIF
+CATCH
+   MsgInfo("Sorry. Your MySql Table '"+ALLTRIM(cTable)+"' could no be created.")
+   RETURN .F.
+END
+
+cTextFile := UPPER(cApp_Path+"cTable")+".TXT"
+
+COPY TO (cTextFile) DELIMITED WITH TAB
+ 
+IF FILE(cTextFile)
+   cTextFile := STRTRAN(cTextFile,"\","/")   // Change the slashes to enable MYSQL to understand the path
+   cQuery := UPPER("LOAD DATA LOCAL INFILE '"+cTextFile+"' INTO TABLE "+cTable+ " FIELDS TERMINATED BY '"+CHR(9)+ "';")
+   oServer:Query(cQuery)
+   ERASE (cTextFile)
+ELSE
+   MsgInfo("Sorry. There was an error in creating intermediatory TAB Delimited Text file."+CRLF;
+                "To Pouplate your MySql Database '"+ALLTRIM(cDatabase)+"'.")
+   RETURN .F.
+ENDIF
+
+RETURN .T.
+
+*************************************************************************************************
+*** FUNCTION MySqlConnect(cServer, cUser, cPassword) to Connect to MySql DB ***
+*************************************************************************************************
+
+FUNCTION MySqlConnect(cServer, cUserName, cPassword)
+
+LOCAL lConnected := .F.
+
+oServer := TMySQLServer():New(ALLTRIM(cServer), ALLTRIM(cUserName), ALLTRIM(cPassword))
+
+IF oServer:NetErr()
+   MsgInfo(oServer:Error())
+ELSE
+   lConnected := .T.
+ENDIF
+
+RETURN lConnected
+
+****************************
+*** EOF() dbf2sql.prg ***
+****************************</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

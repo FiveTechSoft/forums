@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Print from WEB / Imprimir desde WEB - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-23614">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-17.html">Utilities / Utilidades</a> Print from WEB / Imprimir desde WEB</div>
+  <div class="post" id="p126910">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Daniel Garcia-Gil</div>
+      <div class="rank">Posts: 2365</div>
+      <img class="avatar avatar-img" src="avatars/249.gif" alt="" loading="lazy">
+      Joined: Wed Nov 02, 2005 11:46 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Print from WEB / Imprimir desde WEB</span><br>
+        Posted: Sun Mar 04, 2012 05:42 PM
+      </div>
+      <div class="content">Dejo un ejemplo que podemos imprimor desde la WEB en formato RAW sin pasar por el dialogo de impresion del navegador, solo trabaja en navegadores con websocket<br>
+<br>
+i leave a sample to print from WEB in RAW format without call the print dialog, only work with browser with websocket<br>
+<br>
+<a href="http://www.danielgarciagil.com/print/test.zip" rel="noopener">Descargar ejecutable / Download exe</a><br>
+<br>
+Ejecutar desde consola / run from console<br>
+<br>
+test NONE<br>
+<br>
+con ESC sale del programa / exit with ESC<br>
+<br>
+abrir la siguiente url / open the url<br>
+<br>
+<a href="http://danielgarciagil.com/print" rel="noopener">http&#58;//danielgarciagil&#46;com/print</a> (no funciona si el ejecutable no esta corriendo / no work if exe is not running )<br>
+<br>
+PRG <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "hbclass.ch"
+#include "FileIO.ch"
+#include "hbwin.ch"
+
+#define CRLF Chr(13)+Chr(10)
+
+#xcommand REPEAT        =&gt; while .t.
+#xcommand DO            =&gt; while .t.
+#xcommand UNTIL &lt;uExpr&gt; =&gt; if &lt;uExpr&gt;; exit; end; end
+
+#xcommand DEFAULT &lt;uVar1&gt; := &lt;uVal1&gt; ;
+               [, &lt;uVarN&gt; := &lt;uValN&gt; ] =&gt; ;
+                  If( &lt;uVar1&gt; == nil, &lt;uVar1&gt; := &lt;uVal1&gt;, ) ;;
+                [ If( &lt;uVarN&gt; == nil, &lt;uVarN&gt; := &lt;uValN&gt;, ); ]
+
+function main( cMode )
+
+  LOCAL oSrv
+  LOCAL oPrn
+
+  DEFAULT cMode := "S"
+
+
+  oSrv := WebSocketServer():New( "8080", cMode, {| oServer | OnInit( oServer ) } )
+  
+  if ! oSrv:lBackground
+     oSrv:Activate()
+  endif
+
+  
+return nil  
+
+//-----------------------------------------//
+
+function OnInit( oSrv )
+
+  oSrv:bOnNewClient = {| oClient | NewClient( oSrv, oClient ) }
+  oSrv:bOnHandleEvent = {| nEvent, wParam, lParam, cParam, oClient | HandleEvent( nEvent, wParam, lParam, cParam, oClient ) }  
+
+return nil
+
+//-----------------------------------------//
+
+function printTexto( hBuffer )
+
+   local oPrn
+   local hLine
+   local cBuffer := ""
+   local cPrinter
+ 
+   oPrn := TRawPrint():New()
+ 
+   for each hLine in hBuffer[ "texto" ]
+      oPrn:say( hLine["row"], hLine["col"], hLine["text"] )
+   next
+   
+   oPrn:Print( hBuffer[ "printer" ] )
+
+
+return nil
+
+//-----------------------------------------//
+
+function getPrinterList( oClient )
+
+   local aPrinter := Win_PrinterList()
+   local hJson := { =&gt; }
+   local nLen, cJSon
+   
+   hJSon[ "ACTION" ] = "PRINTERS"
+
+   hJson[ "PARAMETERS" ] = { aPrinter, WIN_PrinterGetDefault() }
+
+   cJSon := hb_JSonEncode( hJson, @nlen, .T. )
+   
+   oClient:SendData( cJSon )
+
+return nil
+
+
+//-----------------------------------------//
+
+
+function HandleEvent( nEvent, wParam, lParam, cParam, oClient )
+
+   local hJSon, nTipo
+   local nJson
+   nJSon = hb_jsonDecode( cParam, @hJSon )
+   
+   switch nEvent
+      case 1
+         getPrinterList( oClient )
+         exit
+      case 2 
+         printTexto( hJSon )
+         exit       
+   endswitch
+
+return nil
+
+//-----------------------------------------//
+
+function NewClient( oSrv, oClient )
+
+   local nLen
+   local nPos
+   local o
+
+   //accept only one connection (only for test)
+   //if there are a new conection, will kill old
+   
+   nLen = Len( oSrv:hClients )
+   if nLen &gt; 1
+      nPos := hb_HScan( oSrv:hClients, {|k| k  != oClient:nID } ) 
+      if nPos &gt; 0
+         o = hb_HValueAt( oSrv:hClients, nPos )
+         oSrv:KillClient( o )
+      endif       
+   endif
+   
+RETURN NIL
+
+
+#xtranslate nTrim( &lt;n&gt;, &lt;i&gt;, &lt;d&gt; )  =&gt; AllTrim( Str( &lt;n&gt;, &lt;i&gt;, &lt;d&gt; ) )
+
+//----------------------------------------------------------------------------//
+
+CLASS TRawPrint
+   
+   DATA hRow, hCol HIDDEN
+   
+   DATA hDC, nRow, nCol, nLeftMargin, nTopMargin      AS NUMERIC
+   DATA lFile                                         AS LOGICAL
+   DATA onNewPage
+   DATA nPage                                         AS NUMERIC
+   DATA onEndPage
+   DATA onClose
+   DATA aBuffer                                       AS ARRAY
+   DATA lAnsiToOem                                    AS LOGICAL
+
+   METHOD New( lFile, onNewPage, onEndPage, onClose ) CONSTRUCTOR
+   
+   METHOD Print( cPrinter )
+   
+   METHOD Say( nRow, nCol, cText, lInsert )
+   
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( lFile, onNewPage, onEndPage, onClose  ) CLASS TRawPrint
+
+   DEFAULT lFile := .F.
+
+   ::nLeftMargin  = 0
+   ::nTopMargin   = 0
+   ::nRow         = 0
+   ::nCol         = 0
+   ::lAnsiToOem   = .T.
+   ::hDC          = -1  
+   ::lFile        = lFile
+   ::onNewPage    = onNewPage
+   ::onEndPage    = onEndPage
+   ::onClose      = onClose
+   ::nPage        = 1
+   ::aBuffer      = {}
+
+RETURN Self
+
+//----------------------------------------------------------------------------//
+
+METHOD Print( cPrinter ) CLASS TRawPrint
+   
+   local cBuffer := ""
+   local cLine
+   
+   DEFAULT cPrinter := WIN_PrinterGetDefault()
+
+   for each cLine in ::aBuffer
+      cBuffer += cLine + CRLF
+   next
+
+   WIN_PrintBufferRaw( cPrinter , cBuffer )  
+
+RETURN NIL
+
+
+
+//----------------------------------------------------------------------------//
+
+METHOD Say( nRow, nCol, cText, lInsert ) CLASS TRawPrint
+   local nLen := Len( ::aBuffer )
+   local n
+   local nLenStr, nLenSub
+   local cStr, cSubstr
+   local cNewLine := ""
+   
+   DEFAULT lInsert := .F.
+   
+   if nRow &gt; nLen
+      for n = nLen + 1 to nRow
+         AAdd( ::aBuffer, "" )
+      next
+   endif
+   
+   cStr    = ::aBuffer[ nRow ]
+   cSubstr = PadR( cStr, nCol, " " )
+   
+   if lInsert
+      cNewLine = Stuff( cSubstr, nCol, 0, cText )
+   else 
+      cNewLine = Stuff( cSubstr, nCol, Len( cText ), cText )
+   endif
+   
+   ::aBuffer[ nRow ] = cNewLine
+   
+RETURN NIL</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p132174">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Print from WEB / Imprimir desde WEB</span><br>
+        Posted: Thu Jul 12, 2012 04:25 PM
+      </div>
+      <div class="content"><p>Daniel, el link no funciona más.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p132254">
+    <div class="poster">
+      <div class="name" style="color:#105289">pablovidal</div>
+      <div class="rank">Posts: 401</div>
+      <img class="avatar avatar-img" src="avatars/12.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 10:15 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Print from WEB / Imprimir desde WEB</span><br>
+        Posted: Sat Jul 14, 2012 06:36 PM
+      </div>
+      <div class="content">Hola Daniel,<br>
+<br>
+Estoy usando xHarbour y la funcion <strong>WIN_PrintBufferRaw</strong> no la encuentro ???<br>
+Es propia de harbour o es propia tuya ???</div>
+    </div>
+  </div>
+  <div class="post" id="p132255">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Daniel Garcia-Gil</div>
+      <div class="rank">Posts: 2365</div>
+      <img class="avatar avatar-img" src="avatars/249.gif" alt="" loading="lazy">
+      Joined: Wed Nov 02, 2005 11:46 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Print from WEB / Imprimir desde WEB</span><br>
+        Posted: Sat Jul 14, 2012 07:37 PM
+      </div>
+      <div class="content"><blockquote><cite>karinha wrote:</cite>Daniel, el link no funciona más.</blockquote><br>
+<br>
+Hola a la brevedad activo el link nuevamente<br>
+<br>
+<blockquote><cite>pablovidal wrote:</cite>Hola Daniel,<br>
+<br>
+Estoy usando xHarbour y la funcion <strong>WIN_PrintBufferRaw</strong> no la encuentro ???<br>
+Es propia de harbour o es propia tuya ???</blockquote><br>
+<br>
+si es propia...<br>
+aqi esta el fuente<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">HB_FUNC( WIN_PRINTBUFFERRAW )
+{
+   int iResult = -1;
+
+#if ! defined( HB_OS_WIN_CE )
+   if( HB_ISCHAR( 1 ) &amp;&amp; HB_ISCHAR( 2 ) )
+   {
+      const char * pszSource = hb_parc( 2 );
+      HB_SIZE length = hb_parclen( 2 );
+
+      HANDLE hPrinter;
+      void * hDeviceName;
+      LPCTSTR lpDeviceName = HB_PARSTR( 1, &amp;hDeviceName, NULL );
+
+      if( OpenPrinter( ( LPTSTR ) lpDeviceName, &amp;hPrinter, NULL ) != 0 )
+      {
+         void * hDocName;
+
+         DOC_INFO_1 DocInfo;
+         DocInfo.pDocName = ( LPTSTR ) HB_PARSTR( HB_ISCHAR( 3 ) ? 3 : 2, &amp;hDocName, NULL );
+         DocInfo.pOutputFile = NULL;
+         DocInfo.pDatatype = ( LPTSTR ) TEXT( "RAW" );
+         if( StartDocPrinter( hPrinter, 1, ( LPBYTE ) &amp;DocInfo ) != 0 )
+         {
+            if( StartPagePrinter( hPrinter ) != 0 )
+            {
+                  
+                  HB_SIZE nMaxLen = min( HB_PRINT_BUFFER_SIZE, length ), nRead;
+                  HB_BYTE * pbyBuffer = ( HB_BYTE * ) hb_xgrab( nMaxLen );
+
+                  iResult = 1;
+                  nRead = nMaxLen;
+                  memcpy( pbyBuffer,  ( BYTE * ) pszSource,  nRead );
+                  while( nRead &gt; 0 )
+                  {
+                     DWORD nWritten = 0;
+
+                     while( nWritten &lt; nRead )
+                     {
+                        DWORD dwWritten = 0;
+                        if( !WritePrinter( hPrinter, &amp;pbyBuffer[ nWritten ],
+                                           ( DWORD ) ( nRead - nWritten ),
+                                           &amp;dwWritten ) )
+                        {
+                           iResult = -7;
+                           break;
+                        }
+                        else if( dwWritten == 0 )
+                        {
+                           iResult = -8;
+                           break;
+                        }
+                        nWritten += dwWritten;
+                     }
+//                     if( nWritten &lt; nRead )
+//                        break;
+                        
+                     pszSource += nRead;
+                     nRead = min( HB_PRINT_BUFFER_SIZE,  strlen( pszSource ) ) ;
+                     if( nRead &gt; 0 ){
+                        memcpy( pbyBuffer,  ( BYTE * ) pszSource,  nRead );                     
+                        if( nRead &lt; nMaxLen ){
+                           *(pbyBuffer+nRead + 1) = '\0';
+                        }
+                     }
+                     else
+                        break;
+                  }
+
+                  hb_xfree( pbyBuffer );
+               EndPagePrinter( hPrinter );
+            }
+            else
+               iResult = -4;
+            EndDocPrinter( hPrinter );
+         }
+         else
+            iResult = -3;
+
+         ClosePrinter( hPrinter );
+
+         hb_strfree( hDocName );
+      }
+      else
+         iResult = -2;
+
+      hb_strfree( hDeviceName );
+   }
+#endif
+   
+   hb_retni( iResult );
+}</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p142572">
+    <div class="poster">
+      <div class="name" style="color:#105289">Bayron</div>
+      <div class="rank">Posts: 883</div>
+      <img class="avatar avatar-img" src="avatars/1853.jpg" alt="" loading="lazy">
+      Joined: Thu Dec 24, 2009 12:46 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Print from WEB / Imprimir desde WEB</span><br>
+        Posted: Fri Apr 05, 2013 04:25 AM
+      </div>
+      <div class="content">Hola Daniel,<br>
+<br>
+PrintFileRaw() imprime un Archivo, quisiera imprimir sin tener que grabar en disco...<br>
+Existe alguna función parecida para imprimir una variable desde una aplicacion desktop... o puede ésta misma ser usada????<br>
+<br>
+Intenté usar ésta, pero me dió los siguiente errores:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">--------------------Configuration: Violetas - Release--------------------
+Harbour 3.2.0dev (Rev. 18754)
+Copyright (c) 1999-2013, http://harbour-project.org/
+Embarcadero C++ 6.50 for Win32 Copyright (c) 1993-2012 Embarcadero Technologies, Inc.
+MayaPOS.c:
+Embarcadero C++ 6.50 for Win32 Copyright (c) 1993-2012 Embarcadero Technologies, Inc.
+util.c:
+Warning W8065 L:\\Violetas\\prg\\util.prg 323: Call to function 'HB_PARSTR' with no prototype in function HB_FUN_WIN_PRINTBUFFERRAW
+Warning W8069 L:\\Violetas\\prg\\util.prg 323: Nonportable pointer conversion in function HB_FUN_WIN_PRINTBUFFERRAW
+Warning W8065 L:\\Violetas\\prg\\util.prg 330: Call to function 'HB_PARSTR' with no prototype in function HB_FUN_WIN_PRINTBUFFERRAW
+Error E2451 L:\\Violetas\\prg\\util.prg 338: Undefined symbol 'HB_PRINT_BUFFER_SIZE' in function HB_FUN_WIN_PRINTBUFFERRAW
+Warning W8065 L:\\Violetas\\prg\\util.prg 392: Call to function 'hb_strfree' with no prototype in function HB_FUN_WIN_PRINTBUFFERRAW
+Warning W8065 L:\\Violetas\\prg\\util.prg 397: Call to function 'hb_strfree' with no prototype in function HB_FUN_WIN_PRINTBUFFERRAW
+Warning W8004 L:\\Violetas\\prg\\util.prg 398: 'length' is assigned a value that is never used in function HB_FUN_WIN_PRINTBUFFERRAW
+*** 1 errors in Compile ***
+Turbo Incremental Link 6.30 Copyright (c) 1997-2012 Embarcadero Technologies, Inc.
+Violetas.exe - 1 error(s), 6 warning(s)</code></pre></div><br>
+Si se puede usar esta función,<br>
+Que libreria me faltaría compilar???<br>
+y cual sería el valor de HB_PRINT_BUFFER_SIZE???</div>
+    </div>
+  </div>
+  <div class="post" id="p142576">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Daniel Garcia-Gil</div>
+      <div class="rank">Posts: 2365</div>
+      <img class="avatar avatar-img" src="avatars/249.gif" alt="" loading="lazy">
+      Joined: Wed Nov 02, 2005 11:46 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Print from WEB / Imprimir desde WEB</span><br>
+        Posted: Fri Apr 05, 2013 08:03 AM
+      </div>
+      <div class="content">Hola<br>
+<br>
+la idea la tome de la funcion original WIN_PRINTFILERAW() de harbour ubicada en contrib/hbwin/win_prn2.c<br>
+<br>
+lo que te hace falta esta alli, incluso las cabeceras<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "hbwin.h"
+#include "hbwapi.h"
+#include "hbapifs.h"
+#include "hbapiitm.h"
+
+#define HB_PRINT_BUFFER_SIZE  ( 32 * 1024 )</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p142594">
+    <div class="poster">
+      <div class="name" style="color:#105289">Bayron</div>
+      <div class="rank">Posts: 883</div>
+      <img class="avatar avatar-img" src="avatars/1853.jpg" alt="" loading="lazy">
+      Joined: Thu Dec 24, 2009 12:46 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Print from WEB / Imprimir desde WEB</span><br>
+        Posted: Fri Apr 05, 2013 02:07 PM
+      </div>
+      <div class="content">Gracias Daniel,<br>
+Aparentemente funciona bien... <br>
+Por ahona no tengo una impresora que acepte la impresion RAW, pero puedo notar que la impresora que tengo recibe la Data...<br>
+<br>
+Si alguien que tenga una impresora de matriz, pudiera hacer el favor de probarla, lo agradecería...<br>
+<br>
+<a href="http://www.mayapos.com/FiveWin/rawprint.zip" rel="noopener">http&#58;//www&#46;mayapos&#46;com/FiveWin/rawprint&#46;zip</a><br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#INCLUDE "FiveWin.ch"
+
+Function Main()
+        LOCAL CFILE, nHandle, Ntext
+        //Printing on a Raw printer... Con o sin archivo...
+        
+        //Con archivo
+        CFILE := "P.TXT"
+        nHandle := fCreate( cFile )
+        Ntext := "Hello to everyone" + CRLF
+        Ntext += "Hello to everyone" + CRLF
+        Ntext += "Hello to everyone" + CRLF
+        Ntext += "Hello to everyone" + CRLF
+        Ntext += "Hello to everyone" + CRLF
+        FWRITE( nHandle, Ntext)
+        fClose( nHandle )
+        PrintFileRaw(getdefaultPrinter(),CFILE)
+        FERASE(CFILE)
+        
+        //Sin archivo
+        WIN_PRINTBUFFERRAW(getdefaultPrinter(),Ntext)
+
+Return NIL
+
+
+#pragma BEGINDUMP
+
+#include &lt;hbwin.h&gt;
+#include &lt;hbwapi.h&gt;
+#include &lt;hbapifs.h&gt;
+#include &lt;hbapiitm.h&gt;
+
+#define HB_PRINT_BUFFER_SIZE  ( 32 * 1024 )
+
+HB_FUNC( WIN_PRINTBUFFERRAW )
+{
+   int iResult = -1;
+
+#if ! defined( HB_OS_WIN_CE )
+   if( HB_ISCHAR( 1 ) &amp;&amp; HB_ISCHAR( 2 ) )
+   {
+      const char * pszSource = hb_parc( 2 );
+      HB_SIZE length = hb_parclen( 2 );
+
+      HANDLE hPrinter;
+      void * hDeviceName;
+      LPCTSTR lpDeviceName = HB_PARSTR( 1, &amp;hDeviceName, NULL );
+
+      if( OpenPrinter( ( LPTSTR ) lpDeviceName, &amp;hPrinter, NULL ) != 0 )
+      {
+         void * hDocName;
+
+         DOC_INFO_1 DocInfo;
+         DocInfo.pDocName = ( LPTSTR ) HB_PARSTR( HB_ISCHAR( 3 ) ? 3 : 2, &amp;hDocName, NULL );
+         DocInfo.pOutputFile = NULL;
+         DocInfo.pDatatype = ( LPTSTR ) TEXT( "RAW" );
+         if( StartDocPrinter( hPrinter, 1, ( LPBYTE ) &amp;DocInfo ) != 0 )
+         {
+            if( StartPagePrinter( hPrinter ) != 0 )
+            {
+                  
+                  HB_SIZE nMaxLen = min( HB_PRINT_BUFFER_SIZE, length ), nRead;
+                  HB_BYTE * pbyBuffer = ( HB_BYTE * ) hb_xgrab( nMaxLen );
+
+                  iResult = 1;
+                  nRead = nMaxLen;
+                  memcpy( pbyBuffer,  ( BYTE * ) pszSource,  nRead );
+                  while( nRead &gt; 0 )
+                  {
+                     DWORD nWritten = 0;
+
+                     while( nWritten &lt; nRead )
+                     {
+                        DWORD dwWritten = 0;
+                        if( !WritePrinter( hPrinter, &amp;pbyBuffer[ nWritten ],
+                                           ( DWORD ) ( nRead - nWritten ),
+                                           &amp;dwWritten ) )
+                        {
+                           iResult = -7;
+                           break;
+                        }
+                        else if( dwWritten == 0 )
+                        {
+                           iResult = -8;
+                           break;
+                        }
+                        nWritten += dwWritten;
+                     }
+//                     if( nWritten &lt; nRead )
+//                        break;
+                        
+                     pszSource += nRead;
+                     nRead = min( HB_PRINT_BUFFER_SIZE,  strlen( pszSource ) ) ;
+                     if( nRead &gt; 0 ){
+                        memcpy( pbyBuffer,  ( BYTE * ) pszSource,  nRead );                     
+                        if( nRead &lt; nMaxLen ){
+                           *(pbyBuffer+nRead + 1) = '\0';
+                        }
+                     }
+                     else
+                        break;
+                  }
+
+                  hb_xfree( pbyBuffer );
+               EndPagePrinter( hPrinter );
+            }
+            else
+               iResult = -4;
+            EndDocPrinter( hPrinter );
+         }
+         else
+            iResult = -3;
+
+         ClosePrinter( hPrinter );
+
+         hb_strfree( hDocName );
+      }
+      else
+         iResult = -2;
+
+      hb_strfree( hDeviceName );
+   }
+#endif
+   
+   hb_retni( iResult );
+}
+
+#pragma ENDDUMP</code></pre></div></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

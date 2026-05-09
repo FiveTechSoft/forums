@@ -1,0 +1,2172 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pickdate part 2 – a control class in development - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-12150">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Pickdate part 2 – a control class in development</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-12150-page-2.html">2</a> <a href="topic-12150-page-3.html">3</a> (40 posts)</div>  <div class="post" id="p60535">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 09:41 AM
+      </div>
+      <div class="content">Hello Antonio,<br>
+thank you for helping to develop pickdate as control class.<br>
+Now I have the movemouse method ready.<br>
+<br>
+Would you please help again to show me how to implement  redefine and how to use<br>
+this control from a resource.<br>
+<br>
+Please uncomment SET DATE TO GERMAN and use ENGLISH in  func RegionDate(nMonth,cYear ).<br>
+<br>
+Here is the code:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oWnd, oPickDate
+
+   SET DATE TO GERMAN
+   DEFINE WINDOW oWnd TITLE "Calendar"
+
+   oPickDate := TPickDate():New( 10, 10,,, oWnd )
+
+   oWnd:oClient = oPickDate
+
+   ACTIVATE WINDOW oWnd MAXIMIZED
+
+return nil
+//----------------------------------------------------------------------------//
+
+CLASS TPickDate FROM TControl
+
+   DATA    dStart, dEnd, lMove
+   DATA    hBru
+   DATA    nYear
+   DATA    oBrushSunday
+   DATA    nLeftStart
+   DATA    nTopStart
+   DATA    startDay,endDay,TmpEndDay
+   DATA    oFontHeader
+
+   CLASSDATA lRegistered AS LOGICAL
+
+   METHOD  New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack )
+   METHOD  Paint()
+   METHOD  Display() INLINE ::BeginPaint(), ::Paint(), ::EndPaint(), 0
+   METHOD  End()
+   METHOD  LButtonDown( nRow, nCol, nKeyFlags )
+   METHOD  LButtonUp( nRow, nCol, nKeyFlags )
+   METHOD  PreviousYear() INLINE ::nYear--, ::Refresh()
+   METHOD  NextYear() INLINE ::nYear++, ::Refresh()
+   METHOD  EraseBkGnd( hDC ) INLINE 0
+   METHOD  MouseMove( nRow, nCol, nKeyFlags )
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) CLASS TPickDate
+   local IMonate
+
+   DEFAULT nWidth    := 800,;
+      nHeight   := 300,;
+      nLeft     := 0,;
+      nTop      := 0,;
+      nYear     := Year( Date() ),;
+      oWnd      := GetWndDefault()
+
+   ::lMove      =.f.
+   ::nTopStart  = 60                           // for header
+   ::nLeftStart = 150                          // col header
+
+   ::nTop       = nTop
+   ::nLeft      = nLeft
+   ::nBottom    = nTop + nHeight - 1
+   ::nRight     = nLeft + nWidth - 1
+   ::nYear      = Year( Date() )
+   ::oWnd       = oWnd
+
+   ::startDay   = date()
+   ::endDay     = date()
+   ::TmpEndDay  = date()
+
+
+   ::nClrText   = nClrFore
+   ::nClrPane   = nClrBack
+   ::nStyle     = nOr( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER )
+   ::hBru       = CreateSolidBrush( RGB(240,232,188) )
+
+   DEFINE BRUSH ::oBrushSunday COLOR nRGB( 183, 249, 185 ) // Sundays column green brush
+
+   DEFINE FONT ::oFont NAME "Tahoma" SIZE 0, -12 BOLD
+   DEFINE FONT ::oFontHeader NAME "Tahoma" SIZE 0, -12
+
+
+   #ifdef __XPP__
+   DEFAULT ::lRegistered := .F.
+   #endif
+
+   ::Register( nOR( CS_VREDRAW, CS_HREDRAW ) )
+
+   if ! Empty( oWnd:hWnd )
+      ::Create()
+      oWnd:AddControl( Self )
+   else
+      oWnd:DefControl( Self )
+   endif
+
+return self
+
+//----------------------------------------------------------------------------//
+
+METHOD Paint() CLASS TPickDate
+   local aInfo := ::DispBegin()
+   local hDC := ::hDC, cDay, nDay, n:=0, dDate, nColStep, nRowStep
+   local dTmpDate, nMonth := 0
+   local nLeftCol:=0
+   local IShow
+
+   FillRect( hDC, GetClientRect( ::hWnd ), ::oBrush:hBrush )
+
+   nRowStep =   (::nHeight - ::nTopStart) / 13
+
+   GradientFill( hDC, 0, 0, ::nHeight, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } )
+
+   dDate = CToD( "01/01/" + Str( ::nYear, 4 ) )
+
+   nColStep = ( ::nWidth - ::nLeftStart ) / 37
+
+   GradientFill( hDC, 0, 0, nRowStep - 1, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } )
+
+   ::Say( (::nTopStart  +( nRowStep / 2 ) - ( ::oFont:nHeight / 2 )),;
+      ( ( ::nLeftStart + nColStep ) / 2 ) - ( GetTextWidth( hDC, Str( ::nYear, 4 ), ::oFont:hFont ) / 2 ),;
+      Str( ::nYear, 4 ),,, ::oFont, .T., .T. )
+
+   // Paint Sunday background color
+   for n = 1 to 36 step 7
+      FillRect( hDC, { 0, ::nLeftStart+ ( nColStep * n ), ::nHeight - 1, ::nLeftStart + ( nColStep * ( n + 1 ) ) }, ::oBrushSunday:hBrush )
+   next
+
+   for nMonth = 1 to 12
+      ::Line(::nTopStart + nMonth * nRowStep, 0,(::nTopStart  + nMonth * nRowStep), ::nWidth - 1 )
+      ::Say( ::nTopStart + nMonth * nRowStep + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 ), 3, cMonth( RegionDate(nMonth, Str( Year( Date() ), 4 )))   ,,, ::oFont, .T., .T. )
+   next
+
+
+   *******************************************************************
+   * start show move mouse
+   *******************************************************************
+
+   IF ::lMove =.t.
+      dTmpDate := ::startDay
+
+      FOR IShow := 1 TO   ::endDay + 1 - ::startDay
+         nMonth := month(dTmpDate)
+         nLeftCol := ::nLeftStart + (   nColStep * ( DOW(RegionDate(nMonth,Str( ::nYear, 4 ) ))) ) +;
+            nColStep * (Day( dTmpDate )-1)
+
+         FillRect(hDC, {::nTopStart + month(dTmpDate) * nRowStep,;
+            nLeftCol,;
+            ::nTopStart + month(dTmpDate) * nRowStep + nRowStep ,;
+            nLeftCol + nColStep}, ::hBru )
+         dTmpDate := ::startDay +  IShow
+      NEXT
+
+   ENDIF
+   *******************************************************************
+   *  end show move mouse
+   *******************************************************************
+
+   // Draw days
+   for n = 1 to 36
+      ::Line( 0, ::nLeftStart + ( nColStep * n ), ::nHeight - 1, ::nLeftStart + ( nColStep * n ) )
+      cDay = SubStr( CDoW( dDate ), 1, 2 )
+
+      ::Say( (::nTopStart  +nRowStep * 0.4),;
+         ::nLeftStart + ( nColStep * n ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,;
+         cDay, 0, If( DoW( dDate++ ) == 1, nRGB(255,128,255),nRGB(0,187,187)), ::oFont, .T., .T. )
+   next
+
+   // Draw months
+   for nMonth = 1 to 12
+      dDate = RegionDate(nMonth,Str( ::nYear, 4 ) )
+      nDay = DoW( dDate )
+
+      while Month( dDate ) == nMonth
+         cDay = AllTrim( Str( Day( dDate ) ) )
+         ::Say((::nTopStart  + nMonth * nRowStep + ( nRowStep * 0.4 )),;
+            ::nLeftStart + ( nColStep * nDay++ ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,;
+            cDay, 0, If( ! Empty( ::dStart ) .and. dDate &gt;= ::dStart .and. dDate &lt;= ::dEnd, nRGB( 178, 204, 235 ),;
+            If( DoW( dDate ) == 1, nRGB( 128, 233, 176 ),) ), ::oFontHeader, .T. )
+         dDate++
+      end
+   next
+
+   ::DispEnd( aInfo )
+
+return 0
+
+//----------------------------------------------------------------------------//
+
+METHOD End() CLASS TPickDate
+   ::oBrushSunday:end()
+return super:end()
+
+//----------------------------------------------------------------------------//
+
+METHOD LButtonDown( nRow, nCol, nKeyFlags ) CLASS TPickDate
+   local nMonth := Int( (nRow-::nTopStart) / (( ::nHeight - ::nTopStart )/ 13) )
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37  )) - DoW( RegionDate(nMonth,Str( ::nYear, 4 ) ) ) + 1
+
+   IF nDay &gt; 0  .AND. nMonth &gt; 0        // to show only valid dates
+      ::startDay  := CToD( AllTrim(  AllTrim( Str( nDay ) )+ "/"  + Str( nMonth ) )  + "/" + Str( ::nYear, 4 ) )
+      ::lMove := .t.
+      ::refresh(.f.)
+   ENDIF
+
+   Super:LButtonDown( nRow, nCol, nKeyFlags )
+
+return nil
+//-----------------------------------------------------------------//
+
+METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TPickDate
+
+   IF ::endDay - ::startDay &gt; 0
+      msginfo(dtoc(::StartDay)+"  "+ dtoc(::endDay))
+   ENDIF
+
+
+   ::lMove := .f.
+   Super:LButtonUp( nRow, nCol, nKeyFlags )
+return nil
+//-----------------------------------------------------------------//
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) CLASS TPickDate
+   local nMonth := Int( (nRow - ::nTopStart ) / (( ::nHeight - ::nTopStart )/ 13) )
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37  )) - ;
+      DoW( RegionDate(nMonth,Str( ::nYear, 4 ) ) ) + 1
+
+   ::endDay  := CToD( AllTrim(  AllTrim( Str( nDay ) )+ "/"  + Str( nMonth ) )  + "/" + Str( ::nYear, 4 ) )
+
+   IF ::endDay &lt;&gt; ::TmpendDay     // for reducing continuous refreshes
+      ::TmpendDay := ::endDay
+      ::refresh(.f.)
+   ENDIF
+
+   super:MouseMove( nRow, nCol, nKeyFlags )
+
+return 0
+
+
+func RegionDate(nMonth,cYear )
+   local dRegionDate
+   dRegionDate := CToD(  "01/" + Str( nMonth, 2 ) + "/" +  cYear )
+
+   //ENGLISH
+   //dRegionDate := CToD(   Str( nMonth, 2 ) + "/" + "01/" + cYear )
+
+return (dRegionDate)</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p60548">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 10:59 AM
+      </div>
+      <div class="content">Otto,<br>
+<br>
+I am working on your code. Please do an effort to respect the "Hungarian notation"  and the FiveWin coding style, thanks<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch" 
+
+//----------------------------------------------------------------------------// 
+
+function Main() 
+
+   local oWnd, oPickDate 
+
+   SET DATE FRENCH 
+   DEFINE WINDOW oWnd TITLE "Calendar" 
+
+   oPickDate := TPickDate():New( 10, 10,,, oWnd ) 
+
+   oWnd:oClient = oPickDate 
+
+   ACTIVATE WINDOW oWnd MAXIMIZED 
+
+return nil 
+//----------------------------------------------------------------------------// 
+
+CLASS TPickDate FROM TControl 
+
+   DATA    dStart, dEnd, dTemp, lMove 
+   DATA    hBru 
+   DATA    nYear 
+   DATA    oBrushSunday 
+   DATA    nLeftStart, nTopStart 
+   DATA    oFontHeader 
+
+   CLASSDATA lRegistered AS LOGICAL 
+
+   METHOD  New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) 
+   METHOD  Paint() 
+   METHOD  Display() INLINE ::BeginPaint(), ::Paint(), ::EndPaint(), 0 
+   METHOD  End() 
+   METHOD  LButtonDown( nRow, nCol, nKeyFlags ) 
+   METHOD  LButtonUp( nRow, nCol, nKeyFlags ) 
+   METHOD  PreviousYear() INLINE ::nYear--, ::Refresh() 
+   METHOD  NextYear() INLINE ::nYear++, ::Refresh() 
+   METHOD  EraseBkGnd( hDC ) INLINE 0 
+   METHOD  MouseMove( nRow, nCol, nKeyFlags ) 
+
+ENDCLASS 
+
+//----------------------------------------------------------------------------// 
+
+METHOD New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) CLASS TPickDate 
+   local IMonate 
+
+   DEFAULT nWidth    := 800,; 
+      nHeight   := 300,; 
+      nLeft     := 0,; 
+      nTop      := 0,; 
+      nYear     := Year( Date() ),; 
+      oWnd      := GetWndDefault() 
+
+   ::lMove      =.f. 
+   ::nTopStart  = 60                           // for header 
+   ::nLeftStart = 150                          // col header 
+
+   ::nTop       = nTop 
+   ::nLeft      = nLeft 
+   ::nBottom    = nTop + nHeight - 1 
+   ::nRight     = nLeft + nWidth - 1 
+   ::nYear      = Year( Date() ) 
+   ::oWnd       = oWnd 
+
+   ::dStart   = date() 
+   ::dEnd     = date() 
+   ::dTemp    = date() 
+
+   ::nClrText   = nClrFore 
+   ::nClrPane   = nClrBack 
+   ::nStyle     = nOr( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER ) 
+   ::hBru       = CreateSolidBrush( RGB(240,232,188) ) 
+
+   DEFINE BRUSH ::oBrushSunday COLOR nRGB( 183, 249, 185 ) // Sundays column green brush 
+
+   DEFINE FONT ::oFont NAME "Tahoma" SIZE 0, -12 BOLD 
+   DEFINE FONT ::oFontHeader NAME "Tahoma" SIZE 0, -12 
+
+   #ifdef __XPP__ 
+   DEFAULT ::lRegistered := .F. 
+   #endif 
+
+   ::Register( nOR( CS_VREDRAW, CS_HREDRAW ) ) 
+
+   if ! Empty( oWnd:hWnd ) 
+      ::Create() 
+      oWnd:AddControl( Self ) 
+   else 
+      oWnd:DefControl( Self ) 
+   endif 
+
+return self 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Paint() CLASS TPickDate
+ 
+   local aInfo := ::DispBegin() 
+   local hDC := ::hDC, cDay, nDay, n, dDate, nColStep, nRowStep 
+   local dTmpDate, nMonth := 0, nLeftCol := 0
+
+   FillRect( hDC, GetClientRect( ::hWnd ), ::oBrush:hBrush ) 
+
+   nRowStep = ( ::nHeight - ::nTopStart ) / 13 
+
+   GradientFill( hDC, 0, 0, ::nHeight, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   dDate = CToD( "01/01/" + Str( ::nYear, 4 ) )
+   dDate += 8 - DoW( dDate )
+
+   nColStep = ( ::nWidth - ::nLeftStart ) / 37 
+
+   GradientFill( hDC, 0, 0, nRowStep - 1, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   ::Say( ( ::nTopStart  + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 )),; 
+          ( ( ::nLeftStart + nColStep ) / 2 ) - ( GetTextWidth( hDC, Str( ::nYear, 4 ), ::oFont:hFont ) / 2 ),; 
+          Str( ::nYear, 4 ),,, ::oFont, .T., .T. ) 
+
+   // Paint Sunday background color 
+   for n = 1 to 36 step 7 
+      FillRect( hDC, { 0, ::nLeftStart + ( nColStep * n ),;
+                ::nHeight - 1, ::nLeftStart + ( nColStep * ( n + 1 ) ) }, ::oBrushSunday:hBrush ) 
+   next 
+
+   for nMonth = 1 to 12 
+      ::Line( ::nTopStart + nMonth * nRowStep, 0,(::nTopStart  + nMonth * nRowStep), ::nWidth - 1 ) 
+      ::Say( ::nTopStart + nMonth * nRowStep + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 ), 3, cMonth( RegionDate(nMonth, Str( Year( Date() ), 4 )))   ,,, ::oFont, .T., .T. ) 
+   next 
+
+   if ::dEnd &lt; ::dStart
+      dTmpDate = ::dStart
+      ::dEnd = ::dStart
+      ::dStart = dTmpDate
+   endif   
+
+   if ::lMove
+      dTmpDate = ::dStart 
+
+      for n := 1 TO ::dEnd + 1 - ::dStart 
+         nMonth := Month( dTmpDate ) 
+         nLeftCol := ::nLeftStart + (   nColStep * ( DOW(RegionDate(nMonth,Str( ::nYear, 4 ) ))) ) +; 
+            nColStep * (Day( dTmpDate )-1) 
+
+         FillRect( hDC, { ::nTopStart + month(dTmpDate) * nRowStep + 1,; 
+                   nLeftCol, ::nTopStart + Month( dTmpDate ) * nRowStep + nRowStep,; 
+                   nLeftCol + nColStep}, ::hBru ) 
+         dTmpDate := ::dStart + n 
+      next 
+
+   endif 
+
+   // Draw days 
+   for n = 1 to 36 
+      ::Line( 0, ::nLeftStart + ( nColStep * n ), ::nHeight - 1, ::nLeftStart + ( nColStep * n ) ) 
+      cDay = SubStr( CDoW( dDate++ ), 1, 2 ) 
+
+      ::Say( ( ::nTopStart + nRowStep * 0.4 ),; 
+         ::nLeftStart + ( nColStep * n ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+         cDay, 0, 0, ::oFont, .T., .T. ) 
+   next 
+
+   // Draw months 
+   for nMonth = 1 to 12 
+      dDate = RegionDate(nMonth,Str( ::nYear, 4 ) ) 
+      nDay = DoW( dDate ) 
+
+      while Month( dDate ) == nMonth 
+         cDay = AllTrim( Str( Day( dDate ) ) ) 
+         ::Say( ( ::nTopStart  + nMonth * nRowStep + ( nRowStep * 0.4 ) ),; 
+            ::nLeftStart + ( nColStep * nDay++ ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+            cDay, 0, 0, ::oFontHeader, .T., .T. ) 
+         dDate++ 
+      end 
+   next 
+
+   ::DispEnd( aInfo ) 
+
+return 0 
+
+//----------------------------------------------------------------------------// 
+
+METHOD End() CLASS TPickDate 
+   ::oBrushSunday:end() 
+return super:end() 
+
+//----------------------------------------------------------------------------// 
+
+METHOD LButtonDown( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ;
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+
+   if nDay &gt; 0 .and. nMonth &gt; 0        // to show only valid dates 
+      ::dStart := CToD( AllTrim( AllTrim( Str( nDay ) )+ "/"  + Str( nMonth ) )  + "/" + Str( ::nYear, 4 ) ) 
+      ::lMove  := .T. 
+      ::Refresh( .F. ) 
+   endif 
+
+return Super:LButtonDown( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   IF ::dEnd - ::dStart &gt; 0 
+      MsgInfo( DToC( ::dStart ) + "  " + DToC( ::dEnd ) ) 
+   ENDIF 
+
+   ::lMove := .f. 
+   
+return Super:LButtonUp( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) CLASS TPickDate
+ 
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13 ) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ; 
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+
+   ::dEnd := CToD( AllTrim( AllTrim( Str( nDay ) )+ "/"  + Str( nMonth ) ) + "/" + Str( ::nYear, 4 ) ) 
+
+   IF ::dEnd &lt;&gt; ::dTemp     // for reducing continuous refreshes 
+      ::dTemp := ::dEnd 
+      ::Refresh( .F. ) 
+   ENDIF 
+
+return super:MouseMove( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+func RegionDate(nMonth,cYear ) 
+   local dRegionDate 
+   dRegionDate := CToD(  "01/" + Str( nMonth, 2 ) + "/" +  cYear ) 
+
+   //ENGLISH 
+   //dRegionDate := CToD(   Str( nMonth, 2 ) + "/" + "01/" + cYear ) 
+
+return (dRegionDate)</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p60549">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 11:02 AM
+      </div>
+      <div class="content"><a href="http://imageshack.us" rel="noopener"><img src="http://img158.imageshack.us/img158/8583/calendaral3.png" alt="" loading="lazy"></a></div>
+    </div>
+  </div>
+  <div class="post" id="p60552">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 11:22 AM
+      </div>
+      <div class="content">Now you can select in both ways (to the right or to the left). Still there is a bug somewhere that makes it hang sometimes:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch" 
+
+//----------------------------------------------------------------------------// 
+
+function Main() 
+
+   local oWnd, oPickDate 
+
+   SET DATE FRENCH 
+
+   DEFINE WINDOW oWnd TITLE "Calendar" 
+
+   oPickDate := TPickDate():New( 10, 10,,, oWnd ) 
+
+   oWnd:oClient = oPickDate 
+
+   ACTIVATE WINDOW oWnd MAXIMIZED 
+
+return nil 
+
+//----------------------------------------------------------------------------// 
+
+CLASS TPickDate FROM TControl 
+
+   DATA    dStart, dEnd, dTemp, lMove 
+   DATA    nYear 
+   DATA    oBrushSunday, oBrushSelected 
+   DATA    nLeftStart, nTopStart 
+   DATA    oFontHeader 
+
+   CLASSDATA lRegistered AS LOGICAL 
+
+   METHOD  New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) 
+   METHOD  Paint() 
+   METHOD  Display() INLINE ::BeginPaint(), ::Paint(), ::EndPaint(), 0 
+   METHOD  Destroy() 
+   METHOD  LButtonDown( nRow, nCol, nKeyFlags ) 
+   METHOD  LButtonUp( nRow, nCol, nKeyFlags ) 
+   METHOD  PreviousYear() INLINE ::nYear--, ::Refresh() 
+   METHOD  NextYear() INLINE ::nYear++, ::Refresh() 
+   METHOD  EraseBkGnd( hDC ) INLINE 0 
+   METHOD  MouseMove( nRow, nCol, nKeyFlags ) 
+
+ENDCLASS 
+
+//----------------------------------------------------------------------------// 
+
+METHOD New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) CLASS TPickDate 
+
+   DEFAULT nWidth    := 800,; 
+      nHeight   := 300,; 
+      nLeft     := 0,; 
+      nTop      := 0,; 
+      nYear     := Year( Date() ),; 
+      oWnd      := GetWndDefault() 
+
+   ::lMove      =.f. 
+   ::nTopStart  = 60                           // for header 
+   ::nLeftStart = 150                          // col header 
+
+   ::nTop       = nTop 
+   ::nLeft      = nLeft 
+   ::nBottom    = nTop + nHeight - 1 
+   ::nRight     = nLeft + nWidth - 1 
+   ::nYear      = Year( Date() ) 
+   ::oWnd       = oWnd 
+
+   ::dStart   = date() 
+   ::dEnd     = date() 
+   ::dTemp    = date() 
+
+   ::nClrText   = nClrFore 
+   ::nClrPane   = nClrBack 
+   ::nStyle     = nOr( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER ) 
+   
+   DEFINE BRUSH ::oBrushSunday COLOR nRGB( 183, 249, 185 ) // Sundays column green brush 
+   DEFINE BRUSH ::oBrushSelected COLOR nRGB( 240, 232, 188 ) // Selected days orange brush
+
+   DEFINE FONT ::oFont NAME "Tahoma" SIZE 0, -12 BOLD 
+   DEFINE FONT ::oFontHeader NAME "Tahoma" SIZE 0, -12 
+
+   #ifdef __XPP__ 
+      DEFAULT ::lRegistered := .F. 
+   #endif 
+
+   ::Register( nOR( CS_VREDRAW, CS_HREDRAW ) ) 
+
+   if ! Empty( oWnd:hWnd ) 
+      ::Create() 
+      oWnd:AddControl( Self ) 
+   else 
+      oWnd:DefControl( Self ) 
+   endif 
+
+return self 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Paint() CLASS TPickDate
+ 
+   local aInfo := ::DispBegin() 
+   local hDC := ::hDC, cDay, nDay, n, dDate, nColStep, nRowStep 
+   local dTmpDate, nMonth := 0, nLeftCol := 0
+
+   FillRect( hDC, GetClientRect( ::hWnd ), ::oBrush:hBrush ) 
+
+   nRowStep = ( ::nHeight - ::nTopStart ) / 13 
+
+   GradientFill( hDC, 0, 0, ::nHeight, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   dDate = CToD( "01/01/" + Str( ::nYear, 4 ) )
+   dDate += 8 - DoW( dDate )
+
+   nColStep = ( ::nWidth - ::nLeftStart ) / 37 
+
+   GradientFill( hDC, 0, 0, nRowStep - 1, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   ::Say( ( ::nTopStart  + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 )),; 
+          ( ( ::nLeftStart + nColStep ) / 2 ) - ( GetTextWidth( hDC, Str( ::nYear, 4 ), ::oFont:hFont ) / 2 ),; 
+          Str( ::nYear, 4 ),,, ::oFont, .T., .T. ) 
+
+   // Paint Sunday background color 
+   for n = 1 to 36 step 7 
+      FillRect( hDC, { 0, ::nLeftStart + ( nColStep * n ),;
+                ::nHeight - 1, ::nLeftStart + ( nColStep * ( n + 1 ) ) }, ::oBrushSunday:hBrush ) 
+   next 
+
+   for nMonth = 1 to 12 
+      ::Line( ::nTopStart + nMonth * nRowStep, 0,(::nTopStart  + nMonth * nRowStep), ::nWidth - 1 ) 
+      ::Say( ::nTopStart + nMonth * nRowStep + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 ), 3, cMonth( RegionDate(nMonth, Str( Year( Date() ), 4 )))   ,,, ::oFont, .T., .T. ) 
+   next 
+
+   // draw selected days
+   if ::lMove
+      dTmpDate = Min( ::dStart, ::dEnd ) 
+
+      while dTmpDate &lt;= Max( ::dStart, ::dEnd )
+         nMonth = Month( dTmpDate ) 
+         nLeftCol = ::nLeftStart + ( nColStep * ( DOW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) ) ) + ; 
+                    nColStep * ( Day( dTmpDate ) - 1 ) 
+         FillRect( hDC, { ::nTopStart + month(dTmpDate) * nRowStep + 1,; 
+                   nLeftCol, ::nTopStart + Month( dTmpDate ) * nRowStep + nRowStep,; 
+                   nLeftCol + nColStep}, ::oBrushSelected:hBrush ) 
+         dTmpDate++ 
+      end 
+
+   endif 
+
+   // Draw days 
+   for n = 1 to 36 
+      ::Line( 0, ::nLeftStart + ( nColStep * n ), ::nHeight - 1, ::nLeftStart + ( nColStep * n ) ) 
+      cDay = SubStr( CDoW( dDate++ ), 1, 2 ) 
+
+      ::Say( ( ::nTopStart + nRowStep * 0.4 ),; 
+         ::nLeftStart + ( nColStep * n ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+         cDay, 0, 0, ::oFont, .T., .T. ) 
+   next 
+
+   // Draw months 
+   for nMonth = 1 to 12 
+      dDate = RegionDate(nMonth,Str( ::nYear, 4 ) ) 
+      nDay = DoW( dDate ) 
+
+      while Month( dDate ) == nMonth 
+         cDay = AllTrim( Str( Day( dDate ) ) ) 
+         ::Say( ( ::nTopStart  + nMonth * nRowStep + ( nRowStep * 0.4 ) ),; 
+            ::nLeftStart + ( nColStep * nDay++ ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+            cDay, 0, 0, ::oFontHeader, .T., .T. ) 
+         dDate++ 
+      end 
+   next 
+
+   ::DispEnd( aInfo ) 
+
+return 0 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Destroy() CLASS TPickDate 
+
+   ::oBrushSunday:End()
+   ::oBrushSelected:End()
+   ::oFontheader:End() 
+   
+return Super:Destroy() 
+
+//----------------------------------------------------------------------------// 
+
+METHOD LButtonDown( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ;
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+
+   if nDay &gt; 0 .and. nMonth &gt; 0        // to show only valid dates 
+      ::dStart := CToD( AllTrim( AllTrim( Str( nDay ) )+ "/"  + Str( nMonth ) )  + "/" + Str( ::nYear, 4 ) ) 
+      ::lMove  := .T. 
+      ::Refresh( .F. ) 
+   endif 
+
+return Super:LButtonDown( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   if ::dEnd - ::dStart &gt; 0 
+      // MsgInfo( DToC( ::dStart ) + "  " + DToC( ::dEnd ) ) 
+   endif 
+
+   ::lMove := .F. 
+   
+return Super:LButtonUp( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) CLASS TPickDate
+ 
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13 ) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ; 
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+
+   ::dEnd = CToD( Str( nDay ) + "/" + Str( nMonth, 2 ) + "/" + Str( ::nYear, 4 ) ) 
+
+   if ::dEnd != ::dTemp     // for reducing continuous refreshes 
+      ::dTemp := ::dEnd 
+      ::Refresh( .F. ) 
+   endif 
+
+return Super:MouseMove( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+func RegionDate(nMonth,cYear ) 
+   local dRegionDate 
+   dRegionDate := CToD(  "01/" + Str( nMonth, 2 ) + "/" +  cYear ) 
+
+   //ENGLISH 
+   //dRegionDate := CToD(   Str( nMonth, 2 ) + "/" + "01/" + cYear ) 
+
+return (dRegionDate)
+
+//-----------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p60553">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 11:51 AM
+      </div>
+      <div class="content">This one behaves ok (selection in both ways):<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch" 
+
+//----------------------------------------------------------------------------// 
+
+function Main() 
+
+   local oWnd, oPickDate 
+
+   SET DATE FRENCH 
+
+   DEFINE WINDOW oWnd TITLE "Calendar" 
+
+   oPickDate := TPickDate():New( 10, 10,,, oWnd ) 
+
+   oWnd:oClient = oPickDate 
+
+   ACTIVATE WINDOW oWnd MAXIMIZED 
+
+return nil 
+
+//----------------------------------------------------------------------------// 
+
+CLASS TPickDate FROM TControl 
+
+   DATA    dStart, dEnd, dTemp, lMove 
+   DATA    nYear 
+   DATA    oBrushSunday, oBrushSelected 
+   DATA    nLeftStart, nTopStart 
+   DATA    oFontHeader 
+
+   CLASSDATA lRegistered AS LOGICAL 
+
+   METHOD  New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) 
+   METHOD  Paint() 
+   METHOD  Display() INLINE ::BeginPaint(), ::Paint(), ::EndPaint(), 0 
+   METHOD  Destroy() 
+   METHOD  LButtonDown( nRow, nCol, nKeyFlags ) 
+   METHOD  LButtonUp( nRow, nCol, nKeyFlags ) 
+   METHOD  PreviousYear() INLINE ::nYear--, ::Refresh() 
+   METHOD  NextYear() INLINE ::nYear++, ::Refresh() 
+   METHOD  EraseBkGnd( hDC ) INLINE 0 
+   METHOD  MouseMove( nRow, nCol, nKeyFlags ) 
+
+ENDCLASS 
+
+//----------------------------------------------------------------------------// 
+
+METHOD New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) CLASS TPickDate 
+
+   DEFAULT nWidth  := 800,; 
+           nHeight := 300,; 
+           nLeft   := 0,; 
+           nTop    := 0,; 
+           nYear   := Year( Date() ),; 
+           oWnd    := GetWndDefault() 
+
+   ::lMove      = .F. 
+   ::nTopStart  = 60                           // for header 
+   ::nLeftStart = 150                          // col header 
+
+   ::nTop       = nTop 
+   ::nLeft      = nLeft 
+   ::nBottom    = nTop + nHeight - 1 
+   ::nRight     = nLeft + nWidth - 1 
+   ::nYear      = Year( Date() ) 
+   ::oWnd       = oWnd 
+
+   ::dStart := ::dEnd := ::dTemp := Date() 
+
+   ::nClrText   = nClrFore 
+   ::nClrPane   = nClrBack 
+   ::nStyle     = nOr( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER ) 
+   
+   DEFINE BRUSH ::oBrushSunday COLOR nRGB( 183, 249, 185 ) // Sundays column green brush 
+   DEFINE BRUSH ::oBrushSelected COLOR nRGB( 240, 232, 188 ) // Selected days orange brush
+
+   DEFINE FONT ::oFont NAME "Tahoma" SIZE 0, -12 BOLD 
+   DEFINE FONT ::oFontHeader NAME "Tahoma" SIZE 0, -12 
+
+   #ifdef __XPP__ 
+      DEFAULT ::lRegistered := .F. 
+   #endif 
+
+   ::Register( nOR( CS_VREDRAW, CS_HREDRAW ) ) 
+
+   if ! Empty( oWnd:hWnd ) 
+      ::Create() 
+      oWnd:AddControl( Self ) 
+   else 
+      oWnd:DefControl( Self ) 
+   endif 
+
+return self 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Paint() CLASS TPickDate
+ 
+   local aInfo := ::DispBegin() 
+   local hDC := ::hDC, cDay, nDay, n, dDate, nColStep, nRowStep 
+   local dTmpDate, nMonth := 0, nLeftCol := 0
+
+   FillRect( hDC, GetClientRect( ::hWnd ), ::oBrush:hBrush ) 
+
+   nRowStep = ( ::nHeight - ::nTopStart ) / 13 
+
+   GradientFill( hDC, 0, 0, ::nHeight, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   dDate = CToD( "01/01/" + Str( ::nYear, 4 ) )
+   dDate += 8 - DoW( dDate )
+
+   nColStep = ( ::nWidth - ::nLeftStart ) / 37 
+
+   GradientFill( hDC, 0, 0, nRowStep - 1, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   ::Say( ( ::nTopStart  + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 )),; 
+          ( ( ::nLeftStart + nColStep ) / 2 ) - ( GetTextWidth( hDC, Str( ::nYear, 4 ), ::oFont:hFont ) / 2 ),; 
+          Str( ::nYear, 4 ),,, ::oFont, .T., .T. ) 
+
+   // Paint Sunday background color 
+   for n = 1 to 36 step 7 
+      FillRect( hDC, { 0, ::nLeftStart + ( nColStep * n ),;
+                ::nHeight - 1, ::nLeftStart + ( nColStep * ( n + 1 ) ) }, ::oBrushSunday:hBrush ) 
+   next 
+
+   for nMonth = 1 to 12 
+      ::Line( ::nTopStart + nMonth * nRowStep, 0,(::nTopStart  + nMonth * nRowStep), ::nWidth - 1 ) 
+      ::Say( ::nTopStart + nMonth * nRowStep + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 ), 3, cMonth( RegionDate(nMonth, Str( Year( Date() ), 4 )))   ,,, ::oFont, .T., .T. ) 
+   next 
+
+   // fill selected days
+   if ::lMove
+      dTmpDate = Min( ::dStart, ::dEnd ) 
+
+      while dTmpDate &lt;= Max( ::dStart, ::dEnd )
+         nMonth = Month( dTmpDate ) 
+         nLeftCol = ::nLeftStart + ( nColStep * ( DOW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) ) ) + ; 
+                    nColStep * ( Day( dTmpDate ) - 1 ) 
+         FillRect( hDC, { ::nTopStart + month(dTmpDate) * nRowStep + 1,; 
+                   nLeftCol, ::nTopStart + Month( dTmpDate ) * nRowStep + nRowStep,; 
+                   nLeftCol + nColStep}, ::oBrushSelected:hBrush ) 
+         dTmpDate++ 
+      end 
+
+   endif 
+
+   // Draw days 
+   for n = 1 to 36 
+      ::Line( 0, ::nLeftStart + ( nColStep * n ), ::nHeight - 1, ::nLeftStart + ( nColStep * n ) ) 
+      cDay = SubStr( CDoW( dDate++ ), 1, 2 ) 
+
+      ::Say( ( ::nTopStart + nRowStep * 0.4 ),; 
+         ::nLeftStart + ( nColStep * n ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+         cDay, 0, 0, ::oFont, .T., .T. ) 
+   next 
+
+   // Draw months 
+   for nMonth = 1 to 12 
+      dDate = RegionDate(nMonth,Str( ::nYear, 4 ) ) 
+      nDay = DoW( dDate ) 
+
+      while Month( dDate ) == nMonth 
+         cDay = AllTrim( Str( Day( dDate ) ) ) 
+         ::Say( ( ::nTopStart  + nMonth * nRowStep + ( nRowStep * 0.4 ) ),; 
+            ::nLeftStart + ( nColStep * nDay++ ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+            cDay, 0, 0, ::oFontHeader, .T., .T. ) 
+         dDate++ 
+      end 
+   next 
+
+   ::DispEnd( aInfo ) 
+
+return 0 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Destroy() CLASS TPickDate 
+
+   ::oBrushSunday:End()
+   ::oBrushSelected:End()
+   ::oFontHeader:End() 
+   
+return Super:Destroy() 
+
+//----------------------------------------------------------------------------// 
+
+METHOD LButtonDown( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13 ) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ;
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+
+   if nDay &gt; 0 .and. nMonth &gt; 0  // to work with valid dates only
+      ::dStart := CToD( AllTrim( AllTrim( Str( nDay ) )+ "/"  + Str( nMonth ) )  + "/" + Str( ::nYear, 4 ) ) 
+      ::lMove  := .T. 
+      ::Refresh( .F. ) 
+   endif 
+
+return Super:LButtonDown( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   if ::dEnd - ::dStart &gt; 0 
+      // MsgInfo( DToC( ::dStart ) + "  " + DToC( ::dEnd ) ) 
+   endif 
+
+   ::lMove := .F. 
+   
+return Super:LButtonUp( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) CLASS TPickDate
+ 
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13 ) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ; 
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+
+   if nDay &gt; 0 .and. nMonth &gt; 0  // to work with valid dates only
+      ::dEnd = CToD( AllTrim( Str( nDay ) ) + "/" + AllTrim( Str( nMonth ) ) + "/" + Str( ::nYear, 4 ) ) 
+
+      if ::dEnd != ::dTemp     // for reducing continuous refreshes 
+         ::dTemp := ::dEnd 
+         ::Refresh( .F. ) 
+      endif 
+   endif   
+
+return Super:MouseMove( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+function RegionDate( nMonth, cYear ) 
+
+return CToD( "01/" + AllTrim( Str( nMonth ) ) + "/" +  cYear ) 
+
+//-----------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p60555">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 12:24 PM
+      </div>
+      <div class="content">bSelect and bChange implemented<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch" 
+
+//----------------------------------------------------------------------------// 
+
+function Main() 
+
+   local oWnd, oPickDate 
+
+   SET DATE FRENCH 
+
+   DEFINE WINDOW oWnd TITLE "Calendar" 
+
+   oPickDate := TPickDate():New( 10, 10,,, oWnd ) 
+
+   oPickDate:bSelect = { | dStart, dEnd | MsgInfo( Str( dEnd - dStart + 1 ) + " days" ) }
+
+   oWnd:oClient = oPickDate 
+
+   ACTIVATE WINDOW oWnd MAXIMIZED 
+
+return nil 
+
+//----------------------------------------------------------------------------// 
+
+CLASS TPickDate FROM TControl 
+
+   DATA    dStart, dEnd, dTemp, lMove 
+   DATA    nYear 
+   DATA    oBrushSunday, oBrushSelected 
+   DATA    nLeftStart, nTopStart 
+   DATA    oFontHeader
+   DATA    bChange, bSelect 
+
+   CLASSDATA lRegistered AS LOGICAL 
+
+   METHOD  New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) 
+   METHOD  Paint() 
+   METHOD  Display() INLINE ::BeginPaint(), ::Paint(), ::EndPaint(), 0 
+   METHOD  Destroy() 
+   METHOD  LButtonDown( nRow, nCol, nKeyFlags ) 
+   METHOD  LButtonUp( nRow, nCol, nKeyFlags ) 
+   METHOD  PreviousYear() INLINE ::nYear--, ::Refresh() 
+   METHOD  NextYear() INLINE ::nYear++, ::Refresh() 
+   METHOD  EraseBkGnd( hDC ) INLINE 0 
+   METHOD  MouseMove( nRow, nCol, nKeyFlags ) 
+
+ENDCLASS 
+
+//----------------------------------------------------------------------------// 
+
+METHOD New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) CLASS TPickDate 
+
+   DEFAULT nWidth  := 800,; 
+           nHeight := 300,; 
+           nLeft   := 0,; 
+           nTop    := 0,; 
+           nYear   := Year( Date() ),; 
+           oWnd    := GetWndDefault() 
+
+   ::lMove      = .F. 
+   ::nTopStart  = 60                           // for header 
+   ::nLeftStart = 150                          // col header 
+
+   ::nTop       = nTop 
+   ::nLeft      = nLeft 
+   ::nBottom    = nTop + nHeight - 1 
+   ::nRight     = nLeft + nWidth - 1 
+   ::nYear      = Year( Date() ) 
+   ::oWnd       = oWnd 
+
+   ::dStart := ::dEnd := ::dTemp := Date() 
+
+   ::nClrText   = nClrFore 
+   ::nClrPane   = nClrBack 
+   ::nStyle     = nOr( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER ) 
+   
+   DEFINE BRUSH ::oBrushSunday COLOR nRGB( 183, 249, 185 ) // Sundays column green brush 
+   DEFINE BRUSH ::oBrushSelected COLOR nRGB( 240, 232, 188 ) // Selected days orange brush
+
+   DEFINE FONT ::oFont NAME "Tahoma" SIZE 0, -12 BOLD 
+   DEFINE FONT ::oFontHeader NAME "Tahoma" SIZE 0, -12 
+
+   #ifdef __XPP__ 
+      DEFAULT ::lRegistered := .F. 
+   #endif 
+
+   ::Register( nOR( CS_VREDRAW, CS_HREDRAW ) ) 
+
+   if ! Empty( oWnd:hWnd ) 
+      ::Create() 
+      oWnd:AddControl( Self ) 
+   else 
+      oWnd:DefControl( Self ) 
+   endif 
+
+return self 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Paint() CLASS TPickDate
+ 
+   local aInfo := ::DispBegin() 
+   local hDC := ::hDC, cDay, nDay, n, dDate, nColStep, nRowStep 
+   local dTmpDate, nMonth := 0, nLeftCol := 0
+
+   FillRect( hDC, GetClientRect( ::hWnd ), ::oBrush:hBrush ) 
+
+   nRowStep = ( ::nHeight - ::nTopStart ) / 13 
+
+   GradientFill( hDC, 0, 0, ::nHeight, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   dDate = CToD( "01/01/" + Str( ::nYear, 4 ) )
+   dDate += 8 - DoW( dDate )
+
+   nColStep = ( ::nWidth - ::nLeftStart ) / 37 
+
+   GradientFill( hDC, 0, 0, nRowStep - 1, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   ::Say( ( ::nTopStart  + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 )),; 
+          ( ( ::nLeftStart + nColStep ) / 2 ) - ( GetTextWidth( hDC, Str( ::nYear, 4 ), ::oFont:hFont ) / 2 ),; 
+          Str( ::nYear, 4 ),,, ::oFont, .T., .T. ) 
+
+   // Paint Sunday background color 
+   for n = 1 to 36 step 7 
+      FillRect( hDC, { 0, ::nLeftStart + ( nColStep * n ),;
+                ::nHeight - 1, ::nLeftStart + ( nColStep * ( n + 1 ) ) }, ::oBrushSunday:hBrush ) 
+   next 
+
+   for nMonth = 1 to 12 
+      ::Line( ::nTopStart + nMonth * nRowStep, 0,(::nTopStart  + nMonth * nRowStep), ::nWidth - 1 ) 
+      ::Say( ::nTopStart + nMonth * nRowStep + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 ), 3, cMonth( RegionDate(nMonth, Str( Year( Date() ), 4 )))   ,,, ::oFont, .T., .T. ) 
+   next 
+
+   // fill selected days
+   if ::lMove
+      dTmpDate = Min( ::dStart, ::dEnd ) 
+
+      while dTmpDate &lt;= Max( ::dStart, ::dEnd )
+         nMonth = Month( dTmpDate ) 
+         nLeftCol = ::nLeftStart + ( nColStep * ( DOW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) ) ) + ; 
+                    nColStep * ( Day( dTmpDate ) - 1 ) 
+         FillRect( hDC, { ::nTopStart + month(dTmpDate) * nRowStep + 1,; 
+                   nLeftCol, ::nTopStart + Month( dTmpDate ) * nRowStep + nRowStep,; 
+                   nLeftCol + nColStep}, ::oBrushSelected:hBrush ) 
+         dTmpDate++ 
+      end 
+
+   endif 
+
+   // Draw days 
+   for n = 1 to 36 
+      ::Line( 0, ::nLeftStart + ( nColStep * n ), ::nHeight - 1, ::nLeftStart + ( nColStep * n ) ) 
+      cDay = SubStr( CDoW( dDate++ ), 1, 2 ) 
+
+      ::Say( ( ::nTopStart + nRowStep * 0.4 ),; 
+         ::nLeftStart + ( nColStep * n ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+         cDay, 0, 0, ::oFont, .T., .T. ) 
+   next 
+
+   // Draw months 
+   for nMonth = 1 to 12 
+      dDate = RegionDate(nMonth,Str( ::nYear, 4 ) ) 
+      nDay = DoW( dDate ) 
+
+      while Month( dDate ) == nMonth 
+         cDay = AllTrim( Str( Day( dDate ) ) ) 
+         ::Say( ( ::nTopStart  + nMonth * nRowStep + ( nRowStep * 0.4 ) ),; 
+            ::nLeftStart + ( nColStep * nDay++ ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+            cDay, 0, 0, ::oFontHeader, .T., .T. ) 
+         dDate++ 
+      end 
+   next 
+
+   ::DispEnd( aInfo ) 
+
+return 0 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Destroy() CLASS TPickDate 
+
+   ::oBrushSunday:End()
+   ::oBrushSelected:End()
+   ::oFontHeader:End() 
+   
+return Super:Destroy() 
+
+//----------------------------------------------------------------------------// 
+
+METHOD LButtonDown( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13 ) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ;
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+
+   if nDay &gt; 0 .and. nMonth &gt; 0  // to work with valid dates only
+      ::dStart := CToD( AllTrim( AllTrim( Str( nDay ) )+ "/"  + Str( nMonth ) )  + "/" + Str( ::nYear, 4 ) ) 
+      ::lMove  := .T. 
+      ::Refresh( .F. ) 
+   endif 
+
+return Super:LButtonDown( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   if ValType( ::bSelect ) == "B"
+      Eval( ::bSelect, Min( ::dStart, ::dEnd ), Max( ::dStart, ::dEnd ), Self )
+   endif   
+
+   ::lMove := .F. 
+   
+return Super:LButtonUp( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) CLASS TPickDate
+ 
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13 ) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ; 
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+   local dEnd                
+
+   if nDay &gt; 0 .and. nMonth &gt; 0  // to work with valid dates only
+      dEnd = CToD( AllTrim( Str( nDay ) ) + "/" + AllTrim( Str( nMonth ) ) + "/" + Str( ::nYear, 4 ) ) 
+
+      if ! Empty( dEnd ) .and. dEnd != ::dTemp     // for reducing continuous refreshes 
+         ::dTemp := dEnd 
+         ::dEnd = dEnd
+         ::Refresh( .F. )
+         if ValType( ::bChange ) == "B"
+            Eval( ::bChange, Min( ::dStart, ::dEnd ), Max( ::dStart, ::dEnd ), Self )
+         endif    
+      endif 
+   endif   
+
+return Super:MouseMove( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+function RegionDate( nMonth, cYear ) 
+
+return CToD( "01/" + AllTrim( Str( nMonth ) ) + "/" +  cYear ) 
+
+//-----------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p60556">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 12:39 PM
+      </div>
+      <div class="content">We can use bPainted instead of bChange and remove bChange:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch" 
+
+//----------------------------------------------------------------------------// 
+
+function Main() 
+
+   local oWnd, oPickDate 
+
+   SET DATE FRENCH 
+
+   DEFINE WINDOW oWnd TITLE "Calendar" 
+
+   oPickDate := TPickDate():New( 10, 10,,, oWnd ) 
+
+   oPickDate:bSelect = { | dStart, dEnd | MsgInfo( Str( dEnd - dStart + 1 ) + " days" ) }
+   oPickDate:bPainted = { | hDC, dStart, dEnd | ;
+                          oPickDate:Say( 17, 20, Str( dEnd - dStart + 1 ) + " days",,,, .T., .T. ) }
+
+   oWnd:oClient = oPickDate 
+
+   ACTIVATE WINDOW oWnd MAXIMIZED 
+
+return nil 
+
+//----------------------------------------------------------------------------// 
+
+CLASS TPickDate FROM TControl 
+
+   DATA    dStart, dEnd, dTemp, lMove 
+   DATA    nYear 
+   DATA    oBrushSunday, oBrushSelected 
+   DATA    nLeftStart, nTopStart 
+   DATA    oFontHeader
+   DATA    bSelect 
+
+   CLASSDATA lRegistered AS LOGICAL 
+
+   METHOD  New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) 
+   METHOD  Paint() 
+   METHOD  Display() INLINE ::BeginPaint(), ::Paint(), ::EndPaint(), 0 
+   METHOD  Destroy() 
+   METHOD  LButtonDown( nRow, nCol, nKeyFlags ) 
+   METHOD  LButtonUp( nRow, nCol, nKeyFlags ) 
+   METHOD  PreviousYear() INLINE ::nYear--, ::Refresh() 
+   METHOD  NextYear() INLINE ::nYear++, ::Refresh() 
+   METHOD  EraseBkGnd( hDC ) INLINE 0 
+   METHOD  MouseMove( nRow, nCol, nKeyFlags ) 
+
+ENDCLASS 
+
+//----------------------------------------------------------------------------// 
+
+METHOD New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) CLASS TPickDate 
+
+   DEFAULT nWidth  := 800,; 
+           nHeight := 300,; 
+           nLeft   := 0,; 
+           nTop    := 0,; 
+           nYear   := Year( Date() ),; 
+           oWnd    := GetWndDefault() 
+
+   ::lMove      = .F. 
+   ::nTopStart  = 60                           // for header 
+   ::nLeftStart = 150                          // col header 
+
+   ::nTop       = nTop 
+   ::nLeft      = nLeft 
+   ::nBottom    = nTop + nHeight - 1 
+   ::nRight     = nLeft + nWidth - 1 
+   ::nYear      = Year( Date() ) 
+   ::oWnd       = oWnd 
+
+   ::dStart := ::dEnd := ::dTemp := Date() 
+
+   ::nClrText   = nClrFore 
+   ::nClrPane   = nClrBack 
+   ::nStyle     = nOr( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER ) 
+   
+   DEFINE BRUSH ::oBrushSunday COLOR nRGB( 183, 249, 185 ) // Sundays column green brush 
+   DEFINE BRUSH ::oBrushSelected COLOR nRGB( 240, 232, 188 ) // Selected days orange brush
+
+   DEFINE FONT ::oFont NAME "Tahoma" SIZE 0, -12 BOLD 
+   DEFINE FONT ::oFontHeader NAME "Tahoma" SIZE 0, -12 
+
+   #ifdef __XPP__ 
+      DEFAULT ::lRegistered := .F. 
+   #endif 
+
+   ::Register( nOR( CS_VREDRAW, CS_HREDRAW ) ) 
+
+   if ! Empty( oWnd:hWnd ) 
+      ::Create() 
+      oWnd:AddControl( Self ) 
+   else 
+      oWnd:DefControl( Self ) 
+   endif 
+
+return self 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Paint() CLASS TPickDate
+ 
+   local aInfo := ::DispBegin() 
+   local hDC := ::hDC, cDay, nDay, n, dDate, nColStep, nRowStep 
+   local dTmpDate, nMonth := 0, nLeftCol := 0
+
+   FillRect( hDC, GetClientRect( ::hWnd ), ::oBrush:hBrush ) 
+
+   nRowStep = ( ::nHeight - ::nTopStart ) / 13 
+
+   GradientFill( hDC, 0, 0, ::nHeight, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   dDate = CToD( "01/01/" + Str( ::nYear, 4 ) )
+   dDate += 8 - DoW( dDate )
+
+   nColStep = ( ::nWidth - ::nLeftStart ) / 37 
+
+   GradientFill( hDC, 0, 0, nRowStep - 1, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   ::Say( ( ::nTopStart  + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 )),; 
+          ( ( ::nLeftStart + nColStep ) / 2 ) - ( GetTextWidth( hDC, Str( ::nYear, 4 ), ::oFont:hFont ) / 2 ),; 
+          Str( ::nYear, 4 ),,, ::oFont, .T., .T. ) 
+
+   // Paint Sunday background color 
+   for n = 1 to 36 step 7 
+      FillRect( hDC, { 0, ::nLeftStart + ( nColStep * n ),;
+                ::nHeight - 1, ::nLeftStart + ( nColStep * ( n + 1 ) ) }, ::oBrushSunday:hBrush ) 
+   next 
+
+   for nMonth = 1 to 12 
+      ::Line( ::nTopStart + nMonth * nRowStep, 0,(::nTopStart  + nMonth * nRowStep), ::nWidth - 1 ) 
+      ::Say( ::nTopStart + nMonth * nRowStep + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 ), 3, cMonth( RegionDate(nMonth, Str( Year( Date() ), 4 )))   ,,, ::oFont, .T., .T. ) 
+   next 
+
+   // fill selected days
+   if ::lMove
+      dTmpDate = Min( ::dStart, ::dEnd ) 
+
+      while dTmpDate &lt;= Max( ::dStart, ::dEnd )
+         nMonth = Month( dTmpDate ) 
+         nLeftCol = ::nLeftStart + ( nColStep * ( DOW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) ) ) + ; 
+                    nColStep * ( Day( dTmpDate ) - 1 ) 
+         FillRect( hDC, { ::nTopStart + month(dTmpDate) * nRowStep + 1,; 
+                   nLeftCol, ::nTopStart + Month( dTmpDate ) * nRowStep + nRowStep,; 
+                   nLeftCol + nColStep}, ::oBrushSelected:hBrush ) 
+         dTmpDate++ 
+      end 
+
+   endif 
+
+   // Draw days 
+   for n = 1 to 36 
+      ::Line( 0, ::nLeftStart + ( nColStep * n ), ::nHeight - 1, ::nLeftStart + ( nColStep * n ) ) 
+      cDay = SubStr( CDoW( dDate++ ), 1, 2 ) 
+
+      ::Say( ( ::nTopStart + nRowStep * 0.4 ),; 
+         ::nLeftStart + ( nColStep * n ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+         cDay, 0, 0, ::oFont, .T., .T. ) 
+   next 
+
+   // Draw months 
+   for nMonth = 1 to 12 
+      dDate = RegionDate(nMonth,Str( ::nYear, 4 ) ) 
+      nDay = DoW( dDate ) 
+
+      while Month( dDate ) == nMonth 
+         cDay = AllTrim( Str( Day( dDate ) ) ) 
+         ::Say( ( ::nTopStart  + nMonth * nRowStep + ( nRowStep * 0.4 ) ),; 
+            ::nLeftStart + ( nColStep * nDay++ ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+            cDay, 0, 0, ::oFontHeader, .T., .T. ) 
+         dDate++ 
+      end 
+   next 
+
+   if ValType( ::bPainted ) == "B"
+      Eval( ::bPainted, hDC, Min( ::dStart, ::dEnd ), Max( ::dStart, ::dEnd ), Self )
+   endif   
+
+   ::DispEnd( aInfo ) 
+
+return 0 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Destroy() CLASS TPickDate 
+
+   ::oBrushSunday:End()
+   ::oBrushSelected:End()
+   ::oFontHeader:End() 
+   
+return Super:Destroy() 
+
+//----------------------------------------------------------------------------// 
+
+METHOD LButtonDown( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13 ) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ;
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+
+   if nDay &gt; 0 .and. nMonth &gt; 0  // to work with valid dates only
+      ::dStart := CToD( AllTrim( AllTrim( Str( nDay ) )+ "/"  + Str( nMonth ) )  + "/" + Str( ::nYear, 4 ) ) 
+      ::lMove  := .T. 
+      ::Refresh( .F. ) 
+   endif 
+
+return Super:LButtonDown( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   if ValType( ::bSelect ) == "B"
+      Eval( ::bSelect, Min( ::dStart, ::dEnd ), Max( ::dStart, ::dEnd ), Self )
+   endif   
+
+   ::lMove := .F. 
+   
+return Super:LButtonUp( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) CLASS TPickDate
+ 
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13 ) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ; 
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+   local dEnd                
+
+   if nDay &gt; 0 .and. nMonth &gt; 0  // to work with valid dates only
+      dEnd = CToD( AllTrim( Str( nDay ) ) + "/" + AllTrim( Str( nMonth ) ) + "/" + Str( ::nYear, 4 ) ) 
+
+      if ! Empty( dEnd ) .and. dEnd != ::dTemp     // for reducing continuous refreshes 
+         ::dTemp := dEnd 
+         ::dEnd = dEnd
+         ::Refresh( .F. )
+         if ValType( ::bChange ) == "B"
+            Eval( ::bChange, Min( ::dStart, ::dEnd ), Max( ::dStart, ::dEnd ), Self )
+         endif    
+      endif 
+   endif   
+
+return Super:MouseMove( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+function RegionDate( nMonth, cYear ) 
+
+return CToD( "01/" + AllTrim( Str( nMonth ) ) + "/" +  cYear ) 
+
+//-----------------------------------------------------------------//</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p60557">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 12:58 PM
+      </div>
+      <div class="content">Method Redefine() implemented and sample of use:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch" 
+
+//----------------------------------------------------------------------------// 
+
+function Main() 
+
+   local oWnd, oPickDate 
+
+   SET DATE FRENCH 
+
+   DEFINE WINDOW oWnd TITLE "Calendar" 
+
+   oPickDate := TPickDate():New( 10, 10,,, oWnd ) 
+
+   oPickDate:bSelect = { | dStart, dEnd | MsgInfo( Str( dEnd - dStart + 1 ) + " days" ) }
+   oPickDate:bPainted = { | hDC, dStart, dEnd | ;
+                          oPickDate:Say( 17, 20, Str( dEnd - dStart + 1 ) + " days",,,, .T., .T. ) }
+
+   oWnd:oClient = oPickDate 
+
+   ACTIVATE WINDOW oWnd MAXIMIZED ;
+      ON INIT TestDialog()
+   
+return nil 
+
+//----------------------------------------------------------------------------// 
+
+function TestDialog()
+
+   local oDlg, oPickDate
+   
+   DEFINE DIALOG oDlg RESOURCE "Test"
+   
+   oPickDate = TPickDate():Redefine( 10, oDlg )
+
+   oPickDate:bSelect = { | dStart, dEnd | MsgInfo( Str( dEnd - dStart + 1 ) + " days" ) }
+   
+   ACTIVATE DIALOG oDlg CENTERED
+   
+return nil   
+
+//----------------------------------------------------------------------------// 
+
+
+CLASS TPickDate FROM TControl 
+
+   DATA   dStart, dEnd, dTemp, lMove 
+   DATA   nYear 
+   DATA   oBrushSunday, oBrushSelected, oFontHeader 
+   DATA   nLeftStart, nTopStart 
+   DATA   bSelect 
+
+   CLASSDATA lRegistered AS LOGICAL 
+
+   METHOD New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) 
+   METHOD Redefine( nId, oWnd )
+   METHOD Paint() 
+   METHOD Display() INLINE ::BeginPaint(), ::Paint(), ::EndPaint(), 0 
+   METHOD Destroy() 
+   METHOD LButtonDown( nRow, nCol, nKeyFlags ) 
+   METHOD LButtonUp( nRow, nCol, nKeyFlags ) 
+   METHOD PreviousYear() INLINE ::nYear--, ::Refresh() 
+   METHOD NextYear() INLINE ::nYear++, ::Refresh() 
+   METHOD EraseBkGnd( hDC ) INLINE 0 
+   METHOD MouseMove( nRow, nCol, nKeyFlags ) 
+
+ENDCLASS 
+
+//----------------------------------------------------------------------------// 
+
+METHOD New( nTop, nLeft, nWidth, nHeight, oWnd, nYear, nClrFore, nClrBack ) CLASS TPickDate 
+
+   DEFAULT nWidth  := 800,; 
+           nHeight := 300,; 
+           nLeft   := 0,; 
+           nTop    := 0,; 
+           nYear   := Year( Date() ),; 
+           oWnd    := GetWndDefault() 
+
+   ::lMove      = .F. 
+   ::nTopStart  = 60                           // for header 
+   ::nLeftStart = 150                          // col header 
+
+   ::nTop       = nTop 
+   ::nLeft      = nLeft 
+   ::nBottom    = nTop + nHeight - 1 
+   ::nRight     = nLeft + nWidth - 1 
+   ::nYear      = Year( Date() ) 
+   ::oWnd       = oWnd 
+
+   ::dStart := ::dEnd := ::dTemp := Date() 
+
+   ::nClrText   = nClrFore 
+   ::nClrPane   = nClrBack 
+   ::nStyle     = nOr( WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_BORDER ) 
+   
+   DEFINE BRUSH ::oBrushSunday COLOR nRGB( 183, 249, 185 ) // Sundays column green brush 
+   DEFINE BRUSH ::oBrushSelected COLOR nRGB( 240, 232, 188 ) // Selected days orange brush
+
+   DEFINE FONT ::oFont NAME "Tahoma" SIZE 0, -12 BOLD 
+   DEFINE FONT ::oFontHeader NAME "Tahoma" SIZE 0, -12 
+
+   #ifdef __XPP__ 
+      DEFAULT ::lRegistered := .F. 
+   #endif 
+
+   ::Register() 
+
+   if ! Empty( oWnd:hWnd ) 
+      ::Create() 
+      oWnd:AddControl( Self ) 
+   else 
+      oWnd:DefControl( Self ) 
+   endif 
+
+return self 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Redefine( nId, oWnd ) CLASS TPickDate
+
+   DEFAULT oWnd := GetWndDefault()
+   
+   ::nId        = nId
+   ::oWnd       = oWnd
+   ::lMove      = .F. 
+   ::nTopStart  = 60                           // for header 
+   ::nLeftStart = 150                          // col header 
+   ::dStart := ::dEnd := ::dTemp := Date() 
+   ::nYear      = Year( Date() ) 
+
+   DEFINE BRUSH ::oBrushSunday COLOR nRGB( 183, 249, 185 ) // Sundays column green brush 
+   DEFINE BRUSH ::oBrushSelected COLOR nRGB( 240, 232, 188 ) // Selected days orange brush
+
+   DEFINE FONT ::oFont NAME "Tahoma" SIZE 0, -12 BOLD 
+   DEFINE FONT ::oFontHeader NAME "Tahoma" SIZE 0, -12 
+   
+   ::SetColor( 0, 0 )
+   
+   ::Register()   
+
+   oWnd:DefControl( Self )
+   
+return Self
+
+//----------------------------------------------------------------------------// 
+
+METHOD Paint() CLASS TPickDate
+ 
+   local aInfo := ::DispBegin() 
+   local hDC := ::hDC, cDay, nDay, n, dDate, nColStep, nRowStep 
+   local dTmpDate, nMonth := 0, nLeftCol := 0
+
+   FillRect( hDC, GetClientRect( ::hWnd ), ::oBrush:hBrush ) 
+
+   nRowStep = ( ::nHeight - ::nTopStart ) / 13 
+
+   GradientFill( hDC, 0, 0, ::nHeight, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   dDate = CToD( "01/01/" + Str( ::nYear, 4 ) )
+   dDate += 8 - DoW( dDate )
+
+   nColStep = ( ::nWidth - ::nLeftStart ) / 37 
+
+   GradientFill( hDC, 0, 0, nRowStep - 1, ::nWidth, { { 1, nRGB( 128, 217, 255 ), nRGB( 54, 147, 255 ) } } ) 
+
+   ::Say( ( ::nTopStart  + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 )),; 
+          ( ( ::nLeftStart + nColStep ) / 2 ) - ( GetTextWidth( hDC, Str( ::nYear, 4 ), ::oFont:hFont ) / 2 ),; 
+          Str( ::nYear, 4 ),,, ::oFont, .T., .T. ) 
+
+   // Paint Sunday background color 
+   for n = 1 to 36 step 7 
+      FillRect( hDC, { 0, ::nLeftStart + ( nColStep * n ),;
+                ::nHeight - 1, ::nLeftStart + ( nColStep * ( n + 1 ) ) }, ::oBrushSunday:hBrush ) 
+   next 
+
+   for nMonth = 1 to 12 
+      ::Line( ::nTopStart + nMonth * nRowStep, 0,(::nTopStart  + nMonth * nRowStep), ::nWidth - 1 ) 
+      ::Say( ::nTopStart + nMonth * nRowStep + ( nRowStep / 2 ) - ( ::oFont:nHeight / 2 ), 3, cMonth( RegionDate(nMonth, Str( Year( Date() ), 4 )))   ,,, ::oFont, .T., .T. ) 
+   next 
+
+   // fill selected days
+   if ::lMove
+      dTmpDate = Min( ::dStart, ::dEnd ) 
+
+      while dTmpDate &lt;= Max( ::dStart, ::dEnd )
+         nMonth = Month( dTmpDate ) 
+         nLeftCol = ::nLeftStart + ( nColStep * ( DOW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) ) ) + ; 
+                    nColStep * ( Day( dTmpDate ) - 1 ) 
+         FillRect( hDC, { ::nTopStart + month(dTmpDate) * nRowStep + 1,; 
+                   nLeftCol, ::nTopStart + Month( dTmpDate ) * nRowStep + nRowStep,; 
+                   nLeftCol + nColStep}, ::oBrushSelected:hBrush ) 
+         dTmpDate++ 
+      end 
+
+   endif 
+
+   // Draw days 
+   for n = 1 to 36 
+      ::Line( 0, ::nLeftStart + ( nColStep * n ), ::nHeight - 1, ::nLeftStart + ( nColStep * n ) ) 
+      cDay = SubStr( CDoW( dDate++ ), 1, 2 ) 
+
+      ::Say( ( ::nTopStart + nRowStep * 0.4 ),; 
+         ::nLeftStart + ( nColStep * n ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+         cDay, 0, 0, ::oFont, .T., .T. ) 
+   next 
+
+   // Draw months 
+   for nMonth = 1 to 12 
+      dDate = RegionDate(nMonth,Str( ::nYear, 4 ) ) 
+      nDay = DoW( dDate ) 
+
+      while Month( dDate ) == nMonth 
+         cDay = AllTrim( Str( Day( dDate ) ) ) 
+         ::Say( ( ::nTopStart  + nMonth * nRowStep + ( nRowStep * 0.4 ) ),; 
+            ::nLeftStart + ( nColStep * nDay++ ) + ( nColStep / 2 ) - ( GetTextWidth( hDC, cDay, ::oFont:hFont ) / 2 ) + 1,; 
+            cDay, 0, 0, ::oFontHeader, .T., .T. ) 
+         dDate++ 
+      end 
+   next 
+
+   if ValType( ::bPainted ) == "B"
+      Eval( ::bPainted, hDC, Min( ::dStart, ::dEnd ), Max( ::dStart, ::dEnd ), Self )
+   endif   
+
+   ::DispEnd( aInfo ) 
+
+return 0 
+
+//----------------------------------------------------------------------------// 
+
+METHOD Destroy() CLASS TPickDate 
+
+   ::oBrushSunday:End()
+   ::oBrushSelected:End()
+   ::oFontHeader:End() 
+   
+return Super:Destroy() 
+
+//----------------------------------------------------------------------------// 
+
+METHOD LButtonDown( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13 ) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ;
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+
+   if nDay &gt; 0 .and. nMonth &gt; 0  // to work with valid dates only
+      ::dStart := CToD( AllTrim( AllTrim( Str( nDay ) )+ "/"  + Str( nMonth ) )  + "/" + Str( ::nYear, 4 ) ) 
+      ::lMove  := .T. 
+      ::Refresh( .F. ) 
+   endif 
+
+return Super:LButtonDown( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD LButtonUp( nRow, nCol, nKeyFlags ) CLASS TPickDate 
+
+   if ValType( ::bSelect ) == "B"
+      Eval( ::bSelect, Min( ::dStart, ::dEnd ), Max( ::dStart, ::dEnd ), Self )
+   endif   
+
+   ::lMove := .F. 
+   
+return Super:LButtonUp( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+METHOD MouseMove( nRow, nCol, nKeyFlags ) CLASS TPickDate
+ 
+   local nMonth := Int( ( nRow - ::nTopStart ) / ( ( ::nHeight - ::nTopStart ) / 13 ) ) 
+   local nDay   := Int( ( nCol - ::nLeftStart ) / ( ( ::nWidth - ::nLeftStart ) / 37 ) ) - ; 
+                   DoW( RegionDate( nMonth, Str( ::nYear, 4 ) ) ) + 1 
+   local dEnd                
+
+   if nDay &gt; 0 .and. nMonth &gt; 0  // to work with valid dates only
+      dEnd = CToD( AllTrim( Str( nDay ) ) + "/" + AllTrim( Str( nMonth ) ) + "/" + Str( ::nYear, 4 ) ) 
+
+      if ! Empty( dEnd ) .and. dEnd != ::dTemp     // for reducing continuous refreshes 
+         ::dTemp := dEnd 
+         ::dEnd = dEnd
+         ::Refresh( .F. )
+         if ValType( ::bChange ) == "B"
+            Eval( ::bChange, Min( ::dStart, ::dEnd ), Max( ::dStart, ::dEnd ), Self )
+         endif    
+      endif 
+   endif   
+
+return Super:MouseMove( nRow, nCol, nKeyFlags ) 
+
+//-----------------------------------------------------------------// 
+
+function RegionDate( nMonth, cYear ) 
+
+return CToD( "01/" + AllTrim( Str( nMonth ) ) + "/" +  cYear ) 
+
+//-----------------------------------------------------------------//</code></pre></div><br>
+<br>
+Test.rc<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">test DIALOG 12, 26, 544, 363
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Test"
+FONT 8, "MS Sans Serif"
+{
+ CONTROL "", 10, "TPickDate", 0 | WS_CHILD | WS_VISIBLE | WS_BORDER, 5, 5, 535, 354
+}</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p60558">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 01:01 PM
+      </div>
+      <div class="content">A screenshot (yes, you can see what I am doing) <br>
+<br>
+<a href="http://imageshack.us" rel="noopener"><img src="http://img155.imageshack.us/img155/1847/calendarpf7.png" alt="" loading="lazy"></a></div>
+    </div>
+  </div>
+  <div class="post" id="p60562">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 02:12 PM
+      </div>
+      <div class="content">Hello Antonio,<br>
+<br>
+thank you for this interesting demonstration of  „How to build a control class”.<br>
+Regards,<br>
+Otto<br>
+<br>
+<img src="http://www.atzwanger.com/fw/pickdateclass.jpg" alt="" loading="lazy"></div>
+    </div>
+  </div>
+  <div class="post" id="p60565">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 03:38 PM
+      </div>
+      <div class="content"><p>Otto,</p>
+<p>You provided the idea and most of the code. Thanks,</p>
+<p>I simply helped to properly organize and simplify it <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p60567">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 04:50 PM
+      </div>
+      <div class="content"><!-- s:lol: -->
+<p>uauuuuuuu!!!!!!!!</p>
+<!-- s8) -->
+<p>Great ...simply.....  Antonio Linares !!!!</p>
+<p><img src="{SMILIES_PATH}/icon_lol.gif" alt=":lol:" title="Laughing" /><!-- s:lol: --><img src="{SMILIES_PATH}/icon_cool.gif" alt="8)" title="Cool" /><!-- s8) --><!-- s:D --><img src="{SMILIES_PATH}/icon_biggrin.gif" alt=":D" title="Very Happy" /><!-- s:D --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p60570">
+    <div class="poster">
+      <div class="name" style="color:#105289">RAMESHBABU</div>
+      <div class="rank">Posts: 651</div>
+      <img class="avatar avatar-img" src="avatars/190.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 21, 2005 05:54 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 06:09 PM
+      </div>
+      <div class="content"><p>Hello Mr.Antonio</p>
+<p>It is an excellent lesson to the people like me who are interested to <br>
+create classes from their existing reusable codes.</p>
+<p>Mr.Otto</p>
+<p>Thanks for sharing your excellent code from the beginning.</p>
+<p>Regards,</p>
+<ul>
+<li>Ramesh Babu P</li>
+</ul></div>
+    </div>
+  </div>
+  <div class="post" id="p60572">
+    <div class="poster">
+      <div class="name" style="color:#105289">Kleyber</div>
+      <div class="rank">Posts: 581</div>
+      <img class="avatar avatar-img" src="avatars/103.png" alt="" loading="lazy">
+      Joined: Tue Oct 11, 2005 11:28 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 07:00 PM
+      </div>
+      <div class="content"><p>Hello,</p>
+<p>I'm testing here but it calls a functions GradientFill() that I don't have here. I'm using FWH 8.02.</p>
+<p>Regards,</p></div>
+    </div>
+  </div>
+  <div class="post" id="p60573">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pickdate part 2 – a control class in development</span><br>
+        Posted: Sun Aug 03, 2008 07:04 PM
+      </div>
+      <div class="content"><p>Kleyber,</p>
+<p>GradientFill() is a new function in FWH 8.07.</p>
+<p>You can comment out those function calls in the class.</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-12150-page-2.html">2</a> <a href="topic-12150-page-3.html">3</a> (40 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

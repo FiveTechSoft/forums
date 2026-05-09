@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>outlook 2003 test - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-9947">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> outlook 2003 test</div>
+  <div class="post" id="p48198">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">outlook 2003 test</span><br>
+        Posted: Thu Feb 14, 2008 12:11 AM
+      </div>
+      <div class="content">I want  when I click one menu of outlook2003  see  a tree or a xbrowse <br>
+ <br>
+I made this  testout.prg<br>
+<br>
+ <div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// FWH Class TOutLook2003
+
+#include "FiveWin.ch"
+#include "Splitter.ch"
+
+ // LockType
+#define adLockUnspecified   -1
+#define adLockReadOnly       1
+#define adLockPessimistic    2
+#define adLockOptimistic     3
+#define adLockBatchOptimistic 4
+
+// CursorType
+#define adOpenUnspecified     1
+#define adOpenForwardOnly     0
+#define adOpenKeyset          1
+#define adOpenDynamic         2
+#define adOpenStatic          3
+
+
+
+// Cursor Location
+#define adUseClient           3
+#define adUseServer           2
+
+// State constants
+
+#define   adStateClosed       0    //The object is closed
+#define adStateOpen           1    //The object is open
+
+static lExit := .F.
+STATIC oDb, oSc, oCt
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oWnd, oOutLook2003, oStatusBar, oSplit, cCombo, oRad, nValue := 1
+   local oFont,oTree,oBar
+
+   DEFINE WINDOW oWnd TITLE "FWH new Class TOutLook2003" MDI ;
+    MENU BuildMenu()
+    DEFINE BUTTONBAR oBar _3D SIZE 44, 46 OF oWnd 2007 //36, 40
+
+   DEFINE OUTLOOK2003 oOutLook2003 OF oWnd ;
+      PROMPTS "Categorie", "Prodotti", "Utenti", "Tabelle" ;
+      BITMAPS "..\bitmaps\mail.bmp", "..\bitmaps\calendar.bmp", "..\bitmaps\notes.bmp"
+
+   oWnd:oLeft = nil // Because the splitter is going to control the resize
+
+   @ 1, 2 BUTTON "New" OF oOutLook2003:aDialogs[ 1 ] SIZE 80, 22 ACTION BuildDlg()
+
+   @ 3, 2 BUTTON "Edit" OF oOutLook2003:aDialogs[ 1 ] SIZE 80, 22 ACTION MsgInfo( "Edit" )
+
+   @ 5, 2 BUTTON "Search" OF oOutLook2003:aDialogs[ 1 ] SIZE 80, 22 ACTION MsgInfo( "Search" )
+
+   @ 1, 1 COMBOBOX cCombo ITEMS { "January", "February", "March", "April", "May" } ;
+      OF oOutLook2003:aDialogs[ 2 ] SIZE 170, 100
+
+   DEFINE FONT oFont NAME "Arial" SIZE 0, -10
+
+   @ 12, 10 SAY Date() OF oOutLook2003:aDialogs[ 2 ] SIZE 80, 20 FONT oFont
+
+   @ 3, 1 RADIO oRad VAR nValue OF oOutLook2003:aDialogs[ 2 ] ;
+      ITEMS "&amp;Day", "&amp;Week", "&amp;Month" SIZE 100, 20
+
+   oRad:SetFont( oFont )
+
+   SET MESSAGE OF oWnd TO "FW OUTLOOK 2003 TEST" CENTER NOINSET   2007
+
+   SetParent( oOutLook2003:hWnd, oWnd:hWnd )
+
+   oWnd:oClient = nil
+
+
+
+
+
+      ConnectToDataBase()
+
+     IF oDb != NIL .AND. oDb:State == adStateOpen
+
+         IF OpenTables()
+
+            @  00, 191+5 TREEVIEW oTree SIZE oWnd:nRight, oWnd:nBottom PIXEL OF oWnd:oWndClient
+
+
+         ENDIF
+      ENDIF
+
+
+         @ 0, 191 SPLITTER oSplit ;
+      VERTICAL _3DLOOK ;
+      PREVIOUS CONTROLS oOutLook2003 ;
+      HINDS CONTROLS oWnd:oWndClient ;
+      SIZE 4, oWnd:nHeight - 70 PIXEL ;
+      OF oWnd
+
+
+
+
+
+
+
+
+   SetParent( oSplit:hWnd, oWnd:hWnd )
+
+   ACTIVATE WINDOW oWnd ;
+     ON INIT MakeTree( oTree )  ;
+      ON RESIZE (oSplit:Adjust(),oTree:refresh(.t.)) ;
+      VALID lExit := .T.
+
+return nil
+
+//----------------------------------------------------------------------------//
+ STATIC FUNCTION MakeTree( oTree )
+
+   LOCAL oItem
+
+   oSc:MoveFirst()
+   DO WHILE !oSc:Eof()
+
+      oItem    := oTree:Add( oSc:Fields( "SCategoria" ):Value )
+      oItem:Cargo := oSc:Fields( "ID" ):Value
+
+      oCt:Filter  := "SCATEGORIA = " + LTRIM( STR( oSc:Fields( "ID" ):Value ) )
+      IF oCt:RecordCount() &gt; 0
+         oCt:MoveFirst()
+         DO WHILE !oCt:Eof()
+            oItem:Add( oCt:Fields( "Categoria" ):Value,, oCt:Fields( "ID" ):Value )
+            oCt:MoveNext()
+         ENDDO
+      ENDIF
+
+      oSc:MoveNext()
+   ENDDO
+
+  oTree:ExpandAll()
+
+   oCt:Filter  := ""
+   oSc:MoveFirst()
+   oCt:MoveFirst()
+   SetScope()
+
+   RETURN .T.
+
+ STATIC FUNCTION SetScope()
+
+   oCt:Filter := "SCATEGORIA = " + LTRIM( STR( oSc:Fields( "ID" ):Value ) )
+   IF oCt:RecordCount() &gt; 0
+      oCt:MoveFirst()
+   ENDIF
+
+   RETURN NIL
+
+
+
+
+function BuildMenu()
+
+   local oMenu
+
+   MENU oMenu 2007
+      MENUITEM "&amp;One"
+      MENUITEM "&amp;Two"
+      MENUITEM "&amp;Three"
+   ENDMENU
+
+return oMenu
+
+//----------------------------------------------------------------------------//
+
+function BuildDlg()
+
+   local oDlg, oOutL2003
+
+   DEFINE DIALOG oDlg RESOURCE "Test"
+
+   REDEFINE OUTLOOK2003 oOutL2003 ID 110 OF oDlg ;
+      PROMPTS "One", "Two", "Three" ;
+      BITMAPS "..\bitmaps\mail.bmp", "..\bitmaps\calendar.bmp", "..\bitmaps\notes.bmp" ;
+      DIALOGS "Page1", "Page2", "Page3"
+
+   REDEFINE BUTTON ID 110 OF oOutL2003:aDialogs[ 1 ] ACTION MsgInfo( "Click" )
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+function WinRun()
+
+   while NoGPF()
+      if lExit
+         PostQuitMessage( 0 )
+      endif
+   end
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+#pragma BEGINDUMP
+
+#include &lt;windows.h&gt;
+#include &lt;hbapi.h&gt;
+
+BOOL SysRefresh( void );
+
+HB_FUNC( NOGPF )
+{
+   __try
+   {
+      hb_retl( SysRefresh() );
+   }
+   __except ( ( hb_retl( TRUE ), TRUE ) )
+   {}
+}
+
+#pragma ENDDUMP
+
+
+
+
+
+
+
+ STATIC FUNCTION ConnectToDataBase
+
+
+   oDB                    := TOLEAuto():New( "ADODB.Connection" )
+   oDB:ConnectionString   := "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=ecom.mdb;User Id=admin;Password=;"
+   oDB:CursorLocation     := adUseClient
+   TRY
+      oDB:Open()
+   CATCH
+      oDB                  := NIL
+      MsgInfo('Connect Fail')
+      RETURN NIL
+   END
+
+
+RETURN oDB
+
+//----------------------------------------------------------------------------//
+
+STATIC FUNCTION OpenTables
+
+   oSc         := TOLEAuto():New( "ADODB.RecordSet" )
+   WITH OBJECT oSc
+      :ActiveConnection    := oDB
+      :CursorType          := adOpenDynamic
+      :LockType            := adLockOptimistic
+      :Source              := "SCATEGORIE"
+      :CursorLocation      := adUseClient
+   END
+
+   TRY
+      oSc:Open()
+   CATCH
+      oSc                  := NIL
+      MsgInfo( "ATTENZIONE - Non posso aprire la tabella SCATEGORIE" )
+   END
+
+   oCt         := TOLEAuto():New( "ADODB.RecordSet" )
+   WITH OBJECT oCt
+      :ActiveConnection    := oDB
+      :CursorType          := adOpenDynamic
+      :LockType            := adLockOptimistic
+      :Source              := "CATEGORIE"
+      :CursorLocation      := adUseClient
+   END
+
+   TRY
+      oCt:Open()
+   CATCH
+      oCt                  := NIL
+      MsgInfo( "ATTENZIONE - Non posso aprire la tabella CATEGORIE" )
+   END
+
+   IF oSc != NIL .AND. oCt != NIL
+      RETURN .T.
+   ENDIF
+
+RETURN .F.</code></pre></div><br>
+<br>
+<br>
+Now I see the tree always<br>
+<br>
+but I wanted click on "categorie" menu of outlook 2003 and see the treeview<br>
+<br>
+or <br>
+ <br>
+click on "utenti" menu of of outlook 2003 and see  and see a Xbrowse with utenti <br>
+ <br>
+how I can make it ?</div>
+    </div>
+  </div>
+  <div class="post" id="p48219">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: outlook 2003 test</span><br>
+        Posted: Thu Feb 14, 2008 09:49 AM
+      </div>
+      <div class="content"><p>I get "Connect fail" running your sample.</p>
+<p>EMG</p></div>
+    </div>
+  </div>
+  <div class="post" id="p48220">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">outlook 2003 test</span><br>
+        Posted: Thu Feb 14, 2008 09:54 AM
+      </div>
+      <div class="content"><p>you have my file ecom ?<br>
+do you remeber of it ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p48221">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">Enrico Maria Giordano</div>
+      <div class="rank">Posts: 9012</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 06, 2005 08:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">outlook 2003 test</span><br>
+        Posted: Thu Feb 14, 2008 09:57 AM
+      </div>
+      <div class="content"><p>No. You should learn to build self contained samples.</p>
+<p>EMG</p></div>
+    </div>
+  </div>
+  <div class="post" id="p48222">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">outlook 2003 test</span><br>
+        Posted: Thu Feb 14, 2008 10:03 AM
+      </div>
+      <div class="content"><p>I cannot create a self.... because there is many table and data....<br>
+ansd i not Know how I can make to you this sample</p>
+<p>BUT it is not important </p>
+<p>you can use an your own file MDB or dbf </p>
+<p>th eproblem is another here!!!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p48223">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">outlook 2003 test</span><br>
+        Posted: Thu Feb 14, 2008 10:06 AM
+      </div>
+      <div class="content"><p>i want only know the command to show a xbrowse  or a another object at th left of the main window when I clich a menu of TOUTLOOK2003</p>
+<p>perhaps you not read goo my messages</p>
+<p>sorry,..</p></div>
+    </div>
+  </div>
+  <div class="post" id="p48230">
+    <div class="poster">
+      <div class="name" style="color:#105289">ukoenig</div>
+      <div class="rank">Posts: 4043</div>
+      <img class="avatar avatar-img" src="avatars/1257.jpg" alt="" loading="lazy">
+      Joined: Wed Dec 19, 2007 06:40 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Structure of Outlook2003</span><br>
+        Posted: Thu Feb 14, 2008 10:41 AM
+      </div>
+      <div class="content">Hello Silvio,<br>
+<br>
+There are 2 Window-Childs : one obove the Buttons<br>
+and 1 you have on the righthandside.<br>
+Do you want to show on left or right ?<br>
+I prefer the right side. The chhilds above the<br>
+buttons, i use for messages.<br>
+<br>
+I can make you a ready to use structure file,<br>
+where you can put your functions. As well,<br>
+there are Office2007-Bars integreated.<br>
+It comes from the new DB-Tools, where everything<br>
+comes together.<br>
+It is a bit hard, to understand.<br>
+<br>
+<img src="http://www.pflegeplus.com/pictures/outlook3.jpg" alt="" loading="lazy"><br>
+<br>
+Regards<br>
+Uwe</div>
+    </div>
+  </div>
+  <div class="post" id="p48234">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">outlook 2003 test</span><br>
+        Posted: Thu Feb 14, 2008 12:06 PM
+      </div>
+      <div class="content"><p>dear Uwe<br>
+ i want show treeview  object on the left of  oWnd when I click on "Categorie", i wan tshow a xbrowse on the left of oWnd when I click on "Utenti</p>
+<p>when i open the program  the application must see the outlook2003 on the right and a bitmap on the background on the left</p>
+<p>i hope you understand me</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

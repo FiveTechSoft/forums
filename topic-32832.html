@@ -1,0 +1,1508 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ejemplo TdosPrn - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-32832">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Ejemplo TdosPrn</div>
+  <div class="post" id="p193145">
+    <div class="poster">
+      <div class="name" style="color:#105289">TOTOVIOTTI</div>
+      <div class="rank">Posts: 470</div>
+      <img class="avatar avatar-img" src="avatars/1880.jpg" alt="" loading="lazy">
+      Joined: Fri Feb 05, 2010 11:30 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Ejemplo TdosPrn</span><br>
+        Posted: Wed Aug 17, 2016 11:36 AM
+      </div>
+      <div class="content"><p>Amigos<br>
+necesitaría probar un pequeño ejemplo de TdosPrn pero no hay forma.<br>
+Sólo con la clase nativa, sin modificaciones y si tiene vista previa con la clase nativa<br>
+también.<br>
+He probado varios de los que están en el foro y no los puedo hacer funcionar.<br>
+Descargué y enlacé la txtprev.prg y nada...<br>
+No encuentro nada en la carpeta SAMPLES del FWH.<br>
+Gracias<br>
+Roberto</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193147">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Wed Aug 17, 2016 12:57 PM
+      </div>
+      <div class="content">Mui facil:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+USB com TDOSPRN.PRG
+
+Enla cabecera de mi rutina de impresión hice esto:
+
+cPorta := PrnGetPort()
+cPrinter := PrinterPortToName( cPorta )
+if empty(cPrinter)
+   cPrinter := PrinterPortToName( "USB002" )
+   if empty(cPrinter)
+      cPrinter := PrinterPortToName( "USB001" )
+   endif
+endif
+ 
+
+Despues empiezo la impresión, preo creando un archivo:
+
+
+oPrin := TDosPrn():New("minuta.txt")
+oPrin:StartPage()
+...
+...
+ 
+
+Y en el fin de la rutina hago esto:
+
+
+...
+...
+oPrin:EndPage()
+oPrin:End()
+
+
+PrintFileRaw( cPrinter, TrueName("MINUTA.TXT"), "Impressão de Vendas" )
+*/
+
+// ----------------------------------------------------------------------------
+
+//----- Definicao de comando SAY para TdosPrn ---------------------------------
+//
+
+#xcommand @ &lt;nRow&gt;, &lt;nCol&gt; SAY &lt;cText&gt; OF &lt;oPrinter&gt; =&gt; &lt;oPrinter&gt;:Say(&lt;nRow&gt;, &lt;nCol&gt;, &lt;cText&gt; )
+
+//-------------------------------------------------------------------------//
+// Imprime os Cupons Nao Fiscal da Pizzaria/Restaurante
+//-------------------------------------------------------------------------//
+
+STATIC FUNCTION IMPRIMIR_CUPOM( nKey, aGetVenda, oLbx, oDlgVendas, DbClientes,;
+                                                       DbEstoque,  DbPedidos )
+
+    FIELD QTD_VENDEU, DESCRICAO, VLUNITARIO, TOTITEM, TOTPEDIDO
+    FIELD MENSAG1, MENSAG2, MENSAG3, MENSAG4, MENSAG5
+
+    LOCAL nLinha, nPag, oPrn, Conta, Pula, DbMensag
+
+    MEMVAR XNUMPEDIDO,   nNumeroTel,   cCodClien,   cNomeClien,   cEndClien,  ;
+           cNomeProduto, nQuantidade,  nValorProd,  nValorCompra, oSayCxLivre,;
+           XCGCCLI,      nQtdeEstoque, nCodigoProd
+    MEMVAR nDinheiro,    nCheque,     nChequePre,  nTickets,     nCartaoCred,;
+           nCartaoDebi,  nContraVale, nTaxaEntreg, nValorTroco,  nSomaSubTot,;
+           XTROCOCLI,    Valor_Pago,  nValor_Pago, oSayEmpresa
+
+    //-&gt; Nome Fantasia da Empresa - Est  em EMPRESA.DBF
+    PUBLIC XDA, XCAIXA, XCODVEND, XNOMEEMP, XFANTASIA, XIMPQTDECOP, ;
+           XPULARLINHA
+
+    nLinha      := 0
+    nPag        := 1
+
+    IF XIMPQTDECOP &lt;= 0
+       XIMPQTDECOP := 1
+    ENDIF
+
+    //-&gt; Mensagens do Rodape
+    IF NETUSE( "MENSAGEM", .T. )
+       DATABASE DbMensag
+       DbMensag:Load()        //-&gt; Temporario = a FP_PROV.DBF
+       DbMensag:SetBuffer( .T. )
+    ENDIF
+
+    SELECT ( DbPedidos:cAlias )
+    DbPedidos:SetOrder( 1 )
+    GO TOP
+
+    // Para Rede de Computadores
+    // oPrn:New("\\seuterminal\suaimpressora\LPT1")
+    oPrn:= TDosPrn():New( "CUPOM.TXT" ) // para ir para um arquivo .txt
+    // oPrn:= TDosPrn():New()        // para ir para impressora em definitivo
+    // oPrn := TDosPrn():New("lpt1") // para ir para impressora em definitivo
+    // Este Comando, Liga a Impressora. NÆo Tirar Nunca
+    oPrn:StartPage() // da Start(inicializa) na p gina.
+    oPrn:lZeraBuffer := .T.             // Inibe o Pulo da P gina
+
+    //-&gt; Inicia a Impressao - Cabe‡alho do Cupom
+    //-&gt; Modo Draft
+    @ nLinha, 00 SAY +CHR(18)+CHR(27)+"2"+CHR(27)+"H"          OF oPrn
+
+    @ nLinha, 00 SAY SUBST( XNOMEEMP, 1, 23 )                  OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY CHR(15)+REPLICATE("-",38)                 OF oPrn
+    nLinha := nLinha + 1
+
+    //-&gt; Modo Condensado
+    @ nLinha, 00 SAY CHR(15)+"HORA: " + TIME() + " - " + ;
+                            + DTOC(XDA)                        OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY OemToAnsi("PEDIDO N§: " ) + ;
+                     ALLTRIM(STRZERO( XNUMPEDIDO ) )           OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY "FONE..: " + nNumeroTel                   OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY SUBSTR( cNomeClien, 1, 40 )               OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY SUBSTR( cEndClien, 1, 40 )                OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY REPLICATE("-",38)                         OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY "Cod   Qtde   Descricao  Unit     Valor"  OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY REPLICATE("-",38)                         OF oPrn
+    nLinha := nLinha + 1
+
+    //-&gt; Imprime o Pedido
+    WHILE !EOF()
+
+       SYSREFRESH()
+
+       IF EOF()
+          EXIT
+       ENDIF
+
+       @ nLinha, 00 SAY ( DbPedidos:cAlias )-&gt;CODIGO          OF oPrn
+       nLinha := nLinha + 1
+
+       @ nLinha, 00 SAY ( ALLTRIM( STR( QTD_VENDEU ) ) ) +[ - ]+ ;
+                        ( SUBSTR( DESCRICAO, 01, 17 ) )  OF oPrn
+
+       nLinha := nLinha + 1
+
+       @ nLinha, 00 SAY ( SUBSTR( DESCRICAO, 18, 35 ) )            +  ;
+                          TRANSFORM( VLUNITARIO, "@E  99,999.99" ) +  ;
+                          TRANSFORM( TOTITEM,    "@E 999,999.99" ) OF oPrn
+
+       nLinha := nLinha + 1
+
+       DBSKIP()
+
+    ENDDO
+
+    //-&gt; Total do Pedido
+    IF EOF() .OR. TOTPEDIDO &lt;= 0
+       SKIP(-1)
+    ENDIF
+
+    @ nLinha, 00 SAY CHR(15)+REPLICATE("-",38)                  OF oPrn
+    nLinha := nLinha + 1
+
+    IF nDinheiro    &gt; 0
+       @ nLinha, 00 SAY "EM DINHEIRO:   " + ;
+                    TRANSFORM( nDinheiro, "@E 999,999.99" )    OF oPrn
+       nLinha := nLinha + 1
+    ENDIF
+
+    IF nCheque      &gt; 0
+       @ nLinha, 00 SAY "EM CHEQUE:     " + ;
+                    TRANSFORM( nCheque, "@E 999,999.99" )      OF oPrn
+       nLinha := nLinha + 1
+    ENDIF
+
+    IF nChequePre   &gt; 0
+       @ nLinha, 00 SAY "EM CHEQUE PRE: " + ;
+                    TRANSFORM( nChequePre, "@E 999,999.99" )   OF oPrn
+       nLinha := nLinha + 1
+    ENDIF
+
+    IF nTickets     &gt; 0
+       @ nLinha, 00 SAY "EM TICKETS:    " + ;
+                    TRANSFORM( nTickets, "@E 999,999.99" )     OF oPrn
+       nLinha := nLinha + 1
+    ENDIF
+
+    IF nCartaoCred  &gt; 0
+       @ nLinha, 00 SAY "EM C. CREDITO: " + ;
+                    TRANSFORM( nCartaoCred, "@E 999,999.99" )  OF oPrn
+       nLinha := nLinha + 1
+    ENDIF
+
+    IF nCartaoDebi  &gt; 0
+       @ nLinha, 00 SAY "EM C. DEBITO:  " + ;
+                    TRANSFORM( nCartaoDebi, "@E 999,999.99" )  OF oPrn
+       nLinha := nLinha + 1
+    ENDIF
+
+    IF nContraVale  &gt; 0
+       @ nLinha, 00 SAY "EM C. VALE:    " + ;
+                    TRANSFORM( nContraVale, "@E 999,999.99" )  OF oPrn
+       nLinha := nLinha + 1
+    ENDIF
+
+    @ nLinha, 00 SAY CHR(15)+REPLICATE("-",38)                  OF oPrn
+    nLinha := nLinha + 1
+
+    //-&gt; Fechou o Cupom
+    @ nLinha, 00 SAY +CHR(18)+CHR(27)+"2"+CHR(27)+"H"  + ;
+                     "TOTAL: "                         + ;
+                     TRANSFORM( TOTPEDIDO, "@E 9,999,999.99" )  OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY CHR(15)+REPLICATE("-",38)                  OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY CHR(15)+"TROCO:    " + ;
+                 TRANSFORM( XTROCOCLI, "@E 999,999.99" )        OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY "CAIXA: " + STRZERO( XCAIXA, 3 ) + [ - ] + ;
+                     "OPERADOR: " + XCODVEND                    OF oPrn
+    nLinha := nLinha + 1
+
+    @ nLinha, 00 SAY CHR(15)+REPLICATE("-",38)                  OF oPrn
+    nLinha := nLinha + 1
+
+    SELECT ( DbMensag:cAlias )
+    GO TOP
+
+    WHILE !EOF()
+
+       SYSREFRESH()
+
+       IF EOF()
+          EXIT
+       ENDIF
+
+       IF (MENSAG1 ) != SPACE(40)
+          @ nLinha, 00 SAY MENSAG1  OF oPrn
+          nLinha := nLinha + 1
+       ENDIF
+
+       IF (MENSAG2 ) != SPACE(40)
+          @ nLinha, 00 SAY MENSAG2  OF oPrn
+          nLinha := nLinha + 1
+       ENDIF
+
+       IF (MENSAG3 ) != SPACE(40)
+          @ nLinha, 00 SAY MENSAG3  OF oPrn
+          nLinha := nLinha + 1
+       ENDIF
+
+       IF (MENSAG4 ) != SPACE(40)
+          @ nLinha, 00 SAY MENSAG4  OF oPrn
+          nLinha := nLinha + 1
+       ENDIF
+
+       IF (MENSAG5 ) != SPACE(40)
+          @ nLinha, 00 SAY MENSAG5  OF oPrn
+          nLinha := nLinha + 1
+       ENDIF
+
+       @ nLinha, 00 SAY CHR(15)+REPLICATE("-",38)              OF oPrn
+       nLinha := nLinha + 1
+
+       DBSKIP()
+
+    ENDDO
+
+    //-&gt; Pulos do Cupom
+    FOR PULA = 1 TO XPULARLINHA
+       @ nLinha, 00 SAY "."                                    OF oPrn
+       nLinha := nLinha + 1
+    NEXT PULA
+
+    //-&gt; Modo Draft
+    @ nLinha, 00 SAY +CHR(18)+CHR(27)+"2"+CHR(27)+"H"           OF oPrn
+
+    oPrn:EndPage()
+    oPrn:End()
+
+    //--- imprime no spool do windows, liberando o micro para trabalhar.
+    ImpSpool( "CUPOM.TXT",, .T. ) // esta em DBMANT.PRG impressora USB/matricial
+    //--- opcionamente pode-se apagar o arquivo passando .t. no 3o. parametro.
+
+    DbMensag:Close()
+
+    SELECT ( DbPedidos:cAlias )
+    DbPedidos:SetOrder( 1 )
+    DbPedidos:Gotop()
+
+RETURN NIL
+
+// Maravilhoso Ednaldo Cabra Bom!!!
+//----------------------------------------------------------------------------//
+// Funcao    : ImpSpool( cFileTxt, cPorta, lErase )
+// Autor     : Ednaldo Rolim (&lt;!-- e --&gt;&lt;a href="mailto:edrol@pop.com.br"&gt;edrol@pop.com.br&lt;/a&gt;&lt;!-- e --&gt;)
+// Descricao : Envia um arquivo TXT criado pela TDosPrn para uma 
+//             porta de Impressora.
+//----------------------------------------------------------------------------//
+FUNCTION ImpSpool( cFileTxt, cPorta, lErase )
+
+    LOCAL CPRINTER
+
+    //para capturar antes da impressão
+    //cPorta := PrnGetPorta()
+    //WinExec( cPorta )
+    //depois da impressão
+    //WinExex( "Net Use Lpt1: \Delete" )
+    //Ficou mais facil e simples do que criar as portas na Classe TDosPrn
+    //cPorta := If( cPorta == nil, Alltrim( PrnGetPort() ), cPorta ) ; lErase := If( lErase == nil, .T., lErase );
+
+    //cPorta := PrnGetPort()
+    Default cPorta := Alltrim( PrnGetPort() ), lErase:= .t.
+
+    cPrinter := PrinterPortToName( cPorta )
+
+    IF EMPTY( cPrinter )
+
+       cPrinter := PrinterPortToName( "USB002" )
+
+       IF EMPTY(cPrinter)
+
+          cPrinter := PrinterPortToName( "USB001" )
+
+       ENDIF
+
+    ENDIF
+    
+    IF .NOT. FILE( cFileTxt )
+
+       MsgInfo( OemToAnsi( "NÇO ACHEI O ARQUIVO MODO TEXTO PARA IMPRIMIR NA MATRICIAL" ), ;
+                OemToAnsi( "NÇO ACHEI O ARQUIVO MODO TEXTO PARA IMPRIMIR NA MATRICIAL" ) )
+
+       RETURN( .F. )
+
+    ENDIF
+
+    IF .NOT. EMPTY( cPrinter )  // TEM USB
+
+       PrintFileRaw( cPrinter, TrueName( "CUPOM.TXT" ), "Impressão de Vendas" )
+
+    ELSEIF LEN( cPorta ) &lt;= 5 .and. Left( Upper(cPorta), 4 ) = "LPT1"
+
+       //--- Spool Local - Matricial em LPT1
+       cPorta:= "PRN"
+
+       WAITRUN("COMMAND.COM /C COPY /B " + cFileTxt + " " + cPorta, 0 )
+
+    ELSE
+
+       //--- Spool Remoto - Matricial em LPT1
+       WAITRUN("COMMAND.COM /C COPY /B " + cFileTxt + " " + cPorta, 0 )
+
+    ENDIF
+
+    IF lErase // Vem .T. da tela de vendas
+       FERASE( cFileTxt )
+    ENDIF
+
+RETURN( .T. )</code></pre></div><br>
+<br>
+Saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p193148">
+    <div class="poster">
+      <div class="name" style="color:#105289">TOTOVIOTTI</div>
+      <div class="rank">Posts: 470</div>
+      <img class="avatar avatar-img" src="avatars/1880.jpg" alt="" loading="lazy">
+      Joined: Fri Feb 05, 2010 11:30 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Wed Aug 17, 2016 01:01 PM
+      </div>
+      <div class="content"><p>Gracias Joao! Voy a probar!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193149">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Wed Aug 17, 2016 01:30 PM
+      </div>
+      <div class="content">TDOSPRN.PRG que yo uso sin problemas:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+ÚÄ Programa ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+³   Aplication: Class TDosPrint                                            ³
+³         File: TDOSPRN.PRG                                                ³
+³       Author: Ignacio Ortiz de Z£¤iga Echeverr¡a                         ³
+³          CIS: Ignacio Ortiz (Ignacio_Ortiz)                              ³
+³     Internet: &lt;!-- m --&gt;&lt;a class="postlink" href="http://www.ozs.com"&gt;http://www.ozs.com&lt;/a&gt;&lt;!-- m --&gt;                                         ³
+³         Date: 09/13/96                                                   ³
+³         Time: 20:20:07                                                   ³
+³    Copyright: 1997 by Ortiz de Zu¤iga, S.L.                              ³
+ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+
+NOTES:
+
+This peace of software is freeware and is not part of FiveWin.
+
+The following code will let you print directly to the printer from inside
+any Fivewin program, like OLD DOS days. Those users that need DOS printing
+speed can use this class instead of the TPrinter class.
+
+The use of the class is very easy and is very similar to the TPrinter class
+of Fivewin, but we have not create any command to avoid the use of any
+static vars.
+
+This is a little sample of how to use the new class:
+
+  LOCAL oPrn
+
+  oPrn := TDosPrn():New("lpt1")
+
+  oPrn:StartPage()                                    // optional
+  oPrn:Say(10,20, "This goes in line 10, column 20")
+  oPrn:EndPage()                                      // optional
+
+  oPrn:End()
+
+A little description of all the members of this class:
+
+DATA:
+
+ cPort:        Printing port, by default "LPT1"
+ cCompress:    String for compressed mode, by default "15"
+ cNormal:      String for normal mode, by default "18"
+ cFormFeed:    String for EJECT, by default "12"
+ hDC:          Printing file Handle (Internal use)
+ nRow:         Current printing row
+ nCol:         Current pringing column
+ nLeftMargin:  Left margin, by default 0
+ nTopMargin:   Top margin, by default 0
+
+METHODS:
+
+ New(cPort)    Constructor, no comment
+ End()         Destructor, no comment
+ StartPage()   Begining of a page, this method is optional
+ EndPage()     End of page, this method is optional if there is only on page,
+               or you try to print in a row that is before the current one,
+               like it did happen with the SAY command
+ Command(c)    Let you send any command to the printer without changing the
+               current row and col. The string to pass as a parameter should
+               content the ascii values of the command separated with commas,
+               for example, the command to reset Epson printers should
+               be: "27,69"
+ SetCoors(r,c) Let you change the current row and col is the equivalent of
+               SetPrc() of Ca-Clipper
+ NewLine()     Increments the current row
+ Write(cText)  Prints the string cText in the current row and column
+ Say(nRow   ,; Prints the string cText in nRow, nCol
+     nCol   ,;
+     cText   )
+ SayCmp()      The same as the method Say but prints in compressed mode and
+               the row is updated accordly.
+
+NOTE:
+
+At the end of this class is a little function call WorkSheet that will make
+the job of DOS printing a lot easier.
+
+Enjoy it!
+
+*/
+
+/*
+// Baixei de &lt;!-- w --&gt;&lt;a class="postlink" href="http://www.fivewin.com.br"&gt;www.fivewin.com.br&lt;/a&gt;&lt;!-- w --&gt; em 01/11/2002
+// Modifiquei em 03/11/2002 - &lt;!-- e --&gt;&lt;a href="mailto:kapiabafwh@bol.com.br"&gt;kapiabafwh@bol.com.br&lt;/a&gt;&lt;!-- e --&gt;  By JoÆo.
+// InclusÆo: Parte Modificada Por Ednaldo Rolim - &lt;!-- e --&gt;&lt;a href="mailto:edrol@pop.com.br"&gt;edrol@pop.com.br&lt;/a&gt;&lt;!-- e --&gt;
+// Acrescentada a Parte Modificada Pelo Gilmer: &lt;!-- w --&gt;&lt;a class="postlink" href="http://www.fivewin.com.br"&gt;www.fivewin.com.br&lt;/a&gt;&lt;!-- w --&gt;
+*/
+
+#Include "FiveWin.Ch"
+#Include "Fileio.Ch"
+
+#Translate nTrim(&lt;n&gt;)  =&gt; AllTrim(Str(&lt;n&gt;,10,0))
+
+#define PF_BUFLEN   2048
+
+//----------------------------------------------------------------------------//
+
+CLASS TDosPrn
+
+     DATA LastError
+     DATA cPort, cCompress, cNormal, cFormFeed, cBuffer
+     DATA hDC, nRow, nCol, nLeftMargin, nTopMargin
+     DATA lAnsiToOem, lCompress
+     DATA lZeraBuffer // By Gilmer &lt;!-- w --&gt;&lt;a class="postlink" href="http://www.fivewin.com.br"&gt;www.fivewin.com.br&lt;/a&gt;&lt;!-- w --&gt;
+     DATA ImpUSB // AS LOGICAL  By &lt;!-- e --&gt;&lt;a href="mailto:Diego@sysfar.com.br"&gt;Diego@sysfar.com.br&lt;/a&gt;&lt;!-- e --&gt; // Imprimir na USB
+
+     DATA oWnd, oPagina                      // Ednaldo
+     DATA nPage        AS NUMERIC            // Ednaldo
+
+     //METHOD New(cPort) CONSTRUCTOR
+     METHOD New(cPort, cVerUSB) CONSTRUCTOR   // By Diego da Sysfar
+
+     METHOD End()
+
+     // Antigo(Old)
+     // METHOD StartPage()  VIRTUAL // NÆo Conta as P ginas
+     // METHOD EndPage()
+
+     // Novo (New)   // Conta as P ginas By Ednaldo Rolim
+     METHOD StartPage()    INLINE ::ShowProc()           // Ednaldo
+
+     METHOD EndPage()
+
+     // METHOD Command(xPar1, xPar2, xPar3, xPar4, xPar5) //velho
+     METHOD Command(cStr1, cStr2, cStr3, cStr4, cStr5)   // novo
+
+     METHOD SetCoors(nRow, nCol)
+
+     METHOD NewLine()       INLINE (::cBuffer += CRLF ,;
+                                    ::nRow++          ,;
+                                    ::nCol    := 0     )
+
+     METHOD Write(cText, lAToO) ;
+            INLINE (IIF(lAtoO == NIL, lAtoO := .T.,),;
+                    ::cBuffer += iif(lAtoO, AnsitoOem(cText), cText) ,;
+                    ::nCol    += len(cText)                           )
+
+     METHOD Say(nRow, nCol, cText, lAToO)
+
+     METHOD SayCmp(nRow, nCol, cText)
+
+     METHOD CharSay(nRow,nCol,cText) INLINE (IIf(::lCompress,;
+                ::SayCmp(nRow,nCol,cText),;
+                ::Say(nRow,nCol,cText)))
+
+     METHOD ZeraBuffer() // By. Gilmer
+
+     METHOD PrintFile(cFile)
+
+     METHOD ShowProc()          // Ednaldo
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( cPort, lFile, lCompress, cVerUSB ) CLASS TDosPrn
+
+     DEFAULT cPort   := "LPT1", ;
+             cVerUSB := .F.,    ;
+             lFile   := .T.   , ;
+             lCompress := .F.
+
+     cPort := Upper(cPort)
+
+     /* // Copiei de DOSPRINT.PRG
+     [EPSON]
+     Normal=18
+     Bold=27,18,27,69
+     Medium=27,70,27,58
+     Compress=15
+     Large=27,69,27,18,27,14
+     Tiny=27,70,27,83,0,27,49,18,15
+     NoTiny=27,70,27,84,27,50
+     FormFeed=12
+     Length=27,67,0
+
+     [OKIDATA]
+     Normal=27,70,27,84,27,50,27,15,18
+     Bold=27,18,27,69
+     Medium=27,70,27,58
+     Compress=27,70,27,84,27,15
+     Large=27,69,27,18,27,14
+     Tiny=27,70,27,83,0,27,49,18,15
+     NoTiny=27,70,27,84,27,50
+     Image=27,76
+     Header=
+     Footer=
+     Jump=216
+     FormFeed=12
+     Length=27,67,0
+     */
+
+     ::ImpUSB      := .F.
+     ::cCompress   := "15"
+     ::cNormal     := "18"
+     ::cFormFeed   := "  "  // 12  //Pulo de P gina
+     ::cBuffer     := ""
+     ::nLeftMargin := 0
+     ::nTopMargin  := 0
+     ::nRow        := 0
+     ::nCol        := 0
+     ::lAnsiToOem  := .T.
+     ::cPort       := cPort + iif(!"." $ cPort, ".PRN", "")
+
+     If cVerUSB .and. upper( PrnGetPort( ) )="USB"
+        //::cPort := DirTempdoWindows()+"\usb.imp"
+         ::cPort       := cPort + iif(!"." $ cPort, ".IMP", "")
+     Endif
+
+     ::hDC         := fCreate(::cPort)
+     ::LastError   := 0
+     // By. Gilmer  // .F. Pula P gina, .T. NÆo Pula a P gina (Cupom Fiscal)
+     ::lZeraBuffer := .F.
+
+     IF ::hDC &lt; 0
+          ::LastError := fError()
+     ENDIF
+
+     ::nPage := 1                  // Ednaldo
+     ::ShowProc()                  // Ednaldo
+
+RETURN Self
+
+
+//----------------------------------------------------------------------------//
+
+METHOD End() CLASS TDosPrn
+
+     IF !empty(::nRow+::nCol)
+          ::EndPage()
+     ENDIF
+
+     ::LastError := 0
+
+     IF !fClose(::hDC)
+          ::LastError := fError()
+     ENDIF
+
+     CursorArrow()
+
+     if ::oWnd != Nil                    // Ednaldo
+        ::oWnd:End()                     // Ednaldo
+     endif                               // Ednaldo
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD EndPage() CLASS TDosPrn
+
+     LOCAL nFor, nLen, nSec
+     LOCAL lError
+
+     If !::lZeraBuffer  // By Gilmer
+        ::Command(::cFormFeed)
+     End
+
+     ::LastError := 0
+
+     IF fWrite(::hDC, ::cBuffer) &lt; len(::cBuffer)
+          ::LastError := fError()
+     ENDIF
+
+     ::cBuffer := ""
+     ::nRow    := 0
+     ::nCol    := 0
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+//METHOD Command(xPar1, xPar2, xPar3, xPar4, xPar5) CLASS TDosPrn // Velho
+METHOD Command(cStr1, cStr2, cStr3, cStr4, cStr5) CLASS TDosPrn  // Novo
+
+     LOCAL cCommand, cToken, cString
+     LOCAL nToken
+
+     //cString  := cValToChar(xPar1) // Velho
+
+     cString  := cStr1   // Novo
+
+/* // Velho
+     IF xPar2 != NIL
+          cString += ","+cValToChar(xPar2)
+     ENDIF
+*/
+
+     IF cStr2 != NIL
+          cString += ","+cStr2
+     ENDIF
+
+/*   // Velho
+     IF xPar3 != NIL
+          cString += ","+cValToChar(xPar3)
+     ENDIF
+*/
+
+     IF cStr3 != NIL
+          cString += ","+cStr3
+     ENDIF
+
+/*   // Velho
+     IF xPar4 != NIL
+          cString += ","+cValToChar(xPar4)
+     ENDIF
+*/
+
+     IF cStr4 != NIL
+          cString += ","+cStr4
+     ENDIF
+
+/*   // Velho
+     IF xPar5 != NIL
+          cString += ","+cValToChar(xPar5)
+     ENDIF
+*/
+
+     IF cStr5 != NIL
+          cString += ","+cStr5
+     ENDIF
+
+     cCommand := ""
+     nToken   := 1
+
+     DO WHILE !Empty(cToken := StrToken(cString, nToken++, ","))
+          cCommand += Chr(Val(cToken))
+     ENDDO
+
+     ::cBuffer += cCommand
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD SetCoors(nRow, nCol) CLASS TDosPrn
+
+     nRow += ::nTopMargin
+     nCol += ::nLeftMargin
+
+     IF ::nRow &gt; nRow
+          ::EndPage()
+          ::nPage++                          // Ednaldo
+          ::StartPage()
+     ENDIF
+
+     /*   // do Site
+     IF ::nRow &gt; nRow
+          ::EndPage()
+          ::StartPage()
+     ENDIF
+     */
+
+     // Tava Aqui
+
+     /*   // do Site
+     IF nRow == ::nRow  .AND. nCol &lt; ::nCol
+          ::EndPage()
+          ::StartPage()
+     ENDIF
+     */
+
+     DO WHILE ::nRow &lt; nRow
+          ::NewLine()
+     ENDDO
+
+     IF nCol &gt; ::nCol
+          ::Write(Space(nCol-::nCol))
+     ENDIF
+
+     // Para Imprimir Primeiro na coluna desejada exemplo 1§ na Coluna 50
+     // Depois na coluna 05... By NetSpeed Inverte-se a Ordem da Cabe‡a de
+     // ImpressÆo, Come‡ando do Fim Para o Inicio...
+     If nRow == ::nRow .and. nCol &lt; ::nCol
+         ::Write(Chr(13))  // NetSpeed
+     Endif
+
+     // Aqui Inicia da Coluna 1 em diante, nÆo faz como a anterior.
+     // Ou Seja do Inicio Para o Fim da Cabe‡a de ImpressÆo, o Que ‚ Normal.
+     IF nRow == ::nRow  .AND. nCol &lt; ::nCol
+          ::EndPage()
+          ::nPage++                          // Ednaldo
+          ::StartPage()
+     ENDIF
+
+     // By. Gilmer
+     If Len(::cBuffer)&gt;=7928
+        ::ZeraBuffer()
+     Endif
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD Say(nRow, nCol, cText, lAToO) CLASS TDosPrn
+
+     DEFAULT lAToO := ::lAnsiToOem
+
+     IF VALTYPE( cText ) = "D"
+        cText := DTOC( cText )
+     ENDIF
+
+     IF VALTYPE( cText ) = "N"
+        cText := STR( cText )
+     ENDIF
+
+     ::SetCoors(nRow, nCol)
+
+     ::Write(cText, lAToO)
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD SayCmp(nRow, nCol, cText, lAToO) CLASS TDosPrn
+
+     DEFAULT lAToO := ::lAnsiToOem
+
+     ::Command(::cCompress)
+     ::SetCoors(nRow, nCol)
+     ::cBuffer += iif(lAToO, AnsitoOem(cText), cText)
+     ::nCol    += Int(len(cText))
+     * by Digao     ::nCol    += Int(len(cText)/1.7+.5)
+     ::Command(::cNormal)
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD ZeraBuffer() CLASS TDosPrn
+
+    /* // Em Ingles
+    ::LastError := 0
+
+    If ::lZeraBuffer
+        IF fWrite(::hDC, ::cBuffer) &lt; len(::cBuffer)
+                ::LastError := fError()
+        ENDIF
+        ::cBuffer := ""
+    Endif
+    */
+
+    // Em Clipper Puro Como ‚!
+    Self:LastError := 0
+
+    If Self:lZeraBuffer
+        IF fWrite(Self:hDC, Self:cBuffer) &lt; len(Self:cBuffer)
+             Self:LastError := fError()
+        ENDIF
+        Self:cBuffer := ""
+    Endif
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+FUNCTION WorkSheet(cPort)
+
+     LOCAL oPrn
+     LOCAL cLine
+     LOCAL nFor
+
+     cLine := ""
+
+     FOR nFor := 0 TO 7
+          cLine += Str(nFor,1)+Replicate(".",9)
+     NEXT
+
+     cLine := Substr(cLine,3)
+
+     oPrn := TDosPrn():New(cPort)
+
+     oPrn:StartPage()
+
+     //alterei em 29/03/2004
+     FOR nFor := 0 TO  56 //65
+          oPrn:Say(nFor,0,StrZero(nFor,2)+cLine)
+     NEXT
+
+     oPrn:EndPage()
+
+     oPrn:End()
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD PrintFile(cFile) CLASS TDosPrn
+
+     LOCAL hFile
+     LOCAL nRead
+     LOCAL cBuffer
+
+     hFile := FOpen(cFile, FO_READ)
+
+     IF hFile &lt; 0
+          RETURN .F.
+     ENDIF
+
+     cBuffer := Space(PF_BUFLEN)
+
+     DO
+          nRead := fRead(hFile, @cBuffer, PF_BUFLEN)
+
+          IF fWrite(::hDC, Left(cBuffer, nRead)) &lt; nRead
+               ::LastError := fError()
+               fClose(hFile)
+               RETURN .F.
+          ENDIF
+     UNTIL nRead == PF_BUFLEN
+
+     fClose(hFile)
+
+RETURN .T.
+
+//----------------------------------------------------------------------------//
+// Visualiza Processo de impressao                 // Ednaldo
+//----------------------------------------------------------------------------//
+METHOD ShowProc() CLASS TDosPrn                   
+
+     IF ::oWnd = Nil 
+                    
+*        DEFINE DIALOG ::oWnd TITLE "Imprimindo ..."  ;
+*               FROM  230, 217 TO 360, 575 PIXEL ;
+*               COLORS CLR_BLACK, nRGB(193,205,205)
+*        
+*        @ 10, 08 TO 40, 172 OF ::oWnd PIXEL 
+*
+*        @ 1.4, 2 ICON NAME "PRINT.ICO" OF ::oWnd 
+*        
+*        @ 25, 35  SAY "Imprimindo Página :"  ;
+*                  PIXEL OF ::oWnd SIZE 70, 12  RIGHT
+*
+*        @ 25, 107 SAY ::oPagina VAR ::nPage  ;
+*                  PIXEL OF ::oWnd UPDATE SIZE 15, 12 RIGHT
+*
+*        @ 47, 60 BUTTON "Aguarde..." SIZE 60, 12 ;
+*                 PIXEL  OF ::oWnd  ACTION .t.
+*
+*        ::oWnd:bPainted := {|| iif(::nPage&gt;0, ::oPagina:Refresh(), )}
+*
+*        ACTIVATE DIALOG ::oWnd CENTER NOWAIT
+*
+*        EndDialog()
+        ResAllFree()
+
+        CursorWait()
+        SysRefresh()
+
+     ELSE
+
+        ::oWnd:BeginPaint()
+        ::oWnd:Paint()
+        ::oWnd:EndPaint()
+
+     ENDIF
+
+RETURN NIL
+
+// Fim do Programa.</code></pre></div><br>
+<br>
+Saludos.</div>
+    </div>
+  </div>
+  <div class="post" id="p193159">
+    <div class="poster">
+      <div class="name" style="color:#105289">TOTOVIOTTI</div>
+      <div class="rank">Posts: 470</div>
+      <img class="avatar avatar-img" src="avatars/1880.jpg" alt="" loading="lazy">
+      Joined: Fri Feb 05, 2010 11:30 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Wed Aug 17, 2016 07:38 PM
+      </div>
+      <div class="content"><p>Gracias!!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193191">
+    <div class="poster">
+      <div class="name" style="color:#105289">LuisPonce</div>
+      <div class="rank">Posts: 196</div>
+      <div class="avatar"></div>
+      Joined: Tue Jul 01, 2008 06:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Thu Aug 18, 2016 04:01 AM
+      </div>
+      <div class="content">Hola Roberto<br>
+<br>
+Aunque ya te pasaron unos buenos ejemplos, te alcanzo uno mas,,, que nunca esa demas<br>
+<br>
+Esta es la cabecera de la clase:<br>
+<br>
+ÚÄ Programa ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿<br>
+³   Aplication: Class TDosPrint                                            ³<br>
+³         File: TDOSPRN.PRG                                                ³<br>
+³       Author: Ignacio Ortiz de Z£¤iga Echeverr¡a                         ³<br>
+³          CIS: Ignacio Ortiz (Ignacio_Ortiz)                              ³<br>
+³     Internet: <!-- m --><a class="postlink" href="http://ourworld.compuserve.com/homepages/Ignacio_Ortiz">http://ourworld.compuserve.com/homepages/Ignacio_Ortiz</a><!-- m -->     ³<br>
+³         Date: 09/13/96                                                   ³<br>
+³         Time: 20:20:07                                                   ³<br>
+³    Copyright: 1997 by Ortiz de Zu¤iga, S.L.                              ³<br>
+ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ<br>
+<br>
+NOTES:<br>
+<br>
+This peace of software is freeware and is not part of FiveWin.<br>
+<br>
+The following code will let you print directly to the printer from inside<br>
+any Fivewin program, like OLD DOS days. Those users that need DOS printing<br>
+speed can use this class instead of the TPrinter class.<br>
+<br>
+The use of the class is very easy and is very similar to the TPrinter class<br>
+of Fivewin, but we have not create any command to avoid the use of any<br>
+static vars.<br>
+<br>
+This is a little sample of how to use the new class:<br>
+<br>
+  LOCAL oPrn<br>
+<br>
+  oPrn := TDosPrn():New(&quot;lpt1&quot;)<br>
+<br>
+  oPrn:Say(10,20, &quot;This goes in line 10, column 20&quot;)<br>
+  oPrn:EndPage()                                      // optional<br>
+<br>
+  oPrn:End()<br>
+<br>
+A little description of all the members of this class:<br>
+<br>
+DATA:<br>
+<br>
+ cPort:        Printing port, by default &quot;LPT1&quot;<br>
+ cCompress:    String for compressed mode, by default &quot;15&quot;<br>
+ cNormal:      String for normal mode, by default &quot;18&quot;<br>
+ cFormFeed:    String for EJECT, by default &quot;12&quot;<br>
+ hDC:          Printing file Handle (Internal use)<br>
+ nRow:         Current printing row<br>
+ nCol:         Current pringing column<br>
+ nLeftMargin:  Left margin, by default 0<br>
+ nTopMargin:   Top margin, by default 0<br>
+ lAnsiToOem:   If .T. a Ansi to Oem translation is done automatically<br>
+               whe printing, by default is .T.<br>
+<br>
+METHODS:<br>
+<br>
+ New(cPort)    Constructor, no comment<br>
+ End()         Destructor, no comment<br>
+ EndPage()     End of page, this method is optional if there is only on page<br>
+ Command(c)    Let you send any command to the printer without changing the<br>
+               current row and col. The string to pass as a parameter should<br>
+               content the ascii values of the command separated with commas,<br>
+               for example, the command to reset Epson printers should<br>
+               be: &quot;27,69&quot;<br>
+ SetCoors(r,c) Let you change the current row and col is the equivalent of<br>
+               SetPrc() of Ca-Clipper<br>
+ NewLine()     Increments the current row<br>
+ Write(cText)  Prints the string cText in the current row and column<br>
+ Say(nRow   ,; Prints the string cText in nRow, nCol<br>
+     nCol   ,; lAtoO indicates if the string should be transformed to Oem,<br>
+     cText  ,; by default is ::lAnsiToOem<br>
+     lAtoO )<br>
+ SayCmp()      The same as the method Say but prints in compressed mode and<br>
+               the row is updated accordly.<br>
+<br>
+NOTE:<br>
+<br>
+If you try to print on a row before the current one a EJECT will be<br>
+done automatically.<br>
+<br>
+In the same way if you try to print on the same row as the current, but<br>
+in a previous column from the current one a EJECT will be done automatically<br>
+<br>
+At the end of this class is a little function call WorkSheet that will make<br>
+the job of DOS printing a lot easier.<br>
+<br>
+Enjoy it!<br>
+<br>
+<br>
+********************************************************************************<br>
+********************************************************************************<br>
+<br>
+ La Clase desarrollada originalmente por Ignacio Ortiz me ha resultado útil por<br>
+ su sencillez y efectividad.<br>
+<br>
+ El único punto debil de esta clase se encuentra cuando el usuario manda a imprimir<br>
+ y la impresora no está lista (sea cual sea la causa). Esto hace que FiveWin capture<br>
+ el error, saltando sobre cualquier manejador de error que el programador defina,<br>
+ y mostrando esa horrorosa ventana blanca que ya todos conocemos.<br>
+ Si el usuario resuelve el problema de la impresora (sigo hablando de cuando aparece<br>
+ la horrorosa ventana blanca), la impresión se realiza, pero a la final el programa<br>
+ termina explotando igual.<br>
+<br>
+ Ahora les presento algunas modificaciones que le realizado a esta clase con la idea<br>
+ que la impresión se realice directamente en los puertos físicos de la impresora,<br>
+ emulando (en cierta forma) la función que realiza el ROM BIOS, y buscando evitar que<br>
+ el manejador de errores se adelante en situaciones como la que les comenté en el<br>
+ parrafo enterior.<br>
+<br>
+ La idea es que hagan todas las pruebas posibles para pulirla, y dejarle abierta a Uds.<br>
+ la posibilidad de manejar los eventuales errores de acuerdo a la necesidad particular<br>
+ de cada quien.<br>
+<br>
+ Este trabajo ES GRATIS!. Lo único que les pido es que no borren este comentario, ni la<br>
+ documentación anexa, ni los comentarios intercalados en los lugares donde se han realizado<br>
+ las modificaciones.<br>
+<br>
+ En mi caso real, utilizo esta misma clase, pero la que ha sido modificada por el<br>
+ compañero Jose E. Serrano E. (JESE), quien le añadió algunas características más,<br>
+ pero manteniendo la misma estructura de la clase original de Ignacio.<br>
+ Cuando estas modificaciones funcionen sin inconvenientes, las transferiré a la clase<br>
+ modificada por JESE.<br>
+<br>
+ Un Abrazo a todos,<br>
+ y que les sea útil<br>
+<br>
+ Giancarlo J. Sabattino S.<br>
+ 08 Julio 2001<br>
+ <!-- e --><a href="mailto:gsabattino@cantv.net">gsabattino@cantv.net</a><!-- e --><br>
+<br>
+<br>
+ Este trabajo se lo dedico a los compañeros Hernán D. Cecarrelli, José E. Serrano E. (JESE),<br>
+ Juan José Machado, y a Willy Quintana.<br>
+<br>
+<br>
+ NOTAS IMPORTANTES:<br>
+<br>
+ Esta clase está orientada totalmente a impresoras matriciales, o impresoras que se comporten<br>
+ como impresores matriciales, por lo que su uso en cualquier otro tipo de impresora puede<br>
+ causar resultados indeseados.<br>
+<br>
+ Esta clase trabaja directamente sobre los puertos PRN, LPT1 y LPT2 que existan físicamente en el<br>
+ equipo, por lo que no funcionará en ningún otro tipo de dispositivo. Para mantener compatibilidad,<br>
+ se puede pasar un nombre de archivo para grabar la impresión en disco tal como lo hace la clase<br>
+ original.<br>
+<br>
+ En teoría, no debe ser activada si alguna aplicación Windows se encuentra haciendo uso de la<br>
+ misma impresora que se desea utilizar. Yo no he intentado utilizarla de esta forma, pero la<br>
+ lógica me dice que los resultados serán totalmente impredecibles.<br>
+<br>
+<br>
+y este es el ejemplo:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">      oPrnCmp:=TDosPrn():New(cFilPrn)    // oPrnCmp:=TDosPrn():New("luis.prn")
+      oPrnCmp:Command( { 27, 64 } )
+
+      oPrnCmp:Say( nRow, 00, PADC("CIERRE DE TURNO ",40), nCompress )
+       nRow++
+      oPrnCmp:Say( nRow, 00, Repl("-",40), nCompress )
+       nRow ++
+      oPrnCmp:Say( nRow, 00, "Rango: "+TRIM(cRango), nCompress )
+       nRow++
+      oPrnCmp:Say( nRow, 00, "Zona : "+TRIM(cNomIsla), nCompress )
+       nRow++
+      oPrnCmp:Say( nRow, 00, "Turno: "+TRIM(cNomTurno), nCompress )
+       nRow++
+
+      oPrnCmp:Say( nRow, 00, Repl("-",40), nCompress )
+       nRow ++
+      oPrnCmp:Say( nRow, 00, PADC("Vendedor: "+cVendedor+" "+cNomVen,40), nCompress )
+       nRow++
+      oPrnCmp:Say( nRow, 00, Repl("-",40), nCompress )
+       nRow ++
+
+
+      FOR G=1 TO LEN(aTitGrupo)
+
+        oPrnCmp:Say( nRow, 00, aTitGrupo[G][2] , { nCompress } )
+         nRow ++
+
+      NEXT
+
+      oPrnCmp:Say( nRow, 00, Repl("-",40), nCompress )
+       nRow ++
+      oPrnCmp:Say( nRow, 00, mmInicial+DTOC(DATE())+" - "+TIME(), { nCompress } )
+      oPrnCmp:Say( nRow, 28, TRANS(nTotalRep,MA72C), { nCompress } )
+       nRow ++
+       nRow+=7
+      oPrnCmp:Say( nRow, 00, chr(27) + chr(105) , nCompress )  // Corte Parcial
+
+      oPrnCmp:EndPage()
+      oPrnCmp:End()
+
+      PrintFileRaw( cLptDoc, cFilPrn )    // PrintFileRaw( "\\CAJA01\TICKET", "luis.prn" )</code></pre></div><br>
+<br>
+<br>
+lo uso a partir de una clase modificada  por Giancarlo J. Sabattino S. (08-07-2001), lo que me agrada es que el command() recibe un array, tambien genera un archivo.prn que puedes direccionar a cualquier impresora, local o en red</div>
+    </div>
+  </div>
+  <div class="post" id="p193205">
+    <div class="poster">
+      <div class="name" style="color:#105289">TOTOVIOTTI</div>
+      <div class="rank">Posts: 470</div>
+      <img class="avatar avatar-img" src="avatars/1880.jpg" alt="" loading="lazy">
+      Joined: Fri Feb 05, 2010 11:30 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Thu Aug 18, 2016 12:20 PM
+      </div>
+      <div class="content"><p>Gracias! <br>
+Ahora si lo pude hacer funcionar!</p>
+<p>Me queda una pequeña cosita por resolver... habrá forma de determinar<br>
+si la impresora a la que deseo mandar mi impresión es Láser o Chorro a Tinta o <br>
+Matriz de Puntos?</p>
+<p>Estuve viendo que Cristóbal nombró la PRTINFO de VisualFox, pero no puedo <br>
+encontrar fuentes de eso para ver como se puede determinar desde FW el <br>
+tipo de tracción de la impresora seleccionada...</p>
+<p>Muchas gracias!<br>
+Roberto</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193210">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Thu Aug 18, 2016 01:47 PM
+      </div>
+      <div class="content">Luis, puede muestrar:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">   cLptDoc
+
+   y
+
+   cFilPrn</code></pre></div><br>
+<br>
+Gracias, saludos.<br>
+</div>
+    </div>
+  </div>
+  <div class="post" id="p193211">
+    <div class="poster">
+      <div class="name" style="color:#105289">TOTOVIOTTI</div>
+      <div class="rank">Posts: 470</div>
+      <img class="avatar avatar-img" src="avatars/1880.jpg" alt="" loading="lazy">
+      Joined: Fri Feb 05, 2010 11:30 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Thu Aug 18, 2016 01:51 PM
+      </div>
+      <div class="content"><p>Joao:<br>
+Esos datos son del programa de Luis o de la consulta que hago yo?<br>
+Roberto</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193218">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Thu Aug 18, 2016 02:25 PM
+      </div>
+      <div class="content"><p>Del programa de Luis, creo que el tien que muestrar un código más completo, para que cuando sea un novato, comprenda mejor.</p>
+<p>Saludos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p193220">
+    <div class="poster">
+      <div class="name" style="color:#105289">LuisPonce</div>
+      <div class="rank">Posts: 196</div>
+      <div class="avatar"></div>
+      Joined: Tue Jul 01, 2008 06:34 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Thu Aug 18, 2016 02:52 PM
+      </div>
+      <div class="content">Joao, Roberto<br>
+<br>
+cLptDoc:=&quot;luis.prn&quot;<br>
+cFilPrn:=&quot;\\CAJA01\TICKET&quot;<br>
+<br>
+<strong>cLptDoc</strong>; es una variable LOCAL que contiene el nombre del file que generará la TDOSPRN, en este caso genera un file &quot;luis.prn&quot;<br>
+<br>
+<strong>cFilPrn</strong>; es otra variable LOCAL que contiene la ruta y nombre de la impresora a la cual enviaré el reporte<br>
+<br>
+Con esta instruccion:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">PrintFileRaw( cLptDoc, cFilPrn )    // PrintFileRaw( "\\CAJA01\TICKET", "luis.prn" )</code></pre></div><br>
+<br>
+Envio el reporte &quot;luis.prn&quot; a la impresora &quot;\\CAJA01\TICKET&quot; (Impresora nombrada como &quot;TICKET&quot; en el equipo de nombre &quot;CAJA01&quot;); ambas variables del codigo, estan comentadas &quot;//&quot;  en el ejemplo que publiqué<br>
+<br>
+Ademas de corte parcial que va en el ejemplo, tambien hay un comando para abrir el cajon del dinero mediante el puerto RJ11 de la impresora, alguien sabe cual es ese comando?? y la paridad del cableado?.<br>
+<br>
+Saludos</div>
+    </div>
+  </div>
+  <div class="post" id="p193221">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">karinha</div>
+      <div class="rank">Posts: 8496</div>
+      <div class="avatar"></div>
+      Joined: Tue Dec 20, 2005 07:36 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Ejemplo TdosPrn</span><br>
+        Posted: Thu Aug 18, 2016 03:01 PM
+      </div>
+      <div class="content"><p>Gracias Luis, perfecto.</p>
+<p>Saludos.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

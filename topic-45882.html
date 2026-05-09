@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>FLOCK() und RLOCK() - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-45882">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-23.html">All products support</a> FLOCK() und RLOCK()</div>
+  <div class="post" id="p281134">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">FLOCK() und RLOCK()</span><br>
+        Posted: Tue Aug 26, 2025 12:10 AM
+      </div>
+      <div class="content"><p><t>FLOCK() und RLOCK() wirken ja immer auf die Datei und nicht auf die einzelnen Workareas.<br/><br>
+<br/><br>
+Hat jemand einen guten Vorschlag, wie man eine einfache und robuste Lösung für SafeLock() und SafeUnlock() bauen kann – idealerweise so, dass sowohl FLOCK() als auch RLOCK() sauber abgebildet werden und man im eigenen Prozess Mehrfachaufrufe erkennt und korrekt wieder freigibt?<br/><br>
+<br/><br>
+Ich denke z. B. an so etwas in der Art (Pseudocode):<br/><br>
+<br/><br>
+STATIC hLocks := {}<br/><br>
+<br/><br>
+FUNCTION SafeFlock( cFile )<br/><br>
+   IF hLocks[ cFile ] == .T.<br/><br>
+      RETURN { "success"=&gt;.T., "alreadyLocked"=&gt;.T. }<br/><br>
+   ENDIF<br/><br>
+   IF FLOCK()<br/><br>
+      hLocks[ cFile ] := .T.<br/><br>
+      RETURN { "success"=&gt;.T., "alreadyLocked"=&gt;.F. }<br/><br>
+   ELSEIF NETERR()<br/><br>
+      RETURN { "success"=&gt;.F., "error"=&gt;"E_NET" }<br/><br>
+   ELSE<br/><br>
+      RETURN { "success"=&gt;.F., "error"=&gt;"E_LOCK" }<br/><br>
+   ENDIF<br/><br>
+ENDFUNC<br/><br>
+<br/><br>
+FUNCTION SafeRlock()<br/><br>
+   IF DBRLOCK()<br/><br>
+      RETURN { "success"=&gt;.T. }<br/><br>
+   ELSEIF NETERR()<br/><br>
+      RETURN { "success"=&gt;.F., "error"=&gt;"E_NET" }<br/><br>
+   ELSE<br/><br>
+      RETURN { "success"=&gt;.F., "error"=&gt;"E_RLOCK" }<br/><br>
+   ENDIF<br/><br>
+ENDFUNC<br/><br>
+<br/><br>
+FUNCTION SafeUnlock( cFile )<br/><br>
+   DBUNLOCK()<br/><br>
+   UNLOCK()<br/><br>
+   hLocks[ cFile ] := .F.<br/><br>
+   RETURN { "success"=&gt;.T. }<br/><br>
+ENDFUNC<br/><br>
+<br/><br>
+<br/><br>
+Hat jemand von euch schon Best Practices, wie man so etwas noch robuster gestalten kann (z. B. bei Workarea-Wechsel oder wenn ein USE schiefgeht)?</t></p></div>
+    </div>
+  </div>
+  <div class="post" id="p281135">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FLOCK() und RLOCK()</span><br>
+        Posted: Tue Aug 26, 2025 12:30 AM
+      </div>
+      <div class="content"><r><QUOTE><s><blockquote></s>wie DBF-Locking überhaupt funktioniert.<br/><br>
+<br/><br>
+1. File-Lock (FLOCK)<br/><br>
+<br/><br>
+Ein FLOCK() setzt einen Datei-weiten Sperrbereich über den Lock-Mechanismus des Betriebssystems.<br/><br>
+<br/><br>
+Je nach RDD / OS wird dabei in der Regel das ganze File oder ein definierter Bereich (oft Byte 0) gesperrt.<br/><br>
+<br/><br>
+Das Betriebssystem (DOS/Windows: „byte-range locking“, UNIX/NFS: fcntl()/flock()) hält diese Information prozessbezogen.<br/><br>
+<br/><br>
+Gespeichert wird also nur im OS-Kernel, nicht in der DBF selbst.<br/><br>
+<br/><br>
+2. Record-Lock (RLOCK / DBRLOCK)<br/><br>
+<br/><br>
+DBF-Engines (Clipper, Harbour, xHarbour, Xbase++ …) implementieren Record-Locks ebenfalls mit Byte-Range-Locks im Betriebssystem.<br/><br>
+<br/><br>
+Konvention (dBase/Clipper-Standard):<br/><br>
+<br/><br>
+Für Record n wird im DBF-File der Bytebereich n bis n+1 oder eine feste Offset-Formel gelockt.<br/><br>
+<br/><br>
+Beispiel Clipper/DBFNTX: lock at recno * 1, size 1.<br/><br>
+<br/><br>
+ADS/CDX oder andere RDDs nutzen evtl. andere Bereiche, aber immer mit OS-Locks.<br/><br>
+<br/><br>
+Es wird kein zusätzliches Feld in der DBF gesetzt!<br/><br>
+<br/><br>
+Ob ein Datensatz gesperrt ist, weißt du nur durch den Kernel-Lock, nicht durch ein Flag im Record.<br/><br>
+<br/><br>
+3. Wo wird’s gespeichert?<br/><br>
+<br/><br>
+Im Betriebssystem:<br/><br>
+<br/><br>
+Windows: Locktabellen im Kernel (per Filehandle, Prozess, Offset/Length).<br/><br>
+<br/><br>
+UNIX: fcntl(F_SETLK) Strukturen im Kernel.<br/><br>
+<br/><br>
+Jeder Prozess mit demselben Filehandle sieht beim Lock-Versuch: Erfolg oder Fehler.<br/><br>
+<br/><br>
+Die DBF-Datei enthält selbst keinerlei Information über Locks.<br/><br>
+<br/><br>
+4. Konsequenzen<br/><br>
+<br/><br>
+Wenn ein Prozess abstürzt → OS gibt die Locks frei, weil die Filehandles geschlossen werden.<br/><br>
+<br/><br>
+Wenn du dieselbe DBF in zwei Workareas im selben Prozess offen hast → OS sieht nur einen Prozess, die Locks gelten für dich selbst immer als „ok“.<br/><br>
+<br/><br>
+Tools wie IsRecLocked() / DbInfo(DBI_ISFLOCK) fragen im RDD zurück: „halte ich (dieser Prozess) aktuell einen Lock?“ – sie können fremde Locks meist nicht erkennen, nur eigene Versuche schlagen dann fehl.<br/><br>
+<br/><br>
+<EMOJI seq="2705" tseq="2705">✅</EMOJI> Kurzantwort:<br/><br>
+<br/><br>
+Gespeichert wird nur im Betriebssystem (Kernel Lock Table), nicht in der DBF.<br/><br>
+<br/><br>
+RLOCK() ist ein Byte-Range-Lock auf die DBF-Datei, typischerweise 1 Byte pro Recno.<br/><br>
+<br/><br>
+Die DBF enthält keine Flag-Spalte für „locked“ – alles passiert über das OS-Locking.<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="post" id="p281136">
+    <div class="poster">
+      <div class="name" style="color:#105289">Otto</div>
+      <div class="rank">Posts: 6982</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 07:07 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: FLOCK() und RLOCK()</span><br>
+        Posted: Tue Aug 26, 2025 12:31 AM
+      </div>
+      <div class="content"><r>CHATGPT<br>
+<QUOTE><s><blockquote></s>Betriebssystem weiß immer, welcher Prozess (genauer: welches Handle dieses Prozesses) einen Lock gesetzt hat.<br/><br>
+<br/><br>
+Wie das OS es hält<br/><br>
+<br/><br>
+Windows (Win32 API / LockFileEx):<br/><br>
+Jeder LockFile()/LockFileEx() ruft den Kernel an, der in einer internen Locktabelle pro Filehandle speichert:<br/><br>
+<br/><br>
+Prozess-ID (PID)<br/><br>
+<br/><br>
+Filehandle (weil ein Prozess mehrere Handles auf dieselbe Datei haben kann)<br/><br>
+<br/><br>
+Offset + Länge (welcher Bereich ist gesperrt)<br/><br>
+<br/><br>
+Modus (Shared/Exclusive)<br/><br>
+<br/><br>
+Unix/Linux (fcntl()/flock()):<br/><br>
+Ähnlich: der Kernel merkt sich pro Open File Description (d. h. „fd“ in Kombination mit Inode/Dateiobjekt) die Sperrbereiche.<br/><br>
+<br/><br>
+Jeder Prozess hat FDs → die Locktabelle hängt am Dateiknoten.<br/><br>
+<br/><br>
+Bei close() oder Prozessende entfernt der Kernel automatisch die Sperren.<br/><br>
+<br/><br>
+Wichtige Details für DBF-Welt<br/><br>
+<br/><br>
+RLOCK() = „1 Byte locken für Recno N“.<br/><br>
+→ Im Kernel ist gespeichert: „PID 12345, Handle #7, File Inode X, Range [1234,1235) ist gelockt“.<br/><br>
+<br/><br>
+FLOCK() = entweder „ganze Datei“ oder z. B. „Byte 0“ exklusiv sperren.<br/><br>
+<br/><br>
+Warum du das im DBF selbst nicht siehst: Die Lockinformationen leben nur im Kernel, nicht in der DBF-Datei.<br/><br>
+<br/><br>
+Darum:<br/><br>
+<br/><br>
+Wenn der Prozess abstürzt → Kernel räumt alle Locks dieses Prozesses auf.<br/><br>
+<br/><br>
+Wenn du denselben Prozess mit zwei Workareas hast → beide Workareas teilen sich dieselbe PID → Kernel erlaubt doppelt „erfolgreich“, weil er sieht: Lock gehört ohnehin dir.<br/><br>
+<br/><br>
+Konsequenz für dich<br/><br>
+<br/><br>
+Ja: Der Kernel speichert genau, welcher Prozess (PID) und welches Handle eine Sperre hält.<br/><br>
+<br/><br>
+Nein: Du kannst das aus deinem Harbour-Programm normalerweise nicht direkt abfragen (außer über spezielle APIs oder Tools wie lsof, handle.exe, Windows API GetFileInformationByHandleEx).<br/><br>
+<br/><br>
+Das RDD selbst arbeitet nach dem Motto: versuch zu locken → klappt = frei, klappt nicht = jemand anders hat’s.<e></blockquote></e></QUOTE></r></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

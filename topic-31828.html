@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>XBROWSE 15.12 Challenge - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-31828">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> XBROWSE 15.12 Challenge</div>
+  <div class="post" id="p185853">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">XBROWSE 15.12 Challenge</span><br>
+        Posted: Sun Jan 17, 2016 09:50 PM
+      </div>
+      <div class="content"><p>Consider this:</p>
+<p>I have an inventory file.  I create an index on 6 fields, and using AUTOSORT in XBROWSE I can click on the column headers and reset the order, and do an incremental search.</p>
+<p>The inventory file has stocking parts, and non-stocking parts.  I would like to switch between showing all parts, or just stocking parts.</p>
+<p>For speed, I have created indexes both ways, and do my order selection from a popup box.  However, everywhere else in the program, clicking on the header works because no filter is needed.</p>
+<p>I tried using the xBrowse commands for filtering, but those are very slow and do not always reset well when I eliminate the filter.  </p>
+<p>Does anyone have a suggestion how I can use the columns and filter the database quickly, or allow two indexes per column with a runtime condition ?</p>
+<p>Your ideas would be appreciated.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p185859">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Mon Jan 18, 2016 03:36 AM
+      </div>
+      <div class="content">Assuming you have a logical field to indicate stocking parts, if you maintain an index on that logical field, even setting a normal filter to that field should give acceptable performance. Particularly ADS client-server version should give good performace with filters even on large tables.<br>
+<br>
+In any case, switching between indexes is definitely faster. Here is an example how to do this. I selected customer.dbf in fwh\samples folder and created a new DBF with 100,000 records. This size should be good enough for us to judge the performance. I have provided both options (1) switching indexes and (2) setting filter. We can also compare the response times.<br>
+<br>
+Note: TDatabase in buffered mode slows down browsing speeds consderably. It is better to use non-buffered mode and the best option is to browse DBF directly.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+
+REQUEST DBFCDX
+
+static aOrders
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   RDDSETDEFAULT( "DBFCDX" )
+
+   OpenDBF()
+   BrowseDBF()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function OpenDBF()
+
+   if ! File( "CUST100.DBF" ) .or. ;
+      MsgYesNo( "Recreate DBF?" )
+
+      CreateDBF()
+   endif
+
+   USE CUST100 NEW ALIAS CUST SHARED VIA "DBFCDX"
+   SET ORDER TO TAG FIRST
+   GO TOP
+
+   aOrders     := { {}, {} }
+   AEval( DbStruct(), { |a| AAdd( aOrders[ 1 ], a[ 1 ] ), ;
+                            AAdd( aOrders[ 2 ], a[ 1 ] + 'M' ) } )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function BrowseDBF()
+
+   local oDlg, oFont, oBrw, oChk
+   local lMarried    := .f.
+   local lUseFilter  := .f.
+
+   DEFINE FONT oFont NAME "TAHOMA" SIZE 0,-12
+   DEFINE DIALOG oDlg SIZE ScreenWidth(0)*0.8, 600 PIXEL FONT oFont
+
+   @ 40,10 XBROWSE oBrw SIZE -10,-10 PIXEL OF oDlg ;
+      DATASOURCE Alias() AUTOCOLS AUTOSORT ;
+      CELL LINES NOBORDER
+
+   WITH OBJECT oBrw
+      :cSortOrders   := aOrders[ 1 ]
+      :CreateFromCode()
+   END
+
+   @ 10, 10 CHECKBOX lMarried PROMPT "Married Only" SIZE 60,10 PIXEL OF oDlg ;
+      ON CHANGE ( oDlg:AEvalWhen(), ;
+            oBrw:cAlias )-&gt;( SetFilter( oBrw, lMarried, lUseFilter ) )
+
+   @ 10, 80 CHECKBOX lUseFilter PROMPT "Use Filters" SIZE 60,10 PIXEL OF oDlg ;
+      WHEN ! lMarried ;
+      ON CHANGE ( oDlg:AEvalWhen() )
+
+   @ 10,160 SAY oBrw:oSeek PROMPT oBrw:cSeek SIZE 80,10 PIXEL OF oDlg ;
+      COLOR CLR_HRED,CLR_YELLOW
+
+   ACTIVATE DIALOG oDlg CENTERED
+   RELEASE FONT oFont
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function SetFilter( oBrw, lMarried, lUseFilter )
+
+   FIELD MARRIED
+
+   local cOrder   := OrdSetFocus()
+
+   if lUseFilter
+
+      if lMarried
+         SET FILTER TO MARRIED
+      else
+         SET FILTER TO
+      endif
+      DBSKIP( 0 )
+
+   else
+
+      if lMarried
+         oBrw:cSortOrders  := aOrders[ 2 ]
+         cOrder      += "M"
+         OrdSetFocus( cOrder )
+         if ! FIELD-&gt;MARRIED
+            // Needs repositioning the record
+            DBEVAL( { || nil }, nil, { || ! FIELD-&gt;MARRIED } )
+            if Eof()
+               GO BOTTOM
+            endif
+         endif
+      else
+         oBrw:cSortOrders  := aOrders[ 1 ]
+         cOrder      := Left( cOrder, Len( cOrder ) - 1 )
+         OrdSetFocus( cOrder )
+      endif
+
+   endif
+
+   oBrw:Refresh()
+   oBrw:SetFocus()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function CreateDBF()
+
+   local n
+
+   ? "Will now create DBF"
+   USE CUSTOMER
+   COPY STRUCTURE TO CUST100
+   CLOSE DATA
+
+   USE CUST100 EXCLUSIVE
+   for n := 1 to 200
+   APPEND FROM CUSTOMER
+   next
+   ? lastrec(),"records"
+   ? "Will now create Index"
+
+   for n := 1 to FCount()
+      CreateTag( FieldName( n ), FieldType( n ) )
+   next
+   CLOSE DATA
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function CreateTag( ctag, cType )
+
+   FIELD MARRIED
+
+   PRIVATE cExpr
+
+   if cType == 'C'
+      cExpr    := "UPPER(" + Trim( cTag ) + ")"
+      INDEX ON &amp;cExpr TAG &amp;cTag
+      cTag  += "M"
+      INDEX ON &amp;cExpr TAG &amp;cTag FOR MARRIED
+   else
+      cExpr    := cTag
+      INDEX ON &amp;cExpr TAG &amp;ctag
+      cTag  += "M"
+      INDEX ON &amp;cExpr TAG &amp;cTag FOR MARRIED
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//</code></pre></div><br>
+Please build and run this program in \fwh\samples folder.</div>
+    </div>
+  </div>
+  <div class="post" id="p185873">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Mon Jan 18, 2016 05:21 PM
+      </div>
+      <div class="content"><p>That was not exactly the question.  </p>
+<p>An Inventory database has 35 fields.  It has indexes on 6, including partnumber, UPC code, description, manufacturer, location, and cross reference.</p>
+<p>In an xbrowse, I can click on any of those headers and reorder the display based on that index.</p>
+<p>The challenge:  Keeping that same format, I want to filter the display based on the logical flag that indicates if the part is stocking, or not.  ( Non stocking parts are items that were sold but not kept on our shelves ). </p>
+<p>In the past, I created 12 indexes ( two for each of those fields I mentioned, 1 including all parts, and 1 including only stocking parts ) and then used a popup to select the one to be used. With ADS that is very fast.  However, everywhere else in the program, the client sets the order by clicking on a column head.</p>
+<p>I create the browse normally and all parts are displayed, and I click on the field to select the index order.  To get the subset of just stocking parts, I use the browse filter ( bFilterExp = &quot;invtyp = .t. &quot; ) and the lFilterFld := .t. and this does work.  It's just that it appears to be slow.  I'll be testing this with some clients to see if the speed is OK.  Initially I was finding a problem that the filter was not accurate, but that may have been resolved.</p>
+<p>It's not going to be about an index on invtyp because we do not order the data on that field.  We order it on the other 6 fields.</p>
+<p>Tim</p></div>
+    </div>
+  </div>
+  <div class="post" id="p185877">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Mon Jan 18, 2016 05:56 PM
+      </div>
+      <div class="content"><blockquote><br>
+It's not going to be about an index on invtyp because we do not order the data on that field. We order it on the other 6 fields.<br>
+</blockquote><br>
+The purpose of creating indexes is not to set order alone. Major purpose is to optimize filters/where clauses.<br>
+If there is an index on &quot;invtyp&quot;, &quot;SET FILTER TO INVTYP: is optimized and is extremely fast. No body ever need to set order to that index.<br>
+<br>
+<blockquote><br>
+However, everywhere else in the program, the client sets the order by clicking on a column head.<br>
+</blockquote><br>
+<br>
+In this case also that facility is available. Please note the way the indexes are created and are swapped when the Married flag set on/off. As far as the user is concerned still he can click on the header and get the same effect.<br>
+<br>
+I understand you did not try the sample.</div>
+    </div>
+  </div>
+  <div class="post" id="p185880">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Mon Jan 18, 2016 06:07 PM
+      </div>
+      <div class="content"><p>It has been a very crazy morning.  Two people had computers die over the weekend and needed new software installs, and one business had their entire system corrupted by a very powerful virus ... but I will work with this now.</p>
+<p>UPDATE:  Looking very closely at your code, I think I have a solution now combining your methodology with my current tData code.  I'll test it a bit later and post the results.</p>
+<p>Tim</p></div>
+    </div>
+  </div>
+  <div class="post" id="p185922">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Wed Jan 20, 2016 12:22 AM
+      </div>
+      <div class="content">I reviewed your code carefully, but that would require MASSIVE rewriting of a whole module to follow that process.  First, I am using a tdata / tdatabase data object format and I really want to stay with it.  Please consider the following:<br>
+<br>
+First I have index &quot;pairs&quot;.  The first is on all parts, and the second is on only stocking parts.  These are created without a problem.  In my code, I have assigned the following:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">  LOCAL aOrders :=  {{"einnum", "eindes", "einman", "einupc", "eincrs", , , "einloc" },;
+         {"einnums", "eindess", "einmans", "einupcs", "eincrss", , , "einlocs" } }
+
+REDEFINE  XBROWSE oLBxin ;
+     DATASOURCE oInventory ;
+     HEADERS " Part ", " Description ", " Manufacturer ", " UPC ", " Cross Ref. ", " On Hand ", " Charge ", " Location "  ;
+     COLUMNS "invnum", "invdes", "invman", "invupc", "invcod", "invstk", "invchg", "invloc" ;
+     ID 716 OF oDiw ;
+     ON CHANGE ( oPart:load(), oDiw:update() )  ;
+     AUTOSORT UPDATE 
+    oLBxin:cSortOrders := aOrders[1]</code></pre></div><br>
+<br>
+The first array are the indexes that have all parts.  The second array are the indexes that have only stocking parts.  They are in the proper column order.  When I implement this,  the program works as expected, with all columns responding in the order of the proper index.  If I start it using oLBxin:cSortOrders := aOrders[2] it also works correctly, showing only the stocking parts, and allowing me to click on headers to switch indexes.<br>
+<br>
+So, I figured ( from your example ) that I should be able to use a button to toggle to the alternate array.   So I created the following code to toggle the two arrays.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">    DEFINE BUTTON oBtn3 OF oBarInv RESOURCE "FILTER" PROMPT "Filter" TOOLTIP "Filter list";
+        ACTION ( IIF( lAll = .T., (oLBxin:cSortOrders = aOrders[2], lAll := .F., cIAMsg := "Showing Stocking Parts Only"  ), ;
+        (   oLBxin:cSortOrders = aOrders[1], lAll := .t., cIAMsg := "Showing All Parts" ) ), ;
+                oLbxin:refresh(), oPart:load( ), oDiw:Update(), oSay13:refresh( ) )</code></pre></div><br>
+<br>
+So, it does not refresh the browse with the new set of arrays.  Apparently there is a method I need to add to push the refresh using the new orders.  The logic here:  If the setting is showing all records, it substitutes the second order, does a refresh and dialog update and a couple of other things.  <br>
+<br>
+Can we make this work ?  What am I missing ?<br>
+<br>
+Thanks.</div>
+    </div>
+  </div>
+  <div class="post" id="p185923">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Wed Jan 20, 2016 12:59 AM
+      </div>
+      <div class="content"><blockquote>What am I missing ?</blockquote><br>
+In the action clause, you also need to set order to the corresponding new index and re-position the record if necessary.<br>
+<br>
+Note:<br>
+You can include sort orders inside the command like this:<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">    HEADERS " Part ", " Description ", " Manufacturer ", " UPC ", " Cross Ref. ", " On Hand ", " Charge ", " Location "  ;
+     COLUMNS "invnum", "invdes", "invman", "invupc", "invcod", "invstk", "invchg", "invloc" ;
+     SORT aOrders[ 1 ] ;
+     ID 716 OF oDiw ;</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p185925">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Wed Jan 20, 2016 01:11 AM
+      </div>
+      <div class="content"><p>Unfortunately, that does not allow for the column headers to be responsive when clicking them.  In other words, it would appear it's not actually substituting the second array using the button control .</p>
+<p>I call oInventory:setorder( 2 )  and oInventory:gotop() and that then subs in the first column.  Click on another column and it is not using the filtered index.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p185926">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">nageswaragunupudi</div>
+      <div class="rank">Posts: 10733</div>
+      <div class="avatar"></div>
+      Joined: Sun Nov 19, 2006 05:22 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Wed Jan 20, 2016 01:23 AM
+      </div>
+      <div class="content"><p>I shall give you the code in a while that works for tdatabase.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p185927">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Wed Jan 20, 2016 01:38 AM
+      </div>
+      <div class="content"><p>OK ... it would seem like we could push this with some command that would refresh xbrowse with the new order array.  We know both arrays will work, but if we could switch while the control is active, it would be ideal.</p>
+<p>I thought:<br>
+    oLBxin:cSortOrders = aOrders[2]<br>
+    oLBxin:refresh()</p>
+<p>would do it ... but it doesn't</p>
+<p>ADS actually has long recommended using indexes rather than filters.  I did try filters, but it created a bit of a mess with accessing the parts.</p>
+<p>Also, where does cSortOrders come from ?  I do not see it at all in xBrowse.  That only has cSortOrder as a value within the class.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p186201">
+    <div class="poster">
+      <div class="name" style="color:#105289">reinaldocrespo</div>
+      <div class="rank">Posts: 990</div>
+      <img class="avatar avatar-img" src="avatars/299.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 05:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Wed Jan 27, 2016 09:32 PM
+      </div>
+      <div class="content">Hello Tim;<br>
+<br>
+I think what Rao is trying to say is that in addition to your 6 existing indexes you should create one extra index.  In total you would have 7 indexes.  This 7th index is used to create an Advantage Optimized Filter.  Like this:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">( cAlias )-&gt;( AdsSetAof( "isStockItem == .T." ))</code></pre></div><br>
+<br>
+I'm assuming the field name that hols whether an item is stock or not is named &quot;isStockItem&quot; and that it is of type &quot;Logical&quot;.   When this code is executed and your browse is refreshed, only records with isStockItem on true will be displayed.  To turn off the filter execute this code:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">( cAlias )-&gt;( AdsClearAof() )</code></pre></div><br>
+<br>
+Notice you don't change the controlling index nor do you need to create complex index expressions.  BTW- you could use your other indexes to create even more complicated and interesting filters.<br>
+<br>
+Finally; you could use the AOF expression even if an index does not exist, but that would make the browse very slow.<br>
+<br>
+Hope that helps;<br>
+<br>
+<br>
+Reinaldo.</div>
+    </div>
+  </div>
+  <div class="post" id="p186206">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: XBROWSE 15.12 Challenge</span><br>
+        Posted: Wed Jan 27, 2016 10:15 PM
+      </div>
+      <div class="content"><p>Reinaldo,</p>
+<p>I'll experiment with that.  Even without the filter, at our test site we encountered a number of problems with the indexes.  I reverted to a drop down button menu to select the type of filter ... but I would prefer this method if I can get it to work correctly.</p>
+<p>The main problem we found was that the filter was not always filtering all records, but then it may be other issues too ....</p>
+<p>Tim</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

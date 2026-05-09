@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>An example of multithreading and Database - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-29137">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> An example of multithreading and Database</div>
+  <div class="post" id="p164259">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">An example of multithreading and Database</span><br>
+        Posted: Tue Aug 26, 2014 02:32 PM
+      </div>
+      <div class="content"><p>Hi,</p>
+<p>Does anyone have an example of using WorkAreas and MT?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p164261">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: An example of multithreading and Database</span><br>
+        Posted: Tue Aug 26, 2014 03:18 PM
+      </div>
+      <div class="content"><!-- m --><a class="postlink" href="https://docs.google.com/document/d/1xxRphZ5TIGbn5rOWQ_35VVcw8Yex63A4MKXimfq0MVg/edit#">https://docs.google.com/document/d/1xxR ... 0MVg/edit#</a><!-- m --><br>
+<br>
+Example multiThread index.<br>
+I want it noticed that it is possible to use MultiThread in index, but, in practice, in most cases it won't cause speed up because the bottleneck is not the CPU.<br>
+So read for better understanding of MultiThread<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+  Example multiThreads index.
+  One thread by table , and one thread by index.
+  2010 Rafa Carmona
+
+  Thread Main
+       |---------&gt;  Thhread child table for test.dbf
+       |                        |----&gt; Thread child index fname
+       |                        |
+       |                        |-----&gt;Thread child index fcode
+       |
+       |---------&gt;  Thhread child table for test2.dbf
+                               |-----&gt;Thread child index fname2
+
+
+ */
+#include "hbthread.ch"
+
+proc Main( uCreate )
+   Local nSeconds
+   Local aFiles  := { "test", "test2" }        // Arrays files dbf
+   Local aNtx    := { { "fname", "fcode" },;   // files index for test
+                      { "fName2" } }           // files index for test2
+   Local aExpr   := { { "name", "code" },;
+                      { "dtos(fecha)+str(code)" }  }     // Expresions
+   Local cDbf
+
+   if empty( lCreate )
+      lCreate := "0"
+   endif
+
+   setmode( 25,80 )
+   cls
+
+   if uCreate = "1"
+      ? "Create test.dbf and test2.dbf"
+      dbCreate("test",{ {"name","C",1,0 },{"code","N",7,0 } } )
+      use test
+      while lastRec() &lt; 1000000
+            dbAppend()
+            field-&gt;name := chr( recno() )
+            field-&gt;code := recno()
+      enddo
+      close
+      dbCreate("test2",{ {"fecha","D",8,0 },{"code","N",7,0 } } )
+      use test2
+      while lastRec() &lt; 1000000
+            dbAppend()
+            field-&gt;fecha := date() + recno()
+            field-&gt;code := recno()
+      enddo
+      close
+   endif
+
+   cls
+   // Threads
+   nSeconds := Seconds()
+   for each cDbf in aFiles
+      ? "Process.: " + cDbf
+      hb_threadStart( @aCreateIndexe(), cDbf, aNtx[ cDbf:__enumindex ],aExpr[ cDbf:__enumindex ], cDbf:__enumindex  )
+   next
+
+   ? "Wait for threads ...."
+   hb_threadWaitForAll()
+
+   ? hb_valTostr( Seconds() - nSeconds )
+
+   ? "finish"
+
+return
+
+function aCreateIndexe( cFile, aNtx, aExpr, nPosDbf )
+      Local nContador := 1
+      Local cFileNtx, cExpr
+      Local nLong := Len( aNtx )
+      Local aThreads := {}
+      Local cAlias
+
+      use ( cFile )
+      cAlias := alias()
+      hb_dbDetach( cAlias )  // Libero el alias
+
+      for each cFileNtx in aNtx
+          cExpr  := aExpr[ cFileNtx:__enumindex ]
+          nContador := 1
+          nPos := cFileNtx:__enumindex
+          aadd( aThreads, hb_threadStart( @crea(), cAlias,cExpr, cFileNtx, nPos, nPosDbf ) )
+      next
+
+      aEval( aThreads, { |x| hb_threadJoin( x ) } )  // wait threads childs
+      hb_dbRequest( cAlias, , , .T.)  // Restaura el alias
+      close
+
+RETURN NIL
+
+proc crea( cAlias, cExpr, cFileNtx, nPos, nPosDbf )
+     Local nContador := 1
+
+      hb_dbRequest( cAlias, , , .T.)  // Restaura el alias
+
+      INDEX ON &amp;(cExpr) TO &amp;(cFileNtx) ;
+       EVAL {|| hb_dispOutAt( nPosDbf, iif( nPos = 1, 20, 40 ),alltrim( hb_valtostr( nContador) ), "GR+/N" ), nContador += INT(LASTREC() / 100 ) , .T. } ;
+       EVERY INT( LASTREC() / 100 )
+      hb_dbDetach( cAlias )          // Libera el alias
+
+return</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p164271">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: An example of multithreading and Database</span><br>
+        Posted: Tue Aug 26, 2014 04:02 PM
+      </div>
+      <div class="content"><p>Un ejemplo muy bueno que habrá que guardar como &quot;oro en paño&quot;<br>
+Gracias Rafa</p></div>
+    </div>
+  </div>
+  <div class="post" id="p164273">
+    <div class="poster">
+      <div class="name" style="color:#105289">vilian</div>
+      <div class="rank">Posts: 1067</div>
+      <div class="avatar"></div>
+      Joined: Wed Nov 09, 2005 02:17 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: An example of multithreading and Database</span><br>
+        Posted: Tue Aug 26, 2014 05:38 PM
+      </div>
+      <div class="content"><p>Rafa,</p>
+<p>It is possible for one thread to use more than one workarea?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p164316">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: An example of multithreading and Database</span><br>
+        Posted: Wed Aug 27, 2014 02:38 PM
+      </div>
+      <div class="content">The threads do not limit the amount of open table, otherwise this workarea visibility between threads. <br>
+If you open a dbf table in the main thread, the same work area can not be used in a child thread, <br>
+for hb_dbRequest () function is used to transfer the alias of a thread to another. <br>
+That will not prevent open dbf table in another thread. An example;<br>
+<br>
+Sorry my english is a translation of Google;<br>
+&quot;Los hilos no te limitan la cantidad de tabla abiertas, si no, la visibilidad de esa workarea entre hilos. <br>
+Si abres una tabla dbf en el hilo principal, esa misma área de trabajo no puedes usar en un hilo hijo,<br>
+para se usa la función  hb_dbRequest() para traspasar el alias de un hilo a otro.<br>
+Eso no te impide, abrir tabla dbf en otro hilo. Un ejemplo;&quot;<br>
+<br>
+SeudoCódigo <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Function Main()   
+   Open table "customers" alias "customer"
+   Go Top
+
+   hb_threadStart( @create_child_thread() )
+ 
+  ? customer-&gt;recno()  // First 
+   hb_threadWaitForAll()
+
+return
+
+function create_child_thread()
+   Open table "customers" alias "customer"
+   Open table "telephone" alias "telephone"
+
+   Select "customer"  // This work area NOT IS function main
+   go bottom 
+   ? customer-&gt;recno() // Last
+    
+   CLOSE ALL
+
+return nil</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p164321">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: An example of multithreading and Database</span><br>
+        Posted: Wed Aug 27, 2014 03:16 PM
+      </div>
+      <div class="content"><blockquote><cite>cnavarro wrote:</cite>Un ejemplo muy bueno que habrá que guardar como &quot;oro en paño&quot;<br>
+Gracias Rafa</blockquote><br>
+<br>
+Ojo, que esto es a nivel 'experimental', y si lanzas esto con 300 tablas y 500 indices, verás como el server se va al carajo <br>
+<br>
+Una mejora de esto, la publiqué hace muchos años en las news, te pongo aquí las mejoras, que consiste en un pool de threads, por ejemplo, se indexan mantienen solo 5 tablas  activas,<br>
+y se van creando los indices uno a uno. De esta manera, más coheremente tenemos una indexacion multihilo que no es penalizado por el sistema.<br>
+Nosotros lo usamos en el trabajo y va que vuela <br>
+<br>
+La idea es la siguiente;<br>
+/*<br>
+  Thread Main ( Count MAX  by N_THREADS )<br>
+       |---------&gt;  Thhread child table for test.dbf<br>
+       |                        |----&gt; child index fname<br>
+       |                        |<br>
+       |                        |-----&gt;child index fcode<br>
+       |<br>
+       |---------&gt;  Thhread child table for test2.dbf<br>
+       |                       |-----&gt; index fname2<br>
+       |<br>
+       |---------&gt; N_THREADS<br>
+ */<br>
+<br>
+Estoy buscando el código , pero no lo encuentro . <br>
+Si interesa busco el nuestro y quito lo que no interesa a nivel interno.<br>
+<br>
+<blockquote><br>
+#define N_THREADS 5<br>
+<br>
+STATIC s_num_procesos<br>
+<br>
+Function main()<br>
+   aDbfs := { .... tus dbf ... }<br>
+<br>
+   while nPosTable &lt;= nLen_Table<br>
+<br>
+        if ( nTecla := inkey() ) = K_ESC<br>
+           exit<br>
+        endif<br>
+<br>
+        // No se ha muerto ningun proceso , loop<br>
+        if N_THREADS = s_num_procesos<br>
+          loop<br>
+        endif<br>
+<br>
+        cDbf := aDbfs[ nPosTable ]<br>
+<br>
+s_num_procesos++<br>
+        hb_threadStart( @aCreateIndexe(), cDbf, aNtxs[ nPosTable ],<br>
+aKeys[ nPosTable ], aFor[ nPosTable ]  )<br>
+<br>
+        nPosTable++<br>
+    end while<br>
+<br>
+  hb_threadWaitForAll() // Esperamos a los ultimos.<br>
+<br>
+return<br>
+<br>
+<br>
+function aCreateIndexe( cFile, aNtx, aExpr, aFor )<br>
+<br>
+ ... codigo....<br>
+<br>
+       hb_mutexLock( s_hMutex )<br>
+       s_num_procesos--<br>
+       hb_mutexUnLock( s_hMutex )<br>
+return nil<br>
+<br>
+Cuando el hilo muere, se decrementamos el numero de proceso, dando lugar<br>
+a que el bucle principal pueda procesar un nuevo hilo.<br>
+<br>
+El problema que tenia es que tenia 5 hilos, y cada uno de ellos pinta en<br>
+un lugar de la pantalla, y claro, adivinar donde tiene que pinta era más<br>
+complicado que esto <br>
+</blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p164322">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: An example of multithreading and Database</span><br>
+        Posted: Wed Aug 27, 2014 03:30 PM
+      </div>
+      <div class="content"><p>Rafa, cualquier codigo que compartas me será de gran ayuda<br>
+Llevo tiempo queriendo meterme en este tema, pero la informacion encontrada no me era suficiente.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

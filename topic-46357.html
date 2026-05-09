@@ -1,0 +1,1101 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>mod_harbour.v2.1 plugin for mysql keep-alive - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46357">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-45.html">mod_harbour</a> mod_harbour.v2.1 plugin for mysql keep-alive</div>
+  <div class="post" id="p284084">
+    <div class="poster">
+      <div class="name" style="color:#105289">ssbbs</div>
+      <div class="rank">Posts: 129</div>
+      <img class="avatar avatar-img" src="avatars/159.jpg" alt="" loading="lazy">
+      Joined: Mon Oct 17, 2005 03:03 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">mod_harbour.v2.1 plugin for mysql keep-alive</span><br>
+        Posted: Wed Feb 25, 2026 03:21 AM
+      </div>
+      <div class="content"><r><p>**   Provides a MySQL keep-alive connection pool, allowing .prg applications<br/><br>
+**   to reuse the same MySQL connection across multiple HTTP requests,<br/><br>
+**   eliminating the overhead of reconnecting on every request<br/><br>
+**   (connection setup typically takes 10<SUB><s>~</s>50ms</SUB>).<br/><br>
+**   This significantly improves database throughput under high concurrency.</p><br>
+<br>
+<p><URL url="https://imgbb.com/"><s><a href="https://imgbb.com/" rel="noopener"></s><IMG src="https://i.ibb.co/gZz6pqQG/01.jpg"><s><img src="</s>https://i.ibb.co/gZz6pqQG/01.jpg<e>" alt="" loading="lazy"></e></IMG><e></a></e></URL><br/><br>
+<URL url="https://ibb.co/LzvTKsZ0"><s><a href="https://ibb.co/LzvTKsZ0" rel="noopener"></s><IMG src="https://i.ibb.co/8DXykQ7m/02.jpg"><s><img src="</s>https://i.ibb.co/8DXykQ7m/02.jpg<e>" alt="" loading="lazy"></e></IMG><e></a></e></URL><br/><br>
+<URL url="https://ibb.co/0jW6PCyv"><s><a href="https://ibb.co/0jW6PCyv" rel="noopener"></s><IMG src="https://i.ibb.co/Z6wFyBz7/03.jpg"><s><img src="</s>https://i.ibb.co/Z6wFyBz7/03.jpg<e>" alt="" loading="lazy"></e></IMG><e></a></e></URL></p><br>
+<br>
+<p>mh_mysql_pool-e.prg</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;/*
+** mh_mysql_pool-e.prg -- MySQL Keep-Alive Connection Pool for mod_harbour.v2.1
+** (c) WenSheng, 2026
+** MIT License
+**
+** ════════════════════════════════════════════
+** Design Goals
+** ════════════════════════════════════════════
+**   Provides a MySQL keep-alive connection pool, allowing .prg applications
+**   to reuse the same MySQL connection across multiple HTTP requests,
+**   eliminating the overhead of reconnecting on every request
+**   (connection setup typically takes 10~50ms).
+**   This significantly improves database throughput under high concurrency.
+**
+** ════════════════════════════════════════════
+** Thread Safety
+** ════════════════════════════════════════════
+**   The pool uses STATIC variables (shared across all threads) protected
+**   by an hb_mutex lock.
+**   All access to s_hPool MUST be wrapped between hb_mutexLock / hb_mutexUnlock.
+**
+**   [IMPORTANT] BEGIN SEQUENCE / RECOVER USING are used together to ensure:
+**   1. Even if an exception occurs mid-operation, hb_mutexUnlock() is always
+**      called, preventing a permanent mutex lock (deadlock).
+**   2. Exception error messages are stored in THREAD STATIC ts_cLastError
+**      and can be retrieved after the function returns via mhDB_LastError().
+**
+** ════════════════════════════════════════════
+** Pool Data Structure (s_hPool)
+** ════════════════════════════════════════════
+**   s_hPool is a Hash table structured as follows:
+**
+**   s_hPool {
+**     'host:dbname' =&gt; aPool [       &lt;- sub-pool array (shared by same DB+user)
+**       aEntry { oConn, lBusy, cPass, tLastUsed, tBorrowedAt, nTimeout },
+**       aEntry { ... },
+**       ...
+**     ],
+**     'host:db2'    =&gt; aPool [ ... ],
+**     ...
+**   }
+**
+**   Each aEntry array fields:
+**   aEntry[1] = oConn       : TMySQLServer object (the actual MySQL connection)
+**   aEntry[2] = lBusy       : .T. = checked out (in use),  .F. = idle (available)
+**   aEntry[3] = cPass       : Stored password, used for automatic reconnection
+**   aEntry[4] = tLastUsed   : Timestamp of last mhDB_Free() call
+**   aEntry[5] = tBorrowedAt : Timestamp of last mhDB_Connect() checkout
+**   aEntry[6] = nTimeout    : Maximum borrow duration in seconds (0 = unlimited)
+**
+** ════════════════════════════════════════════
+** Connection Types (nTimeout)
+** ════════════════════════════════════════════
+**   nTimeout &gt; 0 : Regular short-lived connection (HTTP request).
+**                  If not returned within N seconds, it is considered a leak
+**                  (caller forgot mhDB_Free()). It will be force-returned
+**                  before the next checkout, preventing pool exhaustion.
+**
+**   nTimeout = 0 : Long-lived connection (SSE / Server-Sent Events / long-polling).
+**                  Never auto-force-returned. The caller is responsible for
+**                  calling mhDB_Free() explicitly.
+**                  Long-lived and short-lived connections are managed in
+**                  separate sub-pools and do NOT interfere with each other.
+**
+** ════════════════════════════════════════════
+** Public API Overview
+** ════════════════════════════════════════════
+**   mhDB_Connect( cHost, cUser, cPass, nPort, cDBName, nTimeout ) -&gt; oConn
+**     Borrow a connection from the pool. Creates a new one if none is idle.
+**
+**   mhDB_Free( oConn )
+**     Return a connection to the pool without closing it. MUST be called
+**     after use — failing to call this will permanently mark the connection
+**     as checked out.
+**
+**   mhDB_ForceClean( [cHost], [cUser], [cDBName], [nPort] ) -&gt; nCount
+**     Force-mark all checked-out connections as idle, including nTimeout=0
+**     long-lived connections. No params = clean ALL sub-pools.
+**     Returns the number of connections force-returned.
+**
+**   mhDB_ClosePool( cHost, cUser, nPort, cDBName )
+**     Close and remove a specific sub-pool. TMySQLServer objects are set to
+**     NIL and released by the Harbour garbage collector.
+**
+**   mhDB_CloseAll()
+**     Close and remove all sub-pools. Typically called before server shutdown.
+**
+**   mhDB_PoolStatus() -&gt; cHTML
+**     Returns an HTML table showing the full pool status, for use in
+**     debug/admin pages.
+**
+**   mhDB_LastError() -&gt; cError
+**     Returns the last error message for the current thread
+**     (THREAD STATIC — each thread has its own independent copy).
+**
+** ════════════════════════════════════════════
+** Quick Usage Example
+** ════════════════════════════════════════════
+**   oConn := mhDB_Connect( '127.0.0.1', 'root', 'pass', 3306, 'mydb' )
+**   IF oConn == NIL
+**      ?? 'Connection failed: ' + mhDB_LastError()
+**   ELSE
+**      oConn:SetChar( 'utf8' )  // Set UTF-8 charset (required for CJK content)
+**      oConn:lWeb := .T.        // Web mode: FieldGet() strings have no trailing spaces
+**      oRS := oConn:Query( 'SELECT * FROM users' )
+**      // ... process data ...
+**      oRS:End()                // Release ResultSet
+**      mhDB_Free( oConn )       // ⚠️ Always return the connection!
+**   ENDIF
+*/
+
+#include "hbclass.ch"
+#include "hbthread.ch"
+
+// ────────────────────────────────────────────────────────────────
+// Global static variables (shared across all threads, protected by Mutex)
+// ────────────────────────────────────────────────────────────────
+STATIC s_hPool  := NIL   // Connection pool Hash (see data structure above)
+STATIC s_oMutex := NIL   // Mutex lock — prevents concurrent modification of s_hPool
+
+// ────────────────────────────────────────────────────────────────
+// Per-thread last error message
+// THREAD STATIC: each thread has its own independent copy
+// ────────────────────────────────────────────────────────────────
+THREAD STATIC ts_cLastError := ''
+
+// ════════════════════════════════════════════════════════════════
+// Public API: mhDB_LastError()
+// Returns the last error message for the current thread.
+// Returns: error string (empty string if no error)
+// ════════════════════════════════════════════════════════════════
+FUNCTION mhDB_LastError()
+RETURN ts_cLastError
+
+// ────────────────────────────────────────────────────────────────
+// Internal: mhDB__Init()
+// Lazy initialization — creates the Mutex and empty pool on first call.
+// Avoids unnecessary initialization overhead at startup.
+// ────────────────────────────────────────────────────────────────
+STATIC PROCEDURE mhDB__Init()
+    IF s_oMutex == NIL
+    s_oMutex := hb_mutexCreate()  // Create the mutex lock
+    ENDIF
+    IF s_hPool == NIL
+    s_hPool := { =&gt; }             // Create an empty Hash as the pool container
+    ENDIF
+RETURN
+
+// ────────────────────────────────────────────────────────────────
+// Internal: mhDB__Key()
+// Generates a unique string key from connection parameters,
+// used as the Hash key in s_hPool.
+// Format: 'host:dbname'
+// Connections with the same key share the same sub-pool.
+// ────────────────────────────────────────────────────────────────
+STATIC FUNCTION mhDB__Key( cHost, cUser, nPort, cDBName )
+RETURN cHost + ':' + hb_ntos( nPort ) + ':' + cUser + ':' + cDBName
+
+// ────────────────────────────────────────────────────────────────
+// Internal: mhDB__NewConn()
+// Creates a brand new TMySQLServer connection and selects the database.
+// Returns NIL on failure; error details are written to ts_cLastError.
+//
+// Process:
+//   1. TMySQLServer():New() establishes the TCP connection
+//   2. oConn:NetErr() checks for connection failure
+//   3. oConn:SelectDB() switches to the target database
+//   4. oConn:Error() verifies the switch succeeded
+// ────────────────────────────────────────────────────────────────
+STATIC FUNCTION mhDB__NewConn( cHost, cUser, cPass, nPort, cDBName )
+    LOCAL oConn := NIL
+    LOCAL oError
+    BEGIN SEQUENCE
+    // Establish the MySQL TCP connection (no DB selected yet)
+    oConn := TMySQLServer():New( cHost, cUser, cPass, nPort )
+    IF oConn:NetErr()
+    // Network connection failed (host unreachable, bad credentials, etc.)
+    ts_cLastError := 'TMySQLServer:New() failed to connect!'
+    oConn := NIL
+    BREAK   // Exit SEQUENCE, continue after END SEQUENCE
+    ENDIF
+    IF ! Empty( cDBName )
+    // Switch to the target database
+    oConn:SelectDB( cDBName )
+    IF ! Empty( oConn:Error() )
+    // Database does not exist, or account lacks privileges
+    ts_cLastError := 'SelectDB(' + cDBName + ') failed: ' + oConn:Error()
+    oConn := NIL
+    BREAK
+    ENDIF
+    ENDIF
+    RECOVER USING oError
+    // Catch unexpected exceptions (e.g. MySQL library crash)
+    IF Empty( ts_cLastError )
+    ts_cLastError := 'Exception during connection: ' + IF( ValType( oError ) == 'O', GetErrorInfo( oError ), '' )
+    ENDIF
+    oConn := NIL
+    END SEQUENCE
+RETURN oConn
+
+// ────────────────────────────────────────────────────────────────
+// Internal: mhDB__CleanupStale()
+// Scans the sub-pool and force-returns connections that have exceeded
+// their borrow timeout.
+//
+// [NOTE] Only processes connections with nTimeout &gt; 0.
+//        nTimeout=0 (long-lived) connections are NOT touched here.
+// [NOTE] Must be called AFTER hb_mutexLock (caller holds the lock).
+//
+// Design purpose:
+//   If an HTTP request has a bug and forgets to call mhDB_Free(),
+//   the connection stays marked as checked-out permanently.
+//   Over time, available connections dwindle and every request
+//   must create a new one, defeating the purpose of the pool.
+//   This function is called automatically inside mhDB_Connect()
+//   to prevent pool exhaustion.
+// ────────────────────────────────────────────────────────────────
+STATIC PROCEDURE mhDB__CleanupStale( aPool )
+    LOCAL aEntry, i, nElapsed
+    FOR i := 1 TO Len( aPool )
+    aEntry := aPool[ i ]
+    IF aEntry[ 2 ] .AND. aEntry[ 6 ] &gt; 0  // checked out AND has a timeout (not long-lived)
+    // Calculate elapsed seconds: DateTime subtraction gives days; multiply by 86400
+    nElapsed := ( hb_DateTime() - aEntry[ 5 ] ) * 86400
+    IF nElapsed &gt; aEntry[ 6 ]
+    // Timed out! Force-return (caller has a bug — forgot mhDB_Free)
+    aEntry[ 2 ] := .F.           // lBusy -&gt; idle
+    aEntry[ 4 ] := hb_DateTime() // update tLastUsed
+    aEntry[ 5 ] := hb_DateTime() // reset tBorrowedAt
+    ENDIF
+    ENDIF
+    NEXT i
+RETURN
+
+// ════════════════════════════════════════════════════════════════
+// Public API: mhDB_ForceClean()
+// Force-marks all checked-out connections as idle,
+// including nTimeout=0 long-lived connections.
+//
+// When to use:
+//   - An SSE connection died abnormally without calling mhDB_Free()
+//   - Before server maintenance to ensure all connections are reclaimed
+//   - Admin interface to manually reset the pool state
+//
+// Parameters (all optional):
+//   cHost   : MySQL host (omit to clean ALL sub-pools)
+//   cUser   : Login account
+//   cDBName : Database name
+//   nPort   : Port number (default 3306)
+//
+// Returns: number of connections force-returned
+// ════════════════════════════════════════════════════════════════
+FUNCTION mhDB_ForceClean( cHost, cUser, cDBName, nPort )
+    LOCAL cKey, aPool, aEntry, i, nCount
+    LOCAL lTargetAll, oError
+
+&lt;i&gt;    &lt;/i&gt;// If cHost is not passed (NIL), clean all sub-pools
+&lt;i&gt;    &lt;/i&gt;lTargetAll := ( cHost == NIL )
+
+&lt;i&gt;    &lt;/i&gt;mhDB__Init()
+
+&lt;i&gt;    &lt;/i&gt;ts_cLastError := ''
+&lt;i&gt;    &lt;/i&gt;nCount := 0
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexLock( s_oMutex )
+
+&lt;i&gt;    &lt;/i&gt;BEGIN SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;IF lTargetAll
+&lt;i&gt;    &lt;/i&gt;// Clean all sub-pools
+&lt;i&gt;    &lt;/i&gt;FOR EACH aPool IN s_hPool
+&lt;i&gt;    &lt;/i&gt;FOR i := 1 TO Len( aPool )
+&lt;i&gt;    &lt;/i&gt;aEntry := aPool[ i ]
+&lt;i&gt;    &lt;/i&gt;IF aEntry[ 2 ]  // lBusy = checked out
+&lt;i&gt;    &lt;/i&gt;aEntry[ 2 ] := .F.           // force-mark as idle
+&lt;i&gt;    &lt;/i&gt;aEntry[ 4 ] := hb_DateTime() // update tLastUsed
+&lt;i&gt;    &lt;/i&gt;aEntry[ 5 ] := hb_DateTime() // reset tBorrowedAt
+&lt;i&gt;    &lt;/i&gt;nCount++
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;NEXT i
+&lt;i&gt;    &lt;/i&gt;NEXT
+&lt;i&gt;    &lt;/i&gt;ELSE
+&lt;i&gt;    &lt;/i&gt;// Clean only the specified sub-pool
+&lt;i&gt;    &lt;/i&gt;hb_default( @nPort, 3306 )
+&lt;i&gt;    &lt;/i&gt;cKey := mhDB__Key( cHost, cUser, nPort, cDBName )
+&lt;i&gt;    &lt;/i&gt;IF hb_HHasKey( s_hPool, cKey )
+&lt;i&gt;    &lt;/i&gt;aPool := s_hPool[ cKey ]
+&lt;i&gt;    &lt;/i&gt;FOR i := 1 TO Len( aPool )
+&lt;i&gt;    &lt;/i&gt;aEntry := aPool[ i ]
+&lt;i&gt;    &lt;/i&gt;IF aEntry[ 2 ]  // lBusy = checked out
+&lt;i&gt;    &lt;/i&gt;aEntry[ 2 ] := .F.
+&lt;i&gt;    &lt;/i&gt;aEntry[ 4 ] := hb_DateTime()
+&lt;i&gt;    &lt;/i&gt;aEntry[ 5 ] := hb_DateTime()
+&lt;i&gt;    &lt;/i&gt;nCount++
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;NEXT i
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;ENDIF
+
+&lt;i&gt;    &lt;/i&gt;RECOVER USING oError
+&lt;i&gt;    &lt;/i&gt;// Catch exception — ensures Mutex can be unlocked below
+&lt;i&gt;    &lt;/i&gt;IF Empty( ts_cLastError )
+&lt;i&gt;    &lt;/i&gt;ts_cLastError := 'mhDB_ForceClean() exception: ' + IF( ValType( oError ) == 'O', GetErrorInfo( oError ), '' )
+&lt;i&gt;    &lt;/i&gt;ENDIF
+
+&lt;i&gt;    &lt;/i&gt;END SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexUnlock( s_oMutex )  // Always executed, even on error
+
+RETURN nCount
+
+// ════════════════════════════════════════════════════════════════
+// Public API: mhDB_Connect()
+// Borrow a MySQL connection from the pool.
+//
+// Checkout process:
+//   1. Ensure pool and mutex are initialized (lazy init)
+//   2. Scan the sub-pool for stale (timed-out) checked-out connections
+//      and force-return them (CleanupStale)
+//   3. Search the sub-pool for an idle connection of the matching type:
+//      a. Ping() succeeds -&gt; check it out directly
+//      b. Ping() fails    -&gt; attempt reconnect;
+//                           remove from pool if reconnect also fails
+//      c. Type matching: nTimeout=0 only borrows from nTimeout=0 entries,
+//         and vice versa — the two types never mix
+//   4. No idle connection available -&gt; create a new one, add to pool, check out
+//
+// Parameters:
+//   cHost    : MySQL host IP or hostname (default '127.0.0.1')
+//   cUser    : Login account (default 'root')
+//   cPass    : Login password
+//   nPort    : MySQL port (default 3306)
+//   cDBName  : Database name to use
+//   nTimeout : Max borrow duration in seconds (default 30; 0 = unlimited for SSE)
+//
+// Returns:
+//   Success -&gt; TMySQLServer object (MUST call mhDB_Free() when done)
+//   Failure -&gt; NIL (call mhDB_LastError() for details)
+// ════════════════════════════════════════════════════════════════
+FUNCTION mhDB_Connect( cHost, cUser, cPass, nPort, cDBName, nTimeout )
+    LOCAL cKey, aPool, oConn, aEntry, i, lFound
+    LOCAL oError
+
+&lt;i&gt;    &lt;/i&gt;// Apply defaults for any omitted parameters
+&lt;i&gt;    &lt;/i&gt;hb_default( @cHost,    '127.0.0.1' )
+&lt;i&gt;    &lt;/i&gt;hb_default( @cUser,    'root' )
+&lt;i&gt;    &lt;/i&gt;hb_default( @cPass,    '' )
+&lt;i&gt;    &lt;/i&gt;hb_default( @nPort,    3306 )
+&lt;i&gt;    &lt;/i&gt;hb_default( @cDBName,  '' )
+&lt;i&gt;    &lt;/i&gt;hb_default( @nTimeout, 30 )   // Default 30-second timeout
+
+&lt;i&gt;    &lt;/i&gt;mhDB__Init()
+
+&lt;i&gt;    &lt;/i&gt;ts_cLastError := ''                                 // Clear previous error
+&lt;i&gt;    &lt;/i&gt;cKey  := mhDB__Key( cHost, cUser, nPort, cDBName ) // Build the sub-pool Hash key
+&lt;i&gt;    &lt;/i&gt;oConn := NIL
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexLock( s_oMutex )  // Lock — protect s_hPool access
+
+&lt;i&gt;    &lt;/i&gt;BEGIN SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;// Create the sub-pool array if this key has never been seen before
+&lt;i&gt;    &lt;/i&gt;IF ! hb_HHasKey( s_hPool, cKey )
+&lt;i&gt;    &lt;/i&gt;s_hPool[ cKey ] := {}
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;aPool := s_hPool[ cKey ]  // Get a reference to the sub-pool array
+
+&lt;i&gt;    &lt;/i&gt;// Before borrowing, sweep the pool for timed-out connections
+&lt;i&gt;    &lt;/i&gt;// (only handles nTimeout &gt; 0 regular connections)
+&lt;i&gt;    &lt;/i&gt;mhDB__CleanupStale( aPool )
+
+&lt;i&gt;    &lt;/i&gt;// Search for an idle connection of the matching timeout type
+&lt;i&gt;    &lt;/i&gt;lFound := .F.
+&lt;i&gt;    &lt;/i&gt;FOR i := 1 TO Len( aPool )
+&lt;i&gt;    &lt;/i&gt;aEntry := aPool[ i ]
+
+&lt;i&gt;    &lt;/i&gt;// Condition 1: lBusy = .F. (idle)
+&lt;i&gt;    &lt;/i&gt;// Condition 2: type match (both long-lived OR both regular — never mixed)
+&lt;i&gt;    &lt;/i&gt;IF ! aEntry[ 2 ] .AND. ( ( nTimeout == 0 ) == ( aEntry[ 6 ] == 0 ) )
+&lt;i&gt;    &lt;/i&gt;IF aEntry[ 1 ]:Ping() == 0  // 0 = Ping succeeded, connection still alive
+&lt;i&gt;    &lt;/i&gt;// Check out this idle connection
+&lt;i&gt;    &lt;/i&gt;aEntry[ 2 ] := .T.            // Mark as checked out
+&lt;i&gt;    &lt;/i&gt;aEntry[ 5 ] := hb_DateTime()  // Record checkout timestamp
+&lt;i&gt;    &lt;/i&gt;aEntry[ 6 ] := nTimeout       // Update timeout setting
+&lt;i&gt;    &lt;/i&gt;oConn  := aEntry[ 1 ]
+&lt;i&gt;    &lt;/i&gt;lFound := .T.
+&lt;i&gt;    &lt;/i&gt;EXIT  // Found one — stop searching
+&lt;i&gt;    &lt;/i&gt;ELSE
+&lt;i&gt;    &lt;/i&gt;// Ping failed — connection dropped; attempt reconnect using stored password
+&lt;i&gt;    &lt;/i&gt;oConn := mhDB__NewConn( cHost, cUser, aEntry[ 3 ], nPort, cDBName )
+&lt;i&gt;    &lt;/i&gt;IF oConn != NIL
+&lt;i&gt;    &lt;/i&gt;// Reconnect succeeded — update pool entry and check out
+&lt;i&gt;    &lt;/i&gt;aEntry[ 1 ] := oConn
+&lt;i&gt;    &lt;/i&gt;aEntry[ 2 ] := .T.
+&lt;i&gt;    &lt;/i&gt;aEntry[ 5 ] := hb_DateTime()
+&lt;i&gt;    &lt;/i&gt;aEntry[ 6 ] := nTimeout
+&lt;i&gt;    &lt;/i&gt;lFound := .T.
+&lt;i&gt;    &lt;/i&gt;EXIT
+&lt;i&gt;    &lt;/i&gt;ELSE
+&lt;i&gt;    &lt;/i&gt;// Reconnect also failed — remove this dead entry from the pool
+&lt;i&gt;    &lt;/i&gt;hb_ADel( aPool, i, .T. )  // .T. = shrink array
+&lt;i&gt;    &lt;/i&gt;i--  // Adjust index to avoid skipping the next entry
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;NEXT i
+
+&lt;i&gt;    &lt;/i&gt;// No idle connection available — create a brand-new connection
+&lt;i&gt;    &lt;/i&gt;IF ! lFound
+&lt;i&gt;    &lt;/i&gt;oConn := mhDB__NewConn( cHost, cUser, cPass, nPort, cDBName )
+&lt;i&gt;    &lt;/i&gt;IF oConn != NIL
+&lt;i&gt;    &lt;/i&gt;// Add to pool: { connection, checked-out, password, returnedAt, borrowedAt, timeout }
+&lt;i&gt;    &lt;/i&gt;AAdd( aPool, { oConn, .T., cPass, hb_DateTime(), hb_DateTime(), nTimeout } )
+&lt;i&gt;    &lt;/i&gt;ELSE
+&lt;i&gt;    &lt;/i&gt;// New connection also failed; ts_cLastError was set inside mhDB__NewConn
+&lt;i&gt;    &lt;/i&gt;BREAK  // Exit SEQUENCE, enter RECOVER
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;ENDIF
+
+&lt;i&gt;    &lt;/i&gt;RECOVER USING oError
+&lt;i&gt;    &lt;/i&gt;// Catch any unexpected exception; ensures Mutex will be unlocked below
+&lt;i&gt;    &lt;/i&gt;IF Empty( ts_cLastError )
+&lt;i&gt;    &lt;/i&gt;ts_cLastError := 'mhDB_Connect() exception: ' + IF( ValType( oError ) == 'O', GetErrorInfo( oError ), '' )
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;oConn := NIL
+
+&lt;i&gt;    &lt;/i&gt;END SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexUnlock( s_oMutex )  // Always executed, even on error — prevents deadlock
+
+RETURN oConn
+
+// ════════════════════════════════════════════════════════════════
+// Public API: mhDB_Free()
+// Return a borrowed connection back to the pool (without closing it),
+// marking it as idle and available for the next checkout.
+//
+// ⚠️ IMPORTANT: Always call this after you are done using a connection!
+//    If omitted, the connection stays marked as checked-out permanently.
+//    It will only be force-returned when nTimeout expires (regular connections),
+//    or never (for nTimeout=0 long-lived connections).
+//
+// Parameter:
+//   oConn : The TMySQLServer object returned by mhDB_Connect()
+// ════════════════════════════════════════════════════════════════
+PROCEDURE mhDB_Free( oConn )
+    LOCAL aPool, aEntry, i
+    LOCAL oError
+
+&lt;i&gt;    &lt;/i&gt;// Ignore NIL or non-object values silently
+&lt;i&gt;    &lt;/i&gt;IF ValType( oConn ) != 'O' .OR. oConn == NIL
+&lt;i&gt;    &lt;/i&gt;RETURN
+&lt;i&gt;    &lt;/i&gt;ENDIF
+
+&lt;i&gt;    &lt;/i&gt;mhDB__Init()
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexLock( s_oMutex )
+
+&lt;i&gt;    &lt;/i&gt;BEGIN SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;// Search all sub-pools for this specific connection object
+&lt;i&gt;    &lt;/i&gt;FOR EACH aPool IN s_hPool
+&lt;i&gt;    &lt;/i&gt;FOR i := 1 TO Len( aPool )
+&lt;i&gt;    &lt;/i&gt;aEntry := aPool[ i ]
+&lt;i&gt;    &lt;/i&gt;IF aEntry[ 1 ] == oConn  // Compare by object reference (same TMySQLServer instance)
+&lt;i&gt;    &lt;/i&gt;aEntry[ 2 ] := .F.           // Mark as idle (available for re-use)
+&lt;i&gt;    &lt;/i&gt;aEntry[ 4 ] := hb_DateTime() // Record return timestamp
+&lt;i&gt;    &lt;/i&gt;EXIT  // Found it — exit the inner loop
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;NEXT i
+&lt;i&gt;    &lt;/i&gt;NEXT
+
+&lt;i&gt;    &lt;/i&gt;RECOVER USING oError
+&lt;i&gt;    &lt;/i&gt;IF Empty( ts_cLastError )
+&lt;i&gt;    &lt;/i&gt;ts_cLastError := 'mhDB_Free() exception: ' + IF( ValType( oError ) == 'O', GetErrorInfo( oError ), '' )
+&lt;i&gt;    &lt;/i&gt;ENDIF
+
+&lt;i&gt;    &lt;/i&gt;END SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexUnlock( s_oMutex )
+
+RETURN
+
+// ════════════════════════════════════════════════════════════════
+// Public API: mhDB_ClosePool()
+// Close and remove all connections in a specific sub-pool.
+// TMySQLServer objects are set to NIL; Harbour GC releases the resources.
+// Call this when a particular database is no longer needed.
+//
+// Parameters:
+//   cHost   : MySQL host
+//   cUser   : Login account
+//   nPort   : Port number (default 3306)
+//   cDBName : Database name
+// ════════════════════════════════════════════════════════════════
+PROCEDURE mhDB_ClosePool( cHost, cUser, nPort, cDBName )
+    LOCAL cKey, aPool, aEntry, i
+    LOCAL oError
+
+&lt;i&gt;    &lt;/i&gt;hb_default( @nPort, 3306 )
+
+&lt;i&gt;    &lt;/i&gt;mhDB__Init()
+
+&lt;i&gt;    &lt;/i&gt;cKey := mhDB__Key( cHost, cUser, nPort, cDBName )
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexLock( s_oMutex )
+
+&lt;i&gt;    &lt;/i&gt;BEGIN SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;IF hb_HHasKey( s_hPool, cKey )
+&lt;i&gt;    &lt;/i&gt;aPool := s_hPool[ cKey ]
+&lt;i&gt;    &lt;/i&gt;FOR i := 1 TO Len( aPool )
+&lt;i&gt;    &lt;/i&gt;aEntry := aPool[ i ]
+&lt;i&gt;    &lt;/i&gt;aEntry[ 1 ] := NIL  // Clear object reference — GC will close the MySQL connection
+&lt;i&gt;    &lt;/i&gt;NEXT i
+&lt;i&gt;    &lt;/i&gt;hb_HDel( s_hPool, cKey )  // Remove this sub-pool from the Hash
+&lt;i&gt;    &lt;/i&gt;ENDIF
+
+&lt;i&gt;    &lt;/i&gt;RECOVER USING oError
+&lt;i&gt;    &lt;/i&gt;IF Empty( ts_cLastError )
+&lt;i&gt;    &lt;/i&gt;ts_cLastError := 'mhDB_ClosePool() exception: ' + IF( ValType( oError ) == 'O', GetErrorInfo( oError ), '' )
+&lt;i&gt;    &lt;/i&gt;ENDIF
+
+&lt;i&gt;    &lt;/i&gt;END SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexUnlock( s_oMutex )
+
+RETURN
+
+// ════════════════════════════════════════════════════════════════
+// Public API: mhDB_CloseAll()
+// Close and remove ALL sub-pools and connections.
+// Typically called before Apache module unload or server shutdown
+// to ensure all MySQL connections are properly released.
+// ════════════════════════════════════════════════════════════════
+PROCEDURE mhDB_CloseAll()
+    LOCAL aPool, aEntry, i
+    LOCAL oError
+
+&lt;i&gt;    &lt;/i&gt;mhDB__Init()
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexLock( s_oMutex )
+
+&lt;i&gt;    &lt;/i&gt;BEGIN SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;// Iterate all sub-pools and release each connection object
+&lt;i&gt;    &lt;/i&gt;FOR EACH aPool IN s_hPool
+&lt;i&gt;    &lt;/i&gt;FOR i := 1 TO Len( aPool )
+&lt;i&gt;    &lt;/i&gt;aEntry := aPool[ i ]
+&lt;i&gt;    &lt;/i&gt;aEntry[ 1 ] := NIL  // Let GC release the MySQL connection
+&lt;i&gt;    &lt;/i&gt;NEXT i
+&lt;i&gt;    &lt;/i&gt;NEXT
+&lt;i&gt;    &lt;/i&gt;s_hPool := { =&gt; }  // Reset the entire pool to an empty Hash
+
+&lt;i&gt;    &lt;/i&gt;RECOVER USING oError
+&lt;i&gt;    &lt;/i&gt;IF Empty( ts_cLastError )
+&lt;i&gt;    &lt;/i&gt;ts_cLastError := 'mhDB_CloseAll() exception: ' + IF( ValType( oError ) == 'O', GetErrorInfo( oError ), '' )
+&lt;i&gt;    &lt;/i&gt;ENDIF
+
+&lt;i&gt;    &lt;/i&gt;END SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexUnlock( s_oMutex )
+
+RETURN
+
+// ════════════════════════════════════════════════════════════════
+// Public API: mhDB_PoolStatus()
+// Returns the full pool status as an HTML table, for debug/admin pages.
+//
+// Table columns:
+//   Connection Key : host:dbname (sub-pool identifier)
+//   Total          : Total number of connections in this sub-pool
+//   In Use         : Currently checked-out connections
+//   Idle           : Available connections ready to borrow
+//   Type           : 'Long-lived' (nTimeout=0) or 'Ns' (N = timeout seconds)
+//   Elapsed        : Seconds since last checkout (shows 'Returned' if idle)
+//   Borrowed At    : Timestamp of last checkout
+//   Last Returned  : Timestamp of last mhDB_Free()
+//
+// Returns: complete HTML string (&lt;table&gt;...&lt;/table&gt;)
+// ════════════════════════════════════════════════════════════════
+FUNCTION mhDB_PoolStatus()
+    LOCAL cHTML
+    LOCAL aPool, aEntry, i
+    LOCAL nTotal, nBusy, nElapsed
+    LOCAL oError
+
+&lt;i&gt;    &lt;/i&gt;mhDB__Init()
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexLock( s_oMutex )
+
+&lt;i&gt;    &lt;/i&gt;// Build the table header (8 columns)
+&lt;i&gt;    &lt;/i&gt;cHTML  := '&lt;table border="1" cellpadding="4"&gt;'
+&lt;i&gt;    &lt;/i&gt;cHTML  += '&lt;tr&gt;'
+&lt;i&gt;    &lt;/i&gt;cHTML  += '&lt;th&gt;Connection Key&lt;/th&gt;'
+&lt;i&gt;    &lt;/i&gt;cHTML  += '&lt;th&gt;Total&lt;/th&gt;&lt;th&gt;In Use&lt;/th&gt;&lt;th&gt;Idle&lt;/th&gt;'
+&lt;i&gt;    &lt;/i&gt;cHTML  += '&lt;th&gt;Type&lt;/th&gt;&lt;th&gt;Elapsed(s)&lt;/th&gt;&lt;th&gt;Borrowed At&lt;/th&gt;&lt;th&gt;Last Returned&lt;/th&gt;'
+&lt;i&gt;    &lt;/i&gt;cHTML  += '&lt;/tr&gt;'
+
+&lt;i&gt;    &lt;/i&gt;BEGIN SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;FOR EACH aPool IN s_hPool
+
+&lt;i&gt;    &lt;/i&gt;// Count checked-out connections in this sub-pool
+&lt;i&gt;    &lt;/i&gt;nTotal := Len( aPool )
+&lt;i&gt;    &lt;/i&gt;nBusy  := 0
+&lt;i&gt;    &lt;/i&gt;FOR i := 1 TO nTotal
+&lt;i&gt;    &lt;/i&gt;aEntry := aPool[ i ]
+&lt;i&gt;    &lt;/i&gt;IF aEntry[ 2 ]  // lBusy
+&lt;i&gt;    &lt;/i&gt;nBusy++
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;NEXT i
+
+&lt;i&gt;    &lt;/i&gt;// Output the sub-pool summary row
+&lt;i&gt;    &lt;/i&gt;// Key column uses rowspan to span the summary row + all detail rows
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;tr&gt;'
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;td rowspan="' + hb_ntos( nTotal + 1 ) + '"&gt;' + aPool:__enumKey() + '&lt;/td&gt;'
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;td&gt;' + hb_ntos( nTotal )         + '&lt;/td&gt;'  // Total
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;td&gt;' + hb_ntos( nBusy )          + '&lt;/td&gt;'  // In Use
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;td&gt;' + hb_ntos( nTotal - nBusy ) + '&lt;/td&gt;'  // Idle
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;td colspan="4"&gt;&lt;/td&gt;'  // Placeholder for Type/Elapsed/Borrowed/Returned columns
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;/tr&gt;'
+
+&lt;i&gt;    &lt;/i&gt;// Output detail rows for each individual connection
+&lt;i&gt;    &lt;/i&gt;FOR i := 1 TO nTotal
+&lt;i&gt;    &lt;/i&gt;aEntry   := aPool[ i ]
+&lt;i&gt;    &lt;/i&gt;// Elapsed seconds (only meaningful when checked out; -1 when idle)
+&lt;i&gt;    &lt;/i&gt;nElapsed := IF( aEntry[ 2 ], Int( ( hb_DateTime() - aEntry[ 5 ] ) * 86400 ), -1 )
+
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;tr&gt;'
+&lt;i&gt;    &lt;/i&gt;// Status column (spans Total/In Use/Idle positions)
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;td colspan="3"&gt;' + IF( aEntry[ 2 ], 'In Use', 'Idle' ) + '&lt;/td&gt;'
+&lt;i&gt;    &lt;/i&gt;// Connection type
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;td&gt;' + IF( aEntry[ 6 ] == 0, 'Long-lived', hb_ntos( aEntry[ 6 ] ) + 's' ) + '&lt;/td&gt;'
+&lt;i&gt;    &lt;/i&gt;// Elapsed borrow time (or 'Returned' if idle)
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;td&gt;' + IF( nElapsed &gt;= 0, hb_ntos( nElapsed ) + 's', 'Returned' ) + '&lt;/td&gt;'
+&lt;i&gt;    &lt;/i&gt;// Last checkout timestamp (shown even when idle, to track last use)
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;td&gt;' + IF( ! Empty( aEntry[ 5 ] ), hb_TToC( aEntry[ 5 ] ), '-' ) + '&lt;/td&gt;'
+&lt;i&gt;    &lt;/i&gt;// Last return timestamp
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;td&gt;' + hb_TToC( aEntry[ 4 ] ) + '&lt;/td&gt;'
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;/tr&gt;'
+&lt;i&gt;    &lt;/i&gt;NEXT i
+
+&lt;i&gt;    &lt;/i&gt;NEXT
+
+&lt;i&gt;    &lt;/i&gt;RECOVER USING oError
+&lt;i&gt;    &lt;/i&gt;IF Empty( ts_cLastError )
+&lt;i&gt;    &lt;/i&gt;ts_cLastError := 'mhDB_PoolStatus() exception: ' + IF( ValType( oError ) == 'O', GetErrorInfo( oError ), '' )
+&lt;i&gt;    &lt;/i&gt;ENDIF
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;tr&gt;&lt;td colspan="8"&gt;Error: ' + ts_cLastError + '&lt;/td&gt;&lt;/tr&gt;'
+
+&lt;i&gt;    &lt;/i&gt;END SEQUENCE
+
+&lt;i&gt;    &lt;/i&gt;cHTML += '&lt;/table&gt;'
+
+&lt;i&gt;    &lt;/i&gt;hb_mutexUnlock( s_oMutex )
+
+RETURN cHTML
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>mh_mysql_pool_example-e.prg</p><br>
+<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;&lt;?prg
+/*
+** mh_mysql_pool_example-e.prg -- Usage Example for mh_mysql_pool
+**
+** Prerequisites:
+**   mh_mysql_pool.prg must be compiled into libmhapache.dll (or .so).
+**   Add the following line to libmhapache.hbp:
+**     source/mh_mysql_pool.prg
+**
+** This example demonstrates:
+**   1. Borrowing a connection from the pool (mhDB_Connect)
+**   2. Setting UTF-8 charset (SetChar)
+**   3. Enabling Web mode (lWeb)
+**   4. Executing a Query and rendering results as HTML
+**   5. Returning the connection to the pool (mhDB_Free)
+**   6. Connecting to multiple different databases simultaneously
+**   7. Viewing the pool status (mhDB_PoolStatus)
+**
+** Key Rules:
+**   - Every borrowed connection MUST be returned via mhDB_Free() when done.
+**   - Every ResultSet (oRS) MUST be released via oRS:End() after use.
+**   - When using multiple databases, each connection object
+**     (oConn / oConnA / oConnB ...) is completely independent.
+**     SetChar, lWeb, Query, and mhDB_Free must all use the SAME object —
+**     never mix them up.
+*/
+
+// ================================================================
+// All LOCAL variable declarations must appear at the top of the
+// program (Harbour language requirement)
+// ================================================================
+LOCAL oConn, oRS    // ss_aaa database connection and query result
+LOCAL oConnA        // ss_bbb database connection
+LOCAL oConnB        // ss_ccc database connection
+LOCAL oConnC        // ss_ddd database connection (demo: 60s timeout)
+
+AP_SetContentType( "text/html; charset=UTF-8" )
+
+// ================================================================
+// Example 1: ss_aaa database (Long-lived connection, nTimeout=0)
+// ================================================================
+// mhDB_Connect parameters: cHost, cUser, cPass, nPort, cDBName, nTimeout
+// nTimeout=0 means long-lived — will NOT be auto-force-returned on timeout
+?? '&lt;h3&gt;ss_aaa Database (Long-lived connection, nTimeout=0)&lt;/h3&gt;'
+
+oConn := mhDB_Connect( '127.0.0.1', 'user', 'password', 3306, 'ss_aaa', 0 )
+IF oConn == NIL
+// Connection failed — use mhDB_LastError() to get the reason
+?? '&lt;p style="color:red"&gt; ss_aaa connection failed: ' + mhDB_LastError() + '&lt;/p&gt;'
+ELSE
+?? '&lt;p style="color:green"&gt; ss_aaa connected successfully!&lt;/p&gt;'
+IF oConn:SetChar( 'utf8' ) != 0
+// SetChar failed — MySQL does not support utf8 (uncommon)
+?? 'Charset error!!&lt;br&gt;' + mhDB_LastError()
+ELSE
+oConn:lWeb := .T.  // Web mode: FieldGet() strings have no trailing spaces
+
+// Verify the active database (for debugging)
+oRS := oConn:Query( "SELECT DATABASE() AS d" )
+IF oRS != NIL .AND. oRS:RecCount() &gt; 0
+?? '&lt;p&gt;Current DB = &lt;b&gt;' + hb_valToStr( oRS:FieldGet( 'd' ) ) + '&lt;/b&gt;&lt;/p&gt;'
+oRS:End()  // Always call End() to release the ResultSet
+ENDIF
+
+// Run the main query
+oRS := oConn:Query( "SELECT CUTID, CT_NUM, CT_DAM FROM cut LIMIT 10" )
+IF oRS != NIL .AND. oRS:RecCount() &gt; 0
+?? '&lt;table border="1" cellpadding="4"&gt;'
+?? '&lt;tr&gt;&lt;th&gt;ID&lt;/th&gt;&lt;th&gt;Name&lt;/th&gt;&lt;th&gt;Tel&lt;/th&gt;&lt;/tr&gt;'
+oRS:GoTop()  // Move to the first record
+DO WHILE ! oRS:EOF()
+?? '&lt;tr&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CUTID'  ) ) + '&lt;/td&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CT_NUM' ) ) + '&lt;/td&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CT_DAM' ) ) + '&lt;/td&gt;'
+?? '&lt;/tr&gt;'
+oRS:Skip()  // Advance to the next record
+ENDDO
+?? '&lt;/table&gt;'
+oRS:End()  // Release the ResultSet
+ELSE
+?? '&lt;p&gt;No records found.&lt;/p&gt;'
+ENDIF
+ENDIF
+mhDB_Free( oConn )  // IMPORTANT: Always return the connection to the pool!
+ENDIF
+
+// ================================================================
+// Example 2: ss_bbb database (Default 30-second timeout)
+// ================================================================
+// When nTimeout is omitted, it defaults to 30 seconds
+?? '&lt;h3&gt;ss_bbb Database (Regular connection, nTimeout=30s)&lt;/h3&gt;'
+
+oConnA := mhDB_Connect( '127.0.0.1', 'user', 'password', 3306, 'ss_bbb' )
+IF oConnA == NIL
+?? '&lt;p style="color:red"&gt; ss_bbb connection failed: ' + mhDB_LastError() + '&lt;/p&gt;'
+ELSE
+?? '&lt;p style="color:green"&gt; ss_bbb connected successfully!&lt;/p&gt;'
+IF oConnA:SetChar( 'utf8' ) != 0  // Use oConnA here — NOT oConn!
+?? 'Charset error!!&lt;br&gt;' + mhDB_LastError()
+ELSE
+oConnA:lWeb := .T.
+
+// Verify the active database
+oRS := oConnA:Query( "SELECT DATABASE() AS d" )
+IF oRS != NIL .AND. oRS:RecCount() &gt; 0
+?? '&lt;p&gt;Current DB = &lt;b&gt;' + hb_valToStr( oRS:FieldGet( 'd' ) ) + '&lt;/b&gt;&lt;/p&gt;'
+oRS:End()
+ENDIF
+
+// Run the query (ss_bbb uses table name "cut", different from ss_aaa)
+oRS := oConnA:Query( "SELECT CUTID, CT_NUM, CT_DAM FROM cut LIMIT 10" )
+IF oRS != NIL .AND. oRS:RecCount() &gt; 0
+?? '&lt;table border="1" cellpadding="4"&gt;'
+?? '&lt;tr&gt;&lt;th&gt;ID&lt;/th&gt;&lt;th&gt;Name&lt;/th&gt;&lt;th&gt;Tel&lt;/th&gt;&lt;/tr&gt;'
+oRS:GoTop()
+DO WHILE ! oRS:EOF()
+?? '&lt;tr&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CUTID'  ) ) + '&lt;/td&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CT_NUM' ) ) + '&lt;/td&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CT_DAM' ) ) + '&lt;/td&gt;'
+?? '&lt;/tr&gt;'
+oRS:Skip()
+ENDDO
+?? '&lt;/table&gt;'
+oRS:End()
+ELSE
+// Display MySQL error for debugging (e.g. table does not exist)
+?? '&lt;p&gt;No records found. | oConnA:Error() = ' + oConnA:Error() + '&lt;/p&gt;'
+ENDIF
+ENDIF
+mhDB_Free( oConnA )  // oConnA was borrowed, so return oConnA
+ENDIF
+
+// ================================================================
+// Example 3: ss_ccc database (Default 30-second timeout)
+// ================================================================
+?? '&lt;h3&gt;ss_ccc Database (Regular connection, nTimeout=30s)&lt;/h3&gt;'
+
+oConnB := mhDB_Connect( '127.0.0.1', 'user', 'password', 3306, 'ss_ccc' )
+IF oConnB == NIL
+?? '&lt;p style="color:red"&gt; ss_ccc connection failed: ' + mhDB_LastError() + '&lt;/p&gt;'
+ELSE
+?? '&lt;p style="color:green"&gt; ss_ccc connected successfully!&lt;/p&gt;'
+IF oConnB:SetChar( 'utf8' ) != 0  //  Use oConnB — NOT oConn or oConnA!
+?? 'Charset error!!&lt;br&gt;' + mhDB_LastError()
+ELSE
+oConnB:lWeb := .T.
+
+// Verify the active database
+oRS := oConnB:Query( "SELECT DATABASE() AS d" )
+IF oRS != NIL .AND. oRS:RecCount() &gt; 0
+?? '&lt;p&gt;Current DB = &lt;b&gt;' + hb_valToStr( oRS:FieldGet( 'd' ) ) + '&lt;/b&gt;&lt;/p&gt;'
+oRS:End()
+ENDIF
+
+oRS := oConnB:Query( "SELECT CUTID, CT_NUM, CT_DAM FROM cut LIMIT 10" )
+IF oRS != NIL .AND. oRS:RecCount() &gt; 0
+?? '&lt;table border="1" cellpadding="4"&gt;'
+?? '&lt;tr&gt;&lt;th&gt;ID&lt;/th&gt;&lt;th&gt;Name&lt;/th&gt;&lt;th&gt;Tel&lt;/th&gt;&lt;/tr&gt;'
+oRS:GoTop()
+DO WHILE ! oRS:EOF()
+?? '&lt;tr&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CUTID'  ) ) + '&lt;/td&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CT_NUM' ) ) + '&lt;/td&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CT_DAM' ) ) + '&lt;/td&gt;'
+?? '&lt;/tr&gt;'
+oRS:Skip()
+ENDDO
+?? '&lt;/table&gt;'
+oRS:End()
+ELSE
+?? '&lt;p&gt;No records found. | oConnB:Error() = ' + oConnB:Error() + '&lt;/p&gt;'
+ENDIF
+ENDIF
+mhDB_Free( oConnB )
+ENDIF
+
+// ================================================================
+// Example 4: ss_ddd database (Custom 60-second timeout)
+// ================================================================
+// nTimeout=60 means the connection will be force-returned if not
+// returned within 60 seconds (on the next checkout attempt)
+?? '&lt;h3&gt;ss_ddd Database (Custom nTimeout=60s)&lt;/h3&gt;'
+
+oConnC := mhDB_Connect( '127.0.0.1', 'user', 'password', 3306, 'ss_ddd', 60 )
+IF oConnC == NIL
+?? '&lt;p style="color:red"&gt; ss_ddd connection failed: ' + mhDB_LastError() + '&lt;/p&gt;'
+ELSE
+?? '&lt;p style="color:green"&gt; ss_ddd connected successfully!&lt;/p&gt;'
+IF oConnC:SetChar( 'utf8' ) != 0
+?? 'Charset error!!&lt;br&gt;' + mhDB_LastError()
+ELSE
+oConnC:lWeb := .T.
+
+// Verify the active database
+oRS := oConnC:Query( "SELECT DATABASE() AS d" )
+IF oRS != NIL .AND. oRS:RecCount() &gt; 0
+?? '&lt;p&gt;Current DB = &lt;b&gt;' + hb_valToStr( oRS:FieldGet( 'd' ) ) + '&lt;/b&gt;&lt;/p&gt;'
+oRS:End()
+ENDIF
+
+oRS := oConnC:Query( "SELECT CUTID, CT_NUM, CT_DAM FROM cut LIMIT 10" )
+IF oRS != NIL .AND. oRS:RecCount() &gt; 0
+?? '&lt;table border="1" cellpadding="4"&gt;'
+?? '&lt;tr&gt;&lt;th&gt;ID&lt;/th&gt;&lt;th&gt;Name&lt;/th&gt;&lt;th&gt;Tel&lt;/th&gt;&lt;/tr&gt;'
+oRS:GoTop()
+DO WHILE ! oRS:EOF()
+?? '&lt;tr&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CUTID'  ) ) + '&lt;/td&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CT_NUM' ) ) + '&lt;/td&gt;'
+?? '&lt;td&gt;' + hb_valToStr( oRS:FieldGet( 'CT_DAM' ) ) + '&lt;/td&gt;'
+?? '&lt;/tr&gt;'
+oRS:Skip()
+ENDDO
+?? '&lt;/table&gt;'
+oRS:End()
+ELSE
+// Error message must use oConnC, not oConnB
+?? '&lt;p&gt;No records found. | oConnC:Error() = ' + oConnC:Error() + '&lt;/p&gt;'
+ENDIF
+ENDIF
+mhDB_Free( oConnC )
+ENDIF
+
+// ================================================================
+// Pool Status Report (for debugging / admin)
+// ================================================================
+// mhDB_PoolStatus() returns an HTML table showing:
+//   - Connection Key (host:dbname)
+//   - Total / In Use / Idle counts per sub-pool
+//   - Per-connection details: type, elapsed borrow time,
+//     checkout timestamp, last return timestamp
+?? '&lt;h3&gt;Connection Pool Status&lt;/h3&gt;'
+?? mhDB_PoolStatus()
+?&gt;
+&lt;e&gt;</code></pre></div></e></CODE><br>
+<br>
+<p>如果認識中文字的，可以參考下面網址：<br/><br>
+<URL url="https://www4.zzz.com.tw/phpBB3/viewtopic.php?f=2&amp;t=371"><s><a href="</s>https://www4.zzz.com.tw/phpBB3/viewtopic.php?f=2&amp;t=371<e>" rel="noopener"></s>https://www4.zzz.com.tw/phpBB3/viewtopic.php?f=2&amp;t=371<e></a></e></URL></p></r></div>
+    </div>
+  </div>
+  <div class="post" id="p284090">
+    <div class="poster">
+      <div class="name" style="color:#105289">russimicro</div>
+      <div class="rank">Posts: 409</div>
+      <div class="avatar"></div>
+      Joined: Sun Jan 31, 2010 03:30 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: mod_harbour.v2.1 plugin for mysql keep-alive</span><br>
+        Posted: Wed Feb 25, 2026 11:54 AM
+      </div>
+      <div class="content"><p><r><p>Good morning...</p></p>
+<p>In a recurring call to the endpoint, where is the pool stored and how is it retrieved to handle multiple HTTP requests?</p>
+
+<p>Is this strategy similar to this one in Node.js?</p>
+
+<p><URL url="https://www.codegenes.net/blog/safely-keeping-mysql-connections-alive/"><LINK_TEXT text="https://www.codegenes.net/blog/safely-k ... ons-alive/">https://www.codegenes.net/blog/safely-keeping-mysql-connections-alive/</LINK_TEXT></URL></p>
+
+<p>Jonsson Russi</p>
+<p></r></p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

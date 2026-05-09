@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Impresion via IRDA - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-8213">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-7.html">FiveWin para Pocket PC</a> Impresion via IRDA</div>
+<div class="pagination">Page: <a href="topic-8213.html">1</a> <strong>2</strong> (24 posts)</div>  <div class="post" id="p41469">
+    <div class="poster">
+      <div class="name" style="color:#105289">Arturo Lopesoria</div>
+      <div class="rank">Posts: 94</div>
+      <img class="avatar avatar-img" src="avatars/1135.jpg" alt="" loading="lazy">
+      Joined: Fri Aug 10, 2007 01:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Impresion via IRDA</span><br>
+        Posted: Mon Nov 12, 2007 02:30 PM
+      </div>
+      <div class="content">Gracias Antonio<br>
+Ahora mismo las pruebo<br>
+Saludos.<br>
+<br>
+<blockquote><cite>Antonio Linares wrote:</cite>Esta es la primera función que has localizado y creo que es la que tiene más posibilidades de funcionar bien. No le falta nada:<br>
+<!-- m --><a class="postlink" href="http://www.pocketpcjunkies.com/Uwe/Forum.aspx/pocketpc-dev/5622/FREE-FREE-FREE-PRINTING-101-IrDA-and-Network-Printing-FREE">http://www.pocketpcjunkies.com/Uwe/Foru ... nting-FREE</a><!-- m --><br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FWCE.ch"
+
+function Main()
+
+   IrdaPrint( "Hello World!" )
+
+return nil
+
+#pragma BEGINDUMP
+
+#include &lt;hbapi.h&gt;
+#include &lt;windows.h&gt;
+
+#define _WIN32_WCE 
+
+#include &lt;WinSock2.h&gt;
+#include &lt;af_irda.h&gt;
+
+#define NUMRETRY 10 // No está definido en el ejemplo. Usamos 10 a ver que tal
+
+HB_FUNC( IRDAPRINT ) // cText
+{
+   SOCKET   sock;           // Socket bound to the server
+   DEVICELIST  devList;     // Device list
+   int    iCount = 0,       // Number of retries
+          index = 0,        // Integer index
+          iDevListLen = sizeof(devList);  // Size of the device list
+   TCHAR    szError[ 100 ]; // Error message string
+   WSADATA   wsaData;
+   WORD    wVersion = MAKEWORD( 1, 1 );  // Winsock Version 1.1
+   BYTE    IASQueryBuff[ sizeof( IAS_QUERY ) - 3 + IAS_MAX_ATTRIBNAME ];
+   int    IASQueryLen = sizeof( IASQueryBuff );
+   PIAS_QUERY  pIASQuery = ( PIAS_QUERY ) &amp;IASQueryBuff;
+   char    szServiceName[ 12 ];
+   SOCKADDR_IRDA iraddr;
+   struct linger   l;   
+
+   if( WSAStartup( wVersion, &amp;wsaData ) != 0 )
+   {
+      wsprintf( szError, TEXT( "WSAStartup failed. Error: %d" ),
+                WSAGetLastError() );
+      MessageBox( 0, szError, TEXT( "error" ), 0 );
+      return;
+   }
+   
+   // Create a socket that is bound to the server.
+   if( ( sock = socket( AF_IRDA, SOCK_STREAM, 0 ) ) == INVALID_SOCKET )
+   {
+      wsprintf( szError, TEXT( "Allocating socket failed. Error: %d" ),
+                WSAGetLastError() );
+      MessageBox( 0, szError, TEXT( "error" ), 0 );
+      WSACleanup();
+      return;
+   }
+
+   // Initialize the number of devices to zero.
+   devList.numDevice = 0;
+
+   while( ( devList.numDevice == 0 ) &amp;&amp; ( iCount &lt;= NUMRETRY ) )
+   {
+      // Retrieve the socket option
+      if( getsockopt( sock, SOL_IRLMP, IRLMP_ENUMDEVICES, ( char * ) &amp;devList,
+                      &amp;iDevListLen) == SOCKET_ERROR )
+      {
+         wsprintf( szError, TEXT( "Server could not be located, getsockopt failed. Error: %d"), WSAGetLastError() );
+         MessageBox( 0, szError, TEXT( "Error" ), 0 );
+         closesocket( sock );
+         WSACleanup();
+         return;
+      }
+      if( devList.numDevice == 0 )
+      {
+         iCount++;
+         Sleep( 1000 );
+      }
+   }
+
+   if( iCount &gt; NUMRETRY )
+   {
+      MessageBox( 0, TEXT( "Server could not be located!" ),  TEXT( "Error" ), 0 );
+      closesocket( sock );
+      WSACleanup();
+      return;
+   }
+
+   memcpy( &amp;pIASQuery-&gt;irdaDeviceID, devList.Device[ 0 ].irdaDeviceID, 4 );
+   memcpy( &amp;pIASQuery-&gt;irdaClassName,  "IrLPT", 6 );
+   memcpy( &amp;pIASQuery-&gt;irdaAttribName, "IrDA:IrLMP:LsapSel", 19 );
+
+   if( getsockopt( sock, SOL_IRLMP, IRLMP_IAS_QUERY, ( char * ) pIASQuery,
+                   &amp;IASQueryLen) == SOCKET_ERROR )
+   {
+      wsprintf( szError, TEXT( "getsockopt failed. Error: %d" ), WSAGetLastError() );
+      MessageBox( 0, szError, TEXT( "Error" ), 0 );
+      closesocket( sock );
+      WSACleanup();
+      return;
+   }
+
+   sprintf( szServiceName, "LSAP-SEL%d", pIASQuery-&gt;irdaAttribute.irdaAttribInt );
+
+   memset( &amp;iraddr, 0, sizeof( iraddr ) );
+   iraddr.irdaAddressFamily = AF_IRDA;
+   memcpy( iraddr.irdaDeviceID, devList.Device[ 0 ].irdaDeviceID, 4 );
+   memcpy( iraddr.irdaServiceName, szServiceName, strlen( szServiceName ) + 1 );
+
+   // Establish a connection to the socket.
+   if( connect( sock, ( struct sockaddr * ) &amp;iraddr, sizeof( iraddr ) ) == SOCKET_ERROR )
+   {
+      wsprintf( szError, TEXT( "Connecting to the server failed. Error: %d" ), WSAGetLastError() );
+      MessageBox( 0, szError, TEXT( "Error" ), MB_OK );
+      closesocket( sock );
+      WSACleanup();
+      return;
+   }
+   
+   // Turn on SO_LINGER
+   l.l_onoff = 1;
+   l.l_linger = 0;
+   if( setsockopt( sock, SOL_SOCKET, SO_LINGER, ( char * ) &amp;l, 
+                   sizeof( struct linger ) ) == SOCKET_ERROR )
+   {
+      wsprintf( szError, TEXT( "setsockopt failed. Error: %d" ), WSAGetLastError() );
+      MessageBox( 0, szError, TEXT( "Error" ), MB_OK );
+      closesocket( sock );
+      WSACleanup();
+      return;
+   }
+   
+   // Send a string from the client socket to the server socket.
+   if( send( sock, hb_parc( 1 ), hb_parclen( 1 ) + 1, 0 ) == SOCKET_ERROR )
+   {
+      wsprintf( szError, TEXT( "Sending data to the server failed. Error: %d" ),
+                WSAGetLastError() );
+      MessageBox( 0, szError, TEXT( "Error" ), MB_OK );
+      closesocket( sock );
+      WSACleanup();
+      return;
+   }
+
+   // Close the socket.
+   if( closesocket( sock ) == SOCKET_ERROR )
+   {
+      wsprintf( szError, TEXT( "closesocket failed. Error: %d" ),
+                WSAGetLastError() );
+      MessageBox( 0, szError, TEXT( "Error" ), 0 );
+      WSACleanup();
+      return;
+   }
+
+   WSACleanup();
+}
+
+#pragma ENDDUMP</code></pre></div></blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p41472">
+    <div class="poster">
+      <div class="name" style="color:#105289">Arturo Lopesoria</div>
+      <div class="rank">Posts: 94</div>
+      <img class="avatar avatar-img" src="avatars/1135.jpg" alt="" loading="lazy">
+      Joined: Fri Aug 10, 2007 01:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Impresion via IRDA</span><br>
+        Posted: Mon Nov 12, 2007 03:28 PM
+      </div>
+      <div class="content">Antonio:<br>
+Tanto en dispositivo como el emulador marcan el mismo error:<br>
+Allocating socket failed Error:10047. No es un error crítico, y en cada intento lo marca. <br>
+<br>
+Alguna Idea?<br>
+<br>
+<br>
+<blockquote><cite>Antonio Linares wrote:</cite>Esta es la primera función que has localizado y creo que es la que tiene más posibilidades de funcionar bien. No le falta nada:<br>
+<!-- m --><a class="postlink" href="http://www.pocketpcjunkies.com/Uwe/Forum.aspx/pocketpc-dev/5622/FREE-FREE-FREE-PRINTING-101-IrDA-and-Network-Printing-FREE">http://www.pocketpcjunkies.com/Uwe/Foru ... nting-FREE</a><!-- m --><br>
+[code]...</div>
+    </div>
+  </div>
+  <div class="post" id="p41473">
+    <div class="poster">
+      <div class="name" style="color:#105289">Arturo Lopesoria</div>
+      <div class="rank">Posts: 94</div>
+      <img class="avatar avatar-img" src="avatars/1135.jpg" alt="" loading="lazy">
+      Joined: Fri Aug 10, 2007 01:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Impresion via IRDA</span><br>
+        Posted: Mon Nov 12, 2007 03:39 PM
+      </div>
+      <div class="content">Aparentemente el error corresponde a:<br>
+[Error=10047] Address family not supported by protocol family <br>
+  <br>
+<br>
+<blockquote><cite>Arturo Lopesoria wrote:</cite>Antonio:<br>
+Tanto en dispositivo como el emulador marcan el mismo error:<br>
+Allocating socket failed Error:10047. No es un error crítico, y en cada intento lo marca. <br>
+<br>
+Alguna Idea?<br>
+<br>
+<br>
+<blockquote><cite>Antonio Linares wrote:</cite>Esta es la primera función que has localizado y creo que es la que tiene más posibilidades de funcionar bien. No le falta nada:<br>
+<!-- m --><a class="postlink" href="http://www.pocketpcjunkies.com/Uwe/Forum.aspx/pocketpc-dev/5622/FREE-FREE-FREE-PRINTING-101-IrDA-and-Network-Printing-FREE">http://www.pocketpcjunkies.com/Uwe/Foru ... nting-FREE</a><!-- m --><br>
+[code]...</blockquote></blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p41480">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Impresion via IRDA</span><br>
+        Posted: Mon Nov 12, 2007 05:56 PM
+      </div>
+      <div class="content"><p>Arturo,</p>
+<p>Esta es la línea que falla:<br>
+if( ( sock = socket( AF_IRDA, SOCK_STREAM, 0 ) ) == INVALID_SOCKET )</p>
+<p>a ver que podemos cambiar ahí...</p></div>
+    </div>
+  </div>
+  <div class="post" id="p41486">
+    <div class="poster">
+      <div class="name" style="color:#105289">Arturo Lopesoria</div>
+      <div class="rank">Posts: 94</div>
+      <img class="avatar avatar-img" src="avatars/1135.jpg" alt="" loading="lazy">
+      Joined: Fri Aug 10, 2007 01:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Impresion via IRDA</span><br>
+        Posted: Mon Nov 12, 2007 06:27 PM
+      </div>
+      <div class="content">Asi es, al abrir el socket, el motivo aparentemente se describe asi:<br>
+<br>
+ERROR: WSAEAFNOSUPPORT 10047<br>
+ <br>
+Address family not supported by protocol family. <br>
+An address incompatible with the requested protocol was used. All sockets are created with an associated address family (that is, AF_INET for Internet Protocols) and a generic protocol type (that is, SOCK_STREAM). This error is returned if an incorrect protocol is explicitly requested in the socket call, or if an address of the wrong family is used for a socket, for example, in sendto<br>
+<br>
+Ahora mismo estoy incluyendo los cambios que en el foro de origen hizo AlanMcFlane respecto del protocolo, para atacar todo junto de una vez.<br>
+  <br>
+<br>
+<blockquote><cite>Antonio Linares wrote:</cite>Arturo,<br>
+<br>
+Esta es la línea que falla:<br>
+if( ( sock = socket( AF_IRDA, SOCK_STREAM, 0 ) ) == INVALID_SOCKET )<br>
+<br>
+a ver que podemos cambiar ahí...</blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p43406">
+    <div class="poster">
+      <div class="name" style="color:#105289">Arturo Lopesoria</div>
+      <div class="rank">Posts: 94</div>
+      <img class="avatar avatar-img" src="avatars/1135.jpg" alt="" loading="lazy">
+      Joined: Fri Aug 10, 2007 01:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Impresion via IRDA</span><br>
+        Posted: Fri Dec 07, 2007 05:33 PM
+      </div>
+      <div class="content">Antonio:<br>
+Por falta de tiempo se me habia pasado cerrar este asunto del IRDA.<br>
+La impresion por IRDA trabaja correctamente con el ejemplo de que hablabamos, unicamente cambie el archivo de cabecera:<br>
+wnisock2 por winsock eso fue todo! y asunto solucionado.<br>
+Saludos.<br>
+<br>
+<br>
+<blockquote><cite>Antonio Linares wrote:</cite>Arturo,<br>
+<br>
+Esta es la línea que falla:<br>
+if( ( sock = socket( AF_IRDA, SOCK_STREAM, 0 ) ) == INVALID_SOCKET )<br>
+<br>
+a ver que podemos cambiar ahí...</blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p43594">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Impresion via IRDA</span><br>
+        Posted: Mon Dec 10, 2007 09:49 AM
+      </div>
+      <div class="content"><p>Arturo,</p>
+<p>Estupendo, gracias por la información! <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>Te importaría poner aqui un pequeño ejemplo de prueba, incluyendo el código en C, para que sirva para futuros usuarios ? Gracias!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p43637">
+    <div class="poster">
+      <div class="name" style="color:#105289">Arturo Lopesoria</div>
+      <div class="rank">Posts: 94</div>
+      <img class="avatar avatar-img" src="avatars/1135.jpg" alt="" loading="lazy">
+      Joined: Fri Aug 10, 2007 01:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Impresion via IRDA</span><br>
+        Posted: Mon Dec 10, 2007 03:51 PM
+      </div>
+      <div class="content">Siguiendo recomendaciones obtenidas en el foro, logre el siguiente ejemplo, que imprime correctamente via IRDA en una impresora EXTECH. <br>
+<br>
+No pude conseguir un protocolo bien estructurado para el control de flujo, pero con el parametro de SleepTime (2000 en el ejemplo) es suficiente para darle tiempo a la impresora de no saturar su buffer de impresion. Si alguien puede contribuir con un control de flujo que permita hacerlo mas robusto a fallas seria magnifico.<br>
+<br>
+<br>
+<br>
+#include "FWCE.ch"<br>
+*************************************************************************<br>
+<br>
+<br>
+function Printx(cFile)<br>
+local oDlg, cc, <br>
+<br>
+<br>
+   DEFINE DIALOG oDlg RESOURCE "printshow"<br>
+<br>
+   cc:=memoread( cFile )<br>
+<br>
+   REDEFINE BUTTON ID 105 OF oDlg ; // Imprimir<br>
+                ACTION ( IrdaPrint( chr(24) + chr(27) + "P" + "#" +;<br>
+                                    cc + chr(13) + chr(10), 2000 ) )<br>
+<br>
+   ACTIVATE DIALOG oDlg CENTERED<br>
+return nil<br>
+<br>
+*************************************************************************<br>
+*************************************************************************<br>
+<br>
+<br>
+#pragma BEGINDUMP<br>
+//#pragma comment (lib,"prnIrda")<br>
+<br>
+<br>
+#include &lt;hbapi.h&gt;<br>
+#include &lt;windows.h&gt;<br>
+<br>
+#define _WIN32_WCE<br>
+//#define _WIN32_WINDOWS<br>
+<br>
+#include &lt;WinSock.h&gt;<br>
+#include &lt;af_irda.h&gt;<br>
+<br>
+#define NUMRETRY 10 // No está definido en el ejemplo. Usamos 10 a ver que tal<br>
+<br>
+int fnTest(LPSTR s);<br>
+<br>
+int WSIrdaSend(SOCKET *pSock, char *Buf, int iLen);<br>
+int WSSendBlocks(SOCKET *pSock, char *Buf, int iLen, int iTout);<br>
+<br>
+<br>
+HB_FUNC( XFNTEST )<br>
+{<br>
+  LPSTR lpStr = hb_parc( 1 );<br>
+  int ret;<br>
+  ret = 0;<br>
+  //fnTest(lpStr);<br>
+  hb_retni( ret );<br>
+ }<br>
+<br>
+<br>
+<br>
+HB_FUNC( IRDAPRINT ) // cText<br>
+{<br>
+   SOCKET   sock;           // Socket bound to the server<br>
+   DEVICELIST  devList;     // Device list<br>
+   int    iCount = 0,       // Number of retries<br>
+          index = 0,        // Integer index<br>
+          iDevListLen = sizeof(devList);  // Size of the device list<br>
+   TCHAR    szError[ 100 ]; // Error message string<br>
+   WSADATA   wsaData;<br>
+   WORD    wVersion = MAKEWORD( 1, 1 );  // Winsock Version 1.1<br>
+   BYTE    IASQueryBuff[ sizeof( IAS_QUERY ) - 3 + IAS_MAX_ATTRIBNAME ];<br>
+   int    IASQueryLen = sizeof( IASQueryBuff );<br>
+   PIAS_QUERY  pIASQuery = ( PIAS_QUERY ) &amp;IASQueryBuff;<br>
+   char    szServiceName[ 12 ];<br>
+   SOCKADDR_IRDA iraddr;<br>
+   struct linger   l;<br>
+	LINGER      lingerStruct;<br>
+	int			retries=1, stat_retries;<br>
+	int			stat_connected=0;<br>
+	fd_set      fdread,fdwrite;<br>
+	int nRet;<br>
+	unsigned long    ul=1;<br>
+	TIMEVAL		tvTimeout ;<br>
+	int result;<br>
+<br>
+<br>
+	tvTimeout.tv_sec  = 0 ;<br>
+	tvTimeout.tv_usec = 0 ;<br>
+<br>
+<br>
+   if( WSAStartup( wVersion, &amp;wsaData ) != 0 )<br>
+   {<br>
+      wsprintf( szError, TEXT( "WSAStartup failed. Error: %d" ),<br>
+                WSAGetLastError() );<br>
+      MessageBox( 0, szError, TEXT( "error" ), 0 );<br>
+      return;<br>
+   }<br>
+<br>
+  // Create a socket that is bound to the server.<br>
+   if( ( sock = socket( AF_IRDA, SOCK_STREAM,0) ) == INVALID_SOCKET )<br>
+   {<br>
+      wsprintf( szError, TEXT( "Allocating socket failed. Error: %d" ),<br>
+                WSAGetLastError() );<br>
+      MessageBox( 0, szError, TEXT( "error" ), 0 );<br>
+      WSACleanup();<br>
+      return;<br>
+   }<br>
+<br>
+   // Initialize the number of devices to zero.<br>
+   devList.numDevice = 0;<br>
+<br>
+   //while( ( devList.numDevice == 0 ) &amp;&amp; ( iCount &lt;= NUMRETRY ) )<br>
+   {<br>
+      // Retrieve the socket option<br>
+      if( getsockopt( sock, SOL_IRLMP, IRLMP_ENUMDEVICES, ( char * ) &amp;devList,<br>
+                      &amp;iDevListLen) == SOCKET_ERROR )<br>
+      {<br>
+         wsprintf( szError, TEXT( "Failed to discover devices, Getsockopt failed. Error: %d"), WSAGetLastError() );<br>
+         MessageBox( 0, szError, TEXT( "Error" ), 0 );<br>
+         closesocket( sock );<br>
+         WSACleanup();<br>
+         return;<br>
+      }<br>
+      if( devList.numDevice == 0 )<br>
+      {<br>
+         iCount++;<br>
+      //   Sleep( 100 );<br>
+      }<br>
+   }<br>
+<br>
+   //if( iCount &gt; NUMRETRY )<br>
+   if( iCount &gt; 0)<br>
+   {<br>
+      MessageBox( 0, TEXT( "Server could not be located! The max number of retries were exceded. " ),  TEXT( "Error" ), 0 );<br>
+      closesocket( sock );<br>
+      WSACleanup();<br>
+      return;<br>
+   }else<br>
+   {<br>
+      //wsprintf( szError, TEXT( "Addr: %0.2X%0.2X%0.2X%0.2X"), devList.Device[ 0 ].irdaDeviceID[0],devList.Device[ 0 ].irdaDeviceID[1],devList.Device[ 0 ].irdaDeviceID[2],devList.Device[ 0 ].irdaDeviceID[3] );<br>
+      //MessageBox( 0, szError,  TEXT( "About to Connect" ), 0 );<br>
+   }<br>
+<br>
+   memcpy( &amp;pIASQuery-&gt;irdaDeviceID, devList.Device[ 0 ].irdaDeviceID, 4 );<br>
+   memcpy( &amp;pIASQuery-&gt;irdaClassName,  "IrLPT", 6 );<br>
+   memcpy( &amp;pIASQuery-&gt;irdaAttribName, "IrDA:LsapSel", 19 );<br>
+<br>
+   if( getsockopt( sock, SOL_IRLMP, IRLMP_IAS_QUERY, ( char * ) pIASQuery,<br>
+                   &amp;IASQueryLen) == SOCKET_ERROR )<br>
+   {<br>
+      wsprintf( szError, TEXT( "Getsockopt failed. Error: %d" ), WSAGetLastError() );<br>
+      MessageBox( 0, szError, TEXT( "Error" ), 0 );<br>
+      closesocket( sock );<br>
+      WSACleanup();<br>
+      return;<br>
+   }<br>
+<br>
+   sprintf( szServiceName, "LSAP-SEL%d", pIASQuery-&gt;irdaAttribute.irdaAttribInt );<br>
+<br>
+   memset( &amp;iraddr, 0, sizeof( iraddr ) );<br>
+   iraddr.irdaAddressFamily = AF_IRDA;<br>
+   memcpy( iraddr.irdaDeviceID, devList.Device[ 0 ].irdaDeviceID, 4 );<br>
+   memcpy( iraddr.irdaServiceName, szServiceName, strlen( szServiceName ) + 1 );<br>
+<br>
+<br>
+<br>
+   // Turn on SO_LINGER<br>
+   l.l_onoff = 1;<br>
+   l.l_linger = 0;<br>
+   if( setsockopt( sock, SOL_SOCKET, SO_LINGER, ( char * ) &amp;l,<br>
+                   sizeof( struct linger ) ) == SOCKET_ERROR )<br>
+   {<br>
+      wsprintf( szError, TEXT( "Setsockopt failed. Error: %d" ), WSAGetLastError() );<br>
+      MessageBox( 0, szError, TEXT( "Error" ), MB_OK );<br>
+      closesocket( sock );<br>
+      WSACleanup();<br>
+      return;<br>
+   }<br>
+<br>
+	//CONNECT SOCKET ASYNCHRONOUSLY<br>
+  Sleep(100);<br>
+	stat_connected=FALSE;<br>
+<br>
+	do{<br>
+		if( connect( sock, ( struct sockaddr * ) &amp;iraddr, sizeof( iraddr ) ) != SOCKET_ERROR )<br>
+		{<br>
+				// At least 1 socket has pending data, in this case only s<br>
+    	  MessageBox(0,TEXT("Connected!"),TEXT("Print Irda ExtTech"), MB_OK | MB_APPLMODAL);<br>
+				stat_connected=TRUE;<br>
+		}<br>
+		if (stat_connected==FALSE)<br>
+		{<br>
+			// error condition<br>
+  	  //MessageBox(0,TEXT("Connect Attempt Failed!"),TEXT("Print Irda ExtTech"), MB_OK | MB_APPLMODAL);<br>
+		}<br>
+	}while( (stat_connected==FALSE) &amp;&amp; (retries++&lt;=4) );<br>
+	if (stat_connected==FALSE)<br>
+	{<br>
+    MessageBox(0,TEXT("Connect Failed!"),TEXT("Print Irda ExtTech"), MB_OK | MB_APPLMODAL);<br>
+	  return;<br>
+	}<br>
+<br>
+<br>
+   // Send a string from the client socket to the server socket.<br>
+   result=WSSendBlocks(&amp;sock,hb_parc( 1 ),hb_parclen( 1 ) + 1, hb_parni(2) );<br>
+	 hb_retni( result );<br>
+<br>
+<br>
+   // Close the socket.<br>
+   if( closesocket( sock ) == SOCKET_ERROR )<br>
+   {<br>
+      wsprintf( szError, TEXT( "closesocket failed. Error: %d" ),<br>
+                WSAGetLastError() );<br>
+      MessageBox( 0, szError, TEXT( "Error" ), 0 );<br>
+      WSACleanup();<br>
+      return;<br>
+   }<br>
+<br>
+   WSACleanup();<br>
+}<br>
+<br>
+<br>
+int WSSendBlocks(SOCKET *pSock, char *Buf, int iLen, int iTout)<br>
+{<br>
+  TCHAR    szError[ 100 ]; // Error message string<br>
+  int nBlocks;<br>
+  int nBytes;<br>
+  int i;<br>
+  nBlocks=iLen/256;<br>
+  nBytes=iLen % 256;<br>
+  for(i=0;i&lt;nBlocks;i++)<br>
+  {<br>
+    WSIrdaSend(pSock, Buf + i*256, 256);<br>
+    //wsprintf( szError, TEXT( "block: %d"),i );<br>
+    //MessageBox(0,szError,TEXT("Print Irda ExtTech"), MB_OK | MB_APPLMODAL);<br>
+    Sleep(iTout);<br>
+  }<br>
+  if(nBytes!=0)<br>
+  {<br>
+    WSIrdaSend(pSock, Buf + nBlocks*256, nBytes);<br>
+    //wsprintf( szError, TEXT( "bytes: %d"),nBytes);<br>
+    //MessageBox(0,szError,TEXT("Print Irda ExtTech"), MB_OK | MB_APPLMODAL);<br>
+  }<br>
+  return(0);<br>
+}<br>
+<br>
+<br>
+int WSIrdaSend(SOCKET *pSock, char *Buf, int Len)<br>
+{<br>
+	int			serr ;<br>
+	int			cbSent = 0 ;<br>
+	fd_set		fdsSend ;<br>
+	TIMEVAL		tvTimeout ;<br>
+<br>
+	tvTimeout.tv_sec  = 45 ;<br>
+	tvTimeout.tv_usec = 0 ;<br>
+<br>
+	do<br>
+	{<br>
+		FD_ZERO( &amp;fdsSend );<br>
+		FD_SET( *pSock , &amp;fdsSend );<br>
+<br>
+		serr = select( 0 , NULL , &amp;fdsSend , NULL , &amp;tvTimeout );<br>
+		if( serr == SOCKET_ERROR )<br>
+		{<br>
+			return(101);<br>
+		}<br>
+		else if( serr == 0 )<br>
+		{<br>
+			//DEBUGMSG( DF , (TEXT("select(send) timed out. \r\n")));<br>
+			continue;<br>
+		}<br>
+		serr = send( *pSock , Buf + cbSent , Len , 0 );<br>
+		if( serr != SOCKET_ERROR )<br>
+		{<br>
+			Len    -= serr ;<br>
+			cbSent += serr ;<br>
+		}<br>
+		else<br>
+		{<br>
+			return(102);<br>
+		}<br>
+	} while( Len &gt; 0 );<br>
+<br>
+	return(0);<br>
+}<br>
+<br>
+#pragma ENDDUMP<br>
+<br>
+<br>
+<br>
+<blockquote><cite>Antonio Linares wrote:</cite>Arturo,<br>
+<br>
+Estupendo, gracias por la información! <br>
+<br>
+Te importaría poner aqui un pequeño ejemplo de prueba, incluyendo el código en C, para que sirva para futuros usuarios ? Gracias!</blockquote></div>
+    </div>
+  </div>
+  <div class="post" id="p43639">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Impresion via IRDA</span><br>
+        Posted: Mon Dec 10, 2007 04:04 PM
+      </div>
+      <div class="content"><p>Arturo,</p>
+<p>Muchas gracias! <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-8213.html">1</a> <strong>2</strong> (24 posts)</div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Leer Gps - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-8612">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-7.html">FiveWin para Pocket PC</a> Leer Gps</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-8612-page-2.html">2</a> (26 posts)</div>  <div class="post" id="p40265">
+    <div class="poster">
+      <div class="name" style="color:#105289">Salvador</div>
+      <div class="rank">Posts: 144</div>
+      <div class="avatar"></div>
+      Joined: Sun Dec 18, 2005 03:18 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Thu Oct 25, 2007 12:36 AM
+      </div>
+      <div class="content">Hola a todos,<br>
+<br>
+Les dejo esta sencilla clase que permite conectar con un gps y obtener algunos de los parámetros de navegación que estos dispositivos proporcionan.<br>
+Espero que sea de interés y podamos mejorarla entre todos.<br>
+Utiliza unas funciones de comunicación que se pueden encontrar en:<br>
+<!-- m --><a class="postlink" href="http://fivetechsoft.com/forums/viewtopic.php?t=8361">http://fivetechsoft.com/forums/viewtopic.php?t=8361</a><!-- m --><br>
+<br>
+Saludos.<br>
+Salvador Gallardo <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fwce.ch"
+Function Main( cCom ) // especifica el puerto como parámetro
+     LOCAL oWnd, oGps, nCom, oTimer
+     DEFAULT cCom := "8" // puerto Com:8
+     nCom := VAL(cCom)
+
+
+    DEFINE WINDOW oWnd TITLE "GPS TEST"
+
+
+    oGps   := Tgps():New( oWnd )
+    oTimer := Ttimer():New( 1000, { || UpdateControls( oWnd, oTimer ) }, oWnd )
+
+    @ 5,    5 SAY "Fecha"    SIZE 53, 20 RIGHT PIXEL
+    @ 5,   60 GET oGps:cDate SIZE 80, 20 WHEN .f. PIXEL OF oWnd
+    @ 5,  145 GET oGps:cTime SIZE 60, 20 WHEN .f. PIXEL OF oWnd
+
+    @ 27,   5 SAY "Lat."    SIZE 53,20 RIGHT PIXEL
+    @ 27,  60 GET oGps:cLat SIZE 80,20 WHEN .f. PIXEL OF oWnd
+    @ 27, 145 GET oGps:cNS  SIZE 20,20 WHEN .f. PIXEL  OF oWnd
+
+    @ 50,   5 SAY "Long."    SIZE 53,20 RIGHT PIXEL
+    @ 50,  60 GET oGps:cLong SIZE 80,20 WHEN .f. PIXEL OF oWnd
+    @ 50, 145 GET oGps:cEW   SIZE 20,20 WHEN .f. PIXEL OF oWnd
+
+    @ 72,  5 SAY "Lat dec."  SIZE 50,20 RIGHT PIXEL
+    @ 72, 60 GET oGps:nLat   SIZE 80,20 PICTURE "999.999999" RIGHT;
+    WHEN .f. PIXEL OF oWnd
+
+    @ 94,  5 SAY "Lon dec."  SIZE 50,20 RIGHT PIXEL
+    @ 94, 60 GET oGps:nLong  SIZE 80,20 PICTURE "999.999999" RIGHT;
+    WHEN .f. PIXEL OF oWnd
+
+    @ 118,  5 SAY "Fix"     SIZE 50,20 RIGHT PIXEL
+    @ 116, 60 GET oGps:cFix SIZE 30,20 WHEN .f. PIXEL OF oWnd
+
+    @ 140,  5 SAY "Sats"     SIZE 50,20 RIGHT PIXEL
+    @ 138, 60 GET oGps:cSats SIZE 30,20 WHEN .f. PIXEL OF oWnd
+
+    @ 162,  5 SAY "Alt."    SIZE 50,20 RIGHT PIXEL
+    @ 160, 60 GET oGps:cAlt SIZE 60,20 WHEN .f. PIXEL OF oWnd
+
+    @ 184,  5 SAY "Veloc."    SIZE 50,20 RIGHT PIXEL
+    @ 182, 60 GET oGps:cSpeed SIZE 60,20 WHEN .f. PIXEL OF oWnd
+
+    @ 204, 5  GET oGps:cNMEA SIZE 232,40 WHEN .f. MULTILINE;
+     NO VSCROLL PIXEL OF oWnd
+
+    @ 258, 5 BUTTON "CONECTAR" SIZE 95, 25 PIXEL;
+    ACTION ( oGps:Conecta( nCom ), oTimer:Activate());
+
+     @ 258, 110 BUTTON "DESCONECTAR" SIZE 95, 25 PIXEL;
+    ACTION ( oTimer:Deactivate(), oGps:Desconecta() )
+
+    ACTIVATE WINDOW oWnd;
+    VALID ( oTimer:End(), oGps:end(), .t.)
+
+
+RETURN .t.
+
+
+///////////////////////////////////////////////////////
+// Mini Clase TGps
+//
+// Lectura de sentencias NMEA GPGGA y GPRMC de un GPS
+// son las necesarias para conocer fecha, hora, posición, velocidad
+// Probado con GPS bluetooth en Com:8 e IPAQ HP2210
+//
+// Autor: Salvador Gallardo 2007
+//
+///////////////////////////////////////////////////////
+
+#define LENNMEA      1024     // longitud cadena leida 3 sentencias minimo
+#define READINTERVAL 1500     // intervalo de lectura del puerto en ms.
+#define NRETRY       10       // reintentos de lectura del puerto
+#define BAUDS        4800     // velocidad de recepcion
+
+
+CLASS TGps
+
+DATA lGps                  // hay conexion con el gps
+DATA oTimer                // intervalo de tiempo para leer el puerto
+DATA oWnd                  // ventana asociada los timers estan asociados a una window
+DATA aNMEA                 // array con las sentencias nmea leidas
+DATA cNMEA                 // ultima sentencia interpretada
+DATA cTime                 // hora
+DATA cDate                 // fecha
+DATA cLat, cLong           // latitud y longitud en formato //dddmm.mmmm,ddddmm.mmmm
+DATA cNS, cEW              // indicadores de N/S E/O
+DATA nLat, nLong           // latitud y longitud en formato decimal dd.mmmmmmmm
+DATA cFix                  // fix del gps 0= invalido 1= valido
+DATA cSats                 // satelites usados
+DATA cAlt                  // altitud
+DATA cSpeed                // velocidad
+DATA CMsgErr               // guarda estado conexion con gps
+DATA nHdlCom               // handle del puerto de comunicaciones
+DATA nRetry                // reintentos sin recibir datos del GPS
+DATA lLog                  // hace log de los datos en una dbf
+
+METHOD New( oWnd ) CONSTRUCTOR
+METHOD Conecta( nCom )
+METHOD Desconecta( )
+METHOD LeeNMEA()          // lee datos del gps
+METHOD GPGGA( cCad )     // procesa sentencia GPGGA
+METHOD GPRMC( cCad )     // procesa sentencia GPRMC
+METHOD End()
+
+ENDCLASS
+
+METHOD New( oWnd ) CLASS TGps
+
+::aNMEA     := Array(3) // se leen 3 sentencias cada vez
+::lGps      := .f.
+::cMsgErr   := "INIT"
+::oWnd      := oWnd
+::nRetry    := 0
+::oTimer    := TTimer():New( READINTERVAL, { || ::LeeNMEA()}, ::oWnd )
+::lLog      := .f.
+::nLat      := 0
+::nLong     := 0
+RETURN self
+
+
+////////////////////////////////////////////////////////////////
+METHOD Conecta( nCom ) CLASS TGps
+
+::nHdlCom := OpenCom( nCom, BAUDS )
+
+ IF ::nHdlCom &lt; 0
+    ::lGps    := .f.
+    ::cMsgErr :=  "FALLO AL ABRIR EL COM:"+ Str( nCom,2 )
+ ENDIF
+ ::cMsgErr :=  "PUERTO ABIERTO"
+ ::oTimer:Activate()
+RETURN nil
+
+/////////////////////////////////////////////////////////////////
+METHOD DesConecta() CLASS TGps
+
+::oTimer:Deactivate()
+ComClose( ::nHdlCom )
+::lGps    := .f.
+::cMsgErr :=  "DESCONECTADO DEL GPS"
+
+RETURN nil
+
+//////////////////////////////////////////////////////////////////
+//
+// LeeNMEA()
+// Lee el puerto y si hay datos los interpreta
+///////////////////////////////////////////////////////////////////
+METHOD LeeNMEA()  CLASS TGps
+LOCAL  c, cBuffer
+
+::oTimer:Deactivate()
+cBuffer := ComRead( ::nHdlCom, LENNMEA )
+
+IF Len( cBuffer ) &lt;= 0
+  ::nRetry ++
+  IF::nRetry &gt; NRETRY
+     ::lGps    := .f.
+     ::cMsgErr := "PERDIDA CONEXION"
+  ENDIF
+  ELSE
+    ::nRetry := 0
+    FOR c := 1 TO LEN( ::aNMEA )
+      ::aNMEA[c] := StrToken( cBuffer, c, "$" ) 
+    NEXT
+
+    FOR c :=  LEN( ::aNMEA ) TO 1 STEP -1  // leemos ultimas sentencias
+
+      DO CASE
+        CASE AT( "GPGGA", ::aNMEA[c] ) ==1
+          IF ChkSum( ::aNMEA[c] )
+              ::cNMEA   := ::aNMEA[c]
+              ::GPGGA( ::aNMEA[c] )
+          ENDIF
+          EXIT
+        CASE AT( "GPRMC", ::aNMEA[c] ) ==1
+          IF ChkSum( ::aNMEA[c] )
+              ::cNMEA   := ::aNMEA[c]
+              ::GPRMC( ::aNMEA[c] )
+          ENDIF
+          EXIT
+      ENDCASE
+
+    NEXT
+
+ENDIF
+
+::oTimer:Activate()
+
+RETURN nil
+
+
+//////////////////////////////////////////////////////////////
+//
+// GPGGA( cCad )
+// Extrae los datos de una sentencia GPGGA
+////////////////////////////////////////////////////////////
+METHOD GPGGA( cCad )  CLASS TGps
+LOCAL cHora, nLat, nLon, nGrados, nMinutos
+
+SET DECIMALS TO 6
+
+cHora     := StrToken( cCad, 2, "," )
+::cTime   := Substr( cHora,1,2)+":"+Substr( cHora,3,2)+":"+Substr( cHora,5,2)
+::cLat    := StrToken( cCad, 3, "," )
+::cNS     := StrToken( cCad, 4, "," )
+::cLong   := StrToken( cCad, 5, "," )
+::cEW     := StrToken( cCad, 6, "," )
+::cFix    := StrToken( cCad, 7, "," )
+::cSats   := StrToken( cCad, 8, "," )
+::cAlt    := StrToken( cCad, 10, "," )
+
+// calculamos latitud y longitud en decimal
+// es la que utiliza Google Maps
+nGrados  := Val(SubStr( ::cLat, 1, 2) )
+nMinutos := Val(SubStr( ::cLat, 3, 7) ) /60
+::nLat   := nGrados+ nMinutos* IIF( ::cNS ="S", -1, 1 )
+
+// longitud
+nGrados   := Val(SubStr( ::cLong, 1, 3 ) )
+nMinutos  := Val(SubStr( ::cLong, 4, 7 ) ) /60
+::nLong   := nGrados+ nMinutos* IIF( ::cNS ="W", -1, 1 )
+::lGps    := .t.
+::cMsgErr := "OK"
+
+
+// log de los datos leidos
+// hay que mejorar la gestion de la dbf
+// añadir fecha y hora
+IF  ::lLog .AND. VAL( ::cFix ) != 0
+  use (CURDIR()+"\gps.dbf" ) VIA "DBFCDX"
+  append blank
+  replace lon with ::nLong
+  replace lat WITH ::nlat
+  replace fix WITH VAL(::cFix)
+  replace sats WITH val(::cSats)
+  replace clong WITH ::cLong
+  replace cLat  WITH ::cLat
+  USE
+endif
+
+RETURN nil
+
+////////////////////////////////////////////////////////////
+//
+// GPRMC( cCad )
+// Extrae los datos de una sentencia GPRMC
+////////////////////////////////////////////////////////////
+
+METHOD GPRMC( cCad )  CLASS TGps
+Local cFecha
+
+cFecha    := StrToken( cCad, 10, "," )
+::cDate   := Substr( cFecha, 1, 2 ) + "/"+ Substr( cFecha, 3, 2) + "/"+ Substr(cFecha, 5, 2 )
+::cSpeed  := StrToken( cCad, 8, "," )
+::lGps    := .t.
+::cMsgErr := "OK"
+
+RETURN nil
+
+
+/////////////////////////////////////////////////////////
+METHOD End() CLASS TGps
+::OTimer:Deactivate()
+::oTimer:End()
+ComClose( ::nHdlCom )
+RETURN nil
+
+
+//////////////////////////////////////////////////////////////////////
+// ChkSum( cCad )
+//
+// Calcula el checksum de la sentencia NMEA
+////////////////////////////////////////////////////////////////////7
+STATIC Function ChkSum( cCad )
+LOCAL c, nLen, nSum1, nSum2
+
+nLen  := AT( "*", cCad )
+nSum1 := HexToDec( Substr( cCad, nLen +1, 2 ) ) // el checksum esta apartir de "*"
+nSum2 := Asc( Substr( cCad, 1, 1 ) ) // cogemos el primer caracter a sumar
+
+FOR c := 2 TO nLen -1
+   nSum2 := nXor( nSum2, Asc( Substr( cCad, c, 1 ) ) )
+NEXT
+
+RETURN IIF( nSum1 == nSum2, .t., .f. )
+
+
+
+//////////////////////////////////////////
+//
+// Actualiza los datos de la ventana
+//////////////////////////////////////////
+
+Function UpdateControls( oWnd, oTimer )
+LOCAL c
+oTimer:Deactivate()
+For c = 1 to Len(oWnd:aControls)
+oWnd:aControls[c]:Refresh()
+next
+
+oTimer:Activate()
+return .t.
+
+
+#pragma BEGINDUMP
+
+#include &lt;windows.h&gt;
+#include &lt;math.h&gt;
+#include &lt;hbapi.h&gt;
+
+// funcion de FW adaptada a FWPPC
+HB_FUNC (HEXTODEC) 
+{
+   LPBYTE pString = ( LPBYTE ) hb_parc( 1 );
+   WORD  w = 0, wLen = hb_parclen( 1 );
+   BYTE  bChar;
+   LONG  nHex = 0;
+
+   while( w &lt; wLen )
+   {
+      bChar = pString[ w ] ;
+      if ( bChar &gt;= 97 ) bChar -= 39;  // lowercase
+      if ( bChar &gt;= 65 ) bChar -= 7 ;  // uppercase
+      bChar -= 48;
+      nHex += bChar * pow( 16, wLen - w - 1 );
+      w++;
+   }
+
+   hb_retnl( nHex );
+}
+
+#pragma ENDDUMP</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p40269">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Thu Oct 25, 2007 07:14 AM
+      </div>
+      <div class="content"><p>Salvador,</p>
+<p>Muchas gracias! <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p40275">
+    <div class="poster">
+      <div class="name" style="color:#105289">Biel EA6DD</div>
+      <div class="rank">Posts: 682</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 14, 2006 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Thu Oct 25, 2007 08:08 AM
+      </div>
+      <div class="content"><p>Gracias Salvador, buen aporte. <br>
+Justo antes de irme de vacaciones, estaba con el tema GPS y mirando las sentencias NMEA. Tenia en mente desarrollar una clase para conexion y lectura de datos del GPS. Y mira por donde que tu tambien estabas en lo mismo.<br>
+ Muchas gracias por compartir la clase, la probare y ya te comentare que tal me ha funcionado.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p40309">
+    <div class="poster">
+      <div class="name" style="color:#105289">Biel EA6DD</div>
+      <div class="rank">Posts: 682</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 14, 2006 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Thu Oct 25, 2007 02:45 PM
+      </div>
+      <div class="content">Hola Salvador, he probado la clase con un  GPS bluetooth y una PDA Symbol MC90, y funciona perfectamente.<br>
+He cambiado el metodo conecta, creo que lo correcto es un else para el caso en que no consigue abrir el puerto.<br>
+<br>
+Ademas le he añadido un retorno de valor logico a conecta, si bien ese dato se podria conseguir del data lGps, o nHdlCom.<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">////////////////////////////////////////////////////////////////
+METHOD Conecta( nCom ) CLASS TGps 
+
+   ::nHdlCom := OpenCom( nCom, BAUDS )
+
+   IF ::nHdlCom &lt; 0
+      ::lGps    := .f.
+      ::cMsgErr :=  "FALLO AL ABRIR EL COM:"+ Str( nCom,2 )
+   ELSE
+      ::cMsgErr :=  "PUERTO ABIERTO"
+      ::lGps    := .T.
+      ::oTimer:Activate()
+   ENDIF
+RETURN ::lGps</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p40332">
+    <div class="poster">
+      <div class="name" style="color:#105289">Salvador</div>
+      <div class="rank">Posts: 144</div>
+      <div class="avatar"></div>
+      Joined: Sun Dec 18, 2005 03:18 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Thu Oct 25, 2007 06:12 PM
+      </div>
+      <div class="content"><p>Gracias Biel.</p>
+<p>Tienes razón en la modificación.<br>
+Con esta clase y las funciones de conexión GPRS, y el API de Google Maps tenemos el camino abierto para incluir en las aplicaciones móviles la posibilidad de localizar geográficamente cualquier persona o vehículo en un mapa.</p>
+<p>Una aportación de José Luis Capel que puede darnos ideas:</p>
+<!-- m -->
+<p><a class="postlink" href="http://www.capelblog.com/?p=83">http://www.capelblog.com/?p=83</a></p>
+<p>Saludos desde El Baix Empordà</p>
+<p>Salvador Gallardo</p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p40994">
+    <div class="poster">
+      <div class="name" style="color:#105289">Biel EA6DD</div>
+      <div class="rank">Posts: 682</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 14, 2006 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Mon Nov 05, 2007 03:14 PM
+      </div>
+      <div class="content">Hola Salvador y demas lectores de este foro. <br>
+<br>
+He variado, y creo que mejorado un poco la gestion de log a DBF. He  cambiado el punto donde comprobar si se debe registrar en el log, lo he incluido en el metodo LeeNMEA()<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD LeeNMEA()  CLASS TGps
+   LOCAL  c, cBuffer
+
+   ::oTimer:Deactivate()
+   cBuffer := ComRead( ::nHdlCom, LENNMEA )
+
+   IF Len( cBuffer ) &lt;= 0
+      ::nRetry ++
+      IF::nRetry &gt; NRETRY
+        ::lGps    := .f.
+        ::cMsgErr := "PERDIDA CONEXION"
+      ENDIF
+   ELSE
+      ::nRetry := 0
+      FOR c := 1 TO LEN( ::aNMEA )
+         ::aNMEA[c] := StrToken( cBuffer, c, "$" )
+      NEXT
+      FOR c :=  LEN( ::aNMEA ) TO 1 STEP -1  // leemos ultimas sentencias
+         DO CASE
+         CASE AT( "GPGGA", ::aNMEA[c] ) ==1
+            IF ChkSum( ::aNMEA[c] )
+               ::cNMEA   := ::aNMEA[c]
+               ::GPGGA( ::aNMEA[c] )
+            ENDIF
+            EXIT
+         CASE AT( "GPRMC", ::aNMEA[c] ) ==1
+           IF ChkSum( ::aNMEA[c] )
+              ::cNMEA   := ::aNMEA[c]
+              ::GPRMC( ::aNMEA[c] )
+           ENDIF
+           EXIT
+        ENDCASE
+     NEXT
+     //Comprobar si hay que registrar el log.
+     IF ::lLog .AND. Val(::cFix)!=0 //Log datos leidos
+         LogDbf( SELF )                      
+      ENDIF
+   ENDIF
+   ::oTimer:Activate()
+RETURN nil</code></pre></div><br>
+Y el log lo proceso por medio de una funciona estatica interna (en principio no le he visto necesidad de que fuera metodo, ni que fuera accesible desde el exterior)<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">///////////////////////////////////////////////////////////////////////7
+//
+// LogDbf()
+// Graba log de los datos leidos del GPS.
+///////////////////////////////////////////////////////////////////////
+STATIC FUNCTION  LogDbf( SELF )
+   IF !File(CurDir()+"\gps.dbf")
+      DBCreate(CurDir()+"\gps.dbf",{;
+                                     { "FECHA"  , "D",     8,    0 },;
+                                     { "HORA"   , "C",     8,    0 },;
+                                     { "LAT"    , "N",    10,    6 },;
+                                     { "LON"    , "N",    10,    6 },;
+                                     { "SAT"    , "N",     1,    0 },;
+                                     { "ALT"    , "N",     5,    0 },;
+                                     { "VEL"    , "N",     6,    2 } ;
+                                   })
+
+   ENDIF
+   IF Select('gps')==0
+      DBUseArea(.T.,'DBFCDX',CurDir()+'\GPS',,.F.)
+   ENDIF
+   Gps-&gt;(DBAppend())
+   Gps-&gt;Fecha := CToD(::cDate)
+   Gps-&gt;Hora  := ::cTime
+   Gps-&gt;Lon   := ::nLong
+   Gps-&gt;Lat   := ::nLat
+   Gps-&gt;Sat   := Val(::cSats)
+   Gps-&gt;Alt   := Val(::cAlt)
+   Gps-&gt;Vel   := Val(::cSpeed)
+RETURN NIL</code></pre></div><br>
+Está función crea el DBF si no existe, y abre la tabla si no lo está. Deja la tabala abierta, luego debiera cerrarse en el meotodo end. <br>
+<br>
+No he colgado toda la clase, para no aburrir con lineas y lineas de codigo que no cambian. De todas formas si a alguine le interesa, solo tiene que pedirla.</div>
+    </div>
+  </div>
+  <div class="post" id="p41216">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Wed Nov 07, 2007 11:47 PM
+      </div>
+      <div class="content"><p>this class run on bluetooth gps <br>
+But if I have a gps into palm How I can see if it run ok ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p41225">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Thu Nov 08, 2007 06:26 AM
+      </div>
+      <div class="content"><p>Silvio,</p>
+<p>Tu palm tiene Windows Mobile ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p41229">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Thu Nov 08, 2007 09:08 AM
+      </div>
+      <div class="content"><p>yes HTC TNT I and HTC TNT II ( with gps)</p></div>
+    </div>
+  </div>
+  <div class="post" id="p41232">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Thu Nov 08, 2007 09:36 AM
+      </div>
+      <div class="content"><p>Silvio,</p>
+<p>Windows Mobile 2003 or 2005 ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p41234">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio</div>
+      <div class="rank">Posts: 3107</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 07, 2005 06:28 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Thu Nov 08, 2007 10:19 AM
+      </div>
+      <div class="content"><p>on HTC TNT I I have installed WINDOWs MOBILE 5.0 ( s.o. 5.1.465) con Feature Pack ( AKU)</p>
+<p>on HTCTNT II there is Windows Mobile 6 Professional</p>
+<p>I downloading wm6 because I want installed on HTC TNT I  because wm5 have many problems when there is a wifi connections</p>
+<p>the first is a samsung processor 400 MHz the second is a Qualcomm MSM 7200, 400MHz</p>
+<p>All have Bluetooth 2.0, IRDA, Wi-Fi IEEE 802.11 b/g and only the HTC TNT II  have a gps antenna connector internal </p>
+<p>THE FIRST have  a 2.0 MB Pixel camera the second ( HTC TNT II) have two cameras with 3.0 MB pixel</p>
+<p>I trying all sample on each Machine : not have problems!!!!</p>
+<p>HTC IS GOOD Pocket PC!!!</p></div>
+    </div>
+  </div>
+  <div class="post" id="p44668">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ugo</div>
+      <div class="rank">Posts: 283</div>
+      <img class="avatar avatar-img" src="avatars/154.jpg" alt="" loading="lazy">
+      Joined: Sat Oct 15, 2005 06:40 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Leer Gps</span><br>
+        Posted: Sat Dec 22, 2007 08:37 PM
+      </div>
+      <div class="content">Hi all,<br>
+during the compilation return this errors:<br>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">Progetto: GPS, Ambiente: FWPPC:
+[1]:Link.Exe @GPS.vcl /nologo /SUBSYSTEM:WINDOWSCE,4.20 /MACHINE:ARM
+   Creating library C:\Work\Src-CE\GPS\GPS.lib and object C:\Work\Src-CE\GPS\GPS.exp
+Gps_1.Obj : error LNK2001: unresolved external symbol HB_FUN_COMREAD
+Gps_1.Obj : error LNK2001: unresolved external symbol HB_FUN_COMCLOSE
+Gps_1.Obj : error LNK2001: unresolved external symbol HB_FUN_OPENCOM
+C:\Work\Src-CE\GPS\GPS.Exe : fatal error LNK1120: 3 unresolved externals</code></pre></div><br>
+I don't found library for comm connection in my Harbour_ce and FwPPC directory.<br>
+How can resolve?</div>
+    </div>
+  </div>
+  <div class="post" id="p44685">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Sun Dec 23, 2007 01:37 AM
+      </div>
+      <div class="content"><p>Ugo,</p>
+<!-- m -->
+<p><a class="postlink" href="http://fivetechsoft.com/forums/viewtopic.php?t=8361">http://fivetechsoft.com/forums/viewtopic.php?t=8361</a></p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p44705">
+    <div class="poster">
+      <div class="name" style="color:#105289">Ugo</div>
+      <div class="rank">Posts: 283</div>
+      <img class="avatar avatar-img" src="avatars/154.jpg" alt="" loading="lazy">
+      Joined: Sat Oct 15, 2005 06:40 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Sun Dec 23, 2007 10:21 AM
+      </div>
+      <div class="content"><blockquote><cite>Antonio Linares wrote:</cite>http://fivetechsoft.com/forums/viewtopic.php?t=8361</blockquote><br>
+Antonio,<br>
+thanks  <br>
+<br>
+Merry Christmas at all Fw's  </div>
+    </div>
+  </div>
+  <div class="post" id="p44706">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Leer Gps</span><br>
+        Posted: Sun Dec 23, 2007 10:24 AM
+      </div>
+      <div class="content"><!-- m -->
+<p><a class="postlink" href="http://fivetechsoft.com/forums/viewtopic.php?t=9270">http://fivetechsoft.com/forums/viewtopic.php?t=9270</a> </p>
+<!-- m --><!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-8612-page-2.html">2</a> (26 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

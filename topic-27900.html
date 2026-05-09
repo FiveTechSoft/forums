@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Calculating or controling IBAN numbers - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-27900">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Calculating or controling IBAN numbers</div>
+  <div class="post" id="p155769">
+    <div class="poster">
+      <div class="name" style="color:#105289">Franklin Demont</div>
+      <div class="rank">Posts: 166</div>
+      <div class="avatar"></div>
+      Joined: Wed Aug 29, 2012 08:25 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Calculating or controling IBAN numbers</span><br>
+        Posted: Sun Jan 05, 2014 10:59 AM
+      </div>
+      <div class="content">Hello ,<br>
+<br>
+I had to write a input routine for IBAN numbers. Old numbers must be converted.<br>
+<br>
+Searching in the forum i found some tip's , no complete example.<br>
+<br>
+Writing first a testmodule , i am glad to deal it , hoping it is usefull.<br>
+<br>
+The inputroutine ask's first the land . This determines also the picture clausule from the bank account number .<br>
+This data comes from Wikipedia , i provided data for 48 country's ( you have to create IbanLand.txt , see source)<br>
+<br>
+If the first two characters are blank , the Controle number is calculated. If not , the valid clausule controles this number<br>
+<br>
+FRank<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"># include "FiveWin.ch"
+
+#xcommand DBG &lt;vars,...&gt; =&gt; ;
+            XBrowse( ArrTranspose( \{ \{ &lt;"vars"&gt; \}, Eval( \{ || \{ &lt;vars&gt; \} \} ) \} ), ;
+            ProcName(0) + " : Line : " + LTrim( Str( ProcLine(0))) + "   " + ProcName(1) + " : Line : " + LTrim( Str( ProcLine(1) ) ),, ;
+            { |o| o:cHeaders := { "Variable", "Value" } } )
+
+STATIC cSep := "-"   // Used in FORMAT from GET (Bank number)
+
+FUNC MAIN(TestNr)
+***********************
+   local oDlg , oGet[2] 
+   local hPict := Hash()
+   local aLand := ReadTxt("IbanLand.txt",hPict) , cLand := "  "  , cNr := SPACE(31)
+   local nH := 400 , nB := 600 , nRow := 50
+   local cOri
+   local lOk := .F.
+   local chars := "0123456789" , i
+   IF TestNr == nil
+      TestNr    := "BE" + PAD("  979797979797",32)
+      //TestNr    := "NL" + PAD("  INGB0001234567" , 32)
+      //TestNr    := "NL" + PAD("  INGB0736160221" , 32)  // to test 11 trial 
+   END
+   TestNr := UPPER(TestNr)
+   FOR i := ASC("A") TO ASC("Z")
+      Chars += CHR(i)
+   NEXT 
+   TestNr := SUBSTR(TestNr,1,4) + CharOnly(Chars,SUBSTR(TestNr,5))
+   cLand := LEFT(TestNr,2)
+   cNr   := SUBSTR(TestNr,3)
+   DEFINE DIALOG oDlg TITLE "Testing IBAN " ;//COLOR "W+/B"
+          FROM 0 , 0 TO 400 , 600  PIXEL
+   DEFINE FONT oDlg:oFont NAME GetSysFont() SIZE 0, -14 // BOLD
+   
+   @ 50 , 10 SAY "Bank number : " OF oDlg RIGHT PIXEL SIZE 50,10 
+   @ 50 , 60 GET oGet[1] VAR cLand OF oDlg SIZE 30,10 PIXEL ;
+             ACTION ComboLand(aLand,oGet[1],oGet[2],hPict);
+             VALID IIF(ASCAN(aLand,{|a|a[1]==cLand})==0 , ComboLand(aLand,oGet[1],oGet[2],hPict)  , (ChangPict(oGet,hPict),.T.) ) ;
+             PICTURE "@K !!"  
+   @ 50 , 90 GET oGet[2] VAR cNr OF oDlg PIXEL VALID ContrIbam(cLand,oGet[2],cOri,aLand);
+             WHEN (cOri := oGet[2]:Varget(),.T.) SIZE 200,12;
+             PICTURE hPict[cLand]
+   oGet[2]:bKeydown := {|nKey|IIF(nKey==27,(oGet[2]:Varput(cOri),oGet[2]:Refresh()),)}
+   @ nH/2 - 20 , 5 BUTTON "&amp;Ok" SIZE 40, 12 PIXEL ;
+      ACTION (lOk := .T. , oDlg:end() )
+
+   ACTIVATE DIALOG oDlg CENTERED VALID lOk 
+return nil
+************************************************************************************
+FUNC ContrIbam(cLand,oGet,cOri,aLand)
+*****************************************
+LOCAL cContr , c , cTxt := "" , Nr , cNr
+LOCAL x , y , i
+Nr := ASCAN(aLand,{|a|a[1]==cLand})
+cNr := TRIM(oGet:Varget())
+IF aLand[Nr,3]&lt;&gt;LEN(cNr)+2
+   // LEN(cNr) doesn't match
+   RETURN .F.
+END
+IF cLand == "BE" // Controle last two characters on modulus 97
+   IF MyMod(SUBSTR(cNr,3,10),.T.) &lt;&gt; RIGHT(cNr,2)    // Modulus 97
+      RETURN .F.
+   END
+ELSEIF cLand == "NL" .AND. SUBSTR(cNr,3,7) &lt;&gt; "INGB000"
+   // 11-proef 
+   x := 0
+   y := RIGHT(cNr,9)
+   FOR i := 1 TO 9
+       x += VAL(y[i])*(10-i)
+   NEXT    
+   IF x%11 &lt;&gt; 0
+      RETURN .F.
+   END
+END
+IF cNr[1]$"0123456789" .AND. cNr[2]$"0123456789"
+      // All ready Iban number , controle on this number 
+      cContr := LEFT(cNr,2)
+      cNr    := SUBSTR(cNr,3)
+      FOR EACH c IN cNr + cLand //cnr
+        IF ASC(c) &gt; 64
+          cTxt += STR(Asc(c)-55,2)
+        ELSE
+          cTxt += c   
+        END
+      NEXT
+      cTxt += "00"
+      RETURN cContr == MyMod(cTxt)
+ELSE
+   // Iban controle number must be calculated
+   FOR EACH c IN SUBSTR(cNr,3)+cLand
+       IF ASC(c) &gt; 64
+          cTxt += STR(Asc(c)-55,2)
+       ELSE
+          cTxt += c   
+       END
+   NEXT
+   cTxt += "00"
+   cNr := PAD(MyMod(cTxt)+SUBSTR(cNr,3),32) 
+   oGet:Varput(cNr) 
+   oGet:Refresh()
+ENDIF        
+RETURN .T.
+******************************************************************************************
+FUNC MyMod(c,lMode)
+*******************
+LOCAL cStart , nPos , x , d
+DEFAULT lMode := .F.
+IF lMode // VAL(c)%97 is ok , LEN(c) &lt; 10
+   x := VAL(c)%97
+   IF x == 0
+       x := 97
+   END 
+   x := STRZERO(x,2)
+   RETURN x
+END
+nPos := 1
+x := ""
+d := 9
+DO WHIL nPos &lt;= LEN(c)
+   cStart := x+SUBSTR(c,nPos,d)
+   nPos   += d
+   d      := 7
+   x := STRZERO(VAL(cStart)%97,2)
+END
+x := STRZERO(98 - VAL(x),2)
+RETURN x
+
+*********************************************************************
+STATIC FUNC ReadTxt(cFile,hPict)
+// Format : Bulgaria                BG   22   4a,6n,8c         PICTURE : BG99 AAAA 9999 99NN NNNN NN
+//                                  25   30   35
+LOCAL h[0]
+LOCAL n := fOpen(cFile)
+LOCAL c , cLand , cCode , nWidth ,cBban , cC
+Local x , i , j , nLen , nPos
+LOCAL hCode := Hash()
+hCode["a"] := "A"
+hCode["n"] := "9"
+hCode["c"] := "N"
+DO WHILE HB_FReadLine(n,@c)==0
+   cLand  := SUBSTR(c,25,2)
+   nWidth := VAL(SUBSTR(c,30,2))
+   cBban  := TRIM(SUBSTR(c,35,10))
+   AADD(h,{cLand ,LEFT(c,24) , nWidth , SUBSTR(c,35,10)})
+   x := "" 
+   j := 1
+   nPos := 0
+   FOR i := 1 TO NumToken(cBban,",")
+       cCode := Token(cBban,",",i)
+       cC     := RIGHT(cCode,1)
+       nLen  := VAL(cCode)
+       FOR j := 1 TO nLen
+           x += hCode[cC]
+           nPos++
+           IF nPos%4==0 .AND. nPos &lt; nWidth - 4
+              x += cSep //" "  // Or other character as "-" 
+           END
+       NEXT
+   NEXT
+   hPict[cLand] := "@KR! ##" + cSep + x
+END
+fClose(n)
+RETURN h
+********************************************************************************
+STATIC FUNC ComboLand(aLand,oGet,NextGet,hPict)
+***********************************************
+LOCAL oDlg , oBrw , oButOk
+LOCAL coord[0]
+LOCAL cReturn
+LOCAL cMem := cReturn := oGet:Varget()
+LOCAL Len := LEN(cReturn)
+LOCAL oFont
+LOCAL nCharWidth , z
+LOCAL lOk := .F. , bEnd
+LOCAL nAt
+DEFINE FONT oFont NAME 'TAHOMA' SIZE 0,-14
+nCharWidth := 10 //oFont:nWidth
+
+Coord := bepcoordWnd(oGet,aLand,2,nCharWidth)
+
+DEFINE DIALOG oDlg FROM Coord[1] , Coord[2] TO Coord[3] , Coord[4] TITLE "Select" ;
+    PIXEL
+bEnd := {||lOk := .T. , cReturn := oBrw:aRow[1], oDlg:end() }
+
+@ 0,0 XBROWSE oBrw ARRAY aLand PIXEL OF oDlg FONT oFont;
+  COLUMNS {1,2};
+  HEADERS {"Code","Land Name"};
+  COLSIZES {30,200};
+  SIZE (oDlg:nRight - oDlg:nLeft)/2 , (oDlg:nBottom -oDlg:nTop)/2-10;
+  AUTOSORT LINES
+
+WITH OBJECT oBrw
+ :GetDisplayCols()
+ :nStretchCol  := STRETCHCOL_WIDEST
+ :ColStretch()
+ :BrwFitSize( .T. )
+ :oWnd:Center()
+ :SetFocus()
+END
+
+oBrw:bkeyDown  := { | nkey | IIF(nkey==13 , EVAL(bEnd)  , )   }
+oBrw:bLDblClick := {||EVAL(bEnd) }
+z :=  oBrw:nWidth
+@ INT((Coord[3]-Coord[1])/2)-8 , 2 SAY "cSeek : " OF oDlg SIZE 30,10 PIXEL
+ oBrw:cSeek := cReturn
+@ INT((Coord[3]-Coord[1])/2)-8 , 22 SAY oBrw:oseek Prompt oBrw:cSeek OF oDlg SIZE z - 47 ,8 PIXEL UPDATE color CLR_RED,CLR_YELLOW FONT oFont
+@ INT((Coord[3]-Coord[1])/2)-10 ,  z - 20 BUTTON oButOk Prompt "OK" OF oDlg SIZE 20 , 12 PIXEL ACTION EVAL(bEnd)
+
+oBrw:CreateFromCode()
+
+
+ACTIVATE DIALOG oDlg ON INIT (nAt := oBrw:nArrayAt := MAX(ASCAN(oBrw:aArrayData,{|a|a[1]=TRIM(cReturn)}),1) ,;
+                              oBrw:nRowSel := SeekMidLine(oBrw,nAt)                                         ,;
+                              xSetfocus(oBrw))
+
+RELEASE FONT oFont
+IF lOk
+   cReturn := oBrw:aRow[1]
+   IF cMem &lt;&gt; cReturn
+      oGet:varput(cReturn)
+      oGet:Refresh()
+      Nextget:Varput(SPACE(40)) 
+      Nextget:cPicture := NextGet:oGet:Picture := hPict[cReturn]
+      Nextget:Refresh()
+   END
+   xSetfocus(Nextget)
+END
+RETURN lOk
+RETURN cReturn
+***********************************************************************************************
+FUNC bepcoordWnd(oGet,Arr,L,nCharWidth)
+**********************************************
+LOCAL hWnd := oget:hWnd() , el , WinBr := 0 , i , n := 60
+LOCAL Coord
+coord := GetWndRect( hWnd)
+FOR i :=1 TO L 
+  WinBr += LEN(Arr[1,i])*nCharWidth
+  IF i == L
+   EXIT
+  END
+NEXT
+winBr += 30 
+coord[1] := coord[3]
+coord[3] := coord[1] + (24 + MIN(Len(Arr) , 12)*22) + 25 //::BepHoogte()
+coord[4] := coord[2] + WinBr
+IF (el := Coord[3] - ( GetSysMetrics(1) - n ) ) &gt; 0
+ Coord[1] -= el
+ Coord[3] -= el
+END
+RETU Coord
+***************************************************
+STATIC FUNC SeekMidLine(oBrw,nAt)
+**********************************
+LOCAL nMid , nRow
+DEFAULT nAt := oBrw:nAt 
+WITH OBJECT oBrw
+     nMid := INT(:RowCount()/2)
+     IF nMid &lt;= nAt .AND. nAt &lt;= :nLen - nMid
+        nRow := nMid
+     ELSEIF nAt &lt; nMid
+        nRow := nAt
+     ELSE
+        nRow := :RowCount() - (oBrw:nLen-nAt) 
+     END
+END
+RETURN nRow
+****************************************************************
+*****************************************************************************************
+function xSetFocus( oObx )
+**************************
+// function from local.fivewin.english 4/1/2003 Kleyber Derick
+local oTempo:=""
+local lGet := oObx:ClassName $ "TGET TMULTIGET"
+define timer oTempo interval 10 of oObx:oWnd ;
+  action (oObx:SetFocus(), IIF(lGet , oObx:SetPos(0) , ), oTempo:Deactivate() )
+activate timer oTempo
+
+return nil
+**************************************************************************
+PROC ChangPict(aGet,hPict)
+**************************
+LOCAL cLand
+IF aGet[1]:oGet:Changed
+   cLand := aGet[1]:Varget()
+   aGet[2]:Varput(SPACE(32)) 
+   aGet[2]:cPicture := aGet[2]:oGet:Picture := hPict[cLand]
+   aGet[2]:Refresh()
+END
+RETURN
+
+/*
+File Ibanland.txt :
+*******************
+Andorra                 AD   24   8n,12c           a:A-Z , n 0..9 , c a..z A..Z 0..9
+Albania                 AL   28   8n,16c
+Austria                 AT   20   16n
+Bosnia and Herzegovina  BA   20   16n
+Belgium                 BE   16   12n
+Bulgaria                BG   22   4a,6n,8c         PICTURE : BG99 AAAA 9999 99NN NNNN NN
+Cyprus                  CY   28   8n,16c
+Czech Republic          CZ   24   20n
+Denmark                 DK   18   14n
+Estonia                 EE   20   16n
+Finland                 FI   18   14n
+Faroe Islands           FO   18   14n
+France                  FR   27   10n,11c,2n
+Germany                 DE   22   18n
+Georgia                 GE   22   2c,16n
+Gibraltar               GI   23   4a,15c
+Greenland               GL   18   14n
+Greece                  GR   27   7n,16c
+Croatie                 HR   21   17n
+Hungary                 HU   28   24n
+Ireland                 IE   23   4c,14n
+Israel                  IL   23   19n
+Iceland                 IS   26   22n
+Italy                   IT   27   1a,10n,12c
+Lebanon                 LB   28   4n,20c
+Liechtenstein           LI   21   5n,12c
+Lithunia                LT   20   16n
+Latvia                  LV   21   4a,13c
+Luxembourg              LU   16   3n,13c
+Macedonia               MK   15   3n,10c,2n
+Malta                   MT   31   4a,5n,18c
+Monaco                  MC   27   10n,11c,2n
+Montenegro              ME   22   18n
+Netherlands             NL   18   4a,10n
+Norway                  NO   15   11n
+Poland                  PL   28   24n
+Portugal                PT   25   21n
+Romania                 RO   24   4a,16c
+Saudi Arabia            SA   24   2n,18c
+San Marino              SM   27   1a,10n,12c
+Serbia                  RS   22   18n
+Slovakia                SK   24   20n
+Slovenia                SI   19   15n
+Spain                   ES   24   20n
+Sweden                  SE   24   20n
+Switzerland             CH   21   5n,12c
+Turkey                  TR   26   5n,17c
+United Kingdom          GB   22   4a,14n
+*/</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p155792">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Calculating or controling IBAN numbers</span><br>
+        Posted: Mon Jan 06, 2014 05:56 PM
+      </div>
+      <div class="content"><p>Frank,<br>
+perhaps you must give to final user the possibility to insert </p>
+<p>code bank  or Cab<br>
+code succursal or ABi<br>
+Number account  and the you can create the iban code  just an Idea</p></div>
+    </div>
+  </div>
+  <div class="post" id="p173121">
+    <div class="poster">
+      <div class="name" style="color:#105289">bart</div>
+      <div class="rank">Posts: 10</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 10, 2015 09:11 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Calculating or controling IBAN numbers</span><br>
+        Posted: Wed Feb 25, 2015 01:09 PM
+      </div>
+      <div class="content"><p>hello, </p>
+<p>Anyone who can &quot;translate&quot; this VB code please. </p>
+<p>Public Function BBANtoIBANint(ByVal ISOcountry As String, ByVal banknumber As String, ByVal Account As String) As String<br>
+Dim xd As Object<br>
+Set xd = CreateObject(&quot;msxml2.domdocument.4.0&quot;)<br>
+xd.Load &quot;http://www.ibanbic.be/IBANBIC.asmx/calculateIBAN2?ISOcountry=&quot; &amp; ISOcountry &amp; &quot;&amp;banknumber=&quot; &amp; banknumber &amp; &quot;&amp;account=&quot; &amp; Account<br>
+Do While xd.ReadyState &lt;&gt; 4<br>
+    DoEvents<br>
+Loop<br>
+BBANtoIBANint = xd.Text<br>
+End Function</p>
+<p>Thank you<br>
+Bart</p></div>
+    </div>
+  </div>
+  <div class="post" id="p173148">
+    <div class="poster">
+      <div class="name" style="color:#105289">driessen</div>
+      <div class="rank">Posts: 1467</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 11:26 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Calculating or controling IBAN numbers</span><br>
+        Posted: Wed Feb 25, 2015 08:20 PM
+      </div>
+      <div class="content">Frank,<br>
+<br>
+This the code I use to convert old account numbers to IBAN and BIC :<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">******************************************************************************
+*                                                                            *
+*   Program : IBANBIC.PRG                                                    *
+*   Datum   : 21/10/2010                                                     *
+*                                                                            *
+*   Doel    : Omzetten van Belgische bankrekeningnummers                     *
+*             naar IBAN- en BIC-code                                         *
+*                                                                            *
+******************************************************************************
+#include "Fivewin.ch"
+#DEFINE DEFAULT(xVar,xVal) xVar=IF(xVar=NIL,xVal,xVar)
+******************************************************************************
+
+FUNCTION MAIN(cPar,cPath)
+
+    LOCAL oGET[3]
+
+    PRIVATE BnkRet   := .T.
+
+    PRIVATE cBANK    := SPACE(14)
+    PRIVATE cIBAN    := SPACE(19)
+    PRIVATE cBIC     := SPACE(11)
+
+   PRIVATE hBorland := LOADLIBRARY("MYBWCC32.DLL")
+
+   PRIVATE oFontSFB
+
+   BWCCRegister(GetResources())
+
+   IF IsWin7()
+      DEFINE FONT oFontSFB NAME "Tahoma"        SIZE 0,16 BOLD
+   ELSE
+      DEFINE FONT oFontSFB NAME "MS Sans Serif" SIZE 0,12 BOLD
+   ENDIF
+
+   SET AUTOPEN ON
+   SET CONFIRM ON
+   SET DATE BRITISH
+   SET DATE FORMAT TO "DD/MM/YYYY"
+   SET DELETED ON
+   SET EXACT ON
+   SET SAFETY OFF
+   SET SCOREBOARD OFF
+   SET EVENTMASK TO 128
+   SET WRAP ON
+
+   DEFINE DIALOG BanDlg NAME "K_IBANBIC" FONT oFontSFB
+   REDEFINE GET oGET[1] VAR cBANK ID 101 OF BanDlg PICTURE "999-9999999-99" UPDATE VALID Contr_BANK("cBANK",BanDlg,,,"BnkRet",.F.)
+   REDEFINE GET oGET[2] VAR cIBAN ID 102 OF BanDlg PICTURE "!!99 9999 9999 9999" UPDATE WHEN .F.
+   REDEFINE GET oGET[3] VAR cBIC  ID 103 OF BanDlg PICTURE "!!!!!!!!!!!" UPDATE WHEN .F.
+
+   REDEFINE BUTTON ID 901 OF BanDlg ACTION (SYSREFRESH(),CtrBankIban(),BanDlg:Update(),oGET[1]:SetFocus(),)
+    REDEFINE BUTTON ID 902 OF BanDlg ACTION (OpenClipBoard(),EmptyClipBoard(),SetClipBoardData(1,cIBAN),CloseClipBoard(),BanDlg:End(),MsgAlert("Het IBAN-nummer werd in het klemboard geplaatst !!!" + CHR(13) + CHR(13) + "U kan dit IBAN-nummer nu elders in uw gegevens of tekst plakken.","Opgelet"))
+   REDEFINE BUTTON ID 903 OF BanDlg ACTION (BanDlg:END())
+
+    oGET[1]:bGotFocus := {|| SYSREFRESH(),oGET[1]:Assign(),oGET[1]:SetSel(0,LEN(RTRIM(cBANK)))}
+
+   ACTIVATE Dialog BanDlg RESIZE16 CENTERED
+
+   oFontSFB:End()
+
+   FREELIBRARY(hBorLand)
+
+   ResAllFree()
+   QUIT
+
+RETURN(.T.)
+
+******************************************************************************
+
+STATIC PROCEDURE CtrBankIban
+
+    IF BnkRet
+        cIBAN := BBANtoIBAN(cBANK,1)
+        IF VAL(LEFT(cIBAN,1)) = 0 .AND. LEFT(cIBAN,1) &lt;&gt; "0"
+            cBIC := BBANtoIBAN(cBANK,2)
+        ELSE
+            cIBAN := SPACE(19)
+            cBic  := SPACE(11)
+        ENDIF
+        IF LEFT(cIBAN,5)="EXIT2"
+            MsgAlert("U heeft de limiet van 1.000 conversies naar IBAN-nummers per dag bereikt !!!","Opgelet")
+            cIBAN := SPACE(19)
+            cBIC  := SPACE(11)
+        ENDIF
+    ELSE
+        cIBAN := SPACE(19)
+        cBIC  := SPACE(11)
+    ENDIF
+
+RETURN
+
+******************************************************************************
+
+FUNCTION BBANtoIBAN(cBankTxt,cSrt)
+
+   LOCAL xd
+   LOCAL cText       := ""
+   LOCAL oText       := IF(cSrt&lt;3,cBankTxt,"")
+
+   PRIVATE dBankTxt  := cBankTxt
+
+   // cSrt = 1 : Omzetting Belgisch banknummer naar IBAN-nummer
+   // cSrt = 2 : Opzoeken BIC-code
+   // cSrt &gt; 2 : Omzetten van getal in voluit geschreven tekst (Nederlands, Frans of Engels)
+
+   IF Contr_Bank("dBankTxt",,.F.)
+
+      IF !IsActiveX("MSXML2.DOMDocument."+IF(IsWin7(),"6","4")+".0")
+         MsgAlert("Het Windows-onderdeel " + CHR(34) + "MSXML2.DOMDocument."+IF(IsWin7(),"6","4")+".0" + CHR(34) + " is niet op uw PC geïnstalleerd !!!" + CHR(13) + CHR(13) + "Dit onderdeel zal nu gedownload en/of geïnstalleerd worden." + CHR(13) + "Gelieve hierbij de aangegeven instructies te volgen.","Opgelet")
+         TRY
+            IF !FILE("MSXML"+IF(IsWin7(),"6","4")+".MSI")
+               MsgRun("Downloaden bezig ...","Een ogenblik AUB ...",{||IF(URLDownloadToFile(0,"http://www.ma-consult.be/utilities/msxml"+IF(IsWin7(),"6","4")+".msi","MSXML"+IF(IsWin7(),"6","4")+".MSI",0,0 ) == 0,.T.,.T.)})
+            ENDIF
+            IF FILE("MSXML"+IF(IsWin7(),"6","4")+".MSI")
+                    WaitRun("MSIEXEC.EXE /I MSXML"+IF(IsWin7(),"6","4")+".MSI")
+            ELSE
+               MsgAlert("Het downloaden of installeren van " + CHR(34) + "MSXML"+IF(IsWin7(),"6","4") + CHR(34) + " is mislukt !!!" + CHR(34) + CHR(34) + "Probeer het later nog eens.","Opgelet")
+            ENDIF
+         CATCH
+            MsgAlert("Het downloaden of installeren van " + CHR(34) + "MSXML"+IF(IsWin7(),"6","4") + CHR(34) + " is mislukt !!!" + CHR(34) + CHR(34) + "Probeer het later nog eens.","Opgelet")
+            cText := "EXIT1MSXML2.DOMDocument."+IF(IsWin7(),"6","4")+".0"
+         END
+      ENDIF
+
+      IF LEFT(cText,5) &lt;&gt; "EXIT1"
+        TRY
+            xd:= CreateObject("MSXML2.DOMDocument."+IF(IsWin7(),"6","4")+".0")
+            DO CASE
+               CASE cSrt = 1 ; xd:Load("http://www.ibanbic.be/IBANBIC.asmx/BBANtoIBAN?value=" + ALLTRIM(cBankTxt))
+               CASE cSrt = 2 ; xd:Load("http://www.ibanbic.be/IBANBIC.asmx/BBANtoBIC?value="  + ALLTRIM(cBankTxt))
+               CASE cSrt = 3 ; xd:Load("http://www.ibanbic.be//Cijfers.asmx/Number2Text?Number="  + STR(cBankTxt) + "&amp;Language=Nederlands")
+               CASE cSrt = 4 ; xd:Load("http://www.ibanbic.be//Cijfers.asmx/Number2Text?Number="  + STR(cBankTxt) + "&amp;Language=Frans")
+               CASE cSrt &gt; 4 ; xd:Load("http://www.ibanbic.be//Cijfers.asmx/Number2Text?Number="  + STR(cBankTxt) + "&amp;Language=Engels")
+            ENDCASE
+            DO WHILE xd:readyState &lt;&gt; 4
+               SYSREFRESH()
+            ENDDO
+            cText := ALLTRIM(xd:text)
+            IF cSrt = 2
+                DO WHILE AT(" ",cText) &lt;&gt; 0
+                    cText := LEFT(cText,AT(" ",cText)-1) + RIGHT(cText,LEN(cText) - AT(" ",cText))
+                ENDDO
+            ENDIF
+            IF cSrt &gt; 2 .AND. UPPER(RIGHT(ALLTRIM(cText),3)) = "EUR" ; cText := ALLTRIM(LEFT(ALLTRIM(cText),LEN(ALLTRIM(cText))-3)) ; ENDIF
+            IF cSrt = 1 .AND. EMPTY(cText) ; cText := oText ; ENDIF
+         CATCH
+            cText := oText
+         END
+      ELSE
+        cText := oText
+      ENDIF
+
+   ELSE
+
+    cText := oText
+
+   ENDIF
+   IF LEFT(ALLTRIM(cText),1)= "[" ; cText := "EXIT2" ; ENDIF
+
+RETURN(cText)
+
+******************************************************************************
+
+FUNCTION Contr_BANK(nRekNr,nDlg,nRet,nBicNr,IbanRet,ToIbanRet)  // Controle Belgisch Bank-nummer
+
+   LOCAL CtrRet     := .T.
+
+   LOCAL TN1        := 0
+   LOCAL TN2        := 0
+   LOCAL cTel       := 0
+   LOCAL RKDL1      := ""
+   LOCAL RKDL2      := ""
+
+   LOCAL LetTab     := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+   LOCAL CtrBnk     := ""
+   LOCAL CtrBic     := ""
+
+   LOCAL oRekNr     := SPACE(40)
+   LOCAL oBicNr     := SPACE(11)
+
+   DEFAULT(nRet     ,.T.)
+   DEFAULT(nBicNr   ,"" )
+   DEFAULT(IbanRet  ,"" )
+   DEFAULT(ToIbanRet,.T.)
+
+   oRekNr := &amp;nRekNr
+   IF !EMPTY(nBicNr) ; oBicNr := &amp;nBicNr ; ENDIF
+
+   SET(_SET_SOFTSEEK,.T.)
+
+   IF !EMPTY(IbanRet) ; &amp;IbanRet := .T. ; ENDIF
+
+   &amp;nRekNr := ALLTRIM(&amp;nRekNr)
+
+   IF ALLTRIM(&amp;nRekNr) = "-       -" ; &amp;nRekNr := "" ; ENDIF
+
+   FOR x = 1 TO LEN(&amp;nRekNr)
+
+       IF AT(UPPER(SUBSTR(&amp;nRekNr,x,1)),LetTab) = 0
+          &amp;nRekNr := LEFT(&amp;nRekNr,x-1) + RIGHT(&amp;nRekNr,LEN(&amp;nRekNr)-x)
+          x--
+       ENDIF
+
+   NEXT
+
+   &amp;nRekNr := LEFT(&amp;nRekNr+SPACE(40),40)
+
+   IF !EMPTY(&amp;nRekNr)
+
+      IF VAL(SUBSTR(&amp;nRekNr,1,1)) = 0 .AND. SUBSTR(&amp;nRekNr,1,1) &lt;&gt; "0"
+         RKDL1 := LEFT(&amp;nRekNr,4)
+         RKDL2 := RIGHT(&amp;nRekNr,36)
+      ELSE
+         RKDL2 := &amp;nRekNr
+      ENDIF
+
+      IF EMPTY(RKDL1) .OR. UPPER(LEFT(RKDL1,2)) = "BE"
+
+         FOR x = 1 TO 12
+             IF SUBSTR(RKDL2,x,1) &lt; "0" .OR. SUBSTR(RKDL2,x,1) &gt; "9"
+                cTel++
+             ENDIF
+         NEXT
+
+         TN1 = VAL(LEFT(RKDL2,10))
+         TN2 = ((TN1/97)-INT(TN1/97))*97
+
+         IF !(cTel = 0 .AND. (INT(VAL(SUBSTR(RKDL2,11,2))) = INT(TN2+0.5) .OR. INT(VAL(SUBSTR(RKDL2,11,2))) = INT(TN2+0.5)+97) .AND. VAL(SUBSTR(RKDL2,11,2)) &lt;&gt; 0)
+            IF nRet ; MsgAlert("Deze Belgisch bankrekeningnummer is niet correct !!!","Opgelet") ; ENDIF
+            CtrRet := .F.
+         ELSE
+            RKDL2 := LEFT(RKDL2,14) + SPACE(26)
+         ENDIF
+
+      ENDIF
+
+      IF EMPTY(RKDL1)
+         &amp;nRekNr := LEFT(SUBSTR(&amp;nRekNr,1,3) + "-" + SUBSTR(&amp;nRekNr,4,7) + "-" + SUBSTR(&amp;nRekNr,11,2) + SPACE(40),40)
+         IF !EMPTY(nBicNr) ; &amp;nBicNr := SPACE(11) ; ENDIF
+      ELSE
+         &amp;nRekNr := LEFT(&amp;nRekNr + SPACE(40),40)
+         &amp;nRekNr := LEFT(SUBSTR(&amp;nRekNr,1,4) + " " + SUBSTR(&amp;nRekNr,5,4) + " " + SUBSTR(&amp;nRekNr,9,4) + " " + SUBSTR(&amp;nRekNr,13,4) + " " + SUBSTR(&amp;nRekNr,17,4) + " " + SUBSTR(&amp;nRekNr,21,4) + " " + SUBSTR(&amp;nRekNr,25,4) + " " + SUBSTR(&amp;nRekNr,29,4) + " " + SUBSTR(&amp;nRekNr,33,4) + " " + SUBSTR(&amp;nRekNr,37,4) + SPACE(40),40)
+         IF CtrRet .AND. !EMPTY(nBicNr) .AND. EMPTY(&amp;nBicNr) .AND. LEFT(ALLTRIM(&amp;nRekNr),2) = "BE"
+            SELECT SRT
+            SET ORDER TO 33
+            SEEK(VAL(SUBSTR(ALLTRIM(&amp;nRekNr),6,3)))
+            IF VAL(SUBSTR(ALLTRIM(&amp;nRekNr),6,3)) &gt;= SRT-&gt;BICVAN .AND. VAL(SUBSTR(ALLTRIM(&amp;nRekNr),6,3)) &lt;= SRT-&gt;BICTOT
+               &amp;nBicNr := SRT-&gt;BICCODE
+            ENDIF
+         ENDIF
+      ENDIF
+
+   ELSE
+
+      IF !EMPTY(nBicNr) ; &amp;nBicNr := SPACE(11) ; ENDIF
+
+   ENDIF
+
+   IF !EMPTY(nBicNr) .AND. CtrRet .AND. ToIbanRet .AND. VAL(LEFT(&amp;nRekNr,1)) &lt;&gt; 0 .AND. LEFT(&amp;nRekNr,1) &lt;&gt; "0"
+      CtrBnk  := &amp;nRekNr
+      CtrBic  := &amp;nBicNr
+      CtrBnk  := BBANtoIBAN(CtrBnk,1)
+        IF VAL(LEFT(CtrBnk,1)) = 0 .AND. LEFT(CtrBnk,1) &lt;&gt; "0"
+          CtrBic := BBANtoIBAN(CtrBnk,2)
+       ELSE
+        CtrBic := SPACE(11)
+       ENDIF
+      IF LEFT(CtrBnk,5) = "EXIT2" .OR. LEFT(CtrBic,5) = "EXIT2"
+         MsgAlert("U heeft de limiet van 1.000 conversies naar IBAN-nummers per dag bereikt !!!" + CHR(13) + CHR(13) + "Oude rekeningnummers zullen pas de volgende dag automatisch terug omgezet worden.","Opgelet")
+      ELSE
+         &amp;nRekNr := CtrBnk
+         &amp;nBicNr := CtrBic
+      ENDIF
+   ENDIF
+
+   IF nRet ; nDlg:Update() ; ENDIF
+
+   IF !EMPTY(IbanRet) ; &amp;IbanRet := CtrRet ; ENDIF
+
+RETURN(CtrRet)
+
+******************************************************************************
+DLL32 FUNCTION BWCCRegister(hInst AS LONG) AS WORD PASCAL LIB "MYBWCC32.DLL"
+******************************************************************************
+DLL Function URLDownloadToFile(pCaller AS LONG, szURL AS STRING, szFileName AS STRING, dwReserved AS LONG, lpfnCB AS LONG) AS LONG PASCAL FROM "URLDownloadToFileA" LIB "urlmon.dll"
+******************************************************************************</code></pre></div>This code is working very well. I also have a resource file. If you want it, please send me an e-mail.<br>
+<br>
+Be careful : you only can convert 1000 account numbers in one day. In case you want to do more, you have to contact ibanbic.be. If you provide them with your IP-adres, it will be added to their white list after which there won't be any limit anymore.<br>
+<br>
+Be careful again : this application needs MSXML6 for Windows 7, otherwise MSXML4. If it isn&quot;t installed on your pc, the application will download it automatically (from my website) and start the install for which a user intervention is needed.<br>
+<br>
+Good luck.</div>
+    </div>
+  </div>
+  <div class="post" id="p173151">
+    <div class="poster">
+      <div class="name" style="color:#105289">bart</div>
+      <div class="rank">Posts: 10</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 10, 2015 09:11 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Calculating or controling IBAN numbers</span><br>
+        Posted: Wed Feb 25, 2015 10:29 PM
+      </div>
+      <div class="content"><p>Michel</p>
+<p>Works fine.</p>
+<p>Thank you.</p>
+<p>Best regards<br>
+Bart</p></div>
+    </div>
+  </div>
+  <div class="post" id="p173155">
+    <div class="poster">
+      <div class="name" style="color:#105289">bpd2000</div>
+      <div class="rank">Posts: 153</div>
+      <img class="avatar avatar-img" src="avatars/3115.jpg" alt="" loading="lazy">
+      Joined: Tue Aug 05, 2014 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Calculating or controling IBAN numbers</span><br>
+        Posted: Thu Feb 26, 2015 08:01 AM
+      </div>
+      <div class="content"><p>Dear Michel D.<br>
+Nice<br>
+Thank you for sharing</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

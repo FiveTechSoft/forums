@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Probando una funcion de compresion de ficheros - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-15291">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-7.html">FiveWin para Pocket PC</a> Probando una funcion de compresion de ficheros</div>
+  <div class="post" id="p79206">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Probando una funcion de compresion de ficheros</span><br>
+        Posted: Wed Apr 15, 2009 09:50 PM
+      </div>
+      <div class="content">Compress() esta funcionando <br>
+<br>
+El codigo lo he dejado en C++ para evitar cambios. Aqui lo teneis.<br>
+<br>
+Podeis compilarlo asi:<br>
+c:\vce\bin\clarm -c -Ic:\vce\include\arm -Ic:\harbour\include compres.cpp<br>
+<br>
+El OBJ ya compilado y el EXE:<br>
+<!-- m --><a class="postlink" href="http://www.mediafire.com/?sharekey=d0453478149576bfe7c82ed4b8f0c3809cb377e5bf6f69225be6ba49b5870170">http://www.mediafire.com/?sharekey=d045 ... 49b5870170</a><!-- m --><br>
+<br>
+test.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function Main()
+
+   MsgInfo( FWCurDir() )
+
+   MsgInfo( Compress( FWCurDir() + "\test.prg", FWCurDir() + "\test.out" ) )
+   
+return nil   
+
+function FWCurDir()
+
+   local cExeName := GetModuleFileName( 0 )
+
+return SubStr( cExeName, 1, RAt( "\", cExeName ) - 1 )</code></pre></div><br>
+Here it is the C++ code:<br>
+compres.cpp<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/* Compresión de archivos usando el Algoritmo de Huffman: */
+/* (C) Noviembre de 2000 Salvador Pozo Coronado           */
+/* Compresor                                              */
+
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+/* Tipo nodo para árbol o Lista de árboles*/
+/* El propósito es dual, sirve como elemento de una lista enlazada */
+/* Cuando se usa el puntero sig, y como elemento de un árbol cuando */
+/* se usan los punteros cero y uno */
+typedef struct _nodo
+{
+   char letra;      /* Letra a la que hace referencia el nodo */
+   int frecuencia;  /* veces que aparece la letra en el texto o las letras */
+                    /* de los nodos de las ramas cero y uno */
+   _nodo *sig;      /* Puntero a siguiente nodo de una lista enlazada */
+   _nodo *cero;     /* Puntero a la rama cero de un árbol */
+   _nodo *uno;      /* Puntero a la rama uno de un árbol */
+} tipoNodo;         /* Nombre de tipo */
+
+/* Nodo para construir una lista para la tabla de codigos */
+typedef struct _tabla
+{
+   char letra;      /* Letra a la que hace referencia el nodo */
+   unsigned long int bits; /* Valor de la codificación de la letra */
+   char nbits;      /* Número de bits de la codificación */
+   _tabla *sig;     /* Siguiente elemento de la tabla */
+} tipoTabla;        /* Nombre del tipo */
+
+/* Variables globales */
+tipoTabla *Tabla;
+
+/* Prototipos */
+void Cuenta(tipoNodo* &amp;Lista, char c);
+void Ordenar(tipoNodo* &amp;Lista);
+void InsertarOrden(tipoNodo* &amp;Cabeza, tipoNodo *e);
+void BorrarArbol(tipoNodo *n);
+void CrearTabla(tipoNodo *n, int l, int v);
+void InsertarTabla(char c, int l, int v);
+tipoTabla *BuscaCaracter(tipoTabla *Tabla, char c);
+
+int compress( char * szFileIn, char * szFileOut )
+{
+   tipoNodo *Lista;       /* Lista de letras y frecuencias */
+   tipoNodo *Arbol;       /* Arbol de letras y frecuencias */
+
+   FILE *fe, *fs;         /* Ficheros de entrada y salida */
+   char c;                /* variables auxiliares */
+   tipoNodo *p;
+   tipoTabla *t;
+   int nElementos;        /* Número de elementos en tabla */
+   long int Longitud = 0; /* Longitud del fichero original */
+
+   unsigned long int dWORD; /* Soble palabra usada durante la codificación */
+   int nBits;               /* Número de bits usados de dWORD */
+
+   /*
+   if(argc &lt; 3)
+   {
+      printf("Usar:\n%s &lt;fichero_entrada&gt; &lt;fichero_salida&gt;\n", argv[0]);
+      return 1;
+   }
+   */
+
+   Lista = NULL;
+   /* Fase 1: contar frecuencias */
+   fe = fopen( szFileIn, "r");
+   while((c = fgetc(fe)) != EOF)
+   {
+      Longitud++;       /* Actualiza la cuenta de la longitud del fichero */
+      Cuenta(Lista, c); /* Actualiza la lista de frecuencias */
+   }
+   fclose(fe);
+
+   /* Ordenar la lista de menor a mayor */
+   Ordenar(Lista);
+
+   /* Crear el arbol */
+   Arbol = Lista;
+   while(Arbol &amp;&amp; Arbol-&gt;sig) /* Mientras existan al menos dos elementos en la lista */
+   {
+      p = (tipoNodo *)malloc(sizeof(tipoNodo)); /* Un nuevo árbol */
+      p-&gt;letra = 0;                             /* No corresponde a ninguna letra */
+      p-&gt;uno = Arbol;                           /* Rama uno */
+      Arbol = Arbol-&gt;sig;                       /* Siguiente nodo en */
+      p-&gt;cero = Arbol;                          /* Rama cero */
+      Arbol = Arbol-&gt;sig;                       /* Siguiente nodo */
+      p-&gt;frecuencia = p-&gt;uno-&gt;frecuencia +
+                      p-&gt;cero-&gt;frecuencia;      /* Suma de frecuencias */
+      InsertarOrden(Arbol, p);                  /* Inserta en nuevo nodo */
+   }                                            /* orden de frecuencia */
+
+   /* Construir la tabla de códigos binarios */
+   Tabla = NULL;
+   CrearTabla(Arbol, 0, 0);
+
+   /* Crear fichero comprimido */
+   fs = fopen(szFileOut, "wb");
+   /* Escribir la longitud del fichero */
+   fwrite(&amp;Longitud, sizeof(long int), 1, fs);
+   /* Cuenta el número de elementos de tabla */
+   nElementos = 0;
+   t = Tabla;
+   while(t)
+   {
+      nElementos++;
+      t = t-&gt;sig;
+   }
+   /* Escribir el número de elemenos de tabla */
+   fwrite(&amp;nElementos, sizeof(int), 1, fs);
+   /* Escribir tabla en fichero */
+   t = Tabla;
+   while(t)
+   {
+      fwrite(&amp;t-&gt;letra, sizeof(char), 1, fs);
+      fwrite(&amp;t-&gt;bits, sizeof(unsigned long int), 1, fs);
+      fwrite(&amp;t-&gt;nbits, sizeof(char), 1, fs);
+      t = t-&gt;sig;
+   }
+
+   /* Codificación del fichero de entrada */
+   fe = fopen(szFileIn, "r");
+   dWORD = 0; /* Valor inicial. */
+   nBits = 0; /* Ningún bit */
+   while((c = fgetc(fe)) != EOF)
+   {
+      /* Busca c en tabla: */
+      t = BuscaCaracter(Tabla, c);
+      /* Si nBits + t-&gt;nbits &gt; 32, sacar un byte */
+      while(nBits + t-&gt;nbits &gt; 32)
+      {
+         c = dWORD &gt;&gt; (nBits-8);           /* Extrae los 8 bits de mayor peso */
+         fwrite(&amp;c, sizeof(char), 1, fs);  /* Y lo escribe en el fichero */
+         nBits -= 8;                       /* Ya tenemos hueco para 8 bits más */
+      }
+      dWORD &lt;&lt;= t-&gt;nbits; /* Hacemos sitio para el nuevo caracter */
+      dWORD |= t-&gt;bits;   /* Insertamos el nuevo caracter */
+      nBits += t-&gt;nbits;  /* Actualizamos la cuenta de bits */
+   }
+   /* Extraer los cuatro bytes que quedan en dWORD*/
+   while(nBits&gt;0)
+   {
+      if(nBits&gt;=8) c = dWORD &gt;&gt; (nBits-8);
+      else c = dWORD &lt;&lt; (8-nBits);
+      fwrite(&amp;c, sizeof(char), 1, fs);
+      nBits -= 8;
+   }
+
+   fclose(fe);  /* Cierra los ficheros */
+   fclose(fs);
+
+   /* Borrar Arbol */
+   BorrarArbol(Arbol);
+
+   /* Borrar Tabla */
+   while(Tabla)
+   {
+      t = Tabla;
+      Tabla = t-&gt;sig;
+      free(t);
+   }
+
+   return 0;
+}
+
+/* Actualiza la cuenta de frecuencia del carácter c */
+/* El puntero a Lista se pasa por referencia, ya que debe poder cambiar */
+/* Ya sea por que la lista esté vacía, o porque el nuevo elemento sea el */
+/* primero */
+void Cuenta(tipoNodo* &amp;Lista, char c)
+{
+   tipoNodo *p, *a, *q;
+
+   if(!Lista)  /* Si la lista está vacía, el nuevo nodo será Lista */
+   {
+      Lista = (tipoNodo *)malloc(sizeof(tipoNodo)); /* Un nodo nuevo */
+      Lista-&gt;letra = c;                             /* Para c */
+      Lista-&gt;frecuencia = 1;                        /* en su 1ª aparición */
+      Lista-&gt;sig = Lista-&gt;cero = Lista-&gt;uno = NULL;
+   }
+   else
+   {
+      /* Buscar el caracter en la lista (ordenada por letra) */
+      p = Lista;
+      a = NULL;
+      while(p &amp;&amp; p-&gt;letra &lt; c)
+      {
+         a = p;      /* Guardamos el elemento actual para insertar */
+         p = p-&gt;sig; /* Avanzamos al siguiente */
+      }
+      /* Dos casos: */
+      /* 1) La letra es c se encontró */
+      if(p &amp;&amp; p-&gt;letra == c) p-&gt;frecuencia++; /* Actualizar frecuencia */
+      else
+      /* 2) La letra c no se encontró*/
+      {
+         /* Insertar un elemento nuevo */
+         q = (tipoNodo *)malloc(sizeof(tipoNodo));
+         q-&gt;letra = c;
+         q-&gt;frecuencia = 1;
+         q-&gt;cero = q-&gt;uno = NULL;
+         q-&gt;sig = p;        /* Insertar entre los nodos p */
+         if(a) a-&gt;sig = q;  /* y a */
+         else Lista = q;    /* Si a es NULL el nuevo es el primero */
+      }
+   }
+}
+
+/* Ordena Lista de menor a mayor por frecuencias */
+/* De nuevo pasamos el puntero a lista por referencia */
+void Ordenar(tipoNodo* &amp;Lista)
+{
+   tipoNodo *Lista2, *a;
+
+   if(!Lista) return; /* Lista vacia */
+   Lista2 = Lista;
+   Lista = NULL;
+   while(Lista2)
+   {
+      a = Lista2;              /* Toma los elementos de Lista2 */
+      Lista2 = a-&gt;sig;
+      InsertarOrden(Lista, a); /* Y los inserta por orden en Lista */
+   }
+}
+
+/* Inserta el elemento e en la Lista ordenado por frecuencia de menor a mayor */
+/* El puntero a Cabeza se pasa por referencia */
+void InsertarOrden(tipoNodo* &amp;Cabeza, tipoNodo *e)
+{
+   tipoNodo *p, *a;
+
+   if(!Cabeza) /* Si Cabeza en NULL, e es el primer elemento */
+   {
+      Cabeza = e;
+      Cabeza-&gt;sig = NULL;
+   }
+   else
+   {
+       /* Buscar el caracter en la lista (ordenada por frecuencia) */
+       p = Cabeza;
+       a = NULL;
+       while(p &amp;&amp; p-&gt;frecuencia &lt; e-&gt;frecuencia)
+       {
+          a = p;      /* Guardamos el elemento actual para insertar */
+          p = p-&gt;sig; /* Avanzamos al siguiente */
+       }
+       /* Insertar el elemento */
+       e-&gt;sig = p;
+       if(a) a-&gt;sig = e;   /* Insertar entre a y p */
+       else Cabeza = e;    /* el nuevo es el primero */
+    }
+}
+
+/* Función recursiva para crear Tabla */
+/* Recorre el árbol cuya raiz es n y le asigna el código v de l bits */
+void CrearTabla(tipoNodo *n, int l, int v)
+{
+   if(n-&gt;uno)  CrearTabla(n-&gt;uno, l+1, (v&lt;&lt;1)|1);
+   if(n-&gt;cero) CrearTabla(n-&gt;cero, l+1, v&lt;&lt;1);
+   if(!n-&gt;uno &amp;&amp; !n-&gt;cero) InsertarTabla(n-&gt;letra, l, v);
+}
+
+/* Insertar un elemento en la tabla */
+void InsertarTabla(char c, int l, int v)
+{
+   tipoTabla *t, *p, *a;
+
+   t = (tipoTabla *)malloc(sizeof(tipoTabla)); /* Crea un elemento de tabla */
+   t-&gt;letra = c;                               /* Y lo inicializa */
+   t-&gt;bits = v;
+   t-&gt;nbits = l;
+
+   if(!Tabla)         /* Si tabla es NULL, entonces el elemento t es el 1º */
+   {
+      Tabla = t;
+      Tabla-&gt;sig = NULL;
+   }
+   else
+   {
+       /* Buscar el caracter en la lista (ordenada por frecuencia) */
+       p = Tabla;
+       a = NULL;
+       while(p &amp;&amp; p-&gt;letra &lt; t-&gt;letra)
+       {
+          a = p;      /* Guardamos el elemento actual para insertar */
+          p = p-&gt;sig; /* Avanzamos al siguiente */
+       }
+       /* Insertar el elemento */
+       t-&gt;sig = p;
+       if(a) a-&gt;sig = t;  /* Insertar entre a y p */
+       else Tabla = t;    /* el nuevo es el primero */
+    }
+}
+
+/* Buscar un caracter en la tabla, devielve un puntero al elemento de la tabla */
+tipoTabla *BuscaCaracter(tipoTabla *Tabla, char c)
+{
+   tipoTabla *t;
+
+   t = Tabla;
+   while(t &amp;&amp; t-&gt;letra != c) t = t-&gt;sig;
+   return t;
+}
+
+/* Función recursiva para borrar un arbol */
+void BorrarArbol(tipoNodo *n)
+{
+   if(n-&gt;cero) BorrarArbol(n-&gt;cero);
+   if(n-&gt;uno)  BorrarArbol(n-&gt;uno);
+   free(n);
+}
+
+extern "C" {
+    
+#include &lt;hbapi.h&gt;
+
+HB_FUNC( COMPRESS )
+{
+   hb_retnl( compress( hb_parc( 1 ), hb_parc( 2 ) ) );
+}
+
+}</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p79208">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Probando una funcion de compresion de ficheros</span><br>
+        Posted: Wed Apr 15, 2009 10:01 PM
+      </div>
+      <div class="content">DeCompress() funcionando bien <br>
+<br>
+Aqui teneis los ficheros:<br>
+<!-- m --><a class="postlink" href="http://www.mediafire.com/?sharekey=d0453478149576bfe7c82ed4b8f0c3802171adbb35d842ffb8eada0a1ae8665a">http://www.mediafire.com/?sharekey=d045 ... 0a1ae8665a</a><!-- m --><br>
+<br>
+El fichero C++ lo compilamos de la misma forma.<br>
+<br>
+Aqui esta el codigo:<br>
+<br>
+test.prg<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">function Main()
+
+   // MsgInfo( Compress( FWCurDir() + "\test.prg", FWCurDir() + "\test.out" ) )
+
+   MsgInfo( DeCompress( FWCurDir() + "\test.out", FWCurDir() + "\test.ok" ) )
+   
+return nil   
+
+function FWCurDir()
+
+   local cExeName := GetModuleFileName( 0 )
+
+return SubStr( cExeName, 1, RAt( "\", cExeName ) - 1 )</code></pre></div><br>
+<br>
+decomp.cpp<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/* Compresión de archivos usando el Algoritmo de Huffman: */
+/* (C) Noviembre de 2000 Salvador Pozo Coronado           */
+/* Descompresor */
+
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+/* Tipo nodo para árbol */
+typedef struct _nodo
+{
+   char letra;             /* Letra a la que hace referencia el nodo */
+   unsigned long int bits; /* Valor de la codificación de la letra */
+   char nbits;             /* Número de bits de la codificación */
+   _nodo *cero;            /* Puntero a la rama cero de un árbol */
+   _nodo *uno;             /* Puntero a la rama uno de un árbol */
+} tipoNodo;                /* Nombre del tipo */
+
+/* Funciones prototipo */
+void BorrarArbol(tipoNodo *n);
+
+int decompress( char * szFileIn, char * szFileOut )
+{
+   tipoNodo *Arbol;        /* Arbol de codificación */
+   long int Longitud;      /* Longitud de fichero */
+   int nElementos;         /* Elementos de árbol */
+   unsigned long int bits; /* Almacen de bits para decodificación */
+   FILE *fe, *fs;          /* Ficheros de entrada y salida */
+
+   tipoNodo *p, *q;        /* Auxiliares */
+   unsigned char a;
+   int i, j;
+
+   /* 
+   if(argc &lt; 3)
+   {
+      printf("Usar:\n%s &lt;fichero_entrada&gt; &lt;fichero_salida&gt;\n", argv[0]);
+      return 1;
+   }
+   */
+
+   /* Crear un arbol con la información de la tabla */
+   Arbol = (tipoNodo *)malloc(sizeof(tipoNodo)); /* un nodo nuevo */
+   Arbol-&gt;letra = 0;
+   Arbol-&gt;uno = Arbol-&gt;cero = NULL;
+   fe = fopen( szFileIn, "rb");
+   fread(&amp;Longitud, sizeof(long int), 1, fe); /* Lee el número de caracteres */
+   fread(&amp;nElementos, sizeof(int), 1, fe); /* Lee el número de elementos */
+   for(i = 0; i &lt; nElementos; i++) /* Leer todos los elementos */
+   {
+      p = (tipoNodo *)malloc(sizeof(tipoNodo)); /* un nodo nuevo */
+      fread(&amp;p-&gt;letra, sizeof(char), 1, fe); /* Lee el carácter */
+      fread(&amp;p-&gt;bits, sizeof(unsigned long int), 1, fe); /* Lee el código */
+      fread(&amp;p-&gt;nbits, sizeof(char), 1, fe); /* Lee la longitud */
+      p-&gt;cero = p-&gt;uno = NULL;
+      /* Insertar el nodo en su lugar */
+      j = 1 &lt;&lt; (p-&gt;nbits-1);
+      q = Arbol;
+      while(j &gt; 1)
+      {
+         if(p-&gt;bits &amp; j) /* es un uno*/
+            if(q-&gt;uno) q = q-&gt;uno;   /* Si el nodo existe, nos movemos a él */
+            else                     /* Si no existe, lo creamos */
+            {
+               q-&gt;uno = (tipoNodo *)malloc(sizeof(tipoNodo)); /* un nodo nuevo */
+               q = q-&gt;uno;
+               q-&gt;letra = 0;
+               q-&gt;uno = q-&gt;cero = NULL;
+            }
+         else /* es un cero */
+            if(q-&gt;cero) q = q-&gt;cero; /* Si el nodo existe, nos movemos a él */
+            else                     /* Si no existe, lo creamos */
+            {
+               q-&gt;cero = (tipoNodo *)malloc(sizeof(tipoNodo)); /* un nodo nuevo */
+               q = q-&gt;cero;
+               q-&gt;letra = 0;
+               q-&gt;uno = q-&gt;cero = NULL;
+            }
+         j &gt;&gt;= 1;  /* Siguiente bit */
+      }
+      /* Ultimo Bit */
+      if(p-&gt;bits &amp; 1) /* es un uno*/
+         q-&gt;uno = p;
+      else            /* es un cero */
+         q-&gt;cero = p;
+   }
+   /* Leer datos comprimidos y extraer al fichero de salida */
+   bits = 0;
+   fs = fopen( szFileOut, "w");
+   /* Lee los primeros cuatro bytes en la dobel palabra bits */
+   fread(&amp;a, sizeof(char), 1, fe);
+   bits |= a;
+   bits &lt;&lt;= 8;
+   fread(&amp;a, sizeof(char), 1, fe);
+   bits |= a;
+   bits &lt;&lt;= 8;
+   fread(&amp;a, sizeof(char), 1, fe);
+   bits |= a;
+   bits &lt;&lt;= 8;
+   fread(&amp;a, sizeof(char), 1, fe);
+   bits |= a;
+   j = 0; /* Cada 8 bits leemos otro byte */
+   q = Arbol;
+   /* Bucle */
+   do {
+      if(bits &amp; 0x80000000) q = q-&gt;uno; else q = q-&gt;cero; /* Rama adecuada */
+      bits &lt;&lt;= 1;           /* Siguiente bit */
+      j++;
+      if(8 == j)            /* Cada 8 bits */
+      {
+         i = fread(&amp;a, sizeof(char), 1, fe); /* Leemos un byte desde el fichero */
+         bits |= a;                    /* Y lo insertamos en bits */
+         j = 0;                        /* No quedan huecos */
+      }                                
+      if(!q-&gt;uno &amp;&amp; !q-&gt;cero)          /* Si el nodo es una letra */
+      {
+         putc(q-&gt;letra, fs);           /* La escribimos en el fich de salida */
+         Longitud--;                   /* Actualizamos longitud que queda */
+         q=Arbol;                      /* Volvemos a la raiz del árbol */
+      }
+   } while(Longitud);                  /* Hasta que acabe el fichero */
+   /* Procesar la cola */
+
+   fclose(fs);                         /* Cerramos ficheros */
+   fclose(fe);
+
+   BorrarArbol(Arbol);                 /* Borramos el árbol */
+   return 0;
+}
+
+/* Función recursiva para borrar un arbol */
+void BorrarArbol(tipoNodo *n)
+{
+   if(n-&gt;cero) BorrarArbol(n-&gt;cero);
+   if(n-&gt;uno)  BorrarArbol(n-&gt;uno);
+   free(n);
+}
+
+extern "C" {
+    
+#include &lt;hbapi.h&gt;
+
+HB_FUNC( DECOMPRESS )
+{
+   hb_retnl( decompress( hb_parc( 1 ), hb_parc( 2 ) ) );
+}
+
+}</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p79228">
+    <div class="poster">
+      <div class="name" style="color:#105289">Arturo Lopesoria</div>
+      <div class="rank">Posts: 94</div>
+      <img class="avatar avatar-img" src="avatars/1135.jpg" alt="" loading="lazy">
+      Joined: Fri Aug 10, 2007 01:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Probando una funcion de compresion de ficheros</span><br>
+        Posted: Thu Apr 16, 2009 06:49 AM
+      </div>
+      <div class="content"><p>Gracias Antonio!</p>
+<p>Estaba a punto de probarlo pero me surgio otro problema en un asunto distinto (que pondre en otro post)</p>
+<p>Mientras tanto, Que hay del Uncompres?  <!-- s:oops: --><img src="{SMILIES_PATH}/icon_redface.gif" alt=":oops:" title="Embarassed" /><!-- s:oops: --> </p>
+<p>Saludos</p></div>
+    </div>
+  </div>
+  <div class="post" id="p79229">
+    <div class="poster">
+      <div class="name" style="color:#105289">Arturo Lopesoria</div>
+      <div class="rank">Posts: 94</div>
+      <img class="avatar avatar-img" src="avatars/1135.jpg" alt="" loading="lazy">
+      Joined: Fri Aug 10, 2007 01:47 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Probando una funcion de compresion de ficheros</span><br>
+        Posted: Thu Apr 16, 2009 06:51 AM
+      </div>
+      <div class="content"><p>Perdon, <br>
+YA ESTA EL DECOMPRES !!</p>
+<p>GENIAL !!</p>
+<p>Esto puede ser ideal para mi, ya que usualmente transmito unicamente datos, todo lo pego en un solo archivo, y no requiero password, esto resolvera muchos problemas</p>
+<p>Gracias.<br>
+Saludos.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p79867">
+    <div class="poster">
+      <div class="name" style="color:#105289">Biel EA6DD</div>
+      <div class="rank">Posts: 682</div>
+      <div class="avatar"></div>
+      Joined: Tue Feb 14, 2006 09:48 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Probando una funcion de compresion de ficheros</span><br>
+        Posted: Mon Apr 27, 2009 01:38 PM
+      </div>
+      <div class="content"><p>Probada en FW y FWPPC, fucniona perfecto. <br>
+Nos viene muy bien para la descarga de ficheros maestros, reduce enormemente el tiempo de conexion GPRS.</p>
+<p>Muchas Gracias Antonio.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p79872">
+    <div class="poster">
+      <div class="name" style="color:#105289">fleal</div>
+      <div class="rank">Posts: 234</div>
+      <div class="avatar"></div>
+      Joined: Tue Oct 25, 2005 12:39 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Probando una funcion de compresion de ficheros</span><br>
+        Posted: Mon Apr 27, 2009 02:58 PM
+      </div>
+      <div class="content"><p>Esta si la compro !!</p>
+<p>Actualmente tengo algunas aplicaciones que envian una dbf, hasta 4 fotos, la firma del entrevistado y un archivo .TXT de control para avisarle a mi programa que la trasmisión está completa. En total 7 archivos... Al comprimir la info solo enviaría 2 con lo cual el riesgo de falla de envio se reduce mucho.</p>
+<p>Gracias<br>
+Fernando Leal</p></div>
+    </div>
+  </div>
+  <div class="post" id="p80924">
+    <div class="poster">
+      <div class="name" style="color:#105289">AngelSalom</div>
+      <div class="rank">Posts: 728</div>
+      <img class="avatar avatar-img" src="avatars/23.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:38 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Probando una funcion de compresion de ficheros</span><br>
+        Posted: Mon May 18, 2009 03:30 PM
+      </div>
+      <div class="content"><p>Genial aporte y funciona perfecto.<br>
+Mi pregunta ... ¿cómo lo compilo para usarlo en FWH? ... de este modo podría descomprimir el archivo directamente desde mi aplicación.</p>
+<p>Muchas gracias.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p80960">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Probando una funcion de compresion de ficheros</span><br>
+        Posted: Tue May 19, 2009 04:38 AM
+      </div>
+      <div class="content"><p>Angel,</p>
+<p>Prueba asi:</p>
+<p>c:\bcc55\bin\bcc32 -c -Ic:\bcc32\include -Ic:\harbour\include compres.cpp</p></div>
+    </div>
+  </div>
+  <div class="post" id="p80996">
+    <div class="poster">
+      <div class="name" style="color:#105289">AngelSalom</div>
+      <div class="rank">Posts: 728</div>
+      <img class="avatar avatar-img" src="avatars/23.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:38 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Probando una funcion de compresion de ficheros</span><br>
+        Posted: Tue May 19, 2009 01:30 PM
+      </div>
+      <div class="content"><p>Así perfecto, gracias Antonio.</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Lector de pasaportes y  DNI - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-32057">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Lector de pasaportes y  DNI</div>
+  <div class="post" id="p187562">
+    <div class="poster">
+      <div class="name" style="color:#105289">groiss</div>
+      <div class="rank">Posts: 234</div>
+      <div class="avatar"></div>
+      Joined: Tue Sep 01, 2009 07:55 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Lector de pasaportes y  DNI</span><br>
+        Posted: Mon Mar 07, 2016 09:17 AM
+      </div>
+      <div class="content">Tengo que conectar una de mis aplicaciones a un escáner de pasaportes, para automatizar la entrada de datos de filiación, el aparato viene con un completo SDK, pero el problema es que no se por donde meterle mano al tema, aquí pongo el código en C del SDK para hacer la lectura de los datos MRZ<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/** \file *********************************************************************
+ *
+ * pr_recognize - Passport Reader sample program
+ *
+ * 2006-2010 (c) ARH Inc. (&lt;!-- m --&gt;&lt;a class="postlink" href="http://www.arhungary.hu"&gt;http://www.arhungary.hu&lt;/a&gt;&lt;!-- m --&gt;)
+ ******************************************************************************/
+
+/**
+ * Advanced image capturing and processing
+ *
+ * Purpose:
+ *      Show how to capture and recognize images.
+ *
+ * Description:
+ *
+ *      Capture images after successful startup.
+ *      Read the recognized field data, the calculated checksum, and display the result.
+ *
+ */
+
+#include "prapi.h"
+#include "gxsdldr.c"
+
+#include "../__lib__.h"
+
+/**
+ * Main Function
+ */
+int main() {
+    char *ec[]={"Ok","Warning","Error"};
+    gxVARIANT img;
+    gxIMAGE *gim;
+    gxVARIANT pdoc;
+
+    /* Opening the PR system */
+    gxHANDLE hpr;   /* handle for the PR system */
+    lib_function_start("Opening system files");
+    if (gx_openmodulea(&amp;hpr,"prapi","default")) lib_function_end();
+    else {
+        lib_displ_err();
+        return 0;
+    }
+
+    /* Connecting to the first device */
+    lib_function_start("Connecting to the first device");
+    if (pr_usedevicen(hpr,0,PR_UMODE_FULL_CONTROL)) {
+        lib_function_end();
+    } else {
+        lib_displ_err();
+        gx_closehandle(&amp;hpr);
+        return 0;
+    }
+
+    while(!lib_kbhit()) {
+        int code;
+        int status;
+        int id = PRV_FIELDLIST;
+        gxVARIANT fieldlist;
+        int i;
+        char path[100], text[100];
+        int stext;
+
+
+        lib_process_start("Processing document");
+
+        /* Capturing images */
+        lib_function_start("Capturing images");
+        if (!pr_capture(hpr)) {
+            lib_displ_err();
+        } else {
+            lib_function_end();
+
+            /* Getting document data */
+            lib_function_start("Recognizing.");
+            if (pr_recognize(hpr,0,&amp;pdoc)) {
+                lib_function_end();
+            } else {
+                lib_displ_err();
+            }
+
+            if (!pdoc) {
+                lib_write_line("No data found!");
+            } else {
+
+                /* Displaying document type */
+                if (pr_getdocumentstatus(hpr, pdoc, &amp;code, &amp;status)) {
+                    lib_write_line("Document type: %i, status: %s", code, ec[status/100]);
+                } else {
+                    lib_displ_err();
+                }
+
+                /* Reading some fixed fields and displaying them */
+                stext = sizeof(text);
+                if (pr_getfieldfromdoca(hpr, pdoc, PR_DF_NAME, text, &amp;stext, &amp;status, 0)) {
+                    if (*text) lib_write_line("NAME \"%s\" [%s]", text, ec[status/100]);
+                } else {
+                    lib_displ_err();
+                }
+
+                stext = sizeof(text);
+                if (pr_getfieldfromdoca(hpr, pdoc, PR_DF_DOCUMENT_NUMBER, text, &amp;stext, &amp;status, 0)) {
+                    if (*text) lib_write_line("DOCUMENT NUMBER \"%s\" [%s]",text,ec[status/100]);
+                } else {
+                    lib_displ_err();
+                }
+
+                stext = sizeof(text);
+                if (pr_getfieldfromdoca(hpr, pdoc, PR_DF_EXPIRY_DATE, text, &amp;stext, &amp;status, 0)) {
+                    if(*text) lib_write_line("EXPIRY DATE \"%s\" [%s]",text,ec[status/100]);
+                } else {
+                    lib_displ_err();
+                }
+
+                /* Searching for the fields and displaying them */
+                if(gx_getvariantchild(pdoc,GX_VARIANT_BY_ID, &amp;id, 0, &amp;fieldlist)) {
+                    int nitems = 0;
+                    /* Get the number of recognized fields */
+                    if(gx_getvariant(fieldlist, 0, 0, 0, &amp;nitems, 0)) {
+                        for (i=0; i&lt;nitems; i++) {
+                            int field_code = 0;
+                            int sz = sizeof(int);
+                            int n = 0;
+                            gx_snprintf(path, sizeof(path), "L,X=%d", i);
+                            if(gx_convertvariantbypatha(fieldlist, path, 0, GX_VARIANT_INT, &amp;sz, &amp;n, &amp;field_code, sizeof(field_code))) {
+                                /* Get the field text */
+                                stext = sizeof(text);
+                                if (pr_getfieldfromdoca(hpr,pdoc,field_code,text,&amp;stext,&amp;status,0)) {
+                                    if (*text) {
+                                        /* Converting the data for displaying on console */
+#ifdef WIN32
+                                        CharToOem(text,text);
+#endif
+                                        lib_write_line("[%5i] \"%s\" [%s]", field_code, text, ec[status/100]);
+                                    }
+                                } else {
+                                    lib_displ_err();
+                                }
+
+                                if(field_code &gt;= PR_DF_FORMATTED) continue;
+
+                                /* Get the field image */
+                                gx_snprintf(text, sizeof(text), "%i.jpg",field_code);
+                                if(pr_getfieldimage(hpr,pdoc,field_code,0,&amp;img) &amp;&amp;
+                                    gx_imagefromvariant(gx_direct(GX_CALL_GROUP_GX_IMAGE), &amp;gim, img) &amp;&amp;
+                                    gx_saveimagea(gx_direct(GX_CALL_GROUP_GX_IMAGE), gim, text, GX_JPEG) &amp;&amp;
+                                    gx_unrefimage(gx_direct(GX_CALL_GROUP_GX_IMAGE), gim) &amp;&amp;
+                                    gx_disposevariant(&amp;img)
+                                    )
+                                {
+                                } else {
+                                    lib_displ_err();
+                                }
+                            } else {
+                                lib_displ_err();
+                            }
+                        }
+                    }
+                    if (!gx_disposevariant(&amp;fieldlist)) lib_displ_err();
+                }
+                if (!gx_disposevariant(&amp;pdoc)) lib_displ_err();
+            }
+        }
+
+        lib_process_end();
+        lib_wait_for_sec(3);
+    }
+
+    /* Closing the device */
+    lib_function_start("Closing the device");
+    if (pr_closedevice(hpr)) {
+        lib_function_end();
+    } else {
+        lib_displ_err();
+    }
+
+    /* Closing the PR system */
+    lib_function_start("Closing the PR system");
+    if (gx_closehandle(&amp;hpr)) {
+        lib_function_end();
+    } else {
+        lib_displ_err();
+    }
+
+    return lib_print_stat();
+}</code></pre></div><br>
+<br>
+esto carga además <br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">******************************************************************************
+ * GXSD Loader file - V7.2.10
+ *
+ * 2004-2011 (c) ARH Inc. (http://www.arhungary.hu)
+ ******************************************************************************/
+/** \file
+ * &lt;b&gt; GX system loader &lt;/b&gt;
+ *
+ * The GX is the base system for the majority of the ARH Inc. products.
+ * It is a collection of loadable modules and library functions and gives an easy to program
+ * interface to the hardware devices.
+ *
+ * The applications reaches the GX system modules through a defined interface.
+ * This interface is a common interface implemented in the \c libgxsd.so on Linux
+ * and \c gxsd.dll on Windows systems. The module openings are made using the
+ * general dynamic loader functions.
+ *
+ * Windows example:
+ * \verbatim
+
+    HMODULE module = (HMODULE)LoadLibraryA("gxsd7.dll");
+    ...
+    gx_call = GetProcAddress(module, "gx_call");
+    ...
+    FreeLibrary(module);
+
+   \endverbatim
+ *
+ * Linux example:
+ * \verbatim
+
+    void *module = dlopen("/usr/lib32/libgxsd.so.7", RTLD_NOW | RTLD_GLOBAL);
+    ...
+    gx_call = dlsym(module, "gx_call");
+    ...
+    dlclose(module);
+
+   \endverbatim
+ *
+ * The \a gxsdldr.c(pp) file is a loader that loads the gxsd.dll (libgxsd.so) file.
+ *
+ * Recomended usage:
+ *
+ *  -  Including it in the main source file. (\a \#include \a "gxsdldr.c(pp)")
+ *  -  Copying this file in the source directory, compiling and linking with the other object files.
+ */
+/******************************************************************************/
+#include &lt;string.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;errno.h&gt;
+#include "gxsd.h"
+/******************************************************************************/
+#ifdef ANDROID
+extern void LOG(const char* msg,...);
+#endif
+
+#ifdef GX_NAMESPACES
+    namespace gx {
+#endif
+#ifdef GX_DOTNET
+    /* Unmanaged code for .net */
+    #pragma unmanaged
+#endif
+/******************************************************************************/
+/** Type of the gx_call function. @see gx_call */
+typedef int GXAPI gxldr_callfunc_t(struct gxHANDLE handle, int function, void *params);
+/******************************************************************************/
+#ifdef LINUX
+    #include &lt;dlfcn.h&gt;
+
+    #ifdef __cplusplus
+        extern "C" void gxsdldr_init(void) __attribute__((constructor));
+        extern "C" void gxsdldr_destroy(void) __attribute__((destructor));
+    #else
+        void gxsdldr_init(void) __attribute__((constructor));
+        void gxsdldr_destroy(void) __attribute__((destructor));
+    #endif
+#endif
+/******************************************************************************/
+#ifdef WIN32
+    #include &lt;windows.h&gt;
+
+    #ifdef __cplusplus
+        extern "C" bool gxsdldr_init(gxldr_callfunc_t** gxsdldr_call);
+    #else
+        bool gxsdldr_init(gxldr_callfunc_t** gxsdldr_call);
+    #endif
+#endif
+/******************************************************************************/
+#ifdef __BORLANDC__
+    #pragma warn -amp
+#endif
+/******************************************************************************/
+/** Name of the library. */
+extern const char *gxsdldr_modulename;
+
+/** Error buffer. */
+static char gxsdldr_errstr[256];
+
+/** Main function pointer. */
+#ifdef LINUX
+    gxldr_callfunc_t *gxsdldr_call = 0;
+#endif
+/******************************************************************************
+ * Common section
+ ******************************************************************************/
+/** Calls a module process with the specified parameters.
+ *
+ * The functions and parameters usable inside the modules can be found in the
+ * documentation of the modules. The headers given with the modules contain
+ * inline functions, that make the access to the functions of the module easier.
+ *
+ * @see gx_openmodule() gx_closehandle() gx_direct()
+ *
+ * @param handle    Handle of an opened module or special system handle ( see gx_direct() ).
+ * @param function  Identifier of the function (GX_CALL_xxx).
+ * @param params    Parameters to give for the function (GX_PARM_xxx).
+ * @return Module defined, usually non-zero on success. */
+int GXAPI
+#if defined GX_ALLOW_GX_CALL_EXPORT
+__declspec(dllexport)           /* to allow of building an import library */
+#endif
+gx_call(struct gxHANDLE handle, int function, void *params) {
+#ifdef WIN32
+static gxldr_callfunc_t *gxsdldr_call = 0;
+    if (!gxsdldr_call)
+    {
+        /* Call the init function if the gx_call() is not found */
+        gxsdldr_init(&amp;gxsdldr_call);
+    }
+#else
+    if(!gxsdldr_call) gxsdldr_init();
+#endif
+    if (gxsdldr_call) return gxsdldr_call(handle, function, params);    /* GXSD library is loaded */
+
+    /* GXSD library not loaded */
+    switch(function) {
+        case GX_CALL_GETERROR:  /* gx_geterror() function - Unicode mode */
+            {
+                if(params){
+                    struct GX_PARM_GETERROR *mp = (struct GX_PARM_GETERROR *)params;
+                    mp-&gt;code = ENOENT;
+                    if(mp-&gt;string &amp;&amp; mp-&gt;maxlen&gt;0) {
+                        gx_snwprintf(mp-&gt;string, mp-&gt;maxlen, L"gxsdldr: open error in %hs (%hs)",
+                            gxsdldr_modulename, gxsdldr_errstr);
+                        mp-&gt;string[mp-&gt;maxlen-1] = 0;
+                    }
+                }
+                return ENOENT;
+            }
+#ifndef ANDROID
+        case GX_CALL_GETERRORA: /* gx_geterror() function - ASCII mode */
+            {
+                if(params){
+                    struct GX_PARM_GETERRORA *mp = (struct GX_PARM_GETERRORA *)params;
+                    mp-&gt;code = ENOENT;
+                    if(mp-&gt;string &amp;&amp; mp-&gt;maxlen&gt;0) {
+                        gx_snprintf(mp-&gt;string, mp-&gt;maxlen, "gxsdldr: open error in %s (%s)",
+                            gxsdldr_modulename, gxsdldr_errstr);
+                        mp-&gt;string[mp-&gt;maxlen-1] = 0;
+                    }
+                }
+                return ENOENT;
+            }
+#endif
+        default:
+            /* Unknown function */
+            break;
+    }
+
+    /* Unknown function */
+    errno = EINVAL;
+    return 0;
+}
+
+/******************************************************************************
+ * Linux specific section
+ ******************************************************************************/
+#ifdef LINUX
+
+/** Name of the library. */
+#ifdef GX64
+    const char *gxsdldr_modulename = "/usr/lib64/libgxsd.so.7";
+#else
+    #ifdef ANDROID
+        const char *gxsdldr_modulename = "/vendor/lib/libgxsd.so";
+    #else
+        const char *gxsdldr_modulename = "/usr/lib32/libgxsd.so.7";
+    #endif
+#endif
+
+/** Handle of the opened gxsd library. */
+void *gxsdldr_handle = (void *)0;
+
+/** Init function. */
+void gxsdldr_init(void) {
+    //LOG("gxsdldr_init\n");
+    if(!gxsdldr_handle) {
+#ifndef ANDROID
+        //LOG("dlopen(libgxsd.so.7)\n");
+        gxsdldr_handle = dlopen("libgxsd.so.7", RTLD_NOW | RTLD_GLOBAL);
+        if(!gxsdldr_handle) {
+            //LOG("dlopen(%s)\n",gxsdldr_modulename);
+            gxsdldr_handle = dlopen(gxsdldr_modulename, RTLD_NOW | RTLD_GLOBAL);
+        }
+#else
+        //LOG("dlopen(%s)\n",gxsdldr_modulename);
+        gxsdldr_handle = dlopen(gxsdldr_modulename, RTLD_NOW | RTLD_GLOBAL);
+#endif
+    }
+    //LOG("gxsdldr_handle: %p\n",gxsdldr_handle);
+
+    if(!gxsdldr_handle) {
+        gxsdldr_errstr[sizeof(gxsdldr_errstr)-1] = 0;
+        strncpy(gxsdldr_errstr, dlerror(), sizeof(gxsdldr_errstr)-1);
+        //LOG("Error 1: %s\n",gxsdldr_errstr);
+        return;
+    }
+
+    //LOG("dlsym(gx_call)\n");
+    gxsdldr_call = (gxldr_callfunc_t *)dlsym(gxsdldr_handle, "gx_call");
+    //LOG("gxsdldr_call: %p\n",gxsdldr_call);
+    if(!gxsdldr_call) {
+        gxsdldr_call = 0;
+        gxsdldr_errstr[sizeof(gxsdldr_errstr)-1] = 0;
+        strncpy(gxsdldr_errstr, dlerror(), sizeof(gxsdldr_errstr)-1);
+        dlclose(gxsdldr_handle);
+        gxsdldr_handle = 0;
+        //LOG("Error 2: %s\n",gxsdldr_errstr);
+        return;
+    }
+
+    //LOG("dlsym(gxmoduleinfo)\n");
+    int* vi = (int*) dlsym(gxsdldr_handle, "gxmoduleinfo");
+    //LOG("gxmoduleinfo: %p\n",vi);
+
+    if(vi &amp;&amp; (vi[2]&lt;0x07000000)) {
+        gxsdldr_call = 0;
+        snprintf(gxsdldr_errstr, sizeof(gxsdldr_errstr), "Old version of %s.", gxsdldr_modulename);
+        gxsdldr_errstr[sizeof(gxsdldr_errstr)-1] = 0;
+        dlclose(gxsdldr_handle);
+        gxsdldr_handle = 0;
+        //LOG("Error 3: %s\n",gxsdldr_errstr);
+        return;
+    }
+
+    /* OK */
+    struct GX_PARM_SENDCOMPVERSION compversion;
+    compversion.version = GX_CURRENT_VERSION;
+    struct gxHANDLE nullhandle = { 0 };
+    //LOG("GX_CALL_SENDCOMPVERSION( %x)\n",GX_CURRENT_VERSION);
+    gx_call(nullhandle, GX_CALL_SENDCOMPVERSION, &amp;compversion);
+    //LOG("gxsdldr_init end\n");
+}
+
+/** Clean up function. */
+void gxsdldr_destroy(void) {
+    gxsdldr_call = 0;   /* Restore the pointer */
+    if(gxsdldr_handle) {
+        dlclose(gxsdldr_handle);        /* Close the module */
+        gxsdldr_handle = 0;
+    }
+}
+
+#endif
+
+/******************************************************************************
+ * Windows specific section
+ ******************************************************************************/
+#ifdef WIN32
+
+/** Name of the library. */
+const char *gxsdldr_modulename = "gxsd7.dll";
+
+/** Handle of the opened gxsd library. */
+HMODULE gxsdldr_handle = (HMODULE)0;
+
+/** Init function
+ *
+ * @param gxsdldr_call  Buffer for the main calling function pointer. */
+bool gxsdldr_init(gxldr_callfunc_t** gxsdldr_call) {
+    int *vi;
+    struct GX_PARM_SENDCOMPVERSION compversion;
+    struct gxHANDLE nullhandle = { 0 };
+
+#ifdef _DEBUG
+    char errbuf[1024];
+#endif
+    for(;;) {
+        gxsdldr_handle = (HMODULE)LoadLibraryA(gxsdldr_modulename);
+        if(gxsdldr_handle) break;
+        gx_snprintf(gxsdldr_errstr, sizeof(gxsdldr_errstr), "Could not load: %hs", gxsdldr_modulename);
+        gxsdldr_errstr[sizeof(gxsdldr_errstr)-1] = 0;
+#ifdef _DEBUG
+        gx_snprintf(errbuf, sizeof(errbuf),
+            "GXSD Loader: Could not load: %hs", gxsdldr_modulename);
+        errbuf[sizeof(errbuf)-1] = 0;
+        if(MessageBoxA(0, errbuf, "GXSD Loader",
+            MB_RETRYCANCEL | MB_TASKMODAL | MB_ICONERROR) == IDCANCEL) return 0;
+#else
+        return 0;
+#endif
+    }
+    gxsdldr_errstr[0] = 0;
+
+    (*gxsdldr_call) = (gxldr_callfunc_t *)GetProcAddress(gxsdldr_handle, "gx_call");
+    if(!(*gxsdldr_call)) {
+        (*gxsdldr_call) = 0;
+        FreeLibrary(gxsdldr_handle);
+        gxsdldr_handle = 0;
+        gx_strncpy(gxsdldr_errstr,"No 'gx_call' entry found.",255);
+#ifdef _DEBUG
+        MessageBoxA(0, "GXSD Loader: No 'gx_call' entry found.",
+            "GXSD Loader", MB_OK | MB_TASKMODAL | MB_ICONERROR);
+#endif
+        return 0;
+    }
+
+    vi=(int*)GetProcAddress(gxsdldr_handle,"gxmoduleinfo");
+
+    if(vi &amp;&amp; (vi[2]&lt;0x07000000)) {
+        (*gxsdldr_call) = 0;
+        FreeLibrary(gxsdldr_handle);
+        gxsdldr_handle = 0;
+        gx_snprintf(gxsdldr_errstr, sizeof(gxsdldr_errstr), "Old version of %hs.", gxsdldr_modulename);
+        gxsdldr_errstr[sizeof(gxsdldr_errstr)-1] = 0;
+#ifdef _DEBUG
+        gx_snprintf(errbuf, sizeof(errbuf),
+            "GXSD Loader: Old version of %hs.", gxsdldr_modulename);
+        errbuf[sizeof(errbuf)-1] = 0;
+        MessageBoxA(0, errbuf, "GXSD Loader", MB_OK | MB_TASKMODAL | MB_ICONERROR);
+#endif
+        return 0;
+    }
+
+    gxsdldr_errstr[0] = 0;
+
+    compversion.version = GX_CURRENT_VERSION;
+    gx_call(nullhandle, GX_CALL_SENDCOMPVERSION, &amp;compversion);
+    return 1;
+}
+
+#endif
+/******************************************************************************/
+#ifdef __BORLANDC__
+    #pragma warn .amp
+#endif
+/******************************************************************************/
+#ifdef GX_NAMESPACES
+    };
+#endif
+/******************************************************************************/</code></pre></div><br>
+<br>
+Agradecería una ayudita para poder prescindir del C y hacer las llamadas desde harbour Fivewin.<br>
+Muchas gracias y disculpad por el abuso</div>
+    </div>
+  </div>
+  <div class="post" id="p187566">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lector de pasaportes y  DNI</span><br>
+        Posted: Mon Mar 07, 2016 11:12 AM
+      </div>
+      <div class="content">Hola,<br>
+<br>
+<br>
+¿ Has pensado en hacer una oferta de trabajo por un importe cerrado ?<br>
+<br>
+Hay muchos foros donde esto sucede y nadie se extraña por ello. En algunos casos el contratador, después de pagar el trabajo, lo cede a la comunidad.<br>
+Es impresionante lo que estos sistemas ayudan al áuge de esos foros y de sus herramientas.<br>
+<br>
+Me pareciera a mi, a riesgo de equivocarme, que los foros del todo gratis flaquean por falta de compromiso.<br>
+<br>
+Con la mejor de las intenciones. <br>
+<br>
+PD. Hace tiempo leí una idea que me pareció muy acertada. Mucho más que con sus filantrópicas obras, Bill Gates ha aportado más al mundo cuando ha cobrado por el trabajo realizado. Concretamente lo leí aquí <a href="http://homominimus.com/2015/12/14/no-tienes-que-devolver-nada-a-la-sociedad/" rel="noopener">http&#58;//homominimus&#46;com/2015/12/14/no-tienes-que-devolver-nada-a-la-sociedad/</a></div>
+    </div>
+  </div>
+  <div class="post" id="p187568">
+    <div class="poster">
+      <div class="name" style="color:#105289">groiss</div>
+      <div class="rank">Posts: 234</div>
+      <div class="avatar"></div>
+      Joined: Tue Sep 01, 2009 07:55 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lector de pasaportes y  DNI</span><br>
+        Posted: Mon Mar 07, 2016 11:46 AM
+      </div>
+      <div class="content"><p>Hmpaquito, gracias<br>
+No quiero que nadie me haga el trabajo, simplemente busco la forma de entender, el procedimiento, para hacerlo desde fivewin:<br>
+Cargar la DLL<br>
+Cargar el módulo que me interesa<br>
+Hacer las distintas llamadas a las funciones del modulo<br>
+Gestionar los errores en cada paso</p>
+<p>Un saludo</p></div>
+    </div>
+  </div>
+  <div class="post" id="p187572">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">hmpaquito</div>
+      <div class="rank">Posts: 1515</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 30, 2008 02:37 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lector de pasaportes y  DNI</span><br>
+        Posted: Mon Mar 07, 2016 12:52 PM
+      </div>
+      <div class="content">groiss,<br>
+<br>
+En general, creo yo, en todo lo relacionado con el desktop, en este foro se puede encontrar informacion. Por ejemplo, <a href="http://forums.fivetechsupport.com/viewtopic.php?f=3&amp;t=31014&amp;hilit=sdk" rel="noopener">http&#58;//forums&#46;fivetechsupport&#46;com/viewtopic&#46;php?f=3&amp;t=31014&amp;hilit=sdk</a> podria ser un buen ejemplo de de creacion de un wrapper a un sdk C.<br>
+<br>
+Mi post iba por el hecho de que quizá un experto te lo solucione por unos pocos dólares, la tarea que para un neófito puede llevar muchas horas, y teniendo en cuenta que no es una tarea que vuelva a repetir, al menos en mucho tiempo, resulta que si saca cuentas y suma horas consumidas por la tarea, resulta que pierde dinero por no haberlo contratado... no sé si me explico.<br>
+<br>
+Creo que eso nos pasa mucho a todos.<br>
+<br>
+Un saludo</div>
+    </div>
+  </div>
+  <div class="post" id="p187584">
+    <div class="poster">
+      <div class="name" style="color:#105289">José Vicente Beltrán</div>
+      <div class="rank">Posts: 282</div>
+      <div class="avatar"></div>
+      Joined: Mon Oct 10, 2005 08:55 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lector de pasaportes y  DNI</span><br>
+        Posted: Mon Mar 07, 2016 06:23 PM
+      </div>
+      <div class="content"><p>Groiss<br>
+No se si es lo que buscas, pero te adjunto un lector de pasaportes hecho completamente con FW.<br>
+Implementar el lector de DNI es igual de sencillo.</p>
+<ol>
+<li>Ejecuta la aplicacion</li>
+<li>Cursor en el campo de toma de datos</li>
+<li>Pasar el pasaporte por el escaner</li>
+<li>Y ya tienes los datos</li>
+<li>Puedes imprimir la ficha para el viajero, en A-4, por delante, por delante y detrás con los datos de la policia (en este caso en arabe)<br>
+etc.<br>
+etc.</li>
+</ol>
+<!-- m -->
+<p><a class="postlink" href="https://www.dropbox.com/s/qbvbu7s2y7a77ke/lector%20de%20pasaportes.zip?dl=0">https://www.dropbox.com/s/qbvbu7s2y7a77 ... s.zip?dl=0</a></p>
+<p>Si es de utilidad para ti, ponte en contacto conmigo y te envio los fuentes.<br>
+jvbpARROBAgigabit-tiendas.com</p>
+<!-- m --></div>
+    </div>
+  </div>
+  <div class="post" id="p187585">
+    <div class="poster">
+      <div class="name" style="color:#105289">elvira</div>
+      <div class="rank">Posts: 518</div>
+      <div class="avatar"></div>
+      Joined: Fri Jun 29, 2012 12:49 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lector de pasaportes y  DNI</span><br>
+        Posted: Mon Mar 07, 2016 06:25 PM
+      </div>
+      <div class="content"><p>Hola,</p>
+<p>¿Y quién puede realizar estos encargos de C para conectar APIS a Fivewin?.</p>
+<p>Muy agradecida.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p187587">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lector de pasaportes y  DNI</span><br>
+        Posted: Mon Mar 07, 2016 07:10 PM
+      </div>
+      <div class="content">Jose Luis,<br>
+<br>
+En base a estas notas del código que has publicado:<br>
+<br>
+<blockquote> * Windows example:<br>
+ * \verbatim<br>
+<br>
+    HMODULE module = (HMODULE)LoadLibraryA(&quot;gxsd7.dll&quot;);<br>
+    ...<br>
+    gx_call = GetProcAddress(module, &quot;gx_call&quot;);<br>
+    ...<br>
+    FreeLibrary(module);<br>
+<br>
+   \endverbatim<br>
+<br>
+   gx_call(struct gxHANDLE handle, int function, void *params)<br>
+ *</blockquote><br>
+<br>
+En FWH se haría asi:<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">hDLL = LoadLibrary( "gxsd7.dll" )
+
+MsgInfo( gx_call( hDLL, nFunction, 0 ) )
+
+FreeLibrary( hDLL )
+
+...
+
+DLL FUNCTION gx_call( nHandle AS LONG, nFunction AS LONG, nPTR AS PTR ) AS LONG LIB hDLL</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p187598">
+    <div class="poster">
+      <div class="name" style="color:#105289">groiss</div>
+      <div class="rank">Posts: 234</div>
+      <div class="avatar"></div>
+      Joined: Tue Sep 01, 2009 07:55 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lector de pasaportes y  DNI</span><br>
+        Posted: Tue Mar 08, 2016 06:26 AM
+      </div>
+      <div class="content"><p>José Vicente:<br>
+El escáner que me han traido al trabajo, es un COMBOSCAN, y parece que tu programa no lo detecta, pues no hace nada, pero es interesante tu trabajo, ya me comentarás que debo hacer con el escáner o con que tipo de escaner</p>
+<p>Antonio:<br>
+Eso es mas o menos lo que quiero saber manejar, se trataría de pasar eso que hay en C a fivewin/harbour, que creo que no es mucho.<br>
+Cargar la librería<br>
+Detectar el dispositivo<br>
+Hacer captura<br>
+Leer datos MRZ<br>
+Pasar os campos<br>
+Devolver los datos de los campos<br>
+Liberar la librería</p>
+<p>Voy a ver como sigo con ello<br>
+Muchas gracias</p></div>
+    </div>
+  </div>
+  <div class="post" id="p188035">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lector de pasaportes y  DNI</span><br>
+        Posted: Fri Mar 18, 2016 11:52 AM
+      </div>
+      <div class="content"><p>Buenas</p>
+<p>Mira si tiene soporte por OCX ( ActiveX ). <br>
+Si lo tiene, que seguro que si, te será mucho más sencillo.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p188161">
+    <div class="poster">
+      <div class="name" style="color:#105289">groiss</div>
+      <div class="rank">Posts: 234</div>
+      <div class="avatar"></div>
+      Joined: Tue Sep 01, 2009 07:55 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Lector de pasaportes y  DNI</span><br>
+        Posted: Mon Mar 21, 2016 06:36 AM
+      </div>
+      <div class="content"><p>Rafa:<br>
+Si tiene soporte OCX, pero ahí se me hace más engorroso, no lo he manejado nunca, y los ejemplos que vienen están todos para visual basic.<br>
+Un saludo</p></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

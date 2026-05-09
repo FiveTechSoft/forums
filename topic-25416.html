@@ -1,0 +1,1070 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>New class TUpdate - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-25416">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> New class TUpdate</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-25416-page-2.html">2</a> (26 posts)</div>  <div class="post" id="p138444">
+    <div class="poster">
+      <div class="name" style="color:#105289">StefanHaupt</div>
+      <div class="rank">Posts: 824</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 13, 2005 07:39 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">New class TUpdate</span><br>
+        Posted: Mon Dec 31, 2012 02:24 PM
+      </div>
+      <div class="content">Hi friends,<br>
+<br>
+last month I needed an easy possibility to update my application over the internet. I found some specialized functions, but nothing for common use. So I wrote my own new class to do this job. It´s very easy to use, you can integrate it in every application.<br>
+<br>
+It´s working fine with XP, Windows 7, Windows 8 is not tested.<br>
+<br>
+I publish this code, so everyone can benefit from this new class. Maybe you´ll find it useful.<br>
+<br>
+Any comments are welcome   <br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+   Class TUpdate - application update over ftp
+   --------------------------------------------------
+   (based on a function from Biel Maimo)
+
+   Version 1.2
+   (c) Stefan Haupt 2012
+
+   Description: This is a claas to update your application over a Ftp-Server.
+                Itïs very easy to use, I think the code is self explaining. You
+                just need some vars to be set, the update is automatically done.
+                That means your application is closed, the files are copied and
+                your application is restarted.
+   Sample:
+           FUNCTION Update ()
+
+             LOCAL oUpdate
+             LOCAL cFtp  := "YourFtpServer"
+             LOCAL cUser := "YourLoginName"
+             LOCAL cPW   := "YourPassword"
+             LOCAL cFtpDir   := "YourUpdateFolderOnFtp"
+             LOCAL cUpdFile  := "NameOfTheUpdatefile"
+             LOCAL cLocalDir := "NameOfTheLocalDir"
+             LOCAL nFlags := &lt;SpecialConnectionFlags&gt; // use 134217728 to set passive mode
+
+             oUpdate := TUpdate():New(cFtp, cUser, cPW, cFtpDir, cUpdFile, cLocalDir+"Updates\")
+             oUpdate:nFlags := nFlags
+             oUpdate:Update ()
+             oUpdate:End ()
+
+           RETURN (nil)
+   ****************************************************************************
+   Remarks: If you want to use the passive mode in your ftp connection, you have
+   to update the class TFtp that comes with fwh.
+   Just replace the method new with this one:
+
+       METHOD New( cFTPSite, oInternet, cUserName, cPassword, nFlags ) CLASS TFTP
+
+         DEFAULT nFlags := 0
+
+         ::oInternet = oInternet
+         ::cSite     = cFTPSite
+         ::cUserName = cUserName
+         ::cPassword = cPassword
+
+         if oInternet:hSession != nil
+            ::hFTP = InternetConnect( oInternet:hSession, cFTPSite, FTP_PORT,;
+                                      ::cUserName, ::cPassword,;
+                                      INTERNET_SERVICE_FTP, nFlags, 0 )
+            AAdd( oInternet:aFTPs, Self )
+         endif
+
+      return Self
+
+   ****************************************************************************/
+
+#include "FiveWin.ch"
+//#include "xBrowse.ch"
+
+#define INTERNET_FLAG_PASSIVE  0x08000000  // used for FTP connections - 134217728
+#define ZTRIM( cString ) Left( cString, At( Chr( 0 ), cString ) - 1 )
+
+
+CLASS TUpdate
+
+DATA oInternet AS OBJECT
+DATA oFtp      AS OBJECT
+DATA nFlags    AS NUMERIC
+
+DATA cIP     AS CHARACTER         // Ftp-Server
+DATA cUser   AS CHARACTER         // login name
+DATA cPW     AS CHARACTER         // password
+
+DATA cFtpFolder AS CHARACTER      // folder on ftp where update files are
+DATA cZipFile   AS CHARACTER      // name of the update file (must be zip)
+
+DATA cLocalDir  AS CHARACTER      // local folder where the update files are copied
+DATA cAppDir    AS CHARACTER      // applications folder
+DATA cAppFile   AS CHARACTER      // name of the application
+
+DATA aUpdateFiles AS ARRAY        // files in the zip
+DATA cUpdateBatch AS CHARACTER    // path and name of the update batchfile
+
+//DATA lRestartApp AS LOGICAL INIT .f.
+
+DATA nError INIT 0                // common error
+
+METHOD New () CONSTRUCTOR         // create a new instance, initialize all vars
+METHOD End ()                     // close the connection
+METHOD Update ()                  // update the application
+
+//METHOD Setup ()        HIDDEN     // all other methods are only for internal use
+METHOD Download ()     HIDDEN
+METHOD DownloadFile () HIDDEN
+METHOD UnpackFile ()   HIDDEN
+METHOD WriteBatch ()   HIDDEN
+
+ENDCLASS
+
+//----------------------------------------------------------------------
+METHOD New (cIP, cUser, cPW, cFTPFolder, cZIPFile, cLocalDir, nFlags) CLASS TUpdate
+
+  DEFAULT cIP := "localhost",;
+          cUser := "anonymous",;
+          cPW := "anonymous@localhost",;
+          cFtpFolder := "/",;
+          cZipFile := "",;
+          cLocalDir := cFilePath( GetModuleFileName( GetInstance() ) ) + "Updates\"  ,;
+          nFlags := 0
+
+  ::cIP := cIp
+  ::nFlags := nFlags   // special flags for ftp, eg. passive mode
+  ::cUser := cUser
+  ::cPW := cPW
+  ::cFtpFolder := cFtpFolder
+  ::cZipFile := cZipFile
+
+  ::cAppFile := GetModuleFileName( GetInstance() )
+  ::cAppDir  := cFilePath (GetModuleFileName( GetInstance() ) )
+  ::cLocalDir := cLocalDir
+  ::cUpdateBatch := ::cLocalDir + "Update.cmd"
+
+  IF !IsDir (::cLocalDir)                       // create updatefolder
+    IF (::nError := MakeDir (::cLocalDir)) != 0
+      MsgAlert ("Updateverzeichnis konnte nicht erstellt werden","Programmaktualisierung")
+    ENDIF
+  ENDIF
+
+  IF !IsAdmin ()                               // n
+    ::nError := 1
+    MsgAlert ("Sie benötigen Administratorrechte für dieses Update","Programmaktualisierung")
+  ENDIF
+
+RETURN (self)
+
+
+//----------------------------------------------------------------------
+METHOD End ()
+
+  LOCAL bClose := {|| ::END(), ::oInternet:END()}
+
+  IF ::nError = 0
+    MsgRun ("Verbindung beenden...",,bClose)
+  ENDIF
+
+RETURN (nil)
+
+
+//----------------------------------------------------------------------
+METHOD Update () CLASS TUpdate
+
+  LOCAL cFile, nSize, dDate, cTime, aTime
+  LOCAL cFtpFile, dFtpDate, cFtpTime, nFtpSize
+  LOCAL aF := {}, aFiles:={}
+  LOCAL lIsFile := .f.  // update file exists ?
+
+  LOCAL aUpdate := {}, lSuccess := .f.
+  LOCAL bConnect := {|| ::oInternet := tInternet():New(),;
+                        ::oFtp      := tFtp():New (::cIp, ::oInternet, ::cUser, ::cPW, ::nFlags) }
+
+  IF ::nError != 0
+    Return (nil)
+  ENDIF
+
+  IF !Empty (::cIP)
+
+    CursorWait ()
+    MsgRun ("Verbindung aufbauen...",,bConnect)
+    CursorArrow ()
+
+    IF Empty (::hFtp)
+      MsgStop ("Verbindung zum Server gescheitert", "Programmaktualisierung")
+      //::END()
+      //::oInternet:END()
+    ELSE
+
+      ::SetCurrentDirectory( ::cFtpFolder )
+//     cDir := oFtp:GetCurrentDirectory()
+      aFiles := ::Directory (::cZipFile)     // all files in ftp folder
+
+      IF !Empty (aFiles)
+        AEval (aFiles, {|x| Aadd (aF, {ZTRIM (x[1]), x[2], x[3], x[4] } )} )
+
+        cFtpFile := aF[1,1]   // filename
+        dFtpDate := aF[1,3]   //
+        cFtpTime := aF[1,4]   //
+        nFtpSize := aF[1,2]   //
+
+        cFile := ::cLocalDir + ::cZipFile // local file
+        IF File (cFile)
+          aTime := FileTimes ( cFile, 1 )
+          dDate := CToD (Str( aTime[ 3 ], 2 ) + "/" + StrZero( aTime[ 2 ], 2 ) + "/" + StrZero( aTime[ 1 ], 4 ))
+          cTime := StrZero ( aTime[ 4 ], 2 ) + ":" + StrZero( aTime[ 5 ], 2 ) + ":" + StrZero( aTime[ 6 ], 2 )
+          nSize := FileSize ( cFile )
+          lIsFile := .t.
+        ENDIF
+
+        IF !lIsFile .or. ;            // updatefile not present
+           (dDate &lt; dFtpDate).OR.;    // copmpare date and time
+           (dDate == dFtpDate .AND. (TimeToSec (cTime ) &lt; TimeToSec (cFtpTime) ) )
+
+          IF MsgYesNo('Neue Version vorhanden, Aktualisierung durchführen ?',;
+                      "Überprüfung auf neue Programmversion")
+
+            IF ::Download (cFtpFile , cFile, nFtpSize, dFtpDate, cFtpTime)
+              ::END()
+              ::oInternet:END()
+              IF ::WriteBatch ()
+                CLOSE ALL
+                WinExec (::cUpdateBatch)
+                PostQuitMessage(0)
+                QUIT
+              ELSE
+                MsgStop ("Aktualisierung fehlgeschlagen", "Programmaktualisierung")
+              ENDIF
+            ENDIF
+
+          ENDIF // MsgYesNo
+        ELSE
+          MsgInfo ("Die Programmversion ist aktuell","Programmaktualisierung")
+        ENDIF // IF (dDate &lt; dFtpDate).OR
+
+      ELSE
+        MsgInfo ("Die Programmversion ist aktuell","Programmaktualisierung")
+      ENDIF // !Empty (aFiles)
+
+    ENDIF  // Empty (::hFtp)
+  ENDIF // !Empty (::cIP)
+
+RETURN (nil)
+
+
+
+//----------------------------------------------------------------------
+METHOD Download (cSource, cTarget, nSize, dDate, cTime) CLASS TUpdate
+
+  LOCAL oDlg, oSay1, oSay2, oBtnCancel, oMeter1, oMeter2, nMeter1, nMeter2
+  LOCAL lEnd:=.F., nAmount, lOk:=.F., lValRet:=.F.
+  LOCAL hFile
+  LOCAL cError1 := "Fehler beim Download"
+  LOCAL cError2 := "Fehler beim Entpacken"
+
+  // orange
+  //  GRADIENT TRACK { { 1/2, nRGB( 198, 203, 213 ), nRGB( 219, 224, 233 ) },;
+  //                              { 1/2, nRGB( 224, 238,237 ), nRGB( 224, 238,237 ) } } ;
+
+  DEFINE DIALOG oDlg TITLE "Programm-Aktualisierung" FROM 0,0 TO 10,50
+
+   @ 0.5,01 SAY oSay1 PROMPT "Dateien herunterladen" SIZE 80,8 OF oDlg
+   @ 1.2,01 METEREX oMeter1 VAR nMeter1 SIZE 180,10 TOTAL nSize ;
+                  GRADIENT TRACK { { 1/2, nRGB( 198, 203, 213 ), nRGB( 219, 224, 233 ) },;
+                                 { 1/2, nRGB( 224, 238,237 ), nRGB( 224, 238,237 ) } } ;
+                  OF oDlg
+
+   @ 02 ,01 SAY oSay2 PROMPT "Entpacken" OF oDlg
+   @ 2.7,01 METEREX oMeter2 VAR nMeter2 SIZE 180,10 TOTAL 0 ;
+                  GRADIENT TRACK { { 1/2, nRGB( 198, 203, 213 ), nRGB( 219, 224, 233 ) },;
+                                 { 1/2, nRGB( 224, 238,237 ), nRGB( 224, 238,237 ) } } ;
+                  OF oDlg
+
+   @ 3.2,12 BUTTON oBtnCancel PROMPT "&amp;Abbrechen" ACTION ( lEnd := .t., SysRefresh(), oDlg:End() )
+
+   oDlg:bStart := {|| lOk := ::DownloadFile ( cSource, nSize, oMeter1, @lEnd, oDlg, cTarget ),;
+                      IIF (lOk, SetFDaTi (cTarget, dDate, cTime), MsgStop (cError1) ),;
+                      IIF (lOk, lOk := ::UnPackFile (cTarget, oMeter2), ),;
+                      IIF (lOk, (oBtnCancel:SetText( "&amp;Neu starten" ), oBtnCancel:bAction := {|| lEnd := .f., oDlg:End()} ),;
+                                 MsgStop (cError2) ) }
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   IF !lEnd .AND. lOk
+     lValRet:=.T.
+   ENDIF
+
+RETURN (lValRet)
+
+
+//----------------------------------------------------------------------------------------
+METHOD DownloadFile ( cSource, nSize, oMeter, lEnd, oDlg, cTarget ) CLASS TUpdate
+
+   LOCAL oFile, hTarget, lValRet:=.F.
+   LOCAL nBufSize,cBuffer,nBytes := 0, nTotal := 0//, nFile:=0
+   LOCAL lRet := .f.
+
+   nBufSize := 4096
+   cBuffer  := Space(nBufSize)
+   hTarget  := FCreate (cTarget)
+
+   oFile := tFtpFile():New( cSource, ::oFtp )
+   oFile:OpenRead()
+
+   SysRefresh()
+
+   WHILE  ( nBytes := Len( cBuffer := oFile:Read( nBufSize ) ) ) &gt; 0 .and. !lEnd
+     FWrite( hTarget, cBuffer, nBytes )
+     nTotal += nBytes
+     oMeter:Set( nTotal )
+     SysRefresh()
+   END
+
+   FClose( hTarget )
+   oFile:End()
+
+   IF nTotal &gt; 0
+     lRet := (nTotal==nSize)
+   ENDIF
+
+RETURN (lRet)
+
+
+//----------------------------------------------------------------------------------------
+METHOD UnPackFile (cZip, oMeter) CLASS TUpdate
+
+  LOCAL aUpdate :={}, aFiles := {}, aUnzip := {}, n := 1
+  LOCAL lSuccess := .f.
+  LOCAL bProgress := {|| oMeter:Set (n++) }
+  LOCAL cPath :=  cFilePath (cZip)
+
+  aUpdate := hb_GetFilesInZip( cZip, .t. )
+
+  IF Len (aUpdate) &gt; 0
+
+    AEval (aUpdate, {|x| Aadd (aFiles, {x[1], x[6], x[7]} ) } )
+    AEval (aUpdate, {|x| Aadd (aUnzip, x[1]) } )
+    oMeter:= Len (aUnzip)
+
+    lSuccess := hb_UnZipFile( cZip  , ;
+                              bProgress,; //
+                              nil,;       // lWithSubDir
+                              nil,;       // cPassword
+                              cPath,;     // cZipDir
+                              aUnzip ,;
+                              nil )       // bFileProgress
+
+    AEval (aFiles, {|x| SetFDaTi (cPath+x[1], x[2], x[3]) } )  // restore original date and time !!
+
+  ENDIF
+
+  ::aUpdateFiles := AClone (aUnzip)
+
+RETURN (lSuccess)
+
+
+//-------------------------------------------------------------------------------
+METHOD WriteBatch () CLASS TUpdate
+
+  LOCAL hBatch,i
+  LOCAL cBatch, cCopy := "", cDel := "", cS := ["]
+
+  FErase (::cUpdateBatch)
+
+  FOR i := 1 TO Len (::aUpdateFiles)
+    cCopy += "Copy /Y /B /V " + cS + ::cLocalDir + ::aUpdateFiles[i] + cS + " " + cS + ::cAppDir + cS + " &gt; NUL" + CRLF
+    cDel  += "Del /F " + cS + ::cLocalDir + ::aUpdateFiles[i] + cS +  " &gt;NUL" + CRLF
+  NEXT
+
+  cBatch := "@Echo off"+CRLF+;
+            "echo Updating ..."+CRLF+;
+            "ping -n 2 127.0.0.1 &gt; NUL"+CRLF+;    // waiting 2 secs
+            cCopy +;
+            "Start " + cS + "update" + cS + " " + cS + ::cAppFile + cS + CRLF +;
+            cDel +;
+            "EXIT"
+
+  hBatch := FCreate (::cUpdateBatch,0)
+  FWrite (hBatch, cBatch)
+  FClose (hBatch)
+
+RETURN (FError() = 0)
+
+
+
+// convert hours to seconds
+//--------------------------------------------------------
+STATIC FUNCTION  TimeToSec( cTime )
+
+  local nSec := 0, nLen, i, aLim, aMod, nInd, n
+
+if cTime == NIL
+   nSec := seconds()
+elseif HB_ISCHAR( cTime )
+   nLen := len( cTime )
+   if ( nLen + 1 ) % 3 == 0 .and. nLen &lt;= 11
+      nInd := 1
+      aLim := { 24, 60, 60, 100 }
+      aMod := { 3600, 60, 1, 1/100 }
+      for i := 1 to nLen step 3
+         if isdigit( substr( cTime, i,     1 ) ) .and. ;
+            isdigit( substr( cTime, i + 1, 1 ) ) .and. ;
+            ( i == nLen - 1 .or. substr( cTime, i + 2, 1 ) == ":" ) .and. ;
+            ( n := val( substr( cTime, i, 2 ) ) ) &lt; aLim[ nInd ]
+            nSec += n * aMod[ nInd ]
+         else
+            nSec := 0
+            exit
+         endif
+         ++nInd
+      next
+   endif
+ endif
+
+RETURN (Round( nSec, 2)) /* round FL val to be sure that you can compare it */
+
+
+//----------------------------------------------------------------------
+#pragma BEGINDUMP
+
+#include &lt;WinTen.h&gt;
+#include &lt;Windows.h&gt;
+#include &lt;mapiwin.h&gt;
+#include &lt;hbApi.h&gt;
+#include &lt;CommDlg.h&gt;
+
+extern LPSTR LToStr( long w );
+
+                     //nTime 1=Last Update, 2=Last Acces, 3=Creation, defecto last update
+HB_FUNC( FILETIMES ) // params cFileName, nTime --&gt; { nYear, nMonth, nDay, nHour, nMin, nSec }
+{
+   LPSTR cFileName = hb_parc( 1 ) ;
+   int nTime       = ( ISNUM( 2 ) ? hb_parni( 2 ) :  1 ) ; // defaults to 1
+
+   FILETIME ftCreate, ftAccess, ftWrite ;
+   SYSTEMTIME stTime ;
+   BOOL bRet ;
+   HANDLE hFile = CreateFile( cFileName, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0 ) ;
+
+   if( ! hFile )
+      return ;
+
+   GetFileTime( (HANDLE) hFile, &amp;ftCreate, &amp;ftAccess, &amp;ftWrite ) ;
+
+   switch( nTime )
+   {
+      case 1 : // last update
+         FileTimeToSystemTime( &amp;ftWrite, &amp;stTime ) ;
+         break ;
+      case 2 : // last access
+         FileTimeToSystemTime( &amp;ftAccess, &amp;stTime ) ;
+         break ;
+      case 3 : // creation
+         FileTimeToSystemTime( &amp;ftCreate, &amp;stTime ) ;
+         break ;
+      default : // last update
+         FileTimeToSystemTime( &amp;ftWrite, &amp;stTime ) ;
+         break ;
+   }
+
+   SystemTimeToTzSpecificLocalTime( NULL, &amp;stTime, &amp;stTime ) ;
+   CloseHandle( hFile ) ;
+   hb_reta( 6 ) ;
+   hb_storni( stTime.wYear,   -1, 1 ) ;
+   hb_storni( stTime.wMonth,  -1, 2 ) ;
+   hb_storni( stTime.wDay,    -1, 3 ) ;
+   hb_storni( stTime.wHour,   -1, 4 ) ;
+   hb_storni( stTime.wMinute, -1, 5 ) ;
+   hb_storni( stTime.wSecond, -1, 6 ) ;
+}
+
+
+#define FA_RDONLY           1   /* R */
+#define FA_HIDDEN           2   /* H */
+#define FA_SYSTEM           4   /* S */
+#define FA_LABEL            8   /* V */
+#define FA_DIREC           16   /* D */
+#define FA_ARCH            32   /* A */
+#define FA_NORMAL           0
+
+HB_FUNC(FILESIZE)
+
+   {
+   LPCTSTR szFile;
+   DWORD dwFlags=FILE_ATTRIBUTE_ARCHIVE;
+   HANDLE hFind;
+   WIN32_FIND_DATA  hFilesFind;
+      int iAttr;
+      if (hb_pcount() &gt;=1){
+         szFile=hb_parc(1);
+         if (ISNUM(2))      {
+            iAttr=hb_parnl(2);
+         }
+         else{
+         iAttr=63;
+         }
+            if( iAttr &amp; FA_RDONLY )
+               dwFlags |= FILE_ATTRIBUTE_READONLY;
+
+            if( iAttr &amp; FA_HIDDEN )
+               dwFlags |= FILE_ATTRIBUTE_HIDDEN;
+
+            if( iAttr &amp; FA_SYSTEM )
+               dwFlags |= FILE_ATTRIBUTE_SYSTEM;
+            if( iAttr &amp; FA_NORMAL )
+               dwFlags |=    FILE_ATTRIBUTE_NORMAL;
+
+            hFind = FindFirstFile(szFile,&amp;hFilesFind);
+                  if (hFind != INVALID_HANDLE_VALUE){
+                      if (dwFlags &amp; hFilesFind.dwFileAttributes) {
+                         if(hFilesFind.nFileSizeHigh&gt;0)
+                              hb_retnl((hFilesFind.nFileSizeHigh*MAXDWORD)+hFilesFind.nFileSizeLow);
+                         else
+                              hb_retnl(hFilesFind.nFileSizeLow);
+                       }
+                   else
+                           hb_retnl(-1);
+                     }
+
+         }
+}
+
+
+HB_FUNC (ISADMIN)
+
+{
+
+  HANDLE hToken;
+  PTOKEN_GROUPS pGroupInfo;
+  DWORD dwSize = 0, dwResult;
+  DWORD nError = 0, i;
+  BOOL lError, lAdMin = FALSE;
+  LPSTR cFunc = "";
+  PSID   psidAdmin;
+  CHAR cMess[200];
+  SID_IDENTIFIER_AUTHORITY SystemSidAuthority= SECURITY_NT_AUTHORITY;
+
+  if ( lError = (! OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&amp;hToken) ))
+    {
+     cFunc = "OpenProcessToken";
+     nError = GetLastError();
+     if (nError == ERROR_CALL_NOT_IMPLEMENTED)
+       {
+        hb_retl( TRUE );
+        return;
+       }
+    }
+
+  if ( ! lError &amp;&amp;  ! GetTokenInformation(hToken, TokenGroups, NULL, dwSize, &amp;dwSize))
+    {
+      dwResult = GetLastError();
+      if( lError=(dwResult != ERROR_INSUFFICIENT_BUFFER ))
+       {
+        nError = dwResult;
+        cFunc = "GetTokenInformation";
+       }
+    }
+
+  if ( ! lError )
+   {
+    pGroupInfo = (PTOKEN_GROUPS) GlobalAlloc( GPTR, dwSize );
+    if( lError = (! GetTokenInformation(hToken, TokenGroups, pGroupInfo, dwSize, &amp;dwSize ) ))
+      {
+        nError = GetLastError();
+        cFunc = "GetTokenInformation";
+      }
+   }
+
+  if ( ! lError )
+    if ( lError = (! AllocateAndInitializeSid ( &amp;SystemSidAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &amp;psidAdmin) ))
+     {
+      nError = GetLastError();
+      cFunc = "AllocateAndInitializeSid";
+     }
+
+  if ( ! lError )
+    {
+      for( i=0; i&lt;pGroupInfo-&gt;GroupCount; i++)
+       {
+          if ( EqualSid(psidAdmin, pGroupInfo-&gt;Groups[i].Sid) )
+           {
+               lAdMin = TRUE;
+               break;
+           }
+       }
+    }
+  else
+    {
+      cMess[0]=0;
+      lstrcat(cMess,"Error calling ");
+      lstrcat(cMess,cFunc);
+      lstrcat(cMess,": ");
+      lstrcat(cMess,LToStr(nError));
+      MessageBox(GetActiveWindow(),cMess,"Attention", MB_OK);
+    }
+
+  if (psidAdmin)
+      FreeSid(psidAdmin);
+
+  if ( pGroupInfo )
+      GlobalFree( pGroupInfo );
+
+  CloseHandle( hToken );
+  hb_retl( lAdMin );
+
+}
+
+#pragma ENDDUMP</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p138445">
+    <div class="poster">
+      <div class="name" style="color:#105289">Adolfo</div>
+      <div class="rank">Posts: 883</div>
+      <img class="avatar avatar-img" src="avatars/105.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 11, 2005 11:57 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Mon Dec 31, 2012 02:26 PM
+      </div>
+      <div class="content"><p>Stefan</p>
+<p>Thanks for your work, gonna try it NEXT YEAR <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p>
+<p>Greetings</p>
+<p>From Chile<br>
+Adolfo</p></div>
+    </div>
+  </div>
+  <div class="post" id="p138471">
+    <div class="poster">
+      <div class="name" style="color:#105289">hua</div>
+      <div class="rank">Posts: 1096</div>
+      <div class="avatar"></div>
+      Joined: Fri Oct 28, 2005 02:27 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Wed Jan 02, 2013 03:21 AM
+      </div>
+      <div class="content"><p>Thanks for sharing Stefan <!-- s:) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":)" title="Smile" /><!-- s:) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p138473">
+    <div class="poster">
+      <div class="name" style="color:#105289">richard-service</div>
+      <div class="rank">Posts: 866</div>
+      <img class="avatar avatar-img" src="avatars/1193.jpg" alt="" loading="lazy">
+      Joined: Tue Oct 16, 2007 08:57 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Wed Jan 02, 2013 08:03 AM
+      </div>
+      <div class="content"><p>Thanks a lot. I got it.</p></div>
+    </div>
+  </div>
+  <div class="post" id="p138481">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Wed Jan 02, 2013 03:27 PM
+      </div>
+      <div class="content"><p>Stephan,</p>
+<p>Thanks for sharing this.</p>
+<p>Could you explain how this works? Can it be called from a menu in an app, and if so, what then happens? </p>
+<p>Can we somehow check for a new version from a running app?</p>
+<p>Regards,<br>
+James</p></div>
+    </div>
+  </div>
+  <div class="post" id="p138489">
+    <div class="poster">
+      <div class="name" style="color:#105289">RAMESHBABU</div>
+      <div class="rank">Posts: 651</div>
+      <img class="avatar avatar-img" src="avatars/190.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 21, 2005 05:54 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Thu Jan 03, 2013 08:32 AM
+      </div>
+      <div class="content"><p>Mr.James,</p>
+<p>I checking for latest version at the start up of the application.</p>
+<p>Regards, </p>
+<p>-Ramesh Babu P</p></div>
+    </div>
+  </div>
+  <div class="post" id="p138490">
+    <div class="poster">
+      <div class="name" style="color:#105289">StefanHaupt</div>
+      <div class="rank">Posts: 824</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 13, 2005 07:39 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Thu Jan 03, 2013 10:58 AM
+      </div>
+      <div class="content">James,<br>
+<br>
+<blockquote><cite>James Bott wrote:</cite><br>
+Could you explain how this works? Can it be called from a menu in an app, and if so, what then happens? <br>
+</blockquote><br>
+<br>
+It´s very easy to use. You can call it from inside your application. This is a small sample how this class can be called.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FUNCTION Update ()
+
+             LOCAL oUpdate
+             LOCAL cFtp  := "YourFtpServer"
+             LOCAL cUser := "YourLoginName"
+             LOCAL cPW   := "YourPassword"
+             LOCAL cFtpDir   := "YourUpdateFolderOnFtp"
+             LOCAL cUpdFile  := "NameOfTheUpdatefile"
+             LOCAL cLocalDir := "NameOfTheLocalDir"
+             LOCAL nFlags := &lt;SpecialConnectionFlags&gt; // flag to set passive mode
+
+             oUpdate := TUpdate():New(cFtp, cUser, cPW, cFtpDir, cUpdFile, cLocalDir+"Updates\")
+             oUpdate:nFlags := nFlags
+             oUpdate:Update ()
+             oUpdate:End ()
+
+           RETURN (nil)</code></pre></div><br>
+<br>
+It creates a subdir (called &quot;Updates&quot; by default) in the folder you specified with &lt;cLocalDir&gt;. There the update file is copied und unpacked. The update file has to be a .zip file. By default the update folder is located in the .exe dir. Take care that you must have the right to create files in that folder.<br>
+<br>
+<blockquote><br>
+Can we somehow check for a new version from a running app?<br>
+</blockquote><br>
+<br>
+Yes, of course. You can check for a new version at any time while your app is running. With the function above everything is done. The class automatically checks if there is a new version. If so, you are asked to install it, otherwise there is a message that there is no upate available.<br>
+<br>
+First the update method checks if there is an update file on the ftp server and compares the date and time with the last existing file in the local update folder. If there is no existing file (first update) or the local file is older, the update is done.<br>
+<br>
+The update process itself creates a batch, closes your application, copies the files and restarts your application.<br>
+<br>
+Some ftp server need to set the passive mode. You can do this by setting oUpdate:nFlag to 134217728 (0x08000000). But if you want to use this feature you must change the method new of the class TFtp that comes with fwh.<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD New( cFTPSite, oInternet, cUserName, cPassword, nFlags ) CLASS TFTP
+
+         DEFAULT nFlags := 0
+
+         ::oInternet = oInternet
+         ::cSite     = cFTPSite
+         ::cUserName = cUserName
+         ::cPassword = cPassword
+
+         if oInternet:hSession != nil
+            ::hFTP = InternetConnect( oInternet:hSession, cFTPSite, FTP_PORT,;
+                                      ::cUserName, ::cPassword,;
+                                      INTERNET_SERVICE_FTP, nFlags, 0 )  // changed !
+            AAdd( oInternet:aFTPs, Self )
+         endif
+
+      return Self</code></pre></div><br>
+<br>
+A little change in the sources, before the application is closed all dbf are closed ( CLOSE ALL inserted in line 211 after ::WriteBatch() ).</div>
+    </div>
+  </div>
+  <div class="post" id="p138491">
+    <div class="poster">
+      <div class="name" style="color:#AA0000">Antonio Linares</div>
+      <div class="rank">Posts: 44138</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 06, 2005 05:47 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Thu Jan 03, 2013 12:16 PM
+      </div>
+      <div class="content"><p>very good, thanks for sharing <!-- s:-) --><img src="{SMILIES_PATH}/icon_smile.gif" alt=":-)" title="Smile" /><!-- s:-) --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p138496">
+    <div class="poster">
+      <div class="name" style="color:#105289">James Bott</div>
+      <div class="rank">Posts: 4840</div>
+      <img class="avatar avatar-img" src="avatars/303.jpg" alt="" loading="lazy">
+      Joined: Fri Nov 18, 2005 04:52 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Thu Jan 03, 2013 03:24 PM
+      </div>
+      <div class="content"><p>Stephan,</p>
+<p>Thanks a lot for that very detailed explanation. I hope to try it soon.</p>
+<p>Regards,<br>
+James</p></div>
+    </div>
+  </div>
+  <div class="post" id="p138501">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Thu Jan 03, 2013 04:31 PM
+      </div>
+      <div class="content"><p>This is a nice contribution.  However, I handled this process a bit differently because not everyone is eligible for an update.  I wrote an auto update routine which runs in the background all of the time in the folder where the database files are stored.  It works this way.</p>
+<p>1)  Every 3 hours query the server and download a &quot;version file&quot;.  Compare to see if it is greater than the current version.<br>
+2)  Check the customer's status.  If they are eligible, then download and unpack the zip file to its update directory.<br>
+3)  Copy any files that need to be moved to the main directory ( server ).<br>
+4)  When a &quot;client&quot; program starts, it checks the local server to see if a newer version is available.  If so, it copies the newer main .exe file to the local machine, then starts the program.  Otherwise, it starts the existing program.</p>
+<p>This is the least disruptive process.  Often updates to the server are downloaded and run overnight.  The customer gets a pop up notice anytime they have received a newer version.</p>
+<p>In addition, the auto update program also does automatic FTP transfers to remote servers of data used by 3rd party services, and also emails the company's customers automatically with Thank You notes and service reminders.  It resides in the system tray, and has a popup menu for forcing updates.  The system is also used to maintain authorizations for customers, especially useful in rentals, and quick tracking of who is eligible for updates.</p>
+<p>TIm</p></div>
+    </div>
+  </div>
+  <div class="post" id="p138526">
+    <div class="poster">
+      <div class="name" style="color:#105289">StefanHaupt</div>
+      <div class="rank">Posts: 824</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 13, 2005 07:39 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Fri Jan 04, 2013 12:27 PM
+      </div>
+      <div class="content">Hi Tim,<br>
+<br>
+many thanks for your comment.<br>
+<br>
+<blockquote><cite>TimStone wrote:</cite>I wrote an auto update routine which runs in the background all of the time in the folder where the database files are stored. </blockquote><br>
+That´s very similar to this class, just that it doesn´t run in background. But I can also use a timer, so the update function is called automatically.<br>
+<br>
+<blockquote><br>
+1)  Every 3 hours query the server and download a &quot;version file&quot;. </blockquote><br>
+How much updates do you offer a day ? Surely, it depends on the kind of software you are selling, but for my application it´s enough to check for an update when the application starts. Everybody who needs a higher frequency can use a timer.<br>
+<br>
+I also thought of using a version file, but for the moment I decided against it. However it offers the possibility to make a distinction between updates (bugfixes) and upgrades (new version). So, maybe I´ll implement this in future versions.<br>
+<br>
+<blockquote>2)  Check the customer's status.  If they are eligible, then download and unpack the zip file to its update directory. </blockquote><br>
+That´s a problem, I fully agree. How do you solve it ? Sql database, text file ?<br>
+<br>
+I personally differentiate between updates and upgrades. An update is a bugfixed version, every customer should be eligible to get it. An upgrade is new version with new functions. Customers have to pay for it,  so only certain ones are eliglible to get it. I solved it with an encrypted configuration file, which contains all custumers data.<br>
+<br>
+Your update mechanism works in a another but similar way, it´s specialised for your software. But it gives me some ideas how an update process can be realized. A good way to enhance my class.</div>
+    </div>
+  </div>
+  <div class="post" id="p138527">
+    <div class="poster">
+      <div class="name" style="color:#105289">MarcoBoschi</div>
+      <div class="rank">Posts: 1091</div>
+      <img class="avatar avatar-img" src="avatars/297.jpg" alt="" loading="lazy">
+      Joined: Thu Nov 17, 2005 11:08 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Fri Jan 04, 2013 12:51 PM
+      </div>
+      <div class="content"><p>I'll try it as soon as possible<br>
+King regards<br>
+marco</p></div>
+    </div>
+  </div>
+  <div class="post" id="p138531">
+    <div class="poster">
+      <div class="name" style="color:#105289">TimStone</div>
+      <div class="rank">Posts: 3022</div>
+      <img class="avatar avatar-img" src="avatars/34.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 01:45 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Fri Jan 04, 2013 04:58 PM
+      </div>
+      <div class="content"><p>Stefan,</p>
+<p>When our company server is queried ( every 3 hours ), then it downloads a small file that has the latest version number, and a bulletin version number.  That number is compared to the stored version number on the computer.  If a new version is available, the system automatically downloads it to the server.  The info on the local server is stored in a version info file and compared to the very small file downloaded.</p>
+<p>The customer information is passed in a compacted, encrypted, file.  It is also compared to the local data.  We provide the customer name, address, phone, and some other data to the program, so if they make a change we are notified, and then we issue the change through our system.  It cuts down on theft, and keeps us in touch.</p>
+<p>We also have a blog, and when we make a new post, we push through the &quot;version&quot; of the new bulletin, and that generates a popup on the customer's workstation.</p>
+<p>We query every 3 hours from the one machine alone.  That program also does many other tasks as I mentioned.  I usually put out an update early in a month, and then follow it with any needed adjustments ( bugs, awkward UI issues, spelling fixes, etc. ) immediately.  Sometimes people suggest new reports and they are easy to build so I do it quickly and toss out an update.</p>
+<p>It works out well, and customers feel like they are receiving value on an regular basis.</p>
+<p>Tim</p></div>
+    </div>
+  </div>
+  <div class="post" id="p138540">
+    <div class="poster">
+      <div class="name" style="color:#105289">Silvio.Falconi</div>
+      <div class="rank">Posts: 7311</div>
+      <img class="avatar avatar-img" src="avatars/2598.jpg" alt="" loading="lazy">
+      Joined: Thu Oct 18, 2012 07:17 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Fri Jan 04, 2013 10:37 PM
+      </div>
+      <div class="content"><p>Stephan,<br>
+a question <br>
+the test may work through or from connections to the proxy server?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p138586">
+    <div class="poster">
+      <div class="name" style="color:#105289">StefanHaupt</div>
+      <div class="rank">Posts: 824</div>
+      <div class="avatar"></div>
+      Joined: Thu Oct 13, 2005 07:39 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: New class TUpdate</span><br>
+        Posted: Mon Jan 07, 2013 02:58 PM
+      </div>
+      <div class="content"><p>Silvio,</p>
+<p>I have no proxy, so I can´t test it. But it should work the  same way with and without a proxy. You connect to the ftp server directly.</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-25416-page-2.html">2</a> (26 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>

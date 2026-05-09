@@ -1,0 +1,1039 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pasar tablas SQL Server a DBF - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-34329">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>FiveTech Support Forums</h1><div class="sub">FiveWin / Harbour / xBase community</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Pasar tablas SQL Server a DBF</div>
+<div class="pagination">Page: <strong>1</strong> <a href="topic-34329-page-2.html">2</a> <a href="topic-34329-page-3.html">3</a> <a href="topic-34329-page-4.html">4</a> (47 posts)</div>  <div class="post" id="p203627">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Pasar tablas SQL Server a DBF</span><br>
+        Posted: Wed Jul 12, 2017 02:20 PM
+      </div>
+      <div class="content"><p>Hola</p>
+<p>Existe alguna funcion o pgrama que permita tomar tablas de MS-SQL y exportarlas como DBF ?</p>
+<p>Gracias</p></div>
+    </div>
+  </div>
+  <div class="post" id="p203634">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Wed Jul 12, 2017 03:38 PM
+      </div>
+      <div class="content">Buenas<br>
+En mi tiempo tuve que desarrollar una herramienta que a través de ADO, la ejecución de una sentencia de SQL, era transformado en una tabla DBF, y una tabla intermedia donde<br>
+se especifica que es cada campo.<br>
+<br>
+Por ejemplo, una sentencia del tipo SELECT * FROM PROVINCIAS, sobre Oracle o sobre SQLServer, puede darte como resultado un nombre de campos, como<br>
+Código de Provicia, Código Postal, Teléfono de Emergencia, y después con los distintos tipos.<br>
+<br>
+Ahora, esos campos no pueden ser creados en la DBF, así que toca reconvertir los campos SQL a DBF, a no ser que en la select indicas AS XXXX o similar.<br>
+<br>
+Ejemplo de llamada ;<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">    DEFAULT cSql := [ select * from ORA.name ]
+    lResult := ::Traspasa_Oracle( cSql ,;       // Sentencia SQL
+                                  "FINAME",;               // Tabla DBF que vamos a crear
+                                  "NAME", ::lInfo )      // Tabla Orable</code></pre></div><br>
+<br>
+He intentado 'limpiar' cosas , pero lo básico lo tienes, ahora, esto hace más de 10 años que lo escribí y nos<br>
+ha servido para traspasar datos de cualquier motor de SQL a DBFs, usando sentencias.<br>
+Te lo dejo por sí te sirve de ayuda.<br>
+<br>
+<br>
+<div class="codebox"><div class="codehead"><span>Code (fw):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">METHOD Traspasa_Oracle( cSql , cFileDbf, cTableSQL, lInfo ) CLASS TareasSQL
+
+    Local oSql, oTdbf, oDbIntermedia, n := 1
+    Local nTotalRegistros, x, nLen
+    Local aStruct := {}  // Estructura de la dbf
+    Local hTabla := {=&gt;}, cname, ctype, nLenField, ndec, uValue
+    Local lReturn := .F., oError
+
+   ::SetText( CRLF+ "Sentencia:" + cSql + CRLF )
+
+    oSql := tAdoRs():New():Create()
+
+    try
+      if !oSql:Open( cSql, ::oConnection:oConnection, adOpenDynamic )
+         oTDbf:Close()
+         ? "No se pudo ejecutar select"
+         lReturn := .T.
+      endif
+    catch
+         oTDbf:Close()
+         ? "No se pudo ejecutar select"
+         lReturn := .T.
+    end
+
+    if lReturn  // retorno por error.
+        return .f.
+    endif
+
+    oDbIntermedia:SetBuffer( .T. )
+    oDbIntermedia:lOemAnsi := .T.
+    nTotalRegistros := oSql:oRs:RecordCount
+    ::SetText( "Comenzando transaccion para " + alltrim( str( nTotalRegistros,12 )) + " registros." )
+
+    nLen := oSql:oRs:fields:Count - 1  
+    for x := 0 to nLen
+        ADO_FIELDINFO( oSql:oRs, x, DBS_NAME, @cName )
+        ADO_FIELDINFO( oSql:oRs, x, DBS_TYPE, @cType )
+        ADO_FIELDINFO( oSql:oRs, x, DBS_LEN,  @nLenField )
+        ADO_FIELDINFO( oSql:oRs, x, DBS_DEC,  @nDec )
+
+
+         // Guarda la referencia del campo 
+        if lInfo
+           ::SetText( "Name:"+ cName + " Clipper:" + Get_Name_Clipper( cName, hTabla ) )
+        endif
+
+        hTabla[ cName ] := Get_Name_Clipper( cName, hTabla )
+
+        oDbIntermedia:Append()
+        oDbIntermedia:Blank()
+        oDbIntermedia:Table_SQL := cTableSQL
+        oDbIntermedia:Table_DBF := cFileDbf
+        oDbIntermedia:Field_SQL := cName
+        oDbIntermedia:Field_DBF := hTabla[ cName ]
+        oDbIntermedia:Save()
+
+
+        if lInfo
+           ::SetText( "SQL:"+ cName + ;
+                      "  DBF:" + hTabla[ cName ] + "[ "+ cType + "*" + cValtoChar( nlenField ) + "*" + cValtoChar( nDec ) + " ]"  )
+        endif
+
+        if "V" $ cType   // Tipo Variant, vamos a tratarlo como Caracter
+           cType := "C"
+        endif
+
+        if "@" $ cType
+           cType := "D"
+           nLenField := 8
+        endif
+
+        if "M" $ cType  // MEMO
+           nLenField := 10
+        endif
+
+        if "N" $ cType  // No sabemos que tipo de longitud decimal va a tener
+            if nDec = 0
+               nDec := 10
+               nLenField += 10 + 2 // porque tenemos que tener en cuenta el . decimal , y el signo negativo( si lo fuese )
+            else
+               nLenField += 2  // Le add 2 numeros mas por si acaso
+            endif
+        endif
+
+        if cType = "G"  // Los tipo G no se guardan
+           // loop
+           cType     := "C"
+           nLenField := 50
+        endif
+
+        AADD( aStruct, { hTabla[ cName ], cType, nLenField, nDec  } )
+    next x
+
+    if !empty( aStruct )
+       ::SetText( "Creando estructura "+ cFileDbf )
+        if file( cFileDbf + ".DBF" )
+            delete file ( cFileDbf +".dbf" )
+        endif
+        DbCreate( cFileDbf, aStruct )
+    endif
+
+    if nTotalRegistros = 0
+       ::SetText( "No hay registros a traspasar." )
+       oTDbf:Close()
+       return .t.
+    endif
+
+  ::SetText( "Comenzando exportanción de datos a " + cFileDbf )
+
+    USE ( cFileDbf ) NEW ALIAS ( cFileDbf )
+
+    oSql:oRs:MoveFirst()
+    while !oSql:oRs:Eof()
+          APPEND BLANK
+          // Guardamos el contenido de lo campos por regsitro
+          for x := 0 to nLen
+              ADO_FIELDINFO( oSql:oRs, x, DBS_NAME, @cName )
+              ADO_FIELDINFO( oSql:oRs, x, DBS_TYPE, @cType )
+              ADO_FIELDINFO( oSql:oRs, x, DBS_DEC,  @nDec )
+
+
+              if "@" $ cType
+                  try
+                    uValue := oSql:oRs:fields(x):value
+                 catch
+                    uValue := ""
+                    ::SetText( "ATENCION registro Dbf[ " + alltrim( cStr( recno() ) ) + " ] NAME_ID:" + CStr( cName ) + " Campo: " +  cName + "--&gt; Valor por defecto" )
+                 end
+                 if empty( uValue )
+                    uValue := CTOD( "  /  /  " )
+                else
+                    uValue :=  CTOD( TtoC( oSql:oRs:fields(x):value ) )
+                endif
+              elseif "N" $ cType
+                 if empty( oSql:oRs:fields(x):value )  // Si es null
+                    uValue := 0
+                 else
+                    uValue := oSql:oRs:fields(x):value
+                 endif
+
+              elseif "C" $ cType .or. "M" $ cType .or. "V" $ cType
+                 uValue := hb_AnsiToOem( cvaltoChar( oSql:oRs:fields(x):value ) )
+              elseif "L" $ cType
+                 uValue := oSql:oRs:fields(x):value
+              elseif "G" $ cType
+//                 uValue := "TIPO BINARIO"
+//                 loop
+                 uValue := hb_AnsiToOem( cvaltoChar( oSql:oRs:fields(x):value ) )
+              else
+                 ::SetText( "Registro DBF:"+ CStr( Recno() ) + "ATENCION DE TIPOS:( " +  CStr( FieldPos( hTabla[ cName ] ) ) + " ) "+ hTabla[ cName ] + "--&gt;"+ cvaltoChar( uValue ) + " valtype:" + Valtype( uvalue ) + " type:"  + ctype )
+                 loop
+              endif
+
+              try
+                 fieldput( FieldPos( hTabla[ cName ] ), uValue  )
+              catch oError
+                 ::SetText( "DBF:"+ hTabla[ cName ] + " Registro DBF:"+ CStr( Recno() ) + "Error:" + oError:Description )
+              end
+          next
+
+          oSql:oRs:MoveNext()
+    end while
+
+    CLOSE
+    oDbIntermedia:Close()
+    
+
+
+STATIC FUNCTION Get_Name_Clipper( cName, hTabla )
+   Local cTmp := substr( strtran( cName, "_",""), 1, 9 )
+   Local x , nCaracter := 65
+   Local cShortName
+
+   cTmp := substr( strtran( cTmp, " ",""), 1, 9 )
+   cTmp := substr( strtran( cTmp, "ñ","n"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "Ñ","N"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "ç","c"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "Ç","C"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "(",""), 1, 9 )
+   cTmp := substr( strtran( cTmp, ")",""), 1, 9 )
+   cTmp := substr( strtran( cTmp, "%",""), 1, 9 )
+   cTmp := substr( strtran( cTmp, "º",""), 1, 9 )
+   cTmp := substr( strtran( cTmp, "ª",""), 1, 9 )
+   cTmp := substr( strtran( cTmp, "â","a"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "ê","e"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "î","i"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "ô","o"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "û","u"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "ä","a"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "ë","e"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "ï","i"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "ö","o"), 1, 9 )
+   cTmp := substr( strtran( cTmp, "ü","u"), 1, 9 )
+
+   cShortName := ctmp // Impresionante , a veces, vienen CAMPOS con espacios en blanco
+
+   while .t.
+
+         x := HSCAN( hTabla, cShortName, NIL , NIL, .T. )  // Busca EXACTAMENTE
+         if x &gt; 0
+            cShortName := cTmp + chr( nCaracter )
+         else
+            exit  // No existe, la usaremos
+         endif
+         nCaracter++
+   end
+
+RETURN cShortName
+
+STATIC FUNCTION ADO_FIELDINFO( oRecordSet, nField, nInfoType, uInfo )
+
+   LOCAL nType, nLen
+   LOCAL nResult := .T.
+
+   DO CASE
+   CASE nInfoType == DBS_NAME
+       uInfo := oRecordSet:Fields( nField ):Name
+       uInfo := strtran( uInfo ,"Á" , "A")
+       uInfo := strtran( uInfo ,"É" , "E")
+       uInfo := strtran( uInfo ,"Í" , "I")
+       uInfo := strtran( uInfo ,"Ó" , "O")
+       uInfo := strtran( uInfo ,"Ú" , "U")
+       uInfo := strtran( uInfo ,"À" , "A")
+       uInfo := strtran( uInfo ,"È" , "E")
+       uInfo := strtran( uInfo ,"Ì" , "I")
+       uInfo := strtran( uInfo ,"Ò" , "O")
+       uInfo := strtran( uInfo ,"Ù" , "U")
+       uInfo := strtran( uInfo ,"á" , "a")
+       uInfo := strtran( uInfo ,"é" , "a")
+       uInfo := strtran( uInfo ,"í" , "i")
+       uInfo := strtran( uInfo ,"ó" , "o")
+       uInfo := strtran( uInfo ,"ú" , "u")
+       uInfo := strtran( uInfo ,"à" , "a")
+       uInfo := strtran( uInfo ,"è" , "a")
+       uInfo := strtran( uInfo ,"ì" , "i")
+       uInfo := strtran( uInfo ,"ò" , "o")
+       uInfo := strtran( uInfo ,"ù" , "u")
+       uInfo := strtran( uInfo ,"-" , "")
+       uInfo := strtran( uInfo ,"%" , "")
+       uInfo := strtran( uInfo ,"/" , "")
+       uInfo := strtran( uInfo ," " , "")
+       uInfo := strtran( uInfo ,"Ñ" , "N")
+       uInfo := strtran( uInfo ,"ä" , "a")
+       uInfo := strtran( uInfo ,"ë" , "e")
+       uInfo := strtran( uInfo ,"ï" , "i")
+       uInfo := strtran( uInfo ,"ö" , "o")
+       uInfo := strtran( uInfo ,"ü" , "u")
+       uInfo := strtran( uInfo ,"Ä" , "A")
+       uInfo := strtran( uInfo ,"Ë" , "E")
+       uInfo := strtran( uInfo ,"Ï" , "I")
+       uInfo := strtran( uInfo ,"Ö" , "O")
+       uInfo := strtran( uInfo ,"Ü" , "U")
+
+   CASE nInfoType == DBS_TYPE
+       nType := ADO_GETFIELDTYPE( oRecordSet:Fields( nField ):Type )
+       DO CASE
+       CASE nType == HB_FT_STRING
+           uInfo := "C"
+       CASE nType == HB_FT_LOGICAL
+           uInfo := "L"
+       CASE nType == HB_FT_MEMO
+           uInfo := "M"
+       CASE nType == HB_FT_OLE
+           uInfo := "G"
+       CASE nType == HB_FT_PICTURE
+           uInfo := "P"
+       CASE nType == HB_FT_ANY
+           uInfo := "V"
+       CASE nType == HB_FT_DATE
+           uInfo := "D"
+       CASE nType == HB_FT_DATETIME
+           uInfo := "T"
+       CASE nType == HB_FT_TIMESTAMP
+           uInfo := "@"
+       CASE nType == HB_FT_LONG
+           uInfo := "N"
+       CASE nType == HB_FT_INTEGER
+           uInfo := "N"
+       CASE nType == HB_FT_DOUBLE
+           uInfo := "N"
+       OTHERWISE
+           uInfo := "U"
+       ENDCASE
+
+   CASE nInfoType == DBS_LEN
+        ADO_FIELDINFO( oRecordSet, nField, DBS_TYPE, @nType )
+        IF nType == 'N'
+           nLen := oRecordSet:Fields( nField ):Precision
+           if nLen &gt; 100
+              nLen  := 100
+           endif
+        ELSE
+           nLen := oRecordSet:Fields( nField ):DefinedSize
+        ENDIF
+        // Un campo mayor de 1024 lo consideramos un campo memo..
+        // CARACTER de 200
+        uInfo := If( nLen &gt; 1024, 600, nLen )
+
+   CASE nInfoType == DBS_DEC
+        ADO_FIELDINFO( oRecordSet, nField, DBS_LEN, @nLen )
+        ADO_FIELDINFO( oRecordSet, nField, DBS_TYPE, @nType )
+        IF oRecordSet:Fields( nField ):Type == adInteger
+            uInfo := 0
+        ELSEIF nType == 'N'
+            uInfo := Min( Max( 0, nLen - 1 - oRecordSet:Fields( nField ):DefinedSize ), 15 )
+        ELSE
+            uInfo := 0
+        ENDIF
+   CASE nInfoType == DBS_FLAG
+        uInfo := 0
+   CASE nInfoType == DBS_STEP
+        uInfo := 0
+   OTHERWISE
+       RETURN .F.
+   ENDCASE
+
+RETURN .T.
+
+STATIC FUNCTION ADO_GETFIELDTYPE( nADOFieldType )
+
+   LOCAL nDBFFieldType := 0
+
+   DO CASE
+
+      CASE nADOFieldType == adEmpty
+      CASE nADOFieldType == adTinyInt
+         nDBFFieldType := HB_FT_INTEGER
+
+      CASE nADOFieldType == adSmallInt
+         nDBFFieldType := HB_FT_INTEGER
+
+      CASE nADOFieldType == adInteger
+         nDBFFieldType := HB_FT_INTEGER
+
+      CASE nADOFieldType == adBigInt
+         nDBFFieldType := HB_FT_INTEGER
+
+      CASE nADOFieldType == adUnsignedTinyInt
+         nDBFFieldType := HB_FT_INTEGER
+      CASE nADOFieldType == adUnsignedSmallInt
+         nDBFFieldType := HB_FT_INTEGER
+      CASE nADOFieldType == adUnsignedInt
+         nDBFFieldType := HB_FT_INTEGER
+      CASE nADOFieldType == adUnsignedBigInt
+         nDBFFieldType := HB_FT_INTEGER
+      CASE nADOFieldType == adSingle
+         nDBFFieldType := HB_FT_INTEGER
+
+      CASE nADOFieldType == adDouble
+       nDBFFieldType := HB_FT_DOUBLE
+
+      CASE nADOFieldType == adCurrency
+         nDBFFieldType := HB_FT_INTEGER
+
+      CASE nADOFieldType == adDecimal
+         nDBFFieldType := HB_FT_LONG
+
+      CASE nADOFieldType == adNumeric
+         nDBFFieldType := HB_FT_LONG
+
+
+      CASE nADOFieldType == adError
+      CASE nADOFieldType == adUserDefined
+      CASE nADOFieldType == adVariant
+       nDBFFieldType := HB_FT_ANY
+
+      CASE nADOFieldType == adIDispatch
+
+      CASE nADOFieldType == adIUnknown
+
+      CASE nADOFieldType == adGUID
+       nDBFFieldType := HB_FT_STRING
+
+      CASE nADOFieldType == adDate
+         nDBFFieldType := HB_FT_DATETIME
+
+      CASE nADOFieldType == adDBDate
+         nDBFFieldType := HB_FT_DATETIME
+
+      CASE nADOFieldType == adDBTime
+
+      CASE nADOFieldType == adDBTimeStamp
+         nDBFFieldType := HB_FT_TIMESTAMP
+
+      CASE nADOFieldType == adFileTime
+         nDBFFieldType := HB_FT_DATETIME
+
+      CASE nADOFieldType == adBSTR
+       nDBFFieldType := HB_FT_STRING
+
+      CASE nADOFieldType == adChar
+         nDBFFieldType := HB_FT_STRING
+
+      CASE nADOFieldType == adVarChar
+         nDBFFieldType := HB_FT_STRING
+
+      CASE nADOFieldType == adLongVarChar
+         nDBFFieldType := HB_FT_STRING
+
+      CASE nADOFieldType == adWChar
+         nDBFFieldType := HB_FT_STRING
+
+      CASE nADOFieldType == adVarWChar
+         nDBFFieldType := HB_FT_STRING
+
+      CASE nADOFieldType == adBinary
+         nDBFFieldType := HB_FT_OLE
+
+      CASE nADOFieldType == adVarBinary
+         nDBFFieldType := HB_FT_OLE
+
+      CASE nADOFieldType == adLongVarBinary
+         nDBFFieldType := HB_FT_OLE
+
+      CASE nADOFieldType == adChapter
+
+      CASE nADOFieldType == adVarNumeric
+         nDBFFieldType := HB_FT_INTEGER
+
+      // case nADOFieldType == adArray
+
+      CASE nADOFieldType == adBoolean
+         nDBFFieldType := HB_FT_LOGICAL
+
+      CASE nADOFieldType == adLongVarWChar
+         nDBFFieldType := HB_FT_MEMO
+
+      CASE nADOFieldType == adPropVariant
+         nDBFFieldType := HB_FT_MEMO
+
+   ENDCASE
+
+RETURN nDBFFieldType
+
+
+//--------------------DEFINES ----------------------------------------
+// Para el método Open de Connection.  Modo apertura.
+#define     adAsyncConnect             16
+#define     adConnectUnspecified       -1
+
+// Donde colocamos el cursor ADO??
+#define     adUseClient                3
+#define     adUseNone                  1
+#define     adUseServer                2
+
+// Tipos de Cursores
+#define     adOpenDynamic              2
+#define     adOpenForwardOnly          0
+#define     adOpenKeyset               1
+#define     adOpenStatic               3
+#define     adOpenUnspecified          -1
+
+// Tipos de bloqueos
+#define     adLockBatchOptimistic      4
+#define     adLockOptimistic           3
+#define     adLockPessimistic          2
+#define     adLockReadOnly             1
+#define     adLockUnspecified          -1
+
+// Tipos de comandos
+#define     adCmdUnspecified           -1
+#define     adCmdText                  1
+#define     adCmdTable                 2
+#define     adCmdStoredProc            4
+#define     adCmdUnknown               8
+#define     adCmdFile                  256
+#define     adCmdTableDirect           512
+
+// Tipos de ejecuciones
+#define     adAsyncExecute             0x10 Indicates that the command should execute asynchronously.
+#define     adAsyncFetch               0x20 Indicates that the remaining rows after the initial quantity specified in the CacheSize property should be retrieved asynchronously.
+#define     adAsyncFetchNonBlocking    0x40 Indicates that the main thread never blocks while retrieving. If the requested row has not been retrieved, the current row automatically moves to the end of the file.
+#define     adExecuteNoRecords         0x80 Indicates that the command text is a command or stored procedure that does not return rows (for example, a command that only inserts data). If any rows are retrieved, they are discarded and not returned.
+#define     adExecuteStream            0x400 Indicates that the results of a command execution should be returned as a stream.
+#define     adExecuteRecord
+#define     adOptionUnspecified        -1
+
+#define adBigInt 20   // Indicates an eight-byte signed integer (DBTYPE_I8).
+#define adBinary 128  // Indicates a binary value (DBTYPE_BYTES).
+#define adBoolean 11  // Indicates a boolean value (DBTYPE_BOOL).
+#define adBSTR 8      // Indicates a null-terminated character string (Unicode) (DBTYPE_BSTR).
+#define adChapter 136 // Indicates a four-byte chapter value that identifies rows in a child rowset (DBTYPE_HCHAPTER).
+#define adChar 129    // Indicates a string value (DBTYPE_STR).
+#define adCurrency 6  // Indicates a currency value (DBTYPE_CY). Currency is a fixed-point number with four digits to the right of the decimal point. It is stored in an eight-byte signed integer scaled by 10,000.
+#define adDate 7      // Indicates a date value (DBTYPE_DATE). A date is stored as a double, the whole part of which is the number of days since December 30, 1899, and the fractional part of which is the fraction of a day.
+#define adDBDate 133  // Indicates a date value (yyyymmdd) (DBTYPE_DBDATE).
+#define adDBTime 134  // Indicates a time value (hhmmss) (DBTYPE_DBTIME).
+#define adDBTimeStamp 135 // Indicates a date/time stamp (yyyymmddhhmmss plus a fraction in billionths) (DBTYPE_DBTIMESTAMP).
+#define adDecimal 14  // Indicates an exact numeric value with a fixed precision and scale (DBTYPE_DECIMAL).
+#define adDouble 5    // Indicates a double-precision floating-point value (DBTYPE_R8).
+#define adEmpty 0     // Specifies no value (DBTYPE_EMPTY).
+#define adError 10    // Indicates a 32-bit error code (DBTYPE_ERROR).
+#define adFileTime 64 // Indicates a 64-bit value representing the number of 100-nanosecond intervals since January 1, 1601 (DBTYPE_FILETIME).
+#define adGUID 72     // Indicates a globally unique identifier (GUID) (DBTYPE_GUID).
+#define adIDispatch 9 // Indicates a pointer to an IDispatch interface on a COM object (DBTYPE_IDISPATCH).
+
+#define adInteger   3 // Indicates a four-byte signed integer (DBTYPE_I4).
+#define adIUnknown 13 // Indicates a pointer to an IUnknown interface on a COM object (DBTYPE_IUNKNOWN).
+
+#define adLongVarBinary 205 // Indicates a long binary value.
+#define adLongVarChar   201 // Indicates a long string value.
+#define adLongVarWChar  203 // Indicates a long null-terminated Unicode string value.
+#define adNumeric       131 // Indicates an exact numeric value with a fixed precision and scale (DBTYPE_NUMERIC).
+#define adPropVariant   138 // Indicates an Automation PROPVARIANT (DBTYPE_PROP_VARIANT).
+#define adSingle            4 // Indicates a single-precision floating-point value (DBTYPE_R4).
+#define adSmallInt          2 // Indicates a two-byte signed integer (DBTYPE_I2).
+#define adTinyInt          16 // Indicates a one-byte signed integer (DBTYPE_I1).
+#define adUnsignedBigInt   21 // Indicates an eight-byte unsigned integer (DBTYPE_UI8).
+#define adUnsignedInt      19 // Indicates a four-byte unsigned integer (DBTYPE_UI4).
+#define adUnsignedSmallInt 18 // Indicates a two-byte unsigned integer (DBTYPE_UI2).
+#define adUnsignedTinyInt  17 // Indicates a one-byte unsigned integer (DBTYPE_UI1).
+#define adUserDefined 132    // Indicates a user-defined variable (DBTYPE_UDT).
+#define adVarBinary   204    // Indicates a binary value (Parameter object only).
+#define adVarChar     200    // Indicates a string value.
+#define adVariant      12    // Indicates an Automation Variant (DBTYPE_VARIANT).
+
+#define adVarNumeric 139 // Indicates a numeric value (Parameter object only).
+#define adVarWChar   202 // Indicates a null-terminated Unicode character string.
+#define adWChar      130 // Indicates a null-terminated Unicode character string (DBTYPE_WSTR).
+
+#define adParamInput       1 // Default. Indicates that the parameter represents an input parameter.
+#define adParamInputOutput 3 // Indicates that the parameter represents both an input and output parameter.
+#define adParamOutput      2 // Indicates that the parameter represents an output parameter.
+#define adParamReturnValue 4 // Indicates that the parameter represents a return value.
+#define adParamUnknown     0 // Indicates that the parameter direction is unknown.
+
+#define HB_FT_NONE            0
+#define HB_FT_STRING          1     /* "C" */
+#define HB_FT_LOGICAL         2     /* "L" */
+#define HB_FT_DATE            3     /* "D" */
+#define HB_FT_LONG            4     /* "N" */
+#define HB_FT_FLOAT           5     /* "F" */
+#define HB_FT_INTEGER         6     /* "I" */
+#define HB_FT_DOUBLE          7     /* "B" */
+#define HB_FT_DATETIME        8     /* "T" */
+#define HB_FT_TIMESTAMP       9     /* "@" */
+#define HB_FT_MODTIME         10    /* "=" */
+#define HB_FT_ROWVER          11    /* "^" */
+#define HB_FT_AUTOINC         12    /* "+" */
+#define HB_FT_CURRENCY        13    /* "Y" */
+#define HB_FT_CURDOUBLE       14    /* "Z" */
+#define HB_FT_VARLENGTH       15    /* "Q" */
+#define HB_FT_MEMO            16    /* "M" */
+#define HB_FT_ANY             17    /* "V" */
+#define HB_FT_PICTURE         18    /* "P" */
+#define HB_FT_BLOB            19    /* "W" */
+#define HB_FT_OLE             20    /* "G" */
+
+
+/* Positions for field structure array */
+#define DBS_NAME        1
+#define DBS_TYPE        2
+#define DBS_LEN         3
+#define DBS_DEC         4
+#define DBS_FLAG        5
+#define DBS_STEP        6</code></pre></div></div>
+    </div>
+  </div>
+  <div class="post" id="p203656">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 08:54 AM
+      </div>
+      <div class="content">También, creo recordar que existe la function, no sé si te servirá para lo que necesitas <br>
+<br>
+<strong>FW_AdoExportToDBF( oRs, cDbf, lEditStruct )</strong></div>
+    </div>
+  </div>
+  <div class="post" id="p203658">
+    <div class="poster">
+      <div class="name" style="color:#105289">thefull</div>
+      <div class="rank">Posts: 731</div>
+      <img class="avatar avatar-img" src="avatars/24.jpg" alt="" loading="lazy">
+      Joined: Fri Oct 07, 2005 07:42 AM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 09:45 AM
+      </div>
+      <div class="content"><blockquote><cite>cnavarro wrote:</cite>También, creo recordar que existe la function, no sé si te servirá para lo que necesitas <br>
+<br>
+<strong>FW_AdoExportToDBF( oRs, cDbf, lEditStruct )</strong></blockquote><br>
+<br>
+Perfecto, veo que básicamente realiza lo mismo, desconocía de su existencia, pero creo que hace 10 años estas no estaban en Fivewin. <br>
+<br>
+Saludos</div>
+    </div>
+  </div>
+  <div class="post" id="p203665">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 02:09 PM
+      </div>
+      <div class="content"><blockquote><cite>cnavarro wrote:</cite>También, creo recordar que existe la function, no sé si te servirá para lo que necesitas <br>
+<br>
+<strong>FW_AdoExportToDBF( oRs, cDbf, lEditStruct )</strong></blockquote><br>
+<br>
+Donde consigo un ejemplo de como se usa esta funcion ?</div>
+    </div>
+  </div>
+  <div class="post" id="p203668">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 02:51 PM
+      </div>
+      <div class="content"><p>Puedes mirar esto o buscar algo más en el foro</p>
+<!-- l -->
+<p><a class="postlink-local" href="http://forums.fivetechsupport.com/viewtopic.php?f=3&amp;t=28839&amp;start=0&amp;hilit=FW_AdoExportToDBF">viewtopic.php?f=3t=28839start=0hilit=FW_AdoExportToDBF</a></p>
+<p>&amp;&amp;&amp;<!-- l --></p></div>
+    </div>
+  </div>
+  <div class="post" id="p203672">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 03:42 PM
+      </div>
+      <div class="content"><blockquote><cite>cnavarro wrote:</cite>Puedes mirar esto o buscar algo más en el foro<br>
+<br>
+<!-- l --><a class="postlink-local" href="http://forums.fivetechsupport.com/viewtopic.php?f=3&amp;t=28839&amp;start=0&amp;hilit=FW_AdoExportToDBF">viewtopic.php?f=3&amp;t=28839&amp;start=0&amp;hilit=FW_AdoExportToDBF</a><!-- l --></blockquote><br>
+<br>
+Navarro, estoy teniendo este error<br>
+<br>
+<strong>DBFCDX needs to be linked</strong><br>
+<br>
+Y este es mi codigo<br>
+<br>
+#include &quot;FiveWin.ch&quot;<br>
+<br>
+//----------------------------------------------------------------//<br>
+<br>
+function Main()<br>
+local cServer     := &quot;localhost\SQLEXPRESS&quot;<br>
+   local cUser       := &quot;SA&quot;<br>
+   local cPassword   := &quot;1234&quot;<br>
+   local cDatabase   := &quot;SBODemoUS&quot;<br>
+   local cTable      := &quot;OCRD&quot;<br>
+   local oCn, oRs, cDbf, lEditStruct:= .f.<br>
+   <br>
+<br>
+   //oCn   := FW_OpenAdoConnection( { &quot;MSSQL&quot;, cServer, cDatabase, cUser, cPassword }, .t. )<br>
+   oCn   := FW_OpenAdoConnection( { &quot;MSSQL&quot;, cServer, cDatabase }, .t. )<br>
+   if oCn == nil<br>
+      ? &quot;Connect Fail&quot;<br>
+   else<br>
+       oRs := FW_OpenRecordSet( oCn, cTable )<br>
+      if oRs == nil<br>
+         ? &quot;Fail to open table&quot;<br>
+      else<br>
+         XBROWSER oRs FASTEDIT TITLE cTable<br>
+         oRs:Close()<br>
+      endif<br>
+<br>
+      oCn:Close()<br>
+<br>
+   endif<br>
+<br>
+FW_AdoExportToDBF( oRs, cDbf, lEditStruct )<br>
+<br>
+return nil</div>
+    </div>
+  </div>
+  <div class="post" id="p203673">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 03:49 PM
+      </div>
+      <div class="content"><p>REQUEST DBFCDX ?</p></div>
+    </div>
+  </div>
+  <div class="post" id="p203674">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 03:51 PM
+      </div>
+      <div class="content"><p>Agregado REQUEST DBFCDX</p>
+<p>Ahora esto</p>
+<h1>Application</h1>
+<p>Path and name: C:\fwh1705\samples\mssql01.exe (32 bits)<br>
+   Size: 3,793,408 bytes<br>
+   Compiler version: Harbour 3.2.0dev (r1703231115)<br>
+   FiveWin  version: FWH 17.05<br>
+   C compiler version: Borland/Embarcadero C++ 7.0 (32-bit)<br>
+   Windows version: 6.2, Build 9200 </p>
+<p>Time from start: 0 hours 0 mins 2 secs <br>
+   Error occurred at: 07/13/17, 11:51:36<br>
+   Error description: Error BASE/1081  Argument error: +<br>
+   Args:<br>
+     [   1] = C   Can not create <br>
+     [   2] = U   </p>
+<h1>Stack Calls</h1>
+<p>Called from: .\source\function\ADOFUNCS.PRG =&gt; FW_ADOEXPORTTODBF( 1228 )<br>
+   Called from: mssql01.prg =&gt; MAIN( 35 )</p></div>
+    </div>
+  </div>
+  <div class="post" id="p203675">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 03:53 PM
+      </div>
+      <div class="content"><p>Ahora</p>
+<p>Can not create OCRD </p>
+<p>OCRD es mi cDbf</p></div>
+    </div>
+  </div>
+  <div class="post" id="p203677">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 04:01 PM
+      </div>
+      <div class="content"><p>Qué contiene oCrd, ha de ser el nombre de la DBF</p></div>
+    </div>
+  </div>
+  <div class="post" id="p203678">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 04:10 PM
+      </div>
+      <div class="content"><p>OCRD es la tabla que esta en Microsoft SQL y de la cual quiero crear la .DBF</p>
+<p>LO estoy colocando asi</p>
+<h1>include &quot;FiveWin.ch&quot;</h1>
+<p>//----------------------------------------------------------------//</p>
+<p>REQUEST DBFCDX</p>
+<p>function Main()<br>
+local cServer     := &quot;localhost\SQLEXPRESS&quot;<br>
+   local cUser       := &quot;SA&quot;<br>
+   local cPassword   := &quot;1234&quot;<br>
+   local cDatabase   := &quot;SBODemoUS&quot;<br>
+   local cTable      := &quot;OCRD&quot;<br>
+   local oCn, oRs, cDbf:=&quot;OCRD&quot;, lEditStruct:= .F.</p>
+<p>//oCn   := FW_OpenAdoConnection( { &quot;MSSQL&quot;, cServer, cDatabase, cUser, cPassword }, .t. )<br>
+   oCn   := FW_OpenAdoConnection( { &quot;MSSQL&quot;, cServer, cDatabase }, .t. )<br>
+   if oCn == nil<br>
+      ? &quot;Connect Fail&quot;<br>
+   else<br>
+       oRs := FW_OpenRecordSet( oCn, cTable )<br>
+      if oRs == nil<br>
+         ? &quot;Fail to open table&quot;<br>
+      else<br>
+         XBROWSER oRs FASTEDIT TITLE cTable<br>
+         oRs:Close()<br>
+      endif</p>
+<pre><code>  oCn:Close()
+</code></pre>
+<p>endif</p>
+<p>FW_AdoExportToDBF( oRs, cDbf, lEditStruct )</p>
+<p>return nil</p></div>
+    </div>
+  </div>
+  <div class="post" id="p203680">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 04:19 PM
+      </div>
+      <div class="content"><p>Qué version de Fw utilizas para ver qué hay en esa linea</p></div>
+    </div>
+  </div>
+  <div class="post" id="p203681">
+    <div class="poster">
+      <div class="name" style="color:#105289">Compuin</div>
+      <div class="rank">Posts: 1276</div>
+      <img class="avatar avatar-img" src="avatars/2076.png" alt="" loading="lazy">
+      Joined: Tue Dec 28, 2010 01:29 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 04:23 PM
+      </div>
+      <div class="content"><p>1705</p></div>
+    </div>
+  </div>
+  <div class="post" id="p203682">
+    <div class="poster">
+      <div class="name" style="color:#00AA00">cnavarro</div>
+      <div class="rank">Posts: 6755</div>
+      <img class="avatar avatar-img" src="avatars/2342.png" alt="" loading="lazy">
+      Joined: Wed Feb 15, 2012 08:25 PM
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span class="subject">Re: Pasar tablas SQL Server a DBF</span><br>
+        Posted: Thu Jul 13, 2017 04:54 PM
+      </div>
+      <div class="content"><p>Intenta no cerrando el oRs:Close()</p></div>
+    </div>
+  </div><div class="pagination">Page: <strong>1</strong> <a href="topic-34329-page-2.html">2</a> <a href="topic-34329-page-3.html">3</a> <a href="topic-34329-page-4.html">4</a> (47 posts)</div>
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList && t.classList.contains('cb-select')) {
+    e.preventDefault();
+    var pre = t.closest('.codebox').querySelector('pre');
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { document.execCommand('copy'); t.textContent = 'Copied!';
+      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
+    catch(_) {}
+  } else if (t.classList && t.classList.contains('cb-toggle')) {
+    e.preventDefault();
+    var box = t.closest('.codebox');
+    var pre = box.querySelector('pre');
+    if (pre.style.display === 'none') {
+      pre.style.display = '';
+      t.textContent = 'Collapse';
+    } else {
+      pre.style.display = 'none';
+      t.textContent = 'Expand';
+    }
+  }
+});
+</script>
+</body>
+</html>
