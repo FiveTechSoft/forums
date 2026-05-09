@@ -26,13 +26,13 @@ try:
 except ImportError:
     _MD = None
 
-GISCUS_REPO = "FiveTechSoft/forums-demo"
+GISCUS_REPO = "FiveTechSoft/forums"
 GISCUS_REPO_ID = "R_kgDOSYw8Sw"
 GISCUS_CATEGORY = "General"
 GISCUS_CATEGORY_ID = "DIC_kwDOSYw8S84C8qKa"
 
 NEW_THREAD_BASE = (
-    "https://github.com/FiveTechSoft/forums-demo/discussions/new?category=general"
+    "https://github.com/FiveTechSoft/forums/discussions/new?category=general"
 )
 
 
@@ -44,6 +44,49 @@ RE_UID = re.compile(r":[a-z0-9]{4,8}(?=[\]:])", re.IGNORECASE)
 RE_SMILEY_COMMENT = re.compile(r"<!--\s*s[^>]*?-->", re.IGNORECASE)
 RE_SMILEY_IMG = re.compile(r'<img\s+src="\{SMILIES_PATH\}/([^"]+)"[^>]*?/?>', re.IGNORECASE)
 RE_NUMERIC_ENTITY = re.compile(r"&#(\d+);")
+RE_FW_DIV = re.compile(r'<div\s+class="fw"[^>]*>(.*?)</div>', re.DOTALL | re.IGNORECASE)
+
+
+_LANG_MAP = {
+    "fw": "harbour", "fwh": "harbour", "harbour": "harbour", "xharbour": "harbour",
+    "clipper": "harbour", "prg": "harbour",
+    "c": "c", "cpp": "cpp", "c++": "cpp",
+    "js": "javascript", "javascript": "javascript",
+    "py": "python", "python": "python",
+    "sql": "sql", "html": "html", "css": "css", "json": "json",
+    "sh": "bash", "bash": "bash", "shell": "bash",
+    "php": "php", "ini": "ini", "xml": "xml", "yaml": "yaml",
+}
+
+
+def _emit_codebox(body: str, lang_hint: str) -> str:
+    body = _flatten_fw_block(body)
+    body = body.lstrip("\r\n").rstrip()
+    lang = _LANG_MAP.get(lang_hint.lower().strip(), "harbour" if not lang_hint else lang_hint.lower().strip())
+    safe = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        '<div class="codebox"><div class="codehead">'
+        f'<span>Code{f" ({lang_hint})" if lang_hint else ""}:</span> '
+        '<a href="#" class="cb-select">Select all</a> '
+        '<a href="#" class="cb-toggle">Collapse</a></div>'
+        f'<pre><code class="language-{lang}">{safe}</code></pre></div>'
+    )
+
+
+def _flatten_fw_block(body: str) -> str:
+    """phpBB stores [code=fw] bodies as pre-rendered HTML with inline color spans,
+    &nbsp;, &#40; and <br/>. Convert back to plain code text so highlight.js can
+    do its own coloring matching the active theme."""
+    m = RE_FW_DIV.search(body)
+    if m:
+        body = m.group(1)
+    body = re.sub(r"<br\s*/?>", "\n", body, flags=re.IGNORECASE)
+    body = re.sub(r"</?span[^>]*>", "", body, flags=re.IGNORECASE)
+    # decode named + numeric entities
+    body = body.replace("&nbsp;", " ").replace("&quot;", '"')
+    body = body.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    body = RE_NUMERIC_ENTITY.sub(lambda m: chr(int(m.group(1))), body)
+    return body
 RE_MERMAID_BB = re.compile(r"\[mermaid\](.*?)\[/mermaid\]", re.IGNORECASE | re.DOTALL)
 RE_MERMAID_FENCE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
 
@@ -62,8 +105,8 @@ def render_post_body(text: str, enable_markdown: int, enable_bbcode: int) -> str
 
     text2 = RE_MERMAID_BB.sub(stash_bb, text)
 
-    if enable_markdown and _MD is not None:
-        # Stash markdown-fence mermaid too
+    has_bbcode = bool(re.search(r"\[(code|quote|url|img|b|i|color|size|list|attachment)", text2, re.IGNORECASE))
+    if enable_markdown and not has_bbcode and _MD is not None:
         def stash_md(m: re.Match[str]) -> str:
             placeholders.append(m.group(1).strip())
             return f"\x00MERMAID{len(placeholders)-1}\x00"
@@ -109,12 +152,9 @@ def bbcode_to_html(text: str) -> str:
         (r"\[quote=\"([^\"]+)\"\]", r'<blockquote><cite>\1 wrote:</cite>'),
         (r"\[quote\]", r"<blockquote>"),
         (r"\[/quote\]", r"</blockquote>"),
-        # [code] and [code=lang] both supported. Wrap in codebox with select-all + toggle.
-        (r"\[code(?:=[^\]]*)?\](.*?)\[/code\]",
-         r'<div class="codebox"><div class="codehead"><span>Code:</span> '
-         r'<a href="#" class="cb-select">Select all</a> '
-         r'<a href="#" class="cb-toggle">Collapse</a></div>'
-         r'<pre><code>\1</code></pre></div>'),
+        # placeholder — code blocks get post-processed below to flatten & language-tag.
+        (r"\[code(?:=([^\]]*))?\](.*?)\[/code\]",
+         lambda m: _emit_codebox(m.group(2), m.group(1) or "")),
         (r"\[list\]", r"<ul>"),
         (r"\[list=1\]", r"<ol>"),
         (r"\[/list\]", r"</ul>"),
@@ -189,6 +229,55 @@ def page_footer() -> str:
     Static archive · New replies & topics via GitHub Discussions
   </div>
 </div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\\*', '\\*/'),
+      hljs.COMMENT('\\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\\s*\\w+' },
+      { className: 'number', begin: '\\b\\d+(\\.\\d+)?\\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
 <script type="module">
   import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
   var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
@@ -196,7 +285,14 @@ def page_footer() -> str:
   window.__mermaid = mermaid;
 </script>
 <script>
-// Theme toggle
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
 (function() {
   var btn = document.getElementById('theme-toggle');
   if (!btn) return;
@@ -205,8 +301,8 @@ def page_footer() -> str:
     var next = cur === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
     if (window.__mermaid) {
-      // Re-render mermaid blocks in new theme
       document.querySelectorAll('pre.mermaid').forEach(function(el) {
         if (el.dataset.src) el.textContent = el.dataset.src;
         else el.dataset.src = el.textContent;
