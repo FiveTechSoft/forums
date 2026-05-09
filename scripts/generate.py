@@ -26,6 +26,34 @@ try:
 except ImportError:
     _MD = None
 
+
+# Secret redaction. Patterns match common live-credential formats. We replace the
+# match with [REDACTED:type] so the post still reads sensibly but no functional
+# secret leaks. Original DB stays untouched — this only sanitizes generated HTML.
+SECRET_PATTERNS: list[tuple[str, str]] = [
+    (r"sk-[A-Za-z0-9]{20,}", "OPENAI_KEY"),
+    (r"sk-proj-[A-Za-z0-9_-]{20,}", "OPENAI_KEY"),
+    (r"AIza[A-Za-z0-9_\-]{35}", "GOOGLE_API_KEY"),
+    (r"\bsk\.[A-Za-z0-9_\-]{40,}\b", "MAPBOX_SECRET"),
+    (r"\bpk\.eyJ[A-Za-z0-9._\-]{60,}", "MAPBOX_PUBLIC"),
+    (r"\b\d{8,12}:[A-Za-z0-9_\-]{30,40}\b", "TELEGRAM_BOT"),
+    (r"AKIA[0-9A-Z]{16}", "AWS_ACCESS_KEY"),
+    (r"ghp_[A-Za-z0-9]{36}", "GITHUB_PAT"),
+    (r"github_pat_[A-Za-z0-9_]{60,}", "GITHUB_PAT"),
+    (r"gho_[A-Za-z0-9]{36}", "GITHUB_OAUTH"),
+    (r"xox[baprs]-[A-Za-z0-9-]{10,}", "SLACK_TOKEN"),
+    (r"-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+PRIVATE KEY-----", "PRIVATE_KEY_BLOCK"),
+]
+SECRET_REGEX = [(re.compile(p), tag) for p, tag in SECRET_PATTERNS]
+
+
+def redact_secrets(text: str) -> str:
+    if not text:
+        return text
+    for rx, tag in SECRET_REGEX:
+        text = rx.sub(f"[REDACTED:{tag}]", text)
+    return text
+
 GISCUS_REPO = "FiveTechSoft/forums"
 GISCUS_REPO_ID = "R_kgDOSYw8Sw"
 GISCUS_CATEGORY = "General"
@@ -42,9 +70,182 @@ RE_UID = re.compile(r":[a-z0-9]{4,8}(?=[\]:])", re.IGNORECASE)
 
 
 RE_SMILEY_COMMENT = re.compile(r"<!--\s*s[^>]*?-->", re.IGNORECASE)
-RE_SMILEY_IMG = re.compile(r'<img\s+src="\{SMILIES_PATH\}/([^"]+)"[^>]*?/?>', re.IGNORECASE)
+RE_SMILEY_IMG = re.compile(r'<img\s+src="\{SMILIES_PATH\}/([^"]+?)"[^>]*?/?>', re.IGNORECASE)
 RE_NUMERIC_ENTITY = re.compile(r"&#(\d+);")
 RE_FW_DIV = re.compile(r'<div\s+class="fw"[^>]*>(.*?)</div>', re.DOTALL | re.IGNORECASE)
+
+
+def _build_css() -> str:
+    return r"""/* FiveTech Support Forums - prosilver-derived palette + dark/light themes */
+* { box-sizing: border-box; }
+:root {
+  --c01:#1e90ff; --c02:#fff; --c03:#eee; --c04:#ddd; --c05:#ccc;
+  --c06:#bbb; --c07:#aaa; --c08:#a5a5a5; --c09:#d31141; --c10:#ead4d9;
+  --c11:#000; --c12:#333; --c13:#444; --c14:#fff; --c15:#fff;
+  --bg:        var(--c02);
+  --fg:        var(--c11);
+  --fg-muted:  var(--c12);
+  --row-alt:   #f9f9f9;
+  --border:    var(--c04);
+  --header-bg: linear-gradient(180deg,#12a3eb 0%,#00608f 100%);
+  --header-fg: #fff;
+  --link:      #105289;
+  --link-hover:#d31141;
+  --pre-bg:    #fafafa;
+  --quote-bg:  #f4f4f4;
+}
+html[data-theme="dark"] {
+  --c02:#222; --c03:#333; --c04:#444; --c05:#555;
+  --c06:#666; --c07:#6b6b6b; --c08:#7a7a7a; --c10:#6a1b2e;
+  --c11:#fff; --c12:#ccc; --c13:#ddd; --c14:#000;
+  --bg:#0e1620;
+  --fg:#c8d4e0;
+  --fg-muted:#9cb8d8;
+  --row-alt:#192536;
+  --border:#1f3047;
+  --header-bg:linear-gradient(180deg,#1a4a78 0%,#0a2742 100%);
+  --pre-bg:#0e1620;
+  --quote-bg:#1a2638;
+  --link:#5cb0ff;
+  --link-hover:#ff7a8c;
+}
+body {
+  margin:0; font-family: Verdana, Arial, Helvetica, sans-serif; font-size:12px;
+  background: var(--bg); color: var(--fg);
+}
+a { color: var(--link); text-decoration:none; }
+a:hover { color: var(--link-hover); text-decoration:underline; }
+img { max-width:100%; height:auto; }
+.wrap { max-width:1100px; margin:0 auto; padding:8px; }
+.header {
+  position:relative;
+  background: var(--header-bg); color: var(--header-fg);
+  padding:14px 20px; border-radius:6px 6px 0 0;
+  display:flex; align-items:center; gap:18px;
+}
+.header .logo img { display:block; max-height:60px; width:auto; }
+.header .header-text { flex:1; }
+.header h1 { margin:0; font-size:22px; font-weight:bold; letter-spacing:0.3px; }
+.header .sub { font-size:11px; opacity:0.9; margin-top:3px; }
+.theme-toggle { background:rgba(255,255,255,0.15); color:#fff;
+  border:1px solid rgba(255,255,255,0.4); border-radius:4px;
+  padding:4px 10px; cursor:pointer; font-size:14px; }
+.theme-toggle:hover { background:rgba(255,255,255,0.3); }
+.navbar {
+  background: var(--bg); border:1px solid var(--border); border-top:none;
+  padding:6px 12px; font-size:11px;
+}
+.navbar a { margin-right:14px; font-weight:bold; }
+.crumbs { padding:8px 0; font-size:11px; color: var(--fg-muted); }
+.crumbs a::after { content:" »"; color: var(--c06); }
+.cat {
+  background: var(--header-bg); color:#fff;
+  padding:6px 10px; font-weight:bold; font-size:12px;
+  border:1px solid var(--border); border-radius:4px 4px 0 0;
+  margin-top:14px; position:relative;
+}
+.cat .newbtn { position:absolute; right:8px; top:4px; background: var(--c02);
+  color: var(--link); padding:2px 8px; border-radius:3px; font-size:11px;
+  text-decoration:none; font-weight:normal; }
+table.forumlist { width:100%; border-collapse:collapse; background: var(--c02);
+  border:1px solid var(--border); }
+table.forumlist th { background: var(--c03); padding:5px 8px; text-align:left;
+  border-bottom:1px solid var(--border); font-size:11px; color: var(--fg-muted); }
+table.forumlist td { padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+table.forumlist tr:nth-child(even) td { background: var(--row-alt); }
+.forum-icon { width:24px; height:24px; background: var(--c01); border-radius:50%;
+  display:inline-block; vertical-align:middle; box-shadow:inset 0 -2px 4px rgba(0,0,0,0.2); }
+.forum-title { font-weight:bold; font-size:12px; }
+.forum-desc { color: var(--fg-muted); font-size:11px; margin-top:2px; }
+.num { text-align:center; width:80px; font-weight:bold; color: var(--fg-muted); }
+.lastpost { width:240px; font-size:11px; }
+.pagination { padding:8px 0; font-size:11px; }
+.pagination a, .pagination strong { padding:2px 6px; border:1px solid var(--border);
+  margin-right:3px; background: var(--c02); border-radius:3px; }
+.pagination strong { background: var(--c01); color:#fff; border-color: var(--c01); }
+
+/* posts */
+.post { background: var(--c02); border:1px solid var(--border); margin:8px 0;
+  display:grid; grid-template-columns:180px 1fr; }
+.poster { background: var(--c03); padding:12px; border-right:1px solid var(--border);
+  font-size:11px; color: var(--fg); }
+.poster .name { font-weight:bold; font-size:13px; }
+.poster .rank { color: var(--fg-muted); font-style:italic; margin:4px 0; }
+.poster .joined, .poster .location { color: var(--fg-muted); margin-top:4px; }
+.body { padding:12px 16px; color: var(--fg); }
+.body .meta { border-bottom:1px solid var(--border); padding-bottom:6px; margin-bottom:10px;
+  font-size:11px; color: var(--fg-muted); }
+.body .subject { font-weight:bold; color: var(--link); font-size:12px; }
+.body .content { font-size:13px; line-height:1.55; color: var(--fg); word-wrap:break-word; }
+.body .content p { margin:0 0 10px 0; }
+.body .content code { background: var(--c03); border:1px solid var(--border);
+  padding:1px 4px; font-family:Consolas, monospace; font-size:11px; }
+.body .content pre { background: var(--pre-bg); border:1px solid var(--border);
+  padding:8px; overflow-x:auto; font-family:Consolas, monospace; font-size:11px;
+  white-space:pre-wrap; }
+.body .content img { max-width:100%; }
+.signature { border-top:1px solid var(--border); margin-top:14px; padding-top:8px;
+  font-size:11px; color: var(--fg-muted); }
+.signature::before { content:"_________________"; display:block; margin-bottom:6px;
+  color: var(--c06); }
+
+/* avatars */
+img.avatar-img { width:90px; height:90px; object-fit:cover; border:1px solid var(--border);
+  margin:6px 0; display:block; }
+.poster .avatar { width:80px; height:80px; background: var(--c01); border:1px solid var(--border);
+  margin:6px 0; }
+
+/* smileys */
+img.smiley { vertical-align:middle; max-height:18px; width:auto; display:inline; }
+
+/* code box (BBCode [code]) */
+.codebox { background: var(--c02); border:1px solid var(--border); margin:6px 0; }
+.codebox .codehead { background: var(--c03); border-bottom:1px solid var(--border);
+  padding:3px 8px; font-size:10px; color: var(--fg-muted); }
+.codebox .codehead span { font-weight:bold; }
+.codebox .codehead a { margin-left:10px; cursor:pointer; }
+.codebox pre { margin:0; padding:8px 10px; max-height:400px; overflow:auto;
+  background: var(--pre-bg); font-family:Consolas, monospace; font-size:11px;
+  white-space:pre-wrap; word-break:break-word; color: var(--fg); }
+
+/* quote */
+blockquote { background: var(--quote-bg); border-left:3px solid var(--c01);
+  padding:6px 10px; margin:6px 0; }
+blockquote cite { display:block; font-style:italic; color: var(--fg-muted); font-size:10px; }
+
+/* mermaid */
+pre.mermaid { background: var(--c02); border:1px solid var(--border); padding:10px;
+  text-align:center; white-space:normal; }
+
+.attach { background:#fffbe6; padding:1px 4px; border:1px solid #f0d000; color:#000; }
+
+/* giscus */
+.giscus-wrap { background: var(--c02); border:1px solid var(--border); margin-top:14px;
+  padding:12px; }
+.giscus-wrap h3 { margin:0 0 10px 0; color: var(--fg-muted); font-size:13px;
+  border-bottom:1px solid var(--border); padding-bottom:6px; }
+
+/* footer */
+.footer { background: var(--c03); border:1px solid var(--border); border-top:none;
+  padding:10px; font-size:10px; color: var(--fg-muted); text-align:center;
+  border-radius:0 0 6px 6px; }
+
+/* memberlist */
+.memberlist { width:100%; border-collapse:collapse; background: var(--c02);
+  border:1px solid var(--border); margin-top:8px; }
+.memberlist th { background: var(--c03); padding:5px 8px; text-align:left;
+  border-bottom:1px solid var(--border); font-size:11px; color: var(--fg-muted); }
+.memberlist td { padding:6px 10px; border-bottom:1px solid var(--border); }
+.memberlist tr:nth-child(even) td { background: var(--row-alt); }
+.memberlist img.avatar-img { width:40px; height:40px; }
+
+@media (max-width:700px) {
+  .header { flex-direction:column; align-items:flex-start; }
+  .post { grid-template-columns:1fr; }
+  .poster { border-right:none; border-bottom:1px solid var(--border); }
+  .num, .lastpost { display:none; }
+}
+"""
 
 
 _LANG_MAP = {
@@ -96,6 +297,7 @@ def render_post_body(text: str, enable_markdown: int, enable_bbcode: int) -> str
     Mermaid blocks before/after main rendering so they survive untouched."""
     if not text:
         return ""
+    text = redact_secrets(text)
     # Stash mermaid blocks (BBCode form first, then markdown fenced if md path)
     placeholders: list[str] = []
 
@@ -134,9 +336,9 @@ def bbcode_to_html(text: str) -> str:
     if not text:
         return ""
     s = RE_UID.sub("", text)
-    # Strip phpBB smiley wrappers + smiley imgs entirely
+    # Replace phpBB smiley imgs with relative URL pointing to bundled smilies dir.
     s = RE_SMILEY_COMMENT.sub("", s)
-    s = RE_SMILEY_IMG.sub("", s)
+    s = RE_SMILEY_IMG.sub(r'<img class="smiley" src="smilies/\1" alt=":-)" loading="lazy">', s)
     rules: list[tuple[str, str]] = [
         (r"\[b\](.*?)\[/b\]", r"<strong>\1</strong>"),
         (r"\[i\](.*?)\[/i\]", r"<em>\1</em>"),
@@ -195,11 +397,13 @@ STYLE_HREF = "style.css"
 
 def page_header(title: str, depth: int = 0) -> str:
     css = ("../" * depth) + STYLE_HREF
+    base = ("../" * depth) or ""
     return f"""<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <title>{esc(title)}</title>
+<link rel="icon" href="{base}favicon.ico">
 <link rel="stylesheet" href="{css}">
 <script>
 (function() {{
@@ -211,12 +415,15 @@ def page_header(title: str, depth: int = 0) -> str:
 <body>
 <div class="wrap">
   <div class="header">
-    <h1>FiveTech Support Forums</h1>
-    <div class="sub">FiveWin / Harbour / xBase community</div>
+    <a class="logo" href="{base}index.html"><img src="{base}site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a>
+    <div class="header-text"><h1>FiveTech Support Forums</h1>
+    <div class="sub">FiveWin / Harbour / xBase community</div></div>
     <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button>
   </div>
   <div class="navbar">
-    <a href="{('../' * depth) or ''}index.html">Board index</a>
+    <a href="{base}index.html">Board index</a>
+    <a href="{base}memberlist.html">Memberlist</a>
+    <a href="{base}search.html">Search</a>
     <a href="https://github.com/{GISCUS_REPO}/discussions" target="_blank">All discussions</a>
     <a href="https://github.com/login" target="_blank">Login (GitHub)</a>
   </div>
@@ -315,29 +522,39 @@ applyHljsTheme(document.documentElement.getAttribute('data-theme'));
 })();
 // Code block: select all + collapse/expand
 document.addEventListener('click', function(e) {
-  var t = e.target;
-  if (t.classList && t.classList.contains('cb-select')) {
-    e.preventDefault();
-    var pre = t.closest('.codebox').querySelector('pre');
+  var t = e.target.closest('a.cb-select, a.cb-toggle');
+  if (!t) return;
+  e.preventDefault();
+  var box = t.closest('.codebox');
+  var pre = box && box.querySelector('pre');
+  if (!pre) return;
+
+  if (t.classList.contains('cb-select')) {
+    var text = pre.innerText;
+    // 1) visible selection so user sees what was copied
     var range = document.createRange();
     range.selectNodeContents(pre);
-    var sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-    try { document.execCommand('copy'); t.textContent = 'Copied!';
-      setTimeout(function(){ t.textContent = 'Select all'; }, 1500); }
-    catch(_) {}
-  } else if (t.classList && t.classList.contains('cb-toggle')) {
-    e.preventDefault();
-    var box = t.closest('.codebox');
-    var pre = box.querySelector('pre');
-    if (pre.style.display === 'none') {
-      pre.style.display = '';
-      t.textContent = 'Collapse';
+    var s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(range);
+    // 2) write to clipboard (async). Fallback to execCommand for old browsers.
+    var done = function(ok) {
+      t.textContent = ok ? 'Copied!' : 'Select failed';
+      t.classList.toggle('copy-ok', ok);
+      setTimeout(function(){ t.textContent = 'Select all';
+        t.classList.remove('copy-ok'); }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){done(true);}, function(){
+        try { done(document.execCommand('copy')); } catch(_) { done(false); }
+      });
     } else {
-      pre.style.display = 'none';
-      t.textContent = 'Expand';
+      try { done(document.execCommand('copy')); } catch(_) { done(false); }
     }
+  } else if (t.classList.contains('cb-toggle')) {
+    var hidden = pre.style.display === 'none';
+    pre.style.display = hidden ? '' : 'none';
+    t.textContent = hidden ? 'Collapse' : 'Expand';
   }
 });
 </script>
@@ -479,28 +696,35 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
         chunk = posts[p * POSTS_PER_PAGE : (p + 1) * POSTS_PER_PAGE]
         rendered: list[str] = []
         for pid, uid, uname, subj, ptext, ptime, bbcode_uid, en_md, en_bb in chunk:
+            sig_html = ""
+            location = ""
             if user_cache is not None and uid in user_cache:
-                display, colour, posts_count, regdate, avatar = user_cache[uid]
+                display, colour, posts_count, regdate, avatar, sig_raw, location = user_cache[uid]
             else:
                 u = cur.execute(
-                    "SELECT username, user_colour, user_posts, user_regdate, user_avatar FROM phpbb_users WHERE user_id=?",
+                    "SELECT username, user_colour, user_posts, user_regdate, user_avatar, "
+                    "COALESCE(user_sig,''), '' FROM phpbb_users WHERE user_id=?",
                     (uid,),
                 ).fetchone()
                 if u and u[0]:
-                    display, colour, posts_count, regdate, avatar = u
+                    display, colour, posts_count, regdate, avatar, sig_raw, location = u
                 else:
-                    display, colour, posts_count, regdate, avatar = uname or "Guest", "", 0, 0, ""
+                    display, colour, posts_count, regdate, avatar, sig_raw, location = uname or "Guest", "", 0, 0, "", "", ""
             body_html = render_post_body(ptext or "", en_md, en_bb)
+            if sig_raw:
+                sig_html = f'<div class="signature">{render_post_body(sig_raw, 0, 1)}</div>'
             if avatar:
                 avatar_html = f'<img class="avatar avatar-img" src="avatars/{uid}.{avatar}" alt="" loading="lazy">'
             else:
                 avatar_html = '<div class="avatar"></div>'
+            loc_html = f'<div class="location">{esc(location)}</div>' if location else ""
             rendered.append(f"""  <div class="post" id="p{pid}">
     <div class="poster">
       <div class="name" style="color:#{esc(colour or '105289')}">{esc(display)}</div>
       <div class="rank">Posts: {posts_count}</div>
       {avatar_html}
-      Joined: {fmt_time(regdate) if regdate else 'unknown'}
+      <div class="joined">Joined: {fmt_time(regdate) if regdate else 'unknown'}</div>
+      {loc_html}
     </div>
     <div class="body">
       <div class="meta">
@@ -508,6 +732,7 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
         Posted: {fmt_time(ptime)}
       </div>
       <div class="content">{body_html}</div>
+      {sig_html}
     </div>
   </div>""")
 
@@ -587,78 +812,10 @@ def main() -> None:
     args = ap.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
-    # copy style.css
-    src_css = os.path.join(os.path.dirname(__file__), "..", "style.css")
-    if os.path.exists(src_css):
-        with open(src_css, "r", encoding="utf-8") as f:
-            css = f.read()
-        # add a couple of extra rules used in generated pages
-        css += """
-.cat .newbtn { float:right; font-weight:normal; background:#fff; color:#0d4a72;
-  padding:2px 8px; border-radius:3px; font-size:11px; text-decoration:none; }
-.pagination { padding:8px; font-size:11px; }
-blockquote { background:#f4f4f4; border-left:3px solid #b9c7d2; padding:6px 10px;
-  margin:6px 0; }
-blockquote cite { display:block; font-style:italic; color:#777; font-size:10px; }
-.attach { background:#fffbe6; padding:1px 4px; border:1px solid #f0d000; }
-.codebox { background:#fff; border:1px solid #b9c7d2; margin:6px 0; }
-.codebox .codehead { background:#ecf3f7; border-bottom:1px solid #b9c7d2;
-  padding:3px 8px; font-size:10px; color:#536482; }
-.codebox .codehead span { font-weight:bold; }
-.codebox .codehead a { margin-left:10px; color:#105289; cursor:pointer; }
-.codebox pre { margin:0; padding:8px 10px; max-height:400px; overflow:auto;
-  background:#fafafa; font-family:Consolas, "Courier New", monospace; font-size:11px;
-  white-space:pre-wrap; word-break:break-word; }
-img.avatar-img { width:80px; height:80px; object-fit:cover; border:2px solid #fff;
-  outline:1px solid #b9c7d2; margin:6px 0; display:block; }
-html[data-theme="dark"] img.avatar-img { border-color:#1f3047; outline-color:#1f3047; }
-.theme-toggle { position:absolute; top:18px; right:18px; background:rgba(255,255,255,0.15);
-  color:#fff; border:1px solid rgba(255,255,255,0.4); border-radius:4px;
-  padding:4px 10px; cursor:pointer; font-size:14px; }
-.theme-toggle:hover { background:rgba(255,255,255,0.3); }
-.header { position:relative; }
-pre.mermaid { background:#fff; border:1px solid #b9c7d2; padding:10px; text-align:center;
-  white-space:normal; }
-
-/* ==================== DARK THEME ==================== */
-html[data-theme="dark"] body {
-  background:#0e1620 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1" height="200"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="%23142030"/><stop offset="1" stop-color="%230e1620"/></linearGradient></defs><rect width="1" height="200" fill="url(%23g)"/></svg>') repeat-x top;
-  color:#c8d4e0;
-}
-html[data-theme="dark"] a { color:#5cb0ff; }
-html[data-theme="dark"] a:hover { color:#ff7a8c; }
-html[data-theme="dark"] .header { background:linear-gradient(180deg,#1a4a78 0%,#0a2742 100%);
-  border-color:#082135; }
-html[data-theme="dark"] .navbar { background:#142030; border-color:#1f3047; color:#c8d4e0; }
-html[data-theme="dark"] .crumbs { color:#7aa6d0; }
-html[data-theme="dark"] .cat { background:linear-gradient(180deg,#1a4a78 0%,#0a2742 100%);
-  border-color:#082135; }
-html[data-theme="dark"] table.forumlist { background:#162130; border-color:#1f3047; color:#c8d4e0; }
-html[data-theme="dark"] table.forumlist th { background:#1d2d42; color:#9cb8d8;
-  border-color:#1f3047; }
-html[data-theme="dark"] table.forumlist td { border-color:#1a2638; }
-html[data-theme="dark"] table.forumlist tr:nth-child(even) td { background:#192536; }
-html[data-theme="dark"] .num, html[data-theme="dark"] table.forumlist th { color:#9cb8d8; }
-html[data-theme="dark"] .forum-desc, html[data-theme="dark"] .footer { color:#7a8a9e; }
-html[data-theme="dark"] .post { background:#162130; border-color:#1f3047; }
-html[data-theme="dark"] .poster { background:#1a2638; border-color:#1f3047; }
-html[data-theme="dark"] .body .meta { border-color:#1f3047; color:#7a8a9e; }
-html[data-theme="dark"] .body .content { color:#c8d4e0; }
-html[data-theme="dark"] .body .content code { background:#1a2638; border-color:#1f3047;
-  color:#e8a86f; }
-html[data-theme="dark"] .codebox { background:#162130; border-color:#1f3047; }
-html[data-theme="dark"] .codebox .codehead { background:#1a2638; border-color:#1f3047;
-  color:#9cb8d8; }
-html[data-theme="dark"] .codebox .codehead a { color:#5cb0ff; }
-html[data-theme="dark"] .codebox pre { background:#0e1620; color:#c8d4e0; }
-html[data-theme="dark"] blockquote { background:#1a2638; border-color:#5cb0ff; }
-html[data-theme="dark"] .footer { background:#142030; border-color:#1f3047; }
-html[data-theme="dark"] pre.mermaid { background:#162130; border-color:#1f3047; }
-html[data-theme="dark"] .body .content pre { background:#0e1620; border-color:#1f3047;
-  color:#c8d4e0; }
-"""
-        with open(os.path.join(args.out_dir, "style.css"), "w", encoding="utf-8") as f:
-            f.write(css)
+    # Write fresh CSS using prosilver-style palette via CSS variables.
+    css = _build_css()
+    with open(os.path.join(args.out_dir, "style.css"), "w", encoding="utf-8") as f:
+        f.write(css)
 
     conn = sqlite3.connect(args.db)
     conn.execute("PRAGMA query_only = 1")
@@ -691,9 +848,10 @@ html[data-theme="dark"] .body .content pre { background:#0e1620; border-color:#1
                 pass
     print(f"   {len(avatar_map)} avatars found")
     user_cache = {
-        row[0]: (row[1], row[2], row[3], row[4], avatar_map.get(row[0], ""))
+        row[0]: (row[1], row[2], row[3], row[4], avatar_map.get(row[0], ""), row[5] or "", "")
         for row in cur.execute(
-            "SELECT user_id, username, user_colour, user_posts, user_regdate, user_avatar FROM phpbb_users"
+            "SELECT user_id, username, user_colour, user_posts, user_regdate, "
+            "COALESCE(user_sig, '') FROM phpbb_users"
         )
     }
     print(f"   {len(user_cache)} users cached")
