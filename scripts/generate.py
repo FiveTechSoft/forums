@@ -417,12 +417,11 @@ def page_header(title: str, depth: int = 0) -> str:
   <div class="header">
     <a class="logo" href="{base}index.html"><img src="{base}site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a>
     <div class="header-text"><h1>FiveTech Support Forums</h1>
-    <div class="sub">FiveWin / Harbour / xBase community</div></div>
+    <div class="sub">FiveWin / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div>
     <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button>
   </div>
   <div class="navbar">
     <a href="{base}index.html">Board index</a>
-    <a href="{base}memberlist.html">Memberlist</a>
     <a href="{base}search.html">Search</a>
     <a href="https://github.com/{GISCUS_REPO}/discussions" target="_blank">All discussions</a>
     <a href="https://github.com/login" target="_blank">Login (GitHub)</a>
@@ -791,7 +790,7 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
             f'  <div class="header">'
             f'<a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a>'
             f'<div class="header-text"><h1>FiveTech Support Forums</h1>'
-            f'<div class="sub">FiveWin / Harbour / xBase community</div></div>'
+            f'<div class="sub">FiveWin / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div>'
             f'<button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>\n'
             f'  <div class="navbar">'
             f'<a href="index.html">Board index</a>'
