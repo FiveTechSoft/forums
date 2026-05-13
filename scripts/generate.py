@@ -213,6 +213,10 @@ blockquote { background: var(--quote-bg); border-left:3px solid var(--c01);
   padding:6px 10px; margin:6px 0; }
 blockquote cite { display:block; font-style:italic; color: var(--fg-muted); font-size:10px; }
 
+/* horizontal rule from markdown --- (was rendering as faux strikethrough) */
+.body .content hr { border:0; border-top:1px solid var(--border);
+  margin:14px 0; height:0; background:transparent; }
+
 /* mermaid */
 pre.mermaid { background: var(--c02); border:1px solid var(--border); padding:10px;
   text-align:center; white-space:normal; }
