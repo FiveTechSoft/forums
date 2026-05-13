@@ -303,14 +303,125 @@ def _flatten_fw_block(body: str) -> str:
 RE_MERMAID_BB = re.compile(r"\[mermaid\](.*?)\[/mermaid\]", re.IGNORECASE | re.DOTALL)
 RE_MERMAID_FENCE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
 
+# phpBB 3.2+ stores every post_text wrapped in either <r>...</r> (rich — BBCode
+# already parsed to s9e/text-formatter XML) or <t>...</t> (plain text, no markup).
+# Older dumps stored raw BBCode with no wrapper. The renderer below detects the
+# wrapper and walks the XML into HTML directly; without it the XML tags leaked
+# into the output as literal text and `<URL url=...>` lost its hyperlink.
+_RE_XML_WRAPPER = re.compile(r'^\s*<([rt])(?:\s[^>]*)?>(.*)</\1>\s*$', re.DOTALL)
+
+
+def _phpbb_xml_to_html(inner: str) -> str:
+    """Convert the contents of a phpBB <r> rich-XML wrapper into HTML.
+    Caller already stripped the outer <r>...</r>. Mermaid placeholders inserted
+    upstream pass through untouched."""
+    # s9e marks each BBCode token's source range with <s>[tag]</s> / <e>[/tag]</e>
+    # and inserts <i>...</i> for insignificant whitespace. None of it carries
+    # semantic content — strip before walking the real elements.
+    inner = re.sub(r'<s>[^<]*</s>', '', inner)
+    inner = re.sub(r'<e>[^<]*</e>', '', inner)
+    inner = re.sub(r'<i>[^<]*</i>', '', inner)
+    inner = re.sub(r'<br\s*/>', '<br>', inner)
+
+    # URL / EMAIL / IMG / LINK_TEXT — restore hyperlinks lost when the s9e tags
+    # were left raw. Fall back to the URL itself when the rendered label is empty.
+    def _url(m: re.Match[str]) -> str:
+        href = html.unescape(m.group(1))
+        label = m.group(2).strip() or html.escape(href)
+        return f'<a href="{html.escape(href, quote=True)}" rel="noopener">{label}</a>'
+
+    inner = re.sub(r'<URL url="([^"]+)"[^>]*>(.*?)</URL>', _url, inner, flags=re.DOTALL)
+    inner = re.sub(
+        r'<EMAIL email="([^"]+)"[^>]*>(.*?)</EMAIL>',
+        lambda m: f'<a href="mailto:{html.escape(html.unescape(m.group(1)), quote=True)}">'
+                  f'{m.group(2).strip() or html.escape(html.unescape(m.group(1)))}</a>',
+        inner, flags=re.DOTALL,
+    )
+    inner = re.sub(
+        r'<IMG src="([^"]+)"[^>]*>.*?</IMG>',
+        lambda m: f'<img src="{html.escape(html.unescape(m.group(1)), quote=True)}" alt="" loading="lazy">',
+        inner, flags=re.DOTALL,
+    )
+    inner = re.sub(
+        r'<LINK_TEXT text="([^"]+)"[^>]*>(.*?)</LINK_TEXT>',
+        lambda m: f'<a href="{html.escape(html.unescape(m.group(1)), quote=True)}" rel="noopener">'
+                  f'{m.group(2).strip() or html.escape(html.unescape(m.group(1)))}</a>',
+        inner, flags=re.DOTALL,
+    )
+
+    # Inline formatting. phpBB uses uppercase element names for BBCode-derived
+    # tags, so the match is case-sensitive (lowercase <i> above is whitespace).
+    inner = re.sub(r'<B>(.*?)</B>', r'<strong>\1</strong>', inner, flags=re.DOTALL)
+    inner = re.sub(r'<I>(.*?)</I>', r'<em>\1</em>', inner, flags=re.DOTALL)
+    inner = re.sub(r'<U>(.*?)</U>',
+                   r'<span style="text-decoration:underline">\1</span>',
+                   inner, flags=re.DOTALL)
+    inner = re.sub(r'<S>(.*?)</S>', r'<del>\1</del>', inner, flags=re.DOTALL)
+    inner = re.sub(
+        r'<COLOR color="([^"]+)"[^>]*>(.*?)</COLOR>',
+        lambda m: f'<span style="color:{html.escape(html.unescape(m.group(1)), quote=True)}">{m.group(2)}</span>',
+        inner, flags=re.DOTALL,
+    )
+    inner = re.sub(
+        r'<SIZE size="([^"]+)"[^>]*>(.*?)</SIZE>',
+        lambda m: f'<span style="font-size:{html.escape(html.unescape(m.group(1)), quote=True)}%">{m.group(2)}</span>',
+        inner, flags=re.DOTALL,
+    )
+
+    # Emoticon wrapper — keep the literal ":-)" / ":wink:" inside.
+    inner = re.sub(r'<E>([^<]*)</E>', r'\1', inner)
+
+    # QUOTE — author attribute populates the cite line.
+    inner = re.sub(
+        r'<QUOTE author="([^"]+)"[^>]*>(.*?)</QUOTE>',
+        lambda m: f'<blockquote><cite>{html.escape(html.unescape(m.group(1)))} wrote:</cite>{m.group(2)}</blockquote>',
+        inner, flags=re.DOTALL,
+    )
+    inner = re.sub(r'<QUOTE[^>]*>(.*?)</QUOTE>', r'<blockquote>\1</blockquote>', inner, flags=re.DOTALL)
+
+    # Lists. `type="decimal"` (or "1") = ordered.
+    inner = re.sub(r'<LIST\s+type="(?:decimal|1)"[^>]*>(.*?)</LIST>', r'<ol>\1</ol>', inner, flags=re.DOTALL)
+    inner = re.sub(r'<LIST[^>]*>(.*?)</LIST>', r'<ul>\1</ul>', inner, flags=re.DOTALL)
+    inner = re.sub(r'<LI[^>]*>(.*?)</LI>', r'<li>\1</li>', inner, flags=re.DOTALL)
+    inner = re.sub(r'<\*>(.*?)</\*>', r'<li>\1</li>', inner, flags=re.DOTALL)
+
+    # Attachment — display label only; the actual file lives outside the archive.
+    inner = re.sub(
+        r'<ATTACHMENT[^>]*>(.*?)</ATTACHMENT>',
+        r'<span class="attach">📎 \1</span>',
+        inner, flags=re.DOTALL,
+    )
+
+    # CODE: phpBB pre-renders the body to HTML inside the <CODE> element (often
+    # with a div.fw wrapper). Run it through the same flattener the BBCode path
+    # uses so highlight.js can re-colour against the active theme.
+    def _xml_code(m: re.Match[str]) -> str:
+        lang = (m.group(1) or "").strip()
+        return _emit_codebox(m.group(2), lang)
+
+    inner = re.sub(r'<CODE(?:\s+lang="([^"]*)")?[^>]*>(.*?)</CODE>',
+                   _xml_code, inner, flags=re.DOTALL)
+
+    # YouTube — accept either bare id or full URL inside.
+    inner = re.sub(
+        r'<YOUTUBE[^>]*>([^<]+)</YOUTUBE>',
+        r'<iframe width="560" height="315" src="https://www.youtube.com/embed/\1"'
+        r' frameborder="0" allowfullscreen></iframe>',
+        inner,
+    )
+
+    return inner
+
 
 def render_post_body(text: str, enable_markdown: int, enable_bbcode: int) -> str:
-    """Dispatch to BBCode or Markdown renderer based on per-post flags. Both can extract
-    Mermaid blocks before/after main rendering so they survive untouched."""
+    """Render stored post_text to HTML. Detection order:
+       1. phpBB 3.2+ s9e XML wrapper (<r>/<t>) — converted directly to HTML.
+       2. BBCode (if [tag] markers present) — legacy bbcode_to_html path.
+       3. Markdown — when enable_markdown=1 and no BBCode markers exist.
+    Mermaid blocks survive every path via placeholder substitution."""
     if not text:
         return ""
     text = redact_secrets(text)
-    # Stash mermaid blocks (BBCode form first, then markdown fenced if md path)
     placeholders: list[str] = []
 
     def stash_bb(m: re.Match[str]) -> str:
@@ -319,18 +430,31 @@ def render_post_body(text: str, enable_markdown: int, enable_bbcode: int) -> str
 
     text2 = RE_MERMAID_BB.sub(stash_bb, text)
 
-    has_bbcode = bool(re.search(r"\[(code|quote|url|img|b|i|color|size|list|attachment)", text2, re.IGNORECASE))
-    if enable_markdown and not has_bbcode and _MD is not None:
-        def stash_md(m: re.Match[str]) -> str:
-            placeholders.append(m.group(1).strip())
-            return f"\x00MERMAID{len(placeholders)-1}\x00"
-        text2 = RE_MERMAID_FENCE.sub(stash_md, text2)
-        _MD.reset()
-        body = _MD.convert(text2)
-    else:
-        body = bbcode_to_html(text2)
+    body: str | None = None
+    wrap = _RE_XML_WRAPPER.match(text2)
+    if wrap:
+        kind, inner = wrap.group(1), wrap.group(2)
+        if kind == "r":
+            body = _phpbb_xml_to_html(inner)
+        else:
+            # <t> is plain text. Convert <br/> back to real newlines so the
+            # downstream markdown/BBCode path treats the post normally.
+            text2 = re.sub(r'<br\s*/?>', '\n', inner)
 
-    # Restore mermaid blocks as <pre class="mermaid">
+    if body is None:
+        has_bbcode = bool(re.search(r"\[(code|quote|url|img|b|i|color|size|list|attachment)",
+                                    text2, re.IGNORECASE))
+        if enable_markdown and not has_bbcode and _MD is not None:
+            def stash_md(m: re.Match[str]) -> str:
+                placeholders.append(m.group(1).strip())
+                return f"\x00MERMAID{len(placeholders)-1}\x00"
+
+            text2 = RE_MERMAID_FENCE.sub(stash_md, text2)
+            _MD.reset()
+            body = _MD.convert(text2)
+        else:
+            body = bbcode_to_html(text2)
+
     def restore(m: re.Match[str]) -> str:
         idx = int(m.group(1))
         return f'<pre class="mermaid">{html.escape(placeholders[idx])}</pre>'
