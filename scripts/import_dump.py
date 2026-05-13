@@ -76,6 +76,7 @@ WANTED = {
             ("topic_first_poster_name", 14, "str"),
             ("topic_first_poster_colour", 15, "str"),
             ("topic_last_post_id", 16, "int"),
+            ("topic_last_poster_id", 17, "int"),
             ("topic_last_poster_name", 18, "str"),
             ("topic_last_post_time", 22, "int"),
             ("topic_moved_id", 24, "int"),
@@ -385,6 +386,7 @@ def import_dump(dump_path: str, db_path: str) -> None:
     print(f"[3/3] Creating indexes...")
     cur.execute("CREATE INDEX idx_topics_forum ON phpbb_topics(forum_id)")
     cur.execute("CREATE INDEX idx_posts_topic ON phpbb_posts(topic_id)")
+    cur.execute("CREATE INDEX idx_posts_poster ON phpbb_posts(poster_id)")
     cur.execute("CREATE INDEX idx_users_id ON phpbb_users(user_id)")
     conn.commit()
     conn.close()

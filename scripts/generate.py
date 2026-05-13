@@ -234,6 +234,16 @@ pre.mermaid { background: var(--c02); border:1px solid var(--border); padding:10
   padding:10px; font-size:10px; color: var(--fg-muted); text-align:center;
   border-radius:0 0 6px 6px; }
 
+/* user profile (head of user-{id}.html) */
+.userprofile { background: var(--c02); border:1px solid var(--border); margin:8px 0;
+  border-top:none; padding:12px 16px; }
+.userprofile-meta { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.userprofile-meta .name { font-weight:bold; font-size:14px; }
+.userprofile-meta .rank, .userprofile-meta .joined {
+  color: var(--fg-muted); font-size:11px; }
+.userprofile-meta img.avatar-img { margin:0; }
+.userprofile-meta .avatar { margin:0; }
+
 /* memberlist */
 .memberlist { width:100%; border-collapse:collapse; background: var(--c02);
   border:1px solid var(--border); margin-top:8px; }
@@ -384,6 +394,10 @@ def bbcode_to_html(text: str) -> str:
     return "".join(parts)
 
 
+POSTS_PER_PAGE = 15
+USER_POSTS_PER_PAGE = 50
+
+
 def fmt_time(ts: int) -> str:
     if not ts:
         return ""
@@ -392,6 +406,55 @@ def fmt_time(ts: int) -> str:
 
 def esc(s: str) -> str:
     return html.escape(s or "", quote=True)
+
+
+# Cache of {topic_id: {post_id: page_within_topic}} so each topic's post ordering
+# is computed once and reused for every "jump to last post" / "user posts" link.
+# Keyed on POSTS_PER_PAGE which is constant; if it ever varies we'd key the cache too.
+_topic_pages_cache: dict[int, dict[int, int]] = {}
+
+
+def get_post_page(cur: sqlite3.Cursor, topic_id: int, post_id: int) -> int:
+    """Return 1-based page that post_id lives on inside topic_id."""
+    if not topic_id or not post_id:
+        return 1
+    pages = _topic_pages_cache.get(topic_id)
+    if pages is None:
+        rows = cur.execute(
+            "SELECT post_id FROM phpbb_posts WHERE topic_id=? ORDER BY post_time, post_id",
+            (topic_id,),
+        ).fetchall()
+        pages = {pid: (i // POSTS_PER_PAGE) + 1 for i, (pid,) in enumerate(rows)}
+        _topic_pages_cache[topic_id] = pages
+    return pages.get(post_id, 1)
+
+
+def topic_post_url(topic_id: int, post_id: int, page: int) -> str:
+    fn = f"topic-{topic_id}.html" if page == 1 else f"topic-{topic_id}-page-{page}.html"
+    return f"{fn}#p{post_id}"
+
+
+# Username -> user_id resolver, populated once in main(). Used as a fallback for
+# rows whose poster_id column was 0/missing (e.g. older dumps lacking the column).
+_name_to_uid: dict[str, int] = {}
+
+
+def resolve_uid(uid: int, name: str) -> int:
+    if uid and uid > 0:
+        return uid
+    if name:
+        return _name_to_uid.get(name, 0)
+    return 0
+
+
+def user_link(uid: int, name: str, colour: str = "") -> str:
+    """Render a username, linked to user-{uid}.html when we know the uid.
+    Falls back to a styled span (no link) for guests or unknown users."""
+    safe = esc(name or "Guest")
+    style = f' style="color:#{esc(colour or "105289")}"'
+    if uid and uid > 0:
+        return f'<a href="user-{uid}.html"{style}>{safe}</a>'
+    return f'<span{style}>{safe}</span>'
 
 
 # ----------------------------- HTML templates ---------------------------------
@@ -585,13 +648,24 @@ def render_index(conn: sqlite3.Connection, out_dir: str) -> None:
         ).fetchall()
         for fid, fname, fdesc, ft, fp in children:
             last = cur.execute(
-                "SELECT topic_last_poster_name, topic_last_post_time FROM phpbb_topics "
-                "WHERE forum_id=? ORDER BY topic_last_post_time DESC LIMIT 1",
+                "SELECT topic_id, topic_last_post_id, "
+                "COALESCE(topic_last_poster_id,0), topic_last_poster_name, "
+                "topic_last_post_time "
+                "FROM phpbb_topics WHERE forum_id=? "
+                "ORDER BY topic_last_post_time DESC LIMIT 1",
                 (fid,),
             ).fetchone()
             last_str = ""
-            if last and last[1]:
-                last_str = f"by {esc(last[0])}<br>{fmt_time(last[1])}"
+            if last and last[4]:
+                ltid, lpid, lpuid, lpname, ltime = last
+                lpuid = resolve_uid(lpuid, lpname)
+                name_html = user_link(lpuid, lpname)
+                page = get_post_page(cur, ltid, lpid) if lpid else 1
+                href = topic_post_url(ltid, lpid, page) if lpid else f"topic-{ltid}.html"
+                last_str = (
+                    f'by {name_html}<br>'
+                    f'<a href="{href}" title="Go to last post">{fmt_time(ltime)}</a>'
+                )
             body.append(
                 f'      <tr><td><span class="forum-icon"></span>&nbsp;'
                 f'<a class="forum-title" href="forum-{fid}.html">{esc(fname)}</a>'
@@ -622,8 +696,10 @@ def render_forum(conn: sqlite3.Connection, out_dir: str, forum_id: int, page_siz
     fname = forum[0]
     # All visible topics, exclude moved (topic_moved_id != 0 means shadow)
     topics = cur.execute(
-        "SELECT topic_id, topic_title, topic_first_poster_name, topic_first_poster_colour, "
-        "topic_time, topic_last_poster_name, topic_last_post_time, topic_views, topic_type "
+        "SELECT topic_id, topic_title, topic_poster, topic_first_poster_name, "
+        "topic_first_poster_colour, topic_time, "
+        "topic_last_post_id, COALESCE(topic_last_poster_id,0), topic_last_poster_name, "
+        "topic_last_post_time, topic_views, topic_type "
         "FROM phpbb_topics WHERE forum_id=? AND COALESCE(topic_moved_id,0)=0 "
         "ORDER BY topic_type DESC, topic_last_post_time DESC",
         (forum_id,),
@@ -633,14 +709,25 @@ def render_forum(conn: sqlite3.Connection, out_dir: str, forum_id: int, page_siz
         chunk = topics[p * page_size : (p + 1) * page_size]
         rows = []
         for t in chunk:
-            tid, title, poster, colour, ttime, lname, ltime, views, ttype = t
+            (tid, title, p_uid, poster, colour, ttime,
+             lpid, lp_uid, lname, ltime, views, ttype) = t
             sticky = " [sticky]" if ttype and ttype >= 1 else ""
+            p_uid = resolve_uid(p_uid, poster)
+            lp_uid = resolve_uid(lp_uid, lname)
+            poster_html = user_link(p_uid, poster, colour or "555")
+            last_name_html = user_link(lp_uid, lname)
+            if lpid:
+                lpage = get_post_page(cur, tid, lpid)
+                last_href = topic_post_url(tid, lpid, lpage)
+            else:
+                last_href = f"topic-{tid}.html"
             rows.append(
                 f'      <tr><td><span class="forum-icon"></span>&nbsp;'
                 f'<a class="forum-title" href="topic-{tid}.html">{esc(title)}</a>{sticky}'
-                f'<div class="forum-desc">by <span style="color:#{esc(colour or "555")}">{esc(poster)}</span> · {fmt_time(ttime)}</div></td>'
+                f'<div class="forum-desc">by {poster_html} · {fmt_time(ttime)}</div></td>'
                 f'<td class="num">{views}</td>'
-                f'<td class="lastpost">by {esc(lname)}<br>{fmt_time(ltime)}</td></tr>'
+                f'<td class="lastpost">by {last_name_html}<br>'
+                f'<a href="{last_href}" title="Go to last post">{fmt_time(ltime)}</a></td></tr>'
             )
         page_links = ""
         if pages > 1:
@@ -666,9 +753,6 @@ def render_forum(conn: sqlite3.Connection, out_dir: str, forum_id: int, page_siz
         out = page_header(f"{fname} - FiveTech Support Forums") + "\n".join(body) + page_footer()
         with open(os.path.join(out_dir, fn), "w", encoding="utf-8") as f:
             f.write(out)
-
-
-POSTS_PER_PAGE = 15
 
 
 def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
@@ -721,9 +805,10 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
             else:
                 avatar_html = '<div class="avatar"></div>'
             loc_html = f'<div class="location">{esc(location)}</div>' if location else ""
+            display_html = user_link(resolve_uid(uid, display), display, colour or "105289")
             rendered.append(f"""  <div class="post" id="p{pid}">
     <div class="poster">
-      <div class="name" style="color:#{esc(colour or '105289')}">{esc(display)}</div>
+      <div class="name">{display_html}</div>
       <div class="rank">Posts: {posts_count}</div>
       {avatar_html}
       <div class="joined">Joined: {fmt_time(regdate) if regdate else 'unknown'}</div>
@@ -807,6 +892,71 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
             f.write(out)
 
 
+def render_user(conn: sqlite3.Connection, out_dir: str, uid: int,
+                user_cache: dict[int, tuple],
+                forum_names: dict[int, str],
+                posts: list[tuple]) -> None:
+    """Render user-{uid}.html (paginated) listing every post by this user, newest first.
+    `posts` is a list of (post_id, topic_id, post_time, post_subject, forum_id, topic_title)
+    already sorted DESC by (post_time, post_id) so we don't re-query per user."""
+    info = user_cache.get(uid)
+    if not info or not info[0]:
+        return
+    username, colour, posts_count, regdate, avatar, _sig, _location = info
+    if not posts:
+        return
+    cur = conn.cursor()
+    pages = max(1, (len(posts) + USER_POSTS_PER_PAGE - 1) // USER_POSTS_PER_PAGE)
+    avatar_html = (
+        f'<img class="avatar avatar-img" src="avatars/{uid}.{avatar}" alt="" loading="lazy">'
+        if avatar else '<div class="avatar"></div>'
+    )
+
+    for p in range(pages):
+        chunk = posts[p * USER_POSTS_PER_PAGE : (p + 1) * USER_POSTS_PER_PAGE]
+        list_rows = []
+        for pid, tid, ptime, subj, fid, ttitle in chunk:
+            page = get_post_page(cur, tid, pid)
+            href = topic_post_url(tid, pid, page)
+            fname = forum_names.get(fid, "")
+            list_rows.append(
+                f'      <tr><td><a class="forum-title" href="{href}">{esc(subj or ttitle)}</a>'
+                f'<div class="forum-desc">in <a href="forum-{fid}.html">{esc(fname)}</a> &middot; '
+                f'<a href="topic-{tid}.html">{esc(ttitle)}</a></div></td>'
+                f'<td class="lastpost">{fmt_time(ptime)}</td></tr>'
+            )
+        page_links = ""
+        if pages > 1:
+            page_links = " ".join(
+                f'<a href="user-{uid}-page-{i+1}.html">{i+1}</a>' if i != p
+                else f"<strong>{i+1}</strong>"
+                for i in range(pages)
+            )
+        body = [
+            f'  <div class="crumbs"><a href="index.html">Board index</a> '
+            f'User: {esc(username)}</div>',
+            '  <div class="userprofile">',
+            '    <div class="userprofile-meta">',
+            f'      {avatar_html}',
+            f'      <div class="name" style="color:#{esc(colour or "105289")}">{esc(username)}</div>',
+            f'      <div class="rank">Posts: {posts_count}</div>',
+            f'      <div class="joined">Joined: {fmt_time(regdate) if regdate else "unknown"}</div>',
+            '    </div>',
+            '  </div>',
+            f'  <div class="cat">Posts by {esc(username)} ({len(posts)} total)</div>',
+            '  <table class="forumlist">',
+            '    <thead><tr><th>Post</th><th class="lastpost">Posted</th></tr></thead>',
+            '    <tbody>',
+            "\n".join(list_rows),
+            '    </tbody></table>',
+            f'  <div class="pagination">Page: {page_links}</div>' if page_links else "",
+        ]
+        fn = f"user-{uid}.html" if p == 0 else f"user-{uid}-page-{p+1}.html"
+        out = page_header(f"Posts by {username} - FiveTech Support Forums") + "\n".join(body) + page_footer()
+        with open(os.path.join(out_dir, fn), "w", encoding="utf-8") as f:
+            f.write(out)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("db")
@@ -825,24 +975,11 @@ def main() -> None:
 
     conn = sqlite3.connect(args.db)
     conn.execute("PRAGMA query_only = 1")
-
-    print("[1/3] index...")
-    render_index(conn, args.out_dir)
-
-    print("[2/3] forums...")
     cur = conn.cursor()
-    if args.limit_forum:
-        forums = [(args.limit_forum,)]
-    else:
-        forums = cur.execute(
-            "SELECT forum_id FROM phpbb_forums WHERE forum_type=1 ORDER BY left_id"
-        ).fetchall()
-    for (fid,) in forums:
-        render_forum(conn, args.out_dir, fid)
 
-    print("[3/3] topics...")
-    print("   loading user cache...")
-    # Scan avatars dir to map user_id -> ext (if avatars present)
+    # Load user data first — index/forum pages now link usernames so we need
+    # the username->uid map populated before any rendering step runs.
+    print("[1/4] loading user cache...")
     avatar_dir = os.path.join(args.out_dir, "avatars")
     avatar_map: dict[int, str] = {}
     if os.path.isdir(avatar_dir):
@@ -861,20 +998,73 @@ def main() -> None:
         )
     }
     print(f"   {len(user_cache)} users cached")
+    # Populate username -> uid lookup for legacy rows lacking poster_id.
+    for uid, info in user_cache.items():
+        nm = info[0]
+        if nm and nm not in _name_to_uid:
+            _name_to_uid[nm] = uid
+
+    print("[2/4] index + forums...")
+    render_index(conn, args.out_dir)
+    if args.limit_forum:
+        forums = [(args.limit_forum,)]
+    else:
+        forums = cur.execute(
+            "SELECT forum_id FROM phpbb_forums WHERE forum_type=1 ORDER BY left_id"
+        ).fetchall()
+    for (fid,) in forums:
+        render_forum(conn, args.out_dir, fid)
+
+    print("[3/4] topics...")
     n = 0
     t0 = time.time()
+    topic_ids: list[int] = []
     for (fid,) in forums:
         q = "SELECT topic_id FROM phpbb_topics WHERE forum_id=? AND COALESCE(topic_moved_id,0)=0"
         params: tuple = (fid,)
         if args.limit_topics:
             q += " ORDER BY topic_last_post_time DESC LIMIT ?"
             params = (fid, args.limit_topics)
-        for (tid,) in cur.execute(q, params).fetchall():
-            render_topic(conn, args.out_dir, tid, user_cache=user_cache)
-            n += 1
-            if n % 500 == 0:
-                print(f"   {n} topics in {time.time()-t0:.1f}s")
-    print(f"Done. {n} topics generated.")
+        topic_ids.extend(tid for (tid,) in cur.execute(q, params).fetchall())
+    for tid in topic_ids:
+        render_topic(conn, args.out_dir, tid, user_cache=user_cache)
+        n += 1
+        if n % 500 == 0:
+            print(f"   {n} topics in {time.time()-t0:.1f}s")
+    print(f"   {n} topics generated.")
+
+    print("[4/4] user pages...")
+    # Bulk-fetch every post grouped by author. Sorted so each user's slice is
+    # already newest-first; we just slice into pages of USER_POSTS_PER_PAGE.
+    # Filter posts to topics we actually generated (respect --limit-forum/--limit-topics).
+    forum_names = {fid: name for fid, name in
+                   cur.execute("SELECT forum_id, forum_name FROM phpbb_forums")}
+    allowed_topics: set[int] | None = None
+    if args.limit_forum or args.limit_topics:
+        allowed_topics = set(topic_ids)
+    posts_by_user: dict[int, list[tuple]] = {}
+    rows = cur.execute(
+        "SELECT p.poster_id, p.post_id, p.topic_id, p.post_time, p.post_subject, "
+        "p.forum_id, t.topic_title "
+        "FROM phpbb_posts p JOIN phpbb_topics t ON t.topic_id=p.topic_id "
+        "WHERE p.poster_id > 0 AND COALESCE(t.topic_moved_id,0)=0 "
+        "ORDER BY p.poster_id, p.post_time DESC, p.post_id DESC"
+    )
+    skipped = 0
+    for poster_id, pid, tid, ptime, subj, fid, ttitle in rows:
+        if allowed_topics is not None and tid not in allowed_topics:
+            skipped += 1
+            continue
+        posts_by_user.setdefault(poster_id, []).append((pid, tid, ptime, subj, fid, ttitle))
+    print(f"   {len(posts_by_user)} authors, {sum(len(v) for v in posts_by_user.values())} posts")
+    u = 0
+    t1 = time.time()
+    for uid, plist in posts_by_user.items():
+        render_user(conn, args.out_dir, uid, user_cache, forum_names, plist)
+        u += 1
+        if u % 200 == 0:
+            print(f"   {u} users in {time.time()-t1:.1f}s")
+    print(f"Done. {n} topics, {u} user pages generated.")
 
 
 if __name__ == "__main__":
