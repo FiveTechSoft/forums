@@ -26,237 +26,225 @@
         <span class="subject">This is the code behind that community post. You know the one.</span><br>
         Posted: Thu Mar 26, 2026 07:54 AM
       </div>
-      <div class="content"><r><p>Hello friends,</p><br>
-<br>
-<p>Reading Benjamin's list made me think. Not because the projects aren't impressive – they are. But because most of us have built similar things, separately, and never connected the dots.</p><br>
-<br>
-<p>So instead of another list of projects, here is a pattern that came out of the last few months of work. Something everyone here can actually use.</p><br>
-<br>
-<HR>---</HR><br>
-<br>
-<p><STRONG><s>**</s>The core idea: one adapter, one service<e>**</e></STRONG></p><br>
-<br>
-<p>Most of us are connecting FiveWin to external systems – Oracle, SAT, ContPAQ, REST APIs of all kinds. And most of us are solving that problem differently every single time.</p><br>
-<br>
-<p>What if we had a common base?</p><br>
-<br>
-<p>The architecture is simple:</p><br>
-<br>
-<CODE><s>```</s><i><br>
-</i>FiveWin (UI + Business Logic)<br>
-    ↓<br>
-Universal JSON Adapter<br>
-    ↓<br>
-Microservice (your own small Harbour server)<br>
-    ↓<br>
-External systems: Oracle, SAT, APIs, DB...<i><br>
-</i><e>```</e></CODE><br>
-<br>
-<p>Two parts. Clear responsibilities.</p><br>
-<br>
-<HR>---</HR><br>
-<br>
-<p><STRONG><s>**</s>Part 1: The JSON Adapter (FiveWin side)<e>**</e></STRONG></p><br>
-<br>
-<p>The adapter has one job: talk JSON, know endpoints, nothing else.</p><br>
-<br>
-<CODE lang="harbour"><s>```harbour</s><i><br>
-</i>// -----------------------------------------------------------------------<br>
-// Universal JSON Adapter – FiveWin side<br>
-// -----------------------------------------------------------------------<br>
-FUNCTION ApiRequest( cEndpoint, hData )<br>
-   LOCAL hConfig, cUrl, cResponse<br>
-<br>
-   // Load endpoint config from JSON file<br>
-   hConfig  = LoadEndpoint( cEndpoint )<br>
-   cUrl     = hConfig["base_url"] + hConfig["path"]<br>
-<br>
-   // HTTP call (WinHttp / Curl / whatever you use)<br>
-   cResponse = HttpPost( cUrl, hb_jsonEncode( hData ), hConfig["headers"] )<br>
-<br>
-   RETURN hb_jsonDecode( cResponse )<br>
-<br>
-RETURN NIL<br>
-<br>
-// -----------------------------------------------------------------------<br>
-// Example: Create an order<br>
-// -----------------------------------------------------------------------<br>
-FUNCTION CreateOrderInERP()<br>
-   LOCAL hOrder, hResponse, cOrderId<br>
-<br>
-   hOrder = hb_Hash()<br>
-   hOrder["order_number"] = "INV-2026-0001"<br>
-   hOrder["customer_id"]  = 12345<br>
-   hOrder["total"]        = 299.99<br>
-   hOrder["currency"]     = "EUR"<br>
-<br>
-   hOrder["items"] = { ;<br>
-      { "sku" =&gt; "A100", "qty" =&gt; 1, "price" =&gt; 199.99 }, ;<br>
-      { "sku" =&gt; "B200", "qty" =&gt; 2, "price" =&gt; 50.00 } ;<br>
-   }<br>
-<br>
-   hResponse = ApiRequest( "orders_create", hOrder )<br>
-<br>
-   IF ! Empty( hResponse )<br>
-      cOrderId = hb_HGet( hResponse, "id" )<br>
-      MsgInfo( "Order created: " + cOrderId, "Success" )<br>
-   ELSE<br>
-      MsgStop( "Transfer failed", "Error" )<br>
-   ENDIF<br>
-<br>
-RETURN NIL<i><br>
-</i><e>```</e></CODE><br>
-<br>
-<p>FiveWin knows nothing about Oracle. Nothing about SAT. Just: send this, get that back.</p><br>
-<br>
-<HR>---</HR><br>
-<br>
-<p><STRONG><s>**</s>Part 2: The Endpoint configuration<e>**</e></STRONG></p><br>
-<br>
-<p>Instead of hardcoding URLs and auth into your code, define each endpoint in a simple JSON file:</p><br>
-<br>
-<CODE lang="json"><s>```json</s><i><br>
-</i>{<br>
-  "name":     "orders_create",<br>
-  "base_url": "http://localhost:8080",<br>
-  "path":     "/api/orders",<br>
-  "method":   "POST",<br>
-  "headers":  { "Authorization": "Bearer YOUR_TOKEN" },<br>
-  "timeout":  30<br>
-}<i><br>
-</i><e>```</e></CODE><br>
-<br>
-<p>Three practical options for managing these configs:</p><br>
-<br>
-<p><STRONG><s>**</s>Hash in code<e>**</e></STRONG> – fast to start, not scalable. Fine for version 1.</p><br>
-<br>
-<p><STRONG><s>**</s>JSON files<e>**</e></STRONG> (recommended to start) – one file per endpoint: <C><s>`</s>oracle_orders.json<e>`</e></C>, <C><s>`</s>sat_diot.json<e>`</e></C>, <C><s>`</s>oxxo.json<e>`</e></C>. Easy to change without recompile. AI can generate them directly.</p><br>
-<br>
-<p><STRONG><s>**</s>Database<e>**</e></STRONG> – dynamic, multi-user, more complex. A topic for phase 2.</p><br>
-<br>
-<HR>---</HR><br>
-<br>
-<p><STRONG><s>**</s>Part 3: The Microservice (Harbour server side)<e>**</e></STRONG></p><br>
-<br>
-<p>This is where things get interesting. The microservice is not a big system. It is a small Harbour server that exposes clean endpoints and handles all the complexity that does not belong in FiveWin.</p><br>
-<br>
-<CODE lang="harbour"><s>```harbour</s><i><br>
-</i>// -----------------------------------------------------------------------<br>
-// Mini Harbour Microservice – example endpoints<br>
-// -----------------------------------------------------------------------<br>
-FUNCTION HandleRequest( cPath, cMethod, cBody )<br>
-   LOCAL hData := hb_jsonDecode( cBody )<br>
-<br>
-   DO CASE<br>
-   CASE cPath == "/api/health"<br>
-      RETURN JsonOk( { "status" =&gt; "ok" } )<br>
-<br>
-   CASE cPath == "/api/orders" .AND. cMethod == "POST"<br>
-      RETURN ProcessOrder( hData )<br>
-<br>
-   CASE cPath == "/api/diot" .AND. cMethod == "POST"<br>
-      RETURN ProcessDiot( hData )<br>
-<br>
-   OTHERWISE<br>
-      RETURN JsonError( "Unknown endpoint" )<br>
-   ENDCASE<br>
-<br>
-RETURN NIL<br>
-<br>
-// -----------------------------------------------------------------------<br>
-FUNCTION ProcessOrder( hData )<br>
-   // Here: connect to Oracle, ContPAQ, whatever you need<br>
-   // FiveWin never sees this complexity<br>
-   LOCAL hResult := hb_Hash()<br>
-   hResult["id"]     = "ORD-001"<br>
-   hResult["status"] = "created"<br>
-RETURN JsonOk( hResult )<br>
-<br>
-// -----------------------------------------------------------------------<br>
-FUNCTION JsonOk( hData )<br>
-   hData["success"] = .T.<br>
-RETURN hb_jsonEncode( hData )<br>
-<br>
-FUNCTION JsonError( cMsg )<br>
-RETURN hb_jsonEncode( { "success" =&gt; .F., "error" =&gt; cMsg } )<i><br>
-</i><e>```</e></CODE><br>
-<br>
-<p>The microservice handles: business logic, API integration, authentication, data transformation. FiveWin handles none of that. It just calls <C><s>`</s>ApiRequest()<e>`</e></C> and gets an answer.</p><br>
-<br>
-<HR>---</HR><br>
-<br>
-<p><STRONG><s>**</s>Why this matters – and why Functions, not Classes<e>**</e></STRONG></p><br>
-<br>
-<p>Notice what is not here: no class hierarchy, no factory, no inheritance chain. Just functions with clear inputs and outputs.</p><br>
-<br>
-<p>That is intentional. For this kind of integration work, functions are the right tool:</p><br>
-<br>
-<LIST><LI><s>- </s>You see exactly what goes in and comes out</LI><br>
-<LI><s>- </s>AI generates them reliably and correctly</LI><br>
-<LI><s>- </s>You can open the code two years later and still understand it</LI><br>
-<LI><s>- </s>The microservice pattern works <EM><s>*</s>because<e>*</e></EM> each function does one thing</LI></LIST><br>
-<br>
-<p>Classes have their place. But for connecting systems, moving data, and building integrations – functions win every time.</p><br>
-<br>
-<HR>---</HR><br>
-<br>
-<p><STRONG><s>**</s>The connection to AI<e>**</e></STRONG></p><br>
-<br>
-<p>This architecture works especially well with AI assistance because:</p><br>
-<br>
-<p>Ask ChatGPT or Claude: <EM><s>*</s>"generate a JSON endpoint config for Oracle order API"<e>*</e></EM> → you get a working file in seconds.</p><br>
-<br>
-<p>Ask ChatGPT or Claude: <EM><s>*</s>"write a Harbour function that processes a DIOT request"<e>*</e></EM> → clean, testable function, immediately usable.</p><br>
-<br>
-<p>The adapter stays the same. Only the endpoint config and the service logic change per project. That is the real productivity gain – not magic, just a reusable structure.</p><br>
-<br>
-<HR>---</HR><br>
-<br>
-<p><STRONG><s>**</s>One more thought – where this architecture leads<e>**</e></STRONG></p><br>
-<br>
-<p>Once the adapter and microservice are in place, something interesting becomes possible.</p><br>
-<br>
-<p>Right now, FiveWin calls a service and gets data back. Clean, simple, useful. But the next logical step in this architecture is not just getting data – it is getting <EM><s>*</s>reasoning<e>*</e></EM>.</p><br>
-<br>
-<p>Instead of:</p><br>
-<br>
-<CODE><s>```</s><i><br>
-</i>FiveWin → asks for data → gets answer<i><br>
-</i><e>```</e></CODE><br>
-<br>
-<p>imagine:</p><br>
-<br>
-<CODE><s>```</s><i><br>
-</i>FiveWin → describes a situation → service thinks → returns decision<i><br>
-</i><e>```</e></CODE><br>
-<br>
-<p>The microservice does not just fetch an Oracle record. It reasons about it. Checks availability, cross-references bookings, weighs options – and returns a structured answer that FiveWin can act on directly.</p><br>
-<br>
-<p>The technical foundation for this already exists in the community. The jump from "adapter calls API" to "adapter calls reasoning engine" is smaller than it looks – and the same JSON structure handles both.</p><br>
-<br>
-<p>For our kind of business software – hotel systems, ERP, inventory, billing – this would change what "integration" means entirely.</p><br>
-<br>
-<p>Worth a separate thread when we have the adapter basics sorted.</p><br>
-<br>
-<HR>---</HR><br>
-<br>
-<p><STRONG><s>**</s>What I would find interesting to discuss here<e>**</e></STRONG></p><br>
-<br>
-<p>We all have experience with pieces of this. Oracle connections, SAT integrations, REST calls. Nobody has put it together as a shared base yet.</p><br>
-<br>
-<p>Some open questions worth discussing:</p><br>
-<br>
-<LIST><LI><s>- </s>How are others handling authentication (Bearer tokens, OAuth) in Harbour?</LI><br>
-<LI><s>- </s>JSON file vs. database for endpoint configs – what works in practice?</LI><br>
-<LI><s>- </s>How does this connect to the reasoning loop work already happening in the community?</LI></LIST><br>
-<br>
-<p>Happy to share more code if there is interest.</p><br>
-<br>
-<p><B><s><strong></s>Drop your experiences below – sharing the patterns behind them benefits all of us, especially by learning from each other’s experience.<e></strong></e></B></p><br>
-<br>
-<p>Best regards,<br/><br>
-Otto</p></r></div>
-      <div class="signature"><t></t></div>
+      <div class="content"><p>Hello friends,</p>
+
+<p>Reading Benjamin's list made me think. Not because the projects aren't impressive – they are. But because most of us have built similar things, separately, and never connected the dots.</p>
+
+<p>So instead of another list of projects, here is a pattern that came out of the last few months of work. Something everyone here can actually use.</p>
+
+<HR>---</HR>
+
+<p><STRONG>The core idea: one adapter, one service</STRONG></p>
+
+<p>Most of us are connecting FiveWin to external systems – Oracle, SAT, ContPAQ, REST APIs of all kinds. And most of us are solving that problem differently every single time.</p>
+
+<p>What if we had a common base?</p>
+
+<p>The architecture is simple:</p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FiveWin (UI + Business Logic)
+    ↓
+Universal JSON Adapter
+    ↓
+Microservice (your own small Harbour server)
+    ↓
+External systems: Oracle, SAT, APIs, DB...</code></pre></div>
+
+<p>Two parts. Clear responsibilities.</p>
+
+<HR>---</HR>
+
+<p><STRONG>Part 1: The JSON Adapter (FiveWin side)</STRONG></p>
+
+<p>The adapter has one job: talk JSON, know endpoints, nothing else.</p>
+
+<div class="codebox"><div class="codehead"><span>Code (harbour):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// -----------------------------------------------------------------------
+// Universal JSON Adapter – FiveWin side
+// -----------------------------------------------------------------------
+FUNCTION ApiRequest( cEndpoint, hData )
+   LOCAL hConfig, cUrl, cResponse
+
+   // Load endpoint config from JSON file
+   hConfig  = LoadEndpoint( cEndpoint )
+   cUrl     = hConfig["base_url"] + hConfig["path"]
+
+   // HTTP call (WinHttp / Curl / whatever you use)
+   cResponse = HttpPost( cUrl, hb_jsonEncode( hData ), hConfig["headers"] )
+
+   RETURN hb_jsonDecode( cResponse )
+
+RETURN NIL
+
+// -----------------------------------------------------------------------
+// Example: Create an order
+// -----------------------------------------------------------------------
+FUNCTION CreateOrderInERP()
+   LOCAL hOrder, hResponse, cOrderId
+
+   hOrder = hb_Hash()
+   hOrder["order_number"] = "INV-2026-0001"
+   hOrder["customer_id"]  = 12345
+   hOrder["total"]        = 299.99
+   hOrder["currency"]     = "EUR"
+
+   hOrder["items"] = { ;
+      { "sku" =&gt; "A100", "qty" =&gt; 1, "price" =&gt; 199.99 }, ;
+      { "sku" =&gt; "B200", "qty" =&gt; 2, "price" =&gt; 50.00 } ;
+   }
+
+   hResponse = ApiRequest( "orders_create", hOrder )
+
+   IF ! Empty( hResponse )
+      cOrderId = hb_HGet( hResponse, "id" )
+      MsgInfo( "Order created: " + cOrderId, "Success" )
+   ELSE
+      MsgStop( "Transfer failed", "Error" )
+   ENDIF
+
+RETURN NIL</code></pre></div>
+
+<p>FiveWin knows nothing about Oracle. Nothing about SAT. Just: send this, get that back.</p>
+
+<HR>---</HR>
+
+<p><STRONG>Part 2: The Endpoint configuration</STRONG></p>
+
+<p>Instead of hardcoding URLs and auth into your code, define each endpoint in a simple JSON file:</p>
+
+<div class="codebox"><div class="codehead"><span>Code (json):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-json">{
+  "name":     "orders_create",
+  "base_url": "http://localhost:8080",
+  "path":     "/api/orders",
+  "method":   "POST",
+  "headers":  { "Authorization": "Bearer YOUR_TOKEN" },
+  "timeout":  30
+}</code></pre></div>
+
+<p>Three practical options for managing these configs:</p>
+
+<p><STRONG>Hash in code</STRONG> – fast to start, not scalable. Fine for version 1.</p>
+
+<p><STRONG>JSON files</STRONG> (recommended to start) – one file per endpoint: <C>oracle_orders.json</C>, <C>sat_diot.json</C>, <C>oxxo.json</C>. Easy to change without recompile. AI can generate them directly.</p>
+
+<p><STRONG>Database</STRONG> – dynamic, multi-user, more complex. A topic for phase 2.</p>
+
+<HR>---</HR>
+
+<p><STRONG>Part 3: The Microservice (Harbour server side)</STRONG></p>
+
+<p>This is where things get interesting. The microservice is not a big system. It is a small Harbour server that exposes clean endpoints and handles all the complexity that does not belong in FiveWin.</p>
+
+<div class="codebox"><div class="codehead"><span>Code (harbour):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// -----------------------------------------------------------------------
+// Mini Harbour Microservice – example endpoints
+// -----------------------------------------------------------------------
+FUNCTION HandleRequest( cPath, cMethod, cBody )
+   LOCAL hData := hb_jsonDecode( cBody )
+
+   DO CASE
+   CASE cPath == "/api/health"
+      RETURN JsonOk( { "status" =&gt; "ok" } )
+
+   CASE cPath == "/api/orders" .AND. cMethod == "POST"
+      RETURN ProcessOrder( hData )
+
+   CASE cPath == "/api/diot" .AND. cMethod == "POST"
+      RETURN ProcessDiot( hData )
+
+   OTHERWISE
+      RETURN JsonError( "Unknown endpoint" )
+   ENDCASE
+
+RETURN NIL
+
+// -----------------------------------------------------------------------
+FUNCTION ProcessOrder( hData )
+   // Here: connect to Oracle, ContPAQ, whatever you need
+   // FiveWin never sees this complexity
+   LOCAL hResult := hb_Hash()
+   hResult["id"]     = "ORD-001"
+   hResult["status"] = "created"
+RETURN JsonOk( hResult )
+
+// -----------------------------------------------------------------------
+FUNCTION JsonOk( hData )
+   hData["success"] = .T.
+RETURN hb_jsonEncode( hData )
+
+FUNCTION JsonError( cMsg )
+RETURN hb_jsonEncode( { "success" =&gt; .F., "error" =&gt; cMsg } )</code></pre></div>
+
+<p>The microservice handles: business logic, API integration, authentication, data transformation. FiveWin handles none of that. It just calls <C>ApiRequest()</C> and gets an answer.</p>
+
+<HR>---</HR>
+
+<p><STRONG>Why this matters – and why Functions, not Classes</STRONG></p>
+
+<p>Notice what is not here: no class hierarchy, no factory, no inheritance chain. Just functions with clear inputs and outputs.</p>
+
+<p>That is intentional. For this kind of integration work, functions are the right tool:</p>
+
+<ul><li>You see exactly what goes in and comes out</li>
+<li>AI generates them reliably and correctly</li>
+<li>You can open the code two years later and still understand it</li>
+<li>The microservice pattern works <EM>because</EM> each function does one thing</li></ul>
+
+<p>Classes have their place. But for connecting systems, moving data, and building integrations – functions win every time.</p>
+
+<HR>---</HR>
+
+<p><STRONG>The connection to AI</STRONG></p>
+
+<p>This architecture works especially well with AI assistance because:</p>
+
+<p>Ask ChatGPT or Claude: <EM>"generate a JSON endpoint config for Oracle order API"</EM> → you get a working file in seconds.</p>
+
+<p>Ask ChatGPT or Claude: <EM>"write a Harbour function that processes a DIOT request"</EM> → clean, testable function, immediately usable.</p>
+
+<p>The adapter stays the same. Only the endpoint config and the service logic change per project. That is the real productivity gain – not magic, just a reusable structure.</p>
+
+<HR>---</HR>
+
+<p><STRONG>One more thought – where this architecture leads</STRONG></p>
+
+<p>Once the adapter and microservice are in place, something interesting becomes possible.</p>
+
+<p>Right now, FiveWin calls a service and gets data back. Clean, simple, useful. But the next logical step in this architecture is not just getting data – it is getting <EM>reasoning</EM>.</p>
+
+<p>Instead of:</p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FiveWin → asks for data → gets answer</code></pre></div>
+
+<p>imagine:</p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">FiveWin → describes a situation → service thinks → returns decision</code></pre></div>
+
+<p>The microservice does not just fetch an Oracle record. It reasons about it. Checks availability, cross-references bookings, weighs options – and returns a structured answer that FiveWin can act on directly.</p>
+
+<p>The technical foundation for this already exists in the community. The jump from "adapter calls API" to "adapter calls reasoning engine" is smaller than it looks – and the same JSON structure handles both.</p>
+
+<p>For our kind of business software – hotel systems, ERP, inventory, billing – this would change what "integration" means entirely.</p>
+
+<p>Worth a separate thread when we have the adapter basics sorted.</p>
+
+<HR>---</HR>
+
+<p><STRONG>What I would find interesting to discuss here</STRONG></p>
+
+<p>We all have experience with pieces of this. Oracle connections, SAT integrations, REST calls. Nobody has put it together as a shared base yet.</p>
+
+<p>Some open questions worth discussing:</p>
+
+<ul><li>How are others handling authentication (Bearer tokens, OAuth) in Harbour?</li>
+<li>JSON file vs. database for endpoint configs – what works in practice?</li>
+<li>How does this connect to the reasoning loop work already happening in the community?</li></ul>
+
+<p>Happy to share more code if there is interest.</p>
+
+<p><strong>Drop your experiences below – sharing the patterns behind them benefits all of us, especially by learning from each other’s experience.</strong></p>
+
+<p>Best regards,<br>
+Otto</p></div>
+      <div class="signature"></div>
     </div>
   </div>
   <div class="giscus-wrap">

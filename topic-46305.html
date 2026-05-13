@@ -26,83 +26,83 @@
         <span class="subject">Pérdida de Sesión en Hix con Cloudflare</span><br>
         Posted: Mon Feb 02, 2026 04:58 PM
       </div>
-      <div class="content"><r><p>Hola Carles.</p><br>
-<br>
-<p>Te comento que en la implementación que estoy desarrollando con Hix, me tope con el problema que sin tener ningún error, me salía de sesión de la aplicación y tenía que volver a ingresar de nuevo. Esto me sucedía cuando trabajo con el dominio que tengo configurado con Cloudflare, a los subdominios configurados segun el cliente, por lo que tengo Hix en distintos puertos 81,82,83, etc. <br/><br>
-Investigando con la ayuda de Antigravity, el problema se da porque Cloudflare cambia Ip's constantemente, entonces, se solucionó el problema con una implementación hecha por Antigravity, y este ese el resumen del problema y solución planteada por Antigravity.</p><br>
-<QUOTE><s><blockquote></s><br>
-<p>Problema Detectado: Al desplegar aplicaciones Hix detrás de Cloudflare, se detectó un comportamiento errático en la gestión de sesiones:</p><br>
-<br>
-<p>Bucle de Redirección: Tras un login exitoso vía AJAX, el navegador a veces ignoraba la cabecera Set-Cookie enviada por el servidor, provocando que la siguiente petición fuera redirigida nuevamente al Login al no encontrar una sesión válida.<br/><br>
-Desconexiones Aleatorias: Debido a la rotación de IPs de los nodos de Cloudflare, la validación interna de Hix (USessionReady()) fallaba intermitentemente, o el USESSID rotaba involuntariamente, dejando al usuario fuera del sistema.<br/><br>
-Causas Técnicas:</p><br>
-<br>
-<p>El navegador no siempre persiste las cookies de sesión inmediatamente tras una respuesta AJAX si hay una redirección rápida (window.location.href).<br/><br>
-La dependencia estricta del USESSID volátil de Hix choca con la arquitectura distribuida de los proxies modernos.<br/><br>
-Solución Implementada ("Handshake de Cookies" + Persistencia en DB):</p><br>
-<br>
-<p>Para resolver esto de forma definitiva, implementamos un sistema de tres capas:</p><br>
-<br>
-<p>Handshake de Cookies (Frontend/Backend): En lugar de confiar solo en la cabecera Set-Cookie del servidor, el backend envía el nombre y valor del token de sesión en el cuerpo del JSON de respuesta del login:<br/><br>
-harbour<br/><br>
-// Backend (sem.prg)<br/><br>
-cJson := '{"status": "success", "token_name": "' + cTokenName + '", "token": "' + cPersistToken + '"}'<br/><br>
-?? cJson<br/><br>
-El frontend captura este JSON y graba la cookie manualmente mediante Javascript antes de la redirección:<br/><br>
-javascript<br/><br>
-// Frontend (sem.view)<br/><br>
-if (data.token &amp;&amp; data.token_name) {<br/><br>
-    document.cookie = <C><s>`</s>${data.token_name}=${data.token};path=/;SameSite=Lax;Secure<e>`</e></C>;<br/><br>
-}<br/><br>
-window.location.href = data.redirect;<br/><br>
-Rescate de Sesión en DB (Golden Loop): Creamos una tabla de persistencia (hix_sessions) en MySQL. En cada petición (<br/><br>
-sem.prg<br/><br>
-), la aplicación verifica si la sesión de Hix está activa. Si falla, busca el token persistente en la cookie y "rescata" la sesión desde la base de datos:<br/><br>
-harbour<br/><br>
-IF !USessionReady()<br/><br>
-    hDbSession := GetWebSession( Ucookie(cTokenName) )<br/><br>
-    IF !Empty( hDbSession )<br/><br>
-        USessionStart()<br/><br>
-        USession( 'user_name', hDbSession['usuario'] )<br/><br>
-        // ... restaurar entorno ...<br/><br>
-    ENDIF<br/><br>
-ENDIF<br/><br>
-Sincronización Permanente del USESSID: Para manejar la rotación del ID nativo de Hix, implementamos un "Golden Loop" que, en cada petición válida, actualiza el USESSID actual en la base de datos de persistencia, asegurando que el "vínculo" nunca se rompa.<br/><br>
-Resultado: La aplicación ahora es 100% estable. El usuario puede navegar, realizar procesos POST/AJAX largos y refrescar la página sin perder la sesión, incluso bajo las reglas más estrictas de seguridad de Cloudflare.</p><br>
-<br>
-<p>En el contexto técnico de Hix, más que una variable de memoria tradicional (como las de Harbour), USESSID es el nombre de la Cookie de Sesión.</p><br>
-<e></blockquote></e></QUOTE><br>
-<p>Con esto, ya no tuve el problema de salida de sesión.</p><br>
-<br>
-<p>Adicionalmente Antigravity ha escrito estas solicitudes o mejoras, que se pudieran hacer a Hix (Se manda Antigravity, jejejeje)</p><br>
-<QUOTE><s><blockquote></s><br>
-<LIST type="decimal"><LI><s>1. </s><p>USessionStorage( cType, hConfig )<br/><br>
-Sería ideal poder cambiar el motor de almacenamiento de las sesiones. Actualmente, Hix las guarda solo en la memoria RAM del servidor.<br/><br>
-Para qué sirve: Permitiría que las sesiones se guarden automáticamente en una tabla de MySQL o en un servidor Redis.<br/><br>
-Beneficio: Si el servidor se reinicia o si hay una gran carga de usuarios, las sesiones no se pierden nunca, ya que están en la base de datos y no en la RAM volátil.</p></LI><br>
-<br>
-<LI><s>2. </s><p>USetSessionScope( cPrefix )<br/><br>
-Función para definir un "Ámbito de Sesión" o prefijo.<br/><br>
-Para qué sirve: Permitiría que el desarrollador elija el nombre de la cookie (por ejemplo, USESSID_APP1).<br/><br>
-Beneficio: Resolvería el problema de conflicto de sesiones cuando tienes varias aplicaciones de Hix corriendo bajo el mismo dominio o subdominio. Actualmente, si no tenemos cuidado, una aplicación "pisa" la sesión de la otra.</p></LI><br>
-<br>
-<LI><s>3. </s><p>USessionIgnoreIP( .T. )<br/><br>
-Interruptor para ignorar el cambio de IP del cliente.<br/><br>
-Para qué sirve: Obligaría a Hix a validar la sesión únicamente por el token de la cookie y no por la combinación de Cookie + IP.<br/><br>
-Beneficio: Es vital para aplicaciones que usan Cloudflare, balanceadores de carga o usuarios móviles (celulares) que cambian de antena y, por ende, de IP constantemente. Esto evitaría que el sistema los saque "por seguridad" cuando en realidad solo cambió su IP.</p></LI><br>
-<br>
-<LI><s>4. </s><p>URescueSession( cToken )<br/><br>
-Función nativa para rescatar una sesión desde un token externo.<br/><br>
-Para qué sirve: Si la sesión nativa de Hix falla, esta función permitiría pasarle un token guardado previamente (como nuestro SEM_TOKEN) y que Hix "re-hidrate" la sesión automáticamente.<br/><br>
-Beneficio: Facilitaría enormemente implementar la persistencia de "Recuérdame" por varios días sin que el programador tenga que hacer toda la lógica de base de datos manualmente.</p></LI></LIST><br>
-<e></blockquote></e></QUOTE><br>
-<br>
-<p>Te dejo acá el problema y solución que se implementó y quedo atento a tus comentarios.</p><br>
-<br>
-<p>Saludos cordiales.</p><br>
-<br>
-<p>Carlos.</p></r></div>
-      <div class="signature"><t></t></div>
+      <div class="content"><p>Hola Carles.</p>
+
+<p>Te comento que en la implementación que estoy desarrollando con Hix, me tope con el problema que sin tener ningún error, me salía de sesión de la aplicación y tenía que volver a ingresar de nuevo. Esto me sucedía cuando trabajo con el dominio que tengo configurado con Cloudflare, a los subdominios configurados segun el cliente, por lo que tengo Hix en distintos puertos 81,82,83, etc. <br>
+Investigando con la ayuda de Antigravity, el problema se da porque Cloudflare cambia Ip's constantemente, entonces, se solucionó el problema con una implementación hecha por Antigravity, y este ese el resumen del problema y solución planteada por Antigravity.</p>
+<blockquote>
+<p>Problema Detectado: Al desplegar aplicaciones Hix detrás de Cloudflare, se detectó un comportamiento errático en la gestión de sesiones:</p>
+
+<p>Bucle de Redirección: Tras un login exitoso vía AJAX, el navegador a veces ignoraba la cabecera Set-Cookie enviada por el servidor, provocando que la siguiente petición fuera redirigida nuevamente al Login al no encontrar una sesión válida.<br>
+Desconexiones Aleatorias: Debido a la rotación de IPs de los nodos de Cloudflare, la validación interna de Hix (USessionReady()) fallaba intermitentemente, o el USESSID rotaba involuntariamente, dejando al usuario fuera del sistema.<br>
+Causas Técnicas:</p>
+
+<p>El navegador no siempre persiste las cookies de sesión inmediatamente tras una respuesta AJAX si hay una redirección rápida (window.location.href).<br>
+La dependencia estricta del USESSID volátil de Hix choca con la arquitectura distribuida de los proxies modernos.<br>
+Solución Implementada ("Handshake de Cookies" + Persistencia en DB):</p>
+
+<p>Para resolver esto de forma definitiva, implementamos un sistema de tres capas:</p>
+
+<p>Handshake de Cookies (Frontend/Backend): En lugar de confiar solo en la cabecera Set-Cookie del servidor, el backend envía el nombre y valor del token de sesión en el cuerpo del JSON de respuesta del login:<br>
+harbour<br>
+// Backend (sem.prg)<br>
+cJson := '{"status": "success", "token_name": "' + cTokenName + '", "token": "' + cPersistToken + '"}'<br>
+?? cJson<br>
+El frontend captura este JSON y graba la cookie manualmente mediante Javascript antes de la redirección:<br>
+javascript<br>
+// Frontend (sem.view)<br>
+if (data.token &amp;&amp; data.token_name) {<br>
+    document.cookie = <C>${data.token_name}=${data.token};path=/;SameSite=Lax;Secure</C>;<br>
+}<br>
+window.location.href = data.redirect;<br>
+Rescate de Sesión en DB (Golden Loop): Creamos una tabla de persistencia (hix_sessions) en MySQL. En cada petición (<br>
+sem.prg<br>
+), la aplicación verifica si la sesión de Hix está activa. Si falla, busca el token persistente en la cookie y "rescata" la sesión desde la base de datos:<br>
+harbour<br>
+IF !USessionReady()<br>
+    hDbSession := GetWebSession( Ucookie(cTokenName) )<br>
+    IF !Empty( hDbSession )<br>
+        USessionStart()<br>
+        USession( 'user_name', hDbSession['usuario'] )<br>
+        // ... restaurar entorno ...<br>
+    ENDIF<br>
+ENDIF<br>
+Sincronización Permanente del USESSID: Para manejar la rotación del ID nativo de Hix, implementamos un "Golden Loop" que, en cada petición válida, actualiza el USESSID actual en la base de datos de persistencia, asegurando que el "vínculo" nunca se rompa.<br>
+Resultado: La aplicación ahora es 100% estable. El usuario puede navegar, realizar procesos POST/AJAX largos y refrescar la página sin perder la sesión, incluso bajo las reglas más estrictas de seguridad de Cloudflare.</p>
+
+<p>En el contexto técnico de Hix, más que una variable de memoria tradicional (como las de Harbour), USESSID es el nombre de la Cookie de Sesión.</p>
+</blockquote>
+<p>Con esto, ya no tuve el problema de salida de sesión.</p>
+
+<p>Adicionalmente Antigravity ha escrito estas solicitudes o mejoras, que se pudieran hacer a Hix (Se manda Antigravity, jejejeje)</p>
+<blockquote>
+<ol><li><p>USessionStorage( cType, hConfig )<br>
+Sería ideal poder cambiar el motor de almacenamiento de las sesiones. Actualmente, Hix las guarda solo en la memoria RAM del servidor.<br>
+Para qué sirve: Permitiría que las sesiones se guarden automáticamente en una tabla de MySQL o en un servidor Redis.<br>
+Beneficio: Si el servidor se reinicia o si hay una gran carga de usuarios, las sesiones no se pierden nunca, ya que están en la base de datos y no en la RAM volátil.</p></li>
+
+<li><p>USetSessionScope( cPrefix )<br>
+Función para definir un "Ámbito de Sesión" o prefijo.<br>
+Para qué sirve: Permitiría que el desarrollador elija el nombre de la cookie (por ejemplo, USESSID_APP1).<br>
+Beneficio: Resolvería el problema de conflicto de sesiones cuando tienes varias aplicaciones de Hix corriendo bajo el mismo dominio o subdominio. Actualmente, si no tenemos cuidado, una aplicación "pisa" la sesión de la otra.</p></li>
+
+<li><p>USessionIgnoreIP( .T. )<br>
+Interruptor para ignorar el cambio de IP del cliente.<br>
+Para qué sirve: Obligaría a Hix a validar la sesión únicamente por el token de la cookie y no por la combinación de Cookie + IP.<br>
+Beneficio: Es vital para aplicaciones que usan Cloudflare, balanceadores de carga o usuarios móviles (celulares) que cambian de antena y, por ende, de IP constantemente. Esto evitaría que el sistema los saque "por seguridad" cuando en realidad solo cambió su IP.</p></li>
+
+<li><p>URescueSession( cToken )<br>
+Función nativa para rescatar una sesión desde un token externo.<br>
+Para qué sirve: Si la sesión nativa de Hix falla, esta función permitiría pasarle un token guardado previamente (como nuestro SEM_TOKEN) y que Hix "re-hidrate" la sesión automáticamente.<br>
+Beneficio: Facilitaría enormemente implementar la persistencia de "Recuérdame" por varios días sin que el programador tenga que hacer toda la lógica de base de datos manualmente.</p></li></ol>
+</blockquote>
+
+<p>Te dejo acá el problema y solución que se implementó y quedo atento a tus comentarios.</p>
+
+<p>Saludos cordiales.</p>
+
+<p>Carlos.</p></div>
+      <div class="signature"></div>
     </div>
   </div>
   <div class="post" id="p283684">
@@ -118,21 +118,22 @@ Beneficio: Facilitaría enormemente implementar la persistencia de "Recuérdame"
         <span class="subject">Re: Pérdida de Sesión en Hix con Cloudflare</span><br>
         Posted: Tue Feb 03, 2026 06:19 AM
       </div>
-      <div class="content"><p><t><p>Hola,</p></p>
+      <div class="content"><p>Hola,</p>
+
 <p>No hemos tenido hasta ahora ningún problema de este estilo. Incluso he probado bajo cloudflare y no lo consigo reproducir. Lo primero de todo es poder reproducir el problema. No me gusta leer los comentarios de la IA porque muchas veces engaña, ya lo he comentado anteriormente. Si fuera tema de las cookies, cosa que me cuesta creer, ya no es un tema de HIX sino del propio navegador como bien dices, ya no dependeria de HIX , pero nunca lo he visto.</p>
 
-<p>La IA te habla de persistencia en tablas, pero parece que desconoce que ya tenemos la persistencia en ficheros y tambien se esgrime en ignorar la IP en el cambio de cliente, pero es que ya no usamos el uso de IP en la gestion de sesiones.<br/>
+<p>La IA te habla de persistencia en tablas, pero parece que desconoce que ya tenemos la persistencia en ficheros y tambien se esgrime en ignorar la IP en el cambio de cliente, pero es que ya no usamos el uso de IP en la gestion de sesiones.
+
 Total…que siempre digo que la IA engaña muchas veces y has de conocer de lo que habla sino te lia aun mas. Si podemos reproducir el error, lo miramos, mientras tu solución funciona.</p>
 
-<p>C.</p>
-<p></t></p></div>
-      <div class="signature"><r>Salutacions, saludos, regards<br/><br>
-<br/><br>
-"...programar es fácil, hacer programas es difícil..."<br/><br>
-<br/><br>
-UT Page -&gt; <URL url="https://carles9000.github.io/">https://carles9000.github.io/</URL><br/><br>
-Forum UT -&gt; <URL url="https://discord.gg/bq8a9yGMWh">https://discord.gg/bq8a9yGMWh</URL> <br/><br>
-HIX -&gt; <URL url="https://github.com/carles9000/hix">https://github.com/carles9000/hix</URL></r></div>
+<p>C.</p></div>
+      <div class="signature">Salutacions, saludos, regards<br>
+<br>
+"...programar es fácil, hacer programas es difícil..."<br>
+<br>
+UT Page -&gt; <a href="https://carles9000.github.io/" rel="noopener">https://carles9000.github.io/</a><br>
+Forum UT -&gt; <a href="https://discord.gg/bq8a9yGMWh" rel="noopener">https://discord.gg/bq8a9yGMWh</a> <br>
+HIX -&gt; <a href="https://github.com/carles9000/hix" rel="noopener">https://github.com/carles9000/hix</a></div>
     </div>
   </div>
   <div class="post" id="p283692">
@@ -148,15 +149,16 @@ HIX -&gt; <URL url="https://github.com/carles9000/hix">https://github.com/carles
         <span class="subject">Re: Pérdida de Sesión en Hix con Cloudflare</span><br>
         Posted: Tue Feb 03, 2026 01:05 PM
       </div>
-      <div class="content"><p><t><p>Carles,<br/><br>
-En modo local, no hay ningún problema, las sesiones se mantienen estables, pero al subirlo al servidor web, de la nada, se sale de sesión y de nuevo al login. Por el momento lo tengo solucionado de la forma en que la IA lo solucionó.</p></p>
+      <div class="content"><p>Carles,
+
+En modo local, no hay ningún problema, las sesiones se mantienen estables, pero al subirlo al servidor web, de la nada, se sale de sesión y de nuevo al login. Por el momento lo tengo solucionado de la forma en que la IA lo solucionó.</p>
+
 <p>Si logras encontrar porque se da esto, pues, en hora buena.</p>
 
 <p>Saludos cordiales.</p>
 
-<p>Carlos</p>
-<p></t></p></div>
-      <div class="signature"><t></t></div>
+<p>Carlos</p></div>
+      <div class="signature"></div>
     </div>
   </div>
   <div class="giscus-wrap">

@@ -26,145 +26,170 @@
         <span class="subject">Lentitud al abrir una dbf en red</span><br>
         Posted: Thu Jul 06, 2023 02:06 PM
       </div>
-      <div class="content"><p><t>Hola a todos.<br/><br>
-Antes que nada agradecer a la tan buena información que siempre encuentro en este foro.<br/><br>
-Adelanto que investigue en este foro durante una semana, y hasta ahora no puede solucionarlo.<br/><br>
-<br/><br>
-Espero puedan orientarme con un problema.<br/><br>
-Tengo una vieja aplicación que ahora la pase a FWH 2.5 y xHar 1.0, para que corra en 32Bits y utilizo TDBF para abrir las bases.<br/><br>
-No puedo usar un FWH mas nuevo porque, de entrada tengo problemas con la TDBF y pensar en modificar toda la aplicación a por ej TDatabase, no<br/><br>
-tiene mucho sentido, porque el cliente quiere usar un tiempo mas y luego migrar a otro sistema.<br/><br>
-Todo funciona bien accediendo de una PC a la ves. Cuando accedo con por ej 2 PC a un mismo modulo del sistema, el primero que ingresa<br/><br>
-lo hace bien, el segundo tarda una eternidad.<br/><br>
-Es un modulo simple en este caso de Pacientes, el cual tiene 23.400 registros.<br/><br>
-Haciendo pruebas, detecte que si no activo los indices, todo se normaliza.<br/><br>
-Mi pregunta es esto tiene alguna solución simple, o no tiene arreglo.<br/><br>
-<br/><br>
-Nota: Es una red con cableado Ethernet, todas la PC con placas Gigabit y cableado nuevo, los switch también Gigabit<br/><br>
-          Todas con window 10, probé desactivar los antivirus, probé en otra red, y varios otro métodos que viendo durante  varios días<br/><br>
-           en este foro, no logre solucionar el problema.<br/><br>
-<br/><br>
-Desde ya muchas gracias.<br/><br>
-Leonardo G. Olexyn<br/><br>
-<br/><br>
-Adjunto parte del modulo de pacientes :<br/><br>
-<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-//  FWH 2.5 - Paciente<br/><br>
-//  (c) Leonardo Olexyn 2023<br/><br>
-//----------------------------------------------------------------------------//<br/></p>
-<h1>include "FiveWin.ch"<br/></h1>
-<h1>include "Report.ch"<br/></h1>
-<h1>include "Mesdbf.ch"<br/></h1>
-<h1>include "TSButton.ch"<br/></h1>
-<h1>include "XBrowse.Ch"<br/></h1>
-<p><br/><br>
-<br/><br>
-static oLocal, nLocal, cTexAfil :="", oTexAfil, nK:=0<br/><br>
-static cTexLocali :="", oTexLocali, cTexSucur :="", oTexSucur<br/><br>
-static oPaci, oFlt, oBtn[ 6 ]<br/><br>
-<br/><br>
-function Paci_ABM( tUser )<br/><br>
-<br/><br>
-   local oDlg, oLbx, oBusco, cBusco := SPACE(20)  //, cAlias:=cGetNewAlias('Sample')<br/><br>
-   set deleted on<br/><br>
-<br/><br>
-   AbrePaci(  )<br/><br>
-   oPaci:SetFocus()<br/><br>
-   oPaci:SetOrder( 2 )   <br/><br>
-<br/><br>
-   DEFINE DIALOG oDlg RESOURCE "FONDO_PACIENTE" TITLE "ABM de Pacientes" <br/><br>
-<br/><br>
-   REDEFINE LISTBOX oLbx FIELDS str(@oPaci:Codigo,6), @oPaci:Apynom,;<br/><br>
-                              @oPaci:Documento, @oPaci:Obrasoci;<br/><br>
-          HEADERS  "Código", "Apellido y Nombre", "Documento", "Obra Social" ;<br/><br>
-          FIELDSIZES 60,320,110,180 ;<br/><br>
-             ALIAS oPaci:cAlias ;<br/><br>
-          ID 650  OF oDlg COLOR CLR_BLACK, RGB( 255, 255, 235) UPDATE<br/><br>
-<br/><br>
-   oPaci:SetBrowse( oLbx, .f. )  <br/><br>
-<br/><br>
-    REDEFINE GET oBusco VAR cBusco ID 400 OF oDlg ;<br/><br>
-                     ON CHANGE ( oBusco:Assign(),                             ;<br/><br>
-                               oPaci:Seek( AllTrim(UPPER(cBusco))+;<br/><br>
-                               IF( ISALPHA( CHR(nKey) ) .OR. ISDIGIT( CHR(nKey) )  ;<br/><br>
-                                   .OR. nKey = 32, UPPER(CHR(nKey)), "" ) ), ;<br/><br>
-                               oLbx:refresh() )<br/><br>
-<br/><br>
-//   REDEFINE BUTTON ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() <br/><br>
-   REDEFINE SBUTTON oBtn ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() <br/><br>
-<br/><br>
-   REDEFINE BUTTON ID 180 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .f. ), oDlg:Update() <br/><br>
-   REDEFINE BUTTON ID 190 OF oDlg ACTION DelPaci( oLbx, oPaci )<br/><br>
-   REDEFINE BUTTON ID 200 OF oDlg ACTION BuscaPaci( oLbx, oPaci )<br/><br>
-   REDEFINE BUTTON ID 240 OF oDlg CANCEL ACTION oDlg:End()<br/><br>
-<br/><br>
-<br/><br>
-     ACTIVATE DIALOG oDlg CENTERED<br/><br>
-<br/><br>
-    oPaci:End()<br/><br>
-<br/><br>
-return nil<br/><br>
-<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-<br/><br>
-<br/><br>
-<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-//  Abre Paciente<br/><br>
-Function AbrePaci(  ) <br/><br>
-<br/><br>
-    DEFINE DATABASE oPaci FILE "PACIENTE.DBF" ALIAS PACIENTE<br/><br>
-<br/><br>
-        FIELD NAME "CODIGO"     TYPE "N"  LEN 06  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "APYNOM"     TYPE "C"  LEN 45  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DIREC"      TYPE "C"  LEN 40  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "CODPOST"    TYPE "C"  LEN 08  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "OBRACOD"    TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "OBRASOCI"   TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "NAFIALIADO" TYPE "C"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DOCUMENTO"  TYPE "C"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "GSANGUINEO" TYPE "C"  LEN 04  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "LOCPROV"    TYPE "C"  LEN 25  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "TELEF"      TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "FENACIM"    TYPE "D"  LEN 08  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "EDAD"       TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "NACIONALI"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ESTCIVIL"   TYPE "C"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "SEXO"       TYPE "C"  LEN 01  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "OCUPACION"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "FEINITRAT"  TYPE "D"  LEN 08  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ANTQUIRUR"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ANTFAMIL"   TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ANTPATOLOG" TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ENFACTUAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "HABTOXICO"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "MOTCONSUL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "EXAMGERAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DIAGMEDICO" TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DIAGKINES"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-    FIELD NAME "EMAIL"      TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "BAJA"       TYPE "L"  LEN 01  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "MEDICO"     TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "TELMEDICO"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ATIENDEN"   TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "SALPLUS"    TYPE "N"  LEN 08  DEC 02 OF oPaci<br/><br>
-        FIELD NAME "SALORDEN"   TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "SALSESI"    TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-<br/><br>
-   DEFINE INDEX ON str(Codigo,6) TO PACIENTE                 TAG PaciCod NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON substr(Upper(Apynom),1,45) TO PACIENTE    TAG PaciNom NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON str(OBRACOD,3) TO PACIENTE                TAG PaciObr NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON substr(SEXO,1,1)+str(EDAD,3) TO PACIENTE  TAG PaciSex NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON substr(Upper(DOCUMENTO),1,10) TO PACIENTE TAG PaciDoc NODELETED OF oPaci<br/><br>
-    <br/><br>
-   END DATABASE oPaci<br/><br>
-<br/><br>
-   ACTIVATE DATABASE oPaci SHARED <br/><br>
-  // ACTIVATE INDEX IN oPaci<br/><br>
-<br/><br>
-Return( oPaci )</t></p></div>
-      <div class="signature"><t>Leonardo G.</t></div>
+      <div class="content"><p>Hola a todos.</p>
+<p>Antes que nada agradecer a la tan buena información que siempre encuentro en este foro.</p>
+<p>Adelanto que investigue en este foro durante una semana, y hasta ahora no puede solucionarlo.</p>
+<p>Espero puedan orientarme con un problema.</p>
+<p>Tengo una vieja aplicación que ahora la pase a FWH 2.5 y xHar 1.0, para que corra en 32Bits y utilizo TDBF para abrir las bases.</p>
+<p>No puedo usar un FWH mas nuevo porque, de entrada tengo problemas con la TDBF y pensar en modificar toda la aplicación a por ej TDatabase, no</p>
+<p>tiene mucho sentido, porque el cliente quiere usar un tiempo mas y luego migrar a otro sistema.</p>
+<p>Todo funciona bien accediendo de una PC a la ves. Cuando accedo con por ej 2 PC a un mismo modulo del sistema, el primero que ingresa</p>
+<p>lo hace bien, el segundo tarda una eternidad.</p>
+<p>Es un modulo simple en este caso de Pacientes, el cual tiene 23.400 registros.</p>
+<p>Haciendo pruebas, detecte que si no activo los indices, todo se normaliza.</p>
+<p>Mi pregunta es esto tiene alguna solución simple, o no tiene arreglo.</p>
+<p>Nota: Es una red con cableado Ethernet, todas la PC con placas Gigabit y cableado nuevo, los switch también Gigabit</p>
+<pre><code>      Todas con window 10, probé desactivar los antivirus, probé en otra red, y varios otro métodos que viendo durante  varios días
+
+       en este foro, no logre solucionar el problema.
+</code></pre>
+<p>Desde ya muchas gracias.</p>
+<p>Leonardo G. Olexyn</p>
+<p>Adjunto parte del modulo de pacientes :</p>
+<p>//----------------------------------------------------------------------------//</p>
+<p>//  FWH 2.5 - Paciente</p>
+<p>//  (c) Leonardo Olexyn 2023</p>
+<p>//----------------------------------------------------------------------------//</p>
+<h1>include "FiveWin.ch"</h1>
+<h1>include "Report.ch"</h1>
+<h1>include "Mesdbf.ch"</h1>
+<h1>include "TSButton.ch"</h1>
+<h1>include "XBrowse.Ch"</h1>
+<p>static oLocal, nLocal, cTexAfil :="", oTexAfil, nK:=0</p>
+<p>static cTexLocali :="", oTexLocali, cTexSucur :="", oTexSucur</p>
+<p>static oPaci, oFlt, oBtn[ 6 ]</p>
+<p>function Paci_ABM( tUser )</p>
+<p>local oDlg, oLbx, oBusco, cBusco := SPACE(20)  //, cAlias:=cGetNewAlias('Sample')</p>
+<p>set deleted on</p>
+<p>AbrePaci(  )</p>
+<p>oPaci:SetFocus()</p>
+<p>oPaci:SetOrder( 2 )   </p>
+<p>DEFINE DIALOG oDlg RESOURCE "FONDO_PACIENTE" TITLE "ABM de Pacientes" </p>
+<p>REDEFINE LISTBOX oLbx FIELDS str(@oPaci:Codigo,6), @oPaci:Apynom,;</p>
+<pre><code>                          @oPaci:Documento, @oPaci:Obrasoci;
+
+      HEADERS  "Código", "Apellido y Nombre", "Documento", "Obra Social" ;
+
+      FIELDSIZES 60,320,110,180 ;
+
+         ALIAS oPaci:cAlias ;
+
+      ID 650  OF oDlg COLOR CLR_BLACK, RGB( 255, 255, 235) UPDATE
+</code></pre>
+<p>oPaci:SetBrowse( oLbx, .f. )  </p>
+<pre><code>REDEFINE GET oBusco VAR cBusco ID 400 OF oDlg ;
+
+                 ON CHANGE ( oBusco:Assign(),                             ;
+
+                           oPaci:Seek( AllTrim(UPPER(cBusco))+;
+
+                           IF( ISALPHA( CHR(nKey) ) .OR. ISDIGIT( CHR(nKey) )  ;
+
+                               .OR. nKey = 32, UPPER(CHR(nKey)), "" ) ), ;
+
+                           oLbx:refresh() )
+</code></pre>
+<p>//   REDEFINE BUTTON ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() </p>
+<p>REDEFINE SBUTTON oBtn ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() </p>
+<p>REDEFINE BUTTON ID 180 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .f. ), oDlg:Update() </p>
+<p>REDEFINE BUTTON ID 190 OF oDlg ACTION DelPaci( oLbx, oPaci )</p>
+<p>REDEFINE BUTTON ID 200 OF oDlg ACTION BuscaPaci( oLbx, oPaci )</p>
+<p>REDEFINE BUTTON ID 240 OF oDlg CANCEL ACTION oDlg:End()</p>
+<pre><code> ACTIVATE DIALOG oDlg CENTERED
+
+
+
+oPaci:End()
+</code></pre>
+<p>return nil</p>
+<p>//----------------------------------------------------------------------------//</p>
+<p>//----------------------------------------------------------------------------//</p>
+<p>//  Abre Paciente</p>
+<p>Function AbrePaci(  ) </p>
+<pre><code>DEFINE DATABASE oPaci FILE "PACIENTE.DBF" ALIAS PACIENTE
+
+
+
+    FIELD NAME "CODIGO"     TYPE "N"  LEN 06  DEC 00 OF oPaci
+
+    FIELD NAME "APYNOM"     TYPE "C"  LEN 45  DEC 00 OF oPaci
+
+    FIELD NAME "DIREC"      TYPE "C"  LEN 40  DEC 00 OF oPaci
+
+    FIELD NAME "CODPOST"    TYPE "C"  LEN 08  DEC 00 OF oPaci
+
+    FIELD NAME "OBRACOD"    TYPE "N"  LEN 03  DEC 00 OF oPaci
+
+    FIELD NAME "OBRASOCI"   TYPE "C"  LEN 35  DEC 00 OF oPaci
+
+    FIELD NAME "NAFIALIADO" TYPE "C"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "DOCUMENTO"  TYPE "C"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "GSANGUINEO" TYPE "C"  LEN 04  DEC 00 OF oPaci
+
+    FIELD NAME "LOCPROV"    TYPE "C"  LEN 25  DEC 00 OF oPaci
+
+    FIELD NAME "TELEF"      TYPE "C"  LEN 20  DEC 00 OF oPaci
+
+    FIELD NAME "FENACIM"    TYPE "D"  LEN 08  DEC 00 OF oPaci
+
+    FIELD NAME "EDAD"       TYPE "N"  LEN 03  DEC 00 OF oPaci
+
+    FIELD NAME "NACIONALI"  TYPE "C"  LEN 20  DEC 00 OF oPaci
+
+    FIELD NAME "ESTCIVIL"   TYPE "C"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "SEXO"       TYPE "C"  LEN 01  DEC 00 OF oPaci
+
+    FIELD NAME "OCUPACION"  TYPE "C"  LEN 20  DEC 00 OF oPaci
+
+    FIELD NAME "FEINITRAT"  TYPE "D"  LEN 08  DEC 00 OF oPaci
+
+    FIELD NAME "ANTQUIRUR"  TYPE "M"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "ANTFAMIL"   TYPE "M"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "ANTPATOLOG" TYPE "M"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "ENFACTUAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "HABTOXICO"  TYPE "M"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "MOTCONSUL"  TYPE "M"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "EXAMGERAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "DIAGMEDICO" TYPE "M"  LEN 10  DEC 00 OF oPaci
+
+    FIELD NAME "DIAGKINES"  TYPE "M"  LEN 10  DEC 00 OF oPaci
+
+FIELD NAME "EMAIL"      TYPE "C"  LEN 35  DEC 00 OF oPaci
+
+    FIELD NAME "BAJA"       TYPE "L"  LEN 01  DEC 00 OF oPaci
+
+    FIELD NAME "MEDICO"     TYPE "C"  LEN 35  DEC 00 OF oPaci
+
+    FIELD NAME "TELMEDICO"  TYPE "C"  LEN 20  DEC 00 OF oPaci
+
+    FIELD NAME "ATIENDEN"   TYPE "C"  LEN 35  DEC 00 OF oPaci
+
+    FIELD NAME "SALPLUS"    TYPE "N"  LEN 08  DEC 02 OF oPaci
+
+    FIELD NAME "SALORDEN"   TYPE "N"  LEN 03  DEC 00 OF oPaci
+
+    FIELD NAME "SALSESI"    TYPE "N"  LEN 03  DEC 00 OF oPaci
+</code></pre>
+<p>DEFINE INDEX ON str(Codigo,6) TO PACIENTE                 TAG PaciCod NODELETED OF oPaci</p>
+<p>DEFINE INDEX ON substr(Upper(Apynom),1,45) TO PACIENTE    TAG PaciNom NODELETED OF oPaci</p>
+<p>DEFINE INDEX ON str(OBRACOD,3) TO PACIENTE                TAG PaciObr NODELETED OF oPaci</p>
+<p>DEFINE INDEX ON substr(SEXO,1,1)+str(EDAD,3) TO PACIENTE  TAG PaciSex NODELETED OF oPaci</p>
+<p>DEFINE INDEX ON substr(Upper(DOCUMENTO),1,10) TO PACIENTE TAG PaciDoc NODELETED OF oPaci</p>
+<p>END DATABASE oPaci</p>
+<p>ACTIVATE DATABASE oPaci SHARED </p>
+<p>// ACTIVATE INDEX IN oPaci</p>
+<p>Return( oPaci )</p></div>
+      <div class="signature">Leonardo G.</div>
     </div>
   </div>
   <div class="post" id="p261419">
@@ -180,154 +205,154 @@ Return( oPaci )</t></p></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Thu Jul 06, 2023 02:52 PM
       </div>
-      <div class="content"><r><QUOTE author="lgolexyn"><s><blockquote><cite>lgolexyn wrote:</cite></s>Hola a todos.<br/><br>
-Antes que nada agradecer a la tan buena información que siempre encuentro en este foro.<br/><br>
-Adelanto que investigue en este foro durante una semana, y hasta ahora no puede solucionarlo.<br/><br>
-<br/><br>
-Espero puedan orientarme con un problema.<br/><br>
-Tengo una vieja aplicación que ahora la pase a FWH 2.5 y xHar 1.0, para que corra en 32Bits y utilizo TDBF para abrir las bases.<br/><br>
-No puedo usar un FWH mas nuevo porque, de entrada tengo problemas con la TDBF y pensar en modificar toda la aplicación a por ej TDatabase, no<br/><br>
-tiene mucho sentido, porque el cliente quiere usar un tiempo mas y luego migrar a otro sistema.<br/><br>
-Todo funciona bien accediendo de una PC a la ves. Cuando accedo con por ej 2 PC a un mismo modulo del sistema, el primero que ingresa<br/><br>
-lo hace bien, el segundo tarda una eternidad.<br/><br>
-Es un modulo simple en este caso de Pacientes, el cual tiene 23.400 registros.<br/><br>
-Haciendo pruebas, detecte que si no activo los indices, todo se normaliza.<br/><br>
-Mi pregunta es esto tiene alguna solución simple, o no tiene arreglo.<br/><br>
-<br/><br>
-Nota: Es una red con cableado Ethernet, todas la PC con placas Gigabit y cableado nuevo, los switch también Gigabit<br/><br>
-          Todas con window 10, probé desactivar los antivirus, probé en otra red, y varios otro métodos que viendo durante  varios días<br/><br>
-           en este foro, no logre solucionar el problema.<br/><br>
-<br/><br>
-Desde ya muchas gracias.<br/><br>
-Leonardo G. Olexyn<br/><br>
-<br/><br>
-Adjunto parte del modulo de pacientes :<br/><br>
-<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-//  FWH 2.5 - Paciente<br/><br>
-//  (c) Leonardo Olexyn 2023<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-#include "FiveWin.ch"<br/><br>
-#include "Report.ch"<br/><br>
-#include "Mesdbf.ch"<br/><br>
-#include "TSButton.ch"<br/><br>
-#include "XBrowse.Ch"<br/><br>
-<br/><br>
-<br/><br>
-static oLocal, nLocal, cTexAfil :="", oTexAfil, nK:=0<br/><br>
-static cTexLocali :="", oTexLocali, cTexSucur :="", oTexSucur<br/><br>
-static oPaci, oFlt, oBtn[ 6 ]<br/><br>
-<br/><br>
-function Paci_ABM( tUser )<br/><br>
-<br/><br>
-   local oDlg, oLbx, oBusco, cBusco := SPACE(20)  //, cAlias:=cGetNewAlias('Sample')<br/><br>
-   set deleted on<br/><br>
-<br/><br>
-   AbrePaci(  )<br/><br>
-   oPaci:SetFocus()<br/><br>
-   oPaci:SetOrder( 2 )   <br/><br>
-<br/><br>
-   DEFINE DIALOG oDlg RESOURCE "FONDO_PACIENTE" TITLE "ABM de Pacientes" <br/><br>
-<br/><br>
-   REDEFINE LISTBOX oLbx FIELDS str(@oPaci:Codigo,6), @oPaci:Apynom,;<br/><br>
-                              @oPaci:Documento, @oPaci:Obrasoci;<br/><br>
-          HEADERS  "Código", "Apellido y Nombre", "Documento", "Obra Social" ;<br/><br>
-          FIELDSIZES 60,320,110,180 ;<br/><br>
-			 ALIAS oPaci:cAlias ;<br/><br>
-          ID 650  OF oDlg COLOR CLR_BLACK, RGB( 255, 255, 235) UPDATE<br/><br>
-<br/><br>
-   oPaci:SetBrowse( oLbx, .f. )  <br/><br>
-<br/><br>
-	REDEFINE GET oBusco VAR cBusco ID 400 OF oDlg ;<br/><br>
-	                 ON CHANGE ( oBusco:Assign(),                             ;<br/><br>
-                               oPaci:Seek( AllTrim(UPPER(cBusco))+;<br/><br>
-                               IF( ISALPHA( CHR(nKey) ) .OR. ISDIGIT( CHR(nKey) )  ;<br/><br>
-                                   .OR. nKey = 32, UPPER(CHR(nKey)), "" ) ), ;<br/><br>
-                               oLbx:refresh() )<br/><br>
-<br/><br>
-//   REDEFINE BUTTON ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() <br/><br>
-   REDEFINE SBUTTON oBtn ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() <br/><br>
-<br/><br>
-   REDEFINE BUTTON ID 180 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .f. ), oDlg:Update() <br/><br>
-   REDEFINE BUTTON ID 190 OF oDlg ACTION DelPaci( oLbx, oPaci )<br/><br>
-   REDEFINE BUTTON ID 200 OF oDlg ACTION BuscaPaci( oLbx, oPaci )<br/><br>
-   REDEFINE BUTTON ID 240 OF oDlg CANCEL ACTION oDlg:End()<br/><br>
-<br/><br>
-<br/><br>
-     ACTIVATE DIALOG oDlg CENTERED<br/><br>
-<br/><br>
-	oPaci:End()<br/><br>
-<br/><br>
-return nil<br/><br>
-<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-<br/><br>
-<br/><br>
-<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-//  Abre Paciente<br/><br>
-Function AbrePaci(  ) <br/><br>
-<br/><br>
-    DEFINE DATABASE oPaci FILE "PACIENTE.DBF" ALIAS PACIENTE<br/><br>
-<br/><br>
-        FIELD NAME "CODIGO"     TYPE "N"  LEN 06  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "APYNOM"     TYPE "C"  LEN 45  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DIREC"      TYPE "C"  LEN 40  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "CODPOST"    TYPE "C"  LEN 08  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "OBRACOD"    TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "OBRASOCI"   TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "NAFIALIADO" TYPE "C"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DOCUMENTO"  TYPE "C"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "GSANGUINEO" TYPE "C"  LEN 04  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "LOCPROV"    TYPE "C"  LEN 25  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "TELEF"      TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "FENACIM"    TYPE "D"  LEN 08  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "EDAD"       TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "NACIONALI"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ESTCIVIL"   TYPE "C"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "_"       TYPE "C"  LEN 01  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "OCUPACION"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "FEINITRAT"  TYPE "D"  LEN 08  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ANTQUIRUR"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ANTFAMIL"   TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ANTPATOLOG" TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ENFACTUAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "HABTOXICO"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "MOTCONSUL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "EXAMGERAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DIAGMEDICO" TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DIAGKINES"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-	FIELD NAME "EMAIL"      TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "BAJA"       TYPE "L"  LEN 01  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "MEDICO"     TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "TELMEDICO"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ATIENDEN"   TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "SALPLUS"    TYPE "N"  LEN 08  DEC 02 OF oPaci<br/><br>
-        FIELD NAME "SALORDEN"   TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "SALSESI"    TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-<br/><br>
-   DEFINE INDEX ON str(Codigo,6) TO PACIENTE                 TAG PaciCod NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON substr(Upper(Apynom),1,45) TO PACIENTE    TAG PaciNom NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON str(OBRACOD,3) TO PACIENTE                TAG PaciObr NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON substr(_,1,1)+str(EDAD,3) TO PACIENTE  TAG PaciSex NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON substr(Upper(DOCUMENTO),1,10) TO PACIENTE TAG PaciDoc NODELETED OF oPaci<br/><br>
-    <br/><br>
-   END DATABASE oPaci<br/><br>
-<br/><br>
-   ACTIVATE DATABASE oPaci SHARED <br/><br>
-  // ACTIVATE INDEX IN oPaci<br/><br>
-<br/><br>
-Return( oPaci )<e></blockquote></e></QUOTE><br>
+      <div class="content"><blockquote><cite>lgolexyn wrote:</cite>Hola a todos.<br>
+Antes que nada agradecer a la tan buena información que siempre encuentro en este foro.<br>
+Adelanto que investigue en este foro durante una semana, y hasta ahora no puede solucionarlo.<br>
 <br>
-<br/><br>
-Hola buenos dias que tal como esta, espero que bien.<br/><br>
-<br/><br>
-Para empezar yo no uso clases de terceros, todos mis programas estan desarrollados con codigos nativos de FWH y hasta la fecha no he tenido problemas con mi sistema, y es un programa para control de proveedores y su referencias, con su respectivo registro de IVA y tasa ceros similar con la contabilidad.<br/><br>
-<br/><br>
-Y uso indices CDX y no uso filtros o sea SET FILTER, algo en alguna parte de tu codigo este siendo lento para traer informacion, como sugerencia no use clases de terceros, yo uso todo nativo y repito trabajo en red con mas de 12 usuarios y no he tenido problemas, tiene que verificar de donde viene la lentitud y el servidor es windows server 2012 R2.<br/><br>
-<br/><br>
-Saludos y buen dia.</r></div>
-      <div class="signature"><t></t></div>
+Espero puedan orientarme con un problema.<br>
+Tengo una vieja aplicación que ahora la pase a FWH 2.5 y xHar 1.0, para que corra en 32Bits y utilizo TDBF para abrir las bases.<br>
+No puedo usar un FWH mas nuevo porque, de entrada tengo problemas con la TDBF y pensar en modificar toda la aplicación a por ej TDatabase, no<br>
+tiene mucho sentido, porque el cliente quiere usar un tiempo mas y luego migrar a otro sistema.<br>
+Todo funciona bien accediendo de una PC a la ves. Cuando accedo con por ej 2 PC a un mismo modulo del sistema, el primero que ingresa<br>
+lo hace bien, el segundo tarda una eternidad.<br>
+Es un modulo simple en este caso de Pacientes, el cual tiene 23.400 registros.<br>
+Haciendo pruebas, detecte que si no activo los indices, todo se normaliza.<br>
+Mi pregunta es esto tiene alguna solución simple, o no tiene arreglo.<br>
+<br>
+Nota: Es una red con cableado Ethernet, todas la PC con placas Gigabit y cableado nuevo, los switch también Gigabit<br>
+          Todas con window 10, probé desactivar los antivirus, probé en otra red, y varios otro métodos que viendo durante  varios días<br>
+           en este foro, no logre solucionar el problema.<br>
+<br>
+Desde ya muchas gracias.<br>
+Leonardo G. Olexyn<br>
+<br>
+Adjunto parte del modulo de pacientes :<br>
+<br>
+//----------------------------------------------------------------------------//<br>
+//  FWH 2.5 - Paciente<br>
+//  (c) Leonardo Olexyn 2023<br>
+//----------------------------------------------------------------------------//<br>
+#include "FiveWin.ch"<br>
+#include "Report.ch"<br>
+#include "Mesdbf.ch"<br>
+#include "TSButton.ch"<br>
+#include "XBrowse.Ch"<br>
+<br>
+<br>
+static oLocal, nLocal, cTexAfil :="", oTexAfil, nK:=0<br>
+static cTexLocali :="", oTexLocali, cTexSucur :="", oTexSucur<br>
+static oPaci, oFlt, oBtn[ 6 ]<br>
+<br>
+function Paci_ABM( tUser )<br>
+<br>
+   local oDlg, oLbx, oBusco, cBusco := SPACE(20)  //, cAlias:=cGetNewAlias('Sample')<br>
+   set deleted on<br>
+<br>
+   AbrePaci(  )<br>
+   oPaci:SetFocus()<br>
+   oPaci:SetOrder( 2 )   <br>
+<br>
+   DEFINE DIALOG oDlg RESOURCE "FONDO_PACIENTE" TITLE "ABM de Pacientes" <br>
+<br>
+   REDEFINE LISTBOX oLbx FIELDS str(@oPaci:Codigo,6), @oPaci:Apynom,;<br>
+                              @oPaci:Documento, @oPaci:Obrasoci;<br>
+          HEADERS  "Código", "Apellido y Nombre", "Documento", "Obra Social" ;<br>
+          FIELDSIZES 60,320,110,180 ;<br>
+			 ALIAS oPaci:cAlias ;<br>
+          ID 650  OF oDlg COLOR CLR_BLACK, RGB( 255, 255, 235) UPDATE<br>
+<br>
+   oPaci:SetBrowse( oLbx, .f. )  <br>
+<br>
+	REDEFINE GET oBusco VAR cBusco ID 400 OF oDlg ;<br>
+	                 ON CHANGE ( oBusco:Assign(),                             ;<br>
+                               oPaci:Seek( AllTrim(UPPER(cBusco))+;<br>
+                               IF( ISALPHA( CHR(nKey) ) .OR. ISDIGIT( CHR(nKey) )  ;<br>
+                                   .OR. nKey = 32, UPPER(CHR(nKey)), "" ) ), ;<br>
+                               oLbx:refresh() )<br>
+<br>
+//   REDEFINE BUTTON ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() <br>
+   REDEFINE SBUTTON oBtn ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() <br>
+<br>
+   REDEFINE BUTTON ID 180 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .f. ), oDlg:Update() <br>
+   REDEFINE BUTTON ID 190 OF oDlg ACTION DelPaci( oLbx, oPaci )<br>
+   REDEFINE BUTTON ID 200 OF oDlg ACTION BuscaPaci( oLbx, oPaci )<br>
+   REDEFINE BUTTON ID 240 OF oDlg CANCEL ACTION oDlg:End()<br>
+<br>
+<br>
+     ACTIVATE DIALOG oDlg CENTERED<br>
+<br>
+	oPaci:End()<br>
+<br>
+return nil<br>
+<br>
+//----------------------------------------------------------------------------//<br>
+<br>
+<br>
+<br>
+//----------------------------------------------------------------------------//<br>
+//  Abre Paciente<br>
+Function AbrePaci(  ) <br>
+<br>
+    DEFINE DATABASE oPaci FILE "PACIENTE.DBF" ALIAS PACIENTE<br>
+<br>
+        FIELD NAME "CODIGO"     TYPE "N"  LEN 06  DEC 00 OF oPaci<br>
+        FIELD NAME "APYNOM"     TYPE "C"  LEN 45  DEC 00 OF oPaci<br>
+        FIELD NAME "DIREC"      TYPE "C"  LEN 40  DEC 00 OF oPaci<br>
+        FIELD NAME "CODPOST"    TYPE "C"  LEN 08  DEC 00 OF oPaci<br>
+        FIELD NAME "OBRACOD"    TYPE "N"  LEN 03  DEC 00 OF oPaci<br>
+        FIELD NAME "OBRASOCI"   TYPE "C"  LEN 35  DEC 00 OF oPaci<br>
+        FIELD NAME "NAFIALIADO" TYPE "C"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "DOCUMENTO"  TYPE "C"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "GSANGUINEO" TYPE "C"  LEN 04  DEC 00 OF oPaci<br>
+        FIELD NAME "LOCPROV"    TYPE "C"  LEN 25  DEC 00 OF oPaci<br>
+        FIELD NAME "TELEF"      TYPE "C"  LEN 20  DEC 00 OF oPaci<br>
+        FIELD NAME "FENACIM"    TYPE "D"  LEN 08  DEC 00 OF oPaci<br>
+        FIELD NAME "EDAD"       TYPE "N"  LEN 03  DEC 00 OF oPaci<br>
+        FIELD NAME "NACIONALI"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br>
+        FIELD NAME "ESTCIVIL"   TYPE "C"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "_"       TYPE "C"  LEN 01  DEC 00 OF oPaci<br>
+        FIELD NAME "OCUPACION"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br>
+        FIELD NAME "FEINITRAT"  TYPE "D"  LEN 08  DEC 00 OF oPaci<br>
+        FIELD NAME "ANTQUIRUR"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "ANTFAMIL"   TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "ANTPATOLOG" TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "ENFACTUAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "HABTOXICO"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "MOTCONSUL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "EXAMGERAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "DIAGMEDICO" TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "DIAGKINES"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+	FIELD NAME "EMAIL"      TYPE "C"  LEN 35  DEC 00 OF oPaci<br>
+        FIELD NAME "BAJA"       TYPE "L"  LEN 01  DEC 00 OF oPaci<br>
+        FIELD NAME "MEDICO"     TYPE "C"  LEN 35  DEC 00 OF oPaci<br>
+        FIELD NAME "TELMEDICO"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br>
+        FIELD NAME "ATIENDEN"   TYPE "C"  LEN 35  DEC 00 OF oPaci<br>
+        FIELD NAME "SALPLUS"    TYPE "N"  LEN 08  DEC 02 OF oPaci<br>
+        FIELD NAME "SALORDEN"   TYPE "N"  LEN 03  DEC 00 OF oPaci<br>
+        FIELD NAME "SALSESI"    TYPE "N"  LEN 03  DEC 00 OF oPaci<br>
+<br>
+   DEFINE INDEX ON str(Codigo,6) TO PACIENTE                 TAG PaciCod NODELETED OF oPaci<br>
+   DEFINE INDEX ON substr(Upper(Apynom),1,45) TO PACIENTE    TAG PaciNom NODELETED OF oPaci<br>
+   DEFINE INDEX ON str(OBRACOD,3) TO PACIENTE                TAG PaciObr NODELETED OF oPaci<br>
+   DEFINE INDEX ON substr(_,1,1)+str(EDAD,3) TO PACIENTE  TAG PaciSex NODELETED OF oPaci<br>
+   DEFINE INDEX ON substr(Upper(DOCUMENTO),1,10) TO PACIENTE TAG PaciDoc NODELETED OF oPaci<br>
+    <br>
+   END DATABASE oPaci<br>
+<br>
+   ACTIVATE DATABASE oPaci SHARED <br>
+  // ACTIVATE INDEX IN oPaci<br>
+<br>
+Return( oPaci )</blockquote>
+
+<br>
+Hola buenos dias que tal como esta, espero que bien.<br>
+<br>
+Para empezar yo no uso clases de terceros, todos mis programas estan desarrollados con codigos nativos de FWH y hasta la fecha no he tenido problemas con mi sistema, y es un programa para control de proveedores y su referencias, con su respectivo registro de IVA y tasa ceros similar con la contabilidad.<br>
+<br>
+Y uso indices CDX y no uso filtros o sea SET FILTER, algo en alguna parte de tu codigo este siendo lento para traer informacion, como sugerencia no use clases de terceros, yo uso todo nativo y repito trabajo en red con mas de 12 usuarios y no he tenido problemas, tiene que verificar de donde viene la lentitud y el servidor es windows server 2012 R2.<br>
+<br>
+Saludos y buen dia.</div>
+      <div class="signature"></div>
     </div>
   </div>
   <div class="post" id="p261420">
@@ -343,12 +368,12 @@ Saludos y buen dia.</r></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Thu Jul 06, 2023 03:01 PM
       </div>
-      <div class="content"><r>Debe hacer un ejemplo completo para probar y publicar en:<br/><br>
-<br/><br>
-<URL url="https://mega.nz/"><s><a href="</s>https://mega.nz/<e>" rel="noopener"></s>https://mega.nz/<e></a></e></URL><br/><br>
-<br/><br>
-Regards, saludos.</r></div>
-      <div class="signature"><t>João Santos - São Paulo - Brasil - Phone: +55(11)95150-7341</t></div>
+      <div class="content">Debe hacer un ejemplo completo para probar y publicar en:<br>
+<br>
+<a href="https://mega.nz/" rel="noopener">https://mega.nz/</a><br>
+<br>
+Regards, saludos.</div>
+      <div class="signature">João Santos - São Paulo - Brasil - Phone: +55(11)95150-7341</div>
     </div>
   </div>
   <div class="post" id="p261422">
@@ -364,149 +389,149 @@ Regards, saludos.</r></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Thu Jul 06, 2023 03:16 PM
       </div>
-      <div class="content"><r><QUOTE author="lgolexyn"><s><blockquote><cite>lgolexyn wrote:</cite></s>Hola a todos.<br/><br>
-Antes que nada agradecer a la tan buena información que siempre encuentro en este foro.<br/><br>
-Adelanto que investigue en este foro durante una semana, y hasta ahora no puede solucionarlo.<br/><br>
-<br/><br>
-Espero puedan orientarme con un problema.<br/><br>
-Tengo una vieja aplicación que ahora la pase a FWH 2.5 y xHar 1.0, para que corra en 32Bits y utilizo TDBF para abrir las bases.<br/><br>
-No puedo usar un FWH mas nuevo porque, de entrada tengo problemas con la TDBF y pensar en modificar toda la aplicación a por ej TDatabase, no<br/><br>
-tiene mucho sentido, porque el cliente quiere usar un tiempo mas y luego migrar a otro sistema.<br/><br>
-Todo funciona bien accediendo de una PC a la ves. Cuando accedo con por ej 2 PC a un mismo modulo del sistema, el primero que ingresa<br/><br>
-lo hace bien, el segundo tarda una eternidad.<br/><br>
-Es un modulo simple en este caso de Pacientes, el cual tiene 23.400 registros.<br/><br>
-Haciendo pruebas, detecte que si no activo los indices, todo se normaliza.<br/><br>
-Mi pregunta es esto tiene alguna solución simple, o no tiene arreglo.<br/><br>
-<br/><br>
-Nota: Es una red con cableado Ethernet, todas la PC con placas Gigabit y cableado nuevo, los switch también Gigabit<br/><br>
-          Todas con window 10, probé desactivar los antivirus, probé en otra red, y varios otro métodos que viendo durante  varios días<br/><br>
-           en este foro, no logre solucionar el problema.<br/><br>
-<br/><br>
-Desde ya muchas gracias.<br/><br>
-Leonardo G. Olexyn<br/><br>
-<br/><br>
-Adjunto parte del modulo de pacientes :<br/><br>
-<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-//  FWH 2.5 - Paciente<br/><br>
-//  (c) Leonardo Olexyn 2023<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-#include "FiveWin.ch"<br/><br>
-#include "Report.ch"<br/><br>
-#include "Mesdbf.ch"<br/><br>
-#include "TSButton.ch"<br/><br>
-#include "XBrowse.Ch"<br/><br>
-<br/><br>
-<br/><br>
-static oLocal, nLocal, cTexAfil :="", oTexAfil, nK:=0<br/><br>
-static cTexLocali :="", oTexLocali, cTexSucur :="", oTexSucur<br/><br>
-static oPaci, oFlt, oBtn[ 6 ]<br/><br>
-<br/><br>
-function Paci_ABM( tUser )<br/><br>
-<br/><br>
-   local oDlg, oLbx, oBusco, cBusco := SPACE(20)  //, cAlias:=cGetNewAlias('Sample')<br/><br>
-   set deleted on<br/><br>
-<br/><br>
-   AbrePaci(  )<br/><br>
-   oPaci:SetFocus()<br/><br>
-   oPaci:SetOrder( 2 )   <br/><br>
-<br/><br>
-   DEFINE DIALOG oDlg RESOURCE "FONDO_PACIENTE" TITLE "ABM de Pacientes" <br/><br>
-<br/><br>
-   REDEFINE LISTBOX oLbx FIELDS str(@oPaci:Codigo,6), @oPaci:Apynom,;<br/><br>
-                              @oPaci:Documento, @oPaci:Obrasoci;<br/><br>
-          HEADERS  "Código", "Apellido y Nombre", "Documento", "Obra Social" ;<br/><br>
-          FIELDSIZES 60,320,110,180 ;<br/><br>
-			 ALIAS oPaci:cAlias ;<br/><br>
-          ID 650  OF oDlg COLOR CLR_BLACK, RGB( 255, 255, 235) UPDATE<br/><br>
-<br/><br>
-   oPaci:SetBrowse( oLbx, .f. )  <br/><br>
-<br/><br>
-	REDEFINE GET oBusco VAR cBusco ID 400 OF oDlg ;<br/><br>
-	                 ON CHANGE ( oBusco:Assign(),                             ;<br/><br>
-                               oPaci:Seek( AllTrim(UPPER(cBusco))+;<br/><br>
-                               IF( ISALPHA( CHR(nKey) ) .OR. ISDIGIT( CHR(nKey) )  ;<br/><br>
-                                   .OR. nKey = 32, UPPER(CHR(nKey)), "" ) ), ;<br/><br>
-                               oLbx:refresh() )<br/><br>
-<br/><br>
-//   REDEFINE BUTTON ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() <br/><br>
-   REDEFINE SBUTTON oBtn ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() <br/><br>
-<br/><br>
-   REDEFINE BUTTON ID 180 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .f. ), oDlg:Update() <br/><br>
-   REDEFINE BUTTON ID 190 OF oDlg ACTION DelPaci( oLbx, oPaci )<br/><br>
-   REDEFINE BUTTON ID 200 OF oDlg ACTION BuscaPaci( oLbx, oPaci )<br/><br>
-   REDEFINE BUTTON ID 240 OF oDlg CANCEL ACTION oDlg:End()<br/><br>
-<br/><br>
-<br/><br>
-     ACTIVATE DIALOG oDlg CENTERED<br/><br>
-<br/><br>
-	oPaci:End()<br/><br>
-<br/><br>
-return nil<br/><br>
-<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-<br/><br>
-<br/><br>
-<br/><br>
-//----------------------------------------------------------------------------//<br/><br>
-//  Abre Paciente<br/><br>
-Function AbrePaci(  ) <br/><br>
-<br/><br>
-    DEFINE DATABASE oPaci FILE "PACIENTE.DBF" ALIAS PACIENTE<br/><br>
-<br/><br>
-        FIELD NAME "CODIGO"     TYPE "N"  LEN 06  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "APYNOM"     TYPE "C"  LEN 45  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DIREC"      TYPE "C"  LEN 40  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "CODPOST"    TYPE "C"  LEN 08  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "OBRACOD"    TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "OBRASOCI"   TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "NAFIALIADO" TYPE "C"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DOCUMENTO"  TYPE "C"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "GSANGUINEO" TYPE "C"  LEN 04  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "LOCPROV"    TYPE "C"  LEN 25  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "TELEF"      TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "FENACIM"    TYPE "D"  LEN 08  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "EDAD"       TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "NACIONALI"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ESTCIVIL"   TYPE "C"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "_"       TYPE "C"  LEN 01  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "OCUPACION"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "FEINITRAT"  TYPE "D"  LEN 08  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ANTQUIRUR"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ANTFAMIL"   TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ANTPATOLOG" TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ENFACTUAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "HABTOXICO"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "MOTCONSUL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "EXAMGERAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DIAGMEDICO" TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "DIAGKINES"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br/><br>
-	FIELD NAME "EMAIL"      TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "BAJA"       TYPE "L"  LEN 01  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "MEDICO"     TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "TELMEDICO"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "ATIENDEN"   TYPE "C"  LEN 35  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "SALPLUS"    TYPE "N"  LEN 08  DEC 02 OF oPaci<br/><br>
-        FIELD NAME "SALORDEN"   TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-        FIELD NAME "SALSESI"    TYPE "N"  LEN 03  DEC 00 OF oPaci<br/><br>
-<br/><br>
-   DEFINE INDEX ON str(Codigo,6) TO PACIENTE                 TAG PaciCod NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON substr(Upper(Apynom),1,45) TO PACIENTE    TAG PaciNom NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON str(OBRACOD,3) TO PACIENTE                TAG PaciObr NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON substr(_,1,1)+str(EDAD,3) TO PACIENTE  TAG PaciSex NODELETED OF oPaci<br/><br>
-   DEFINE INDEX ON substr(Upper(DOCUMENTO),1,10) TO PACIENTE TAG PaciDoc NODELETED OF oPaci<br/><br>
-    <br/><br>
-   END DATABASE oPaci<br/><br>
-<br/><br>
-   ACTIVATE DATABASE oPaci SHARED <br/><br>
-  // ACTIVATE INDEX IN oPaci<br/><br>
-<br/><br>
-Return( oPaci )<e></blockquote></e></QUOTE><br>
+      <div class="content"><blockquote><cite>lgolexyn wrote:</cite>Hola a todos.<br>
+Antes que nada agradecer a la tan buena información que siempre encuentro en este foro.<br>
+Adelanto que investigue en este foro durante una semana, y hasta ahora no puede solucionarlo.<br>
 <br>
-Otro detalle que he notado en su codigo al principio del programa usted abre las bases de datos y sus respectivo indices AbrePaci( ) y dentro de la funcion, vuelve a generar todos los indices, cuando solo se debe de hacer una sola vez abriendo los indices y no volver a crear de nuevo los indices, tiene que controlarlo, porque si entra otro usuario compartiendo en red, es ahi donde el otro usuario vuelve a abrir la funcion AbrePaci( ) y crea de nuevo los indices que hasta podria marcar error por falta de control de que hay otro o nuevo usuario accediendo al sistema.<br/><br>
-<br/><br>
-Es lo que note en su codigo de programacion al principio.</r></div>
-      <div class="signature"><t></t></div>
+Espero puedan orientarme con un problema.<br>
+Tengo una vieja aplicación que ahora la pase a FWH 2.5 y xHar 1.0, para que corra en 32Bits y utilizo TDBF para abrir las bases.<br>
+No puedo usar un FWH mas nuevo porque, de entrada tengo problemas con la TDBF y pensar en modificar toda la aplicación a por ej TDatabase, no<br>
+tiene mucho sentido, porque el cliente quiere usar un tiempo mas y luego migrar a otro sistema.<br>
+Todo funciona bien accediendo de una PC a la ves. Cuando accedo con por ej 2 PC a un mismo modulo del sistema, el primero que ingresa<br>
+lo hace bien, el segundo tarda una eternidad.<br>
+Es un modulo simple en este caso de Pacientes, el cual tiene 23.400 registros.<br>
+Haciendo pruebas, detecte que si no activo los indices, todo se normaliza.<br>
+Mi pregunta es esto tiene alguna solución simple, o no tiene arreglo.<br>
+<br>
+Nota: Es una red con cableado Ethernet, todas la PC con placas Gigabit y cableado nuevo, los switch también Gigabit<br>
+          Todas con window 10, probé desactivar los antivirus, probé en otra red, y varios otro métodos que viendo durante  varios días<br>
+           en este foro, no logre solucionar el problema.<br>
+<br>
+Desde ya muchas gracias.<br>
+Leonardo G. Olexyn<br>
+<br>
+Adjunto parte del modulo de pacientes :<br>
+<br>
+//----------------------------------------------------------------------------//<br>
+//  FWH 2.5 - Paciente<br>
+//  (c) Leonardo Olexyn 2023<br>
+//----------------------------------------------------------------------------//<br>
+#include "FiveWin.ch"<br>
+#include "Report.ch"<br>
+#include "Mesdbf.ch"<br>
+#include "TSButton.ch"<br>
+#include "XBrowse.Ch"<br>
+<br>
+<br>
+static oLocal, nLocal, cTexAfil :="", oTexAfil, nK:=0<br>
+static cTexLocali :="", oTexLocali, cTexSucur :="", oTexSucur<br>
+static oPaci, oFlt, oBtn[ 6 ]<br>
+<br>
+function Paci_ABM( tUser )<br>
+<br>
+   local oDlg, oLbx, oBusco, cBusco := SPACE(20)  //, cAlias:=cGetNewAlias('Sample')<br>
+   set deleted on<br>
+<br>
+   AbrePaci(  )<br>
+   oPaci:SetFocus()<br>
+   oPaci:SetOrder( 2 )   <br>
+<br>
+   DEFINE DIALOG oDlg RESOURCE "FONDO_PACIENTE" TITLE "ABM de Pacientes" <br>
+<br>
+   REDEFINE LISTBOX oLbx FIELDS str(@oPaci:Codigo,6), @oPaci:Apynom,;<br>
+                              @oPaci:Documento, @oPaci:Obrasoci;<br>
+          HEADERS  "Código", "Apellido y Nombre", "Documento", "Obra Social" ;<br>
+          FIELDSIZES 60,320,110,180 ;<br>
+			 ALIAS oPaci:cAlias ;<br>
+          ID 650  OF oDlg COLOR CLR_BLACK, RGB( 255, 255, 235) UPDATE<br>
+<br>
+   oPaci:SetBrowse( oLbx, .f. )  <br>
+<br>
+	REDEFINE GET oBusco VAR cBusco ID 400 OF oDlg ;<br>
+	                 ON CHANGE ( oBusco:Assign(),                             ;<br>
+                               oPaci:Seek( AllTrim(UPPER(cBusco))+;<br>
+                               IF( ISALPHA( CHR(nKey) ) .OR. ISDIGIT( CHR(nKey) )  ;<br>
+                                   .OR. nKey = 32, UPPER(CHR(nKey)), "" ) ), ;<br>
+                               oLbx:refresh() )<br>
+<br>
+//   REDEFINE BUTTON ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() <br>
+   REDEFINE SBUTTON oBtn ID 170 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .t. ), oDlg:Update() <br>
+<br>
+   REDEFINE BUTTON ID 180 OF oDlg ACTION EditPaci( oLbx, oPaci, @tUser, .f. ), oDlg:Update() <br>
+   REDEFINE BUTTON ID 190 OF oDlg ACTION DelPaci( oLbx, oPaci )<br>
+   REDEFINE BUTTON ID 200 OF oDlg ACTION BuscaPaci( oLbx, oPaci )<br>
+   REDEFINE BUTTON ID 240 OF oDlg CANCEL ACTION oDlg:End()<br>
+<br>
+<br>
+     ACTIVATE DIALOG oDlg CENTERED<br>
+<br>
+	oPaci:End()<br>
+<br>
+return nil<br>
+<br>
+//----------------------------------------------------------------------------//<br>
+<br>
+<br>
+<br>
+//----------------------------------------------------------------------------//<br>
+//  Abre Paciente<br>
+Function AbrePaci(  ) <br>
+<br>
+    DEFINE DATABASE oPaci FILE "PACIENTE.DBF" ALIAS PACIENTE<br>
+<br>
+        FIELD NAME "CODIGO"     TYPE "N"  LEN 06  DEC 00 OF oPaci<br>
+        FIELD NAME "APYNOM"     TYPE "C"  LEN 45  DEC 00 OF oPaci<br>
+        FIELD NAME "DIREC"      TYPE "C"  LEN 40  DEC 00 OF oPaci<br>
+        FIELD NAME "CODPOST"    TYPE "C"  LEN 08  DEC 00 OF oPaci<br>
+        FIELD NAME "OBRACOD"    TYPE "N"  LEN 03  DEC 00 OF oPaci<br>
+        FIELD NAME "OBRASOCI"   TYPE "C"  LEN 35  DEC 00 OF oPaci<br>
+        FIELD NAME "NAFIALIADO" TYPE "C"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "DOCUMENTO"  TYPE "C"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "GSANGUINEO" TYPE "C"  LEN 04  DEC 00 OF oPaci<br>
+        FIELD NAME "LOCPROV"    TYPE "C"  LEN 25  DEC 00 OF oPaci<br>
+        FIELD NAME "TELEF"      TYPE "C"  LEN 20  DEC 00 OF oPaci<br>
+        FIELD NAME "FENACIM"    TYPE "D"  LEN 08  DEC 00 OF oPaci<br>
+        FIELD NAME "EDAD"       TYPE "N"  LEN 03  DEC 00 OF oPaci<br>
+        FIELD NAME "NACIONALI"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br>
+        FIELD NAME "ESTCIVIL"   TYPE "C"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "_"       TYPE "C"  LEN 01  DEC 00 OF oPaci<br>
+        FIELD NAME "OCUPACION"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br>
+        FIELD NAME "FEINITRAT"  TYPE "D"  LEN 08  DEC 00 OF oPaci<br>
+        FIELD NAME "ANTQUIRUR"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "ANTFAMIL"   TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "ANTPATOLOG" TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "ENFACTUAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "HABTOXICO"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "MOTCONSUL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "EXAMGERAL"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "DIAGMEDICO" TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+        FIELD NAME "DIAGKINES"  TYPE "M"  LEN 10  DEC 00 OF oPaci<br>
+	FIELD NAME "EMAIL"      TYPE "C"  LEN 35  DEC 00 OF oPaci<br>
+        FIELD NAME "BAJA"       TYPE "L"  LEN 01  DEC 00 OF oPaci<br>
+        FIELD NAME "MEDICO"     TYPE "C"  LEN 35  DEC 00 OF oPaci<br>
+        FIELD NAME "TELMEDICO"  TYPE "C"  LEN 20  DEC 00 OF oPaci<br>
+        FIELD NAME "ATIENDEN"   TYPE "C"  LEN 35  DEC 00 OF oPaci<br>
+        FIELD NAME "SALPLUS"    TYPE "N"  LEN 08  DEC 02 OF oPaci<br>
+        FIELD NAME "SALORDEN"   TYPE "N"  LEN 03  DEC 00 OF oPaci<br>
+        FIELD NAME "SALSESI"    TYPE "N"  LEN 03  DEC 00 OF oPaci<br>
+<br>
+   DEFINE INDEX ON str(Codigo,6) TO PACIENTE                 TAG PaciCod NODELETED OF oPaci<br>
+   DEFINE INDEX ON substr(Upper(Apynom),1,45) TO PACIENTE    TAG PaciNom NODELETED OF oPaci<br>
+   DEFINE INDEX ON str(OBRACOD,3) TO PACIENTE                TAG PaciObr NODELETED OF oPaci<br>
+   DEFINE INDEX ON substr(_,1,1)+str(EDAD,3) TO PACIENTE  TAG PaciSex NODELETED OF oPaci<br>
+   DEFINE INDEX ON substr(Upper(DOCUMENTO),1,10) TO PACIENTE TAG PaciDoc NODELETED OF oPaci<br>
+    <br>
+   END DATABASE oPaci<br>
+<br>
+   ACTIVATE DATABASE oPaci SHARED <br>
+  // ACTIVATE INDEX IN oPaci<br>
+<br>
+Return( oPaci )</blockquote>
+
+Otro detalle que he notado en su codigo al principio del programa usted abre las bases de datos y sus respectivo indices AbrePaci( ) y dentro de la funcion, vuelve a generar todos los indices, cuando solo se debe de hacer una sola vez abriendo los indices y no volver a crear de nuevo los indices, tiene que controlarlo, porque si entra otro usuario compartiendo en red, es ahi donde el otro usuario vuelve a abrir la funcion AbrePaci( ) y crea de nuevo los indices que hasta podria marcar error por falta de control de que hay otro o nuevo usuario accediendo al sistema.<br>
+<br>
+Es lo que note en su codigo de programacion al principio.</div>
+      <div class="signature"></div>
     </div>
   </div>
   <div class="post" id="p261423">
@@ -522,29 +547,26 @@ Es lo que note en su codigo de programacion al principio.</r></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Thu Jul 06, 2023 03:30 PM
       </div>
-      <div class="content"><p><t>Hola,<br/><br>
-<br/><br>
-Este tema creo que no tiene solución si no te pasas a Advantage RDD.<br/><br>
-<br/><br>
-Tengo la TDbf de Manuel Expósito, una de las joyas de este foro.<br/><br>
-Muchísimas gracias Manuel, que gran trabajo.<br/><br>
-<br/><br>
-Funcionando con FWH32 22.12<br/><br>
-<br/><br>
-Si me das un mail te la envío.<br/><br>
-<br/><br>
-La principal modificación la apliqué el 20/03/2009.<br/><br>
-<br/><br>
- &gt; 20/03/2009<br/><br>
- - La DATA hDataFile estaba definida como AS NUMERIC y con la nueva versión de<br/><br>
-   Harbour (9.02), y el cambio del 'valor' hDataFile por pDataFile en la<br/><br>
-   estructura _DBFAREA de HbRddDbf.h, esta definición era incompatible; de ahí<br/><br>
-   que ahora en la declaración de DATA hDAtaFile se haya omitido AS NUMERIC.<br/><br>
- &lt; 20/03/2009</t></p></div>
-      <div class="signature"><t><p>Un Saludo<br/><br>
+      <div class="content"><p>Hola,</p>
+<p>Este tema creo que no tiene solución si no te pasas a Advantage RDD.</p>
+<p>Tengo la TDbf de Manuel Expósito, una de las joyas de este foro.</p>
+<p>Muchísimas gracias Manuel, que gran trabajo.</p>
+<p>Funcionando con FWH32 22.12</p>
+<p>Si me das un mail te la envío.</p>
+<p>La principal modificación la apliqué el 20/03/2009.</p>
+<p>&gt; 20/03/2009</p>
+<ul>
+<li>La DATA hDataFile estaba definida como AS NUMERIC y con la nueva versión de</li>
+</ul>
+<p>Harbour (9.02), y el cambio del 'valor' hDataFile por pDataFile en la</p>
+<p>estructura _DBFAREA de HbRddDbf.h, esta definición era incompatible; de ahí</p>
+<p>que ahora en la declaración de DATA hDAtaFile se haya omitido AS NUMERIC.</p>
+<p>&lt; 20/03/2009</p></div>
+      <div class="signature"><p>Un Saludo<br>
+<br>
 Carlos G.</p><br>
 <br>
-<p>FiveWin 25.12 + Harbour 3.2.0dev (r2502110321), BCC 7.7 Windows 11 Home</p></t></div>
+<p>FiveWin 25.12 + Harbour 3.2.0dev (r2502110321), BCC 7.7 Windows 11 Home</p></div>
     </div>
   </div>
   <div class="post" id="p261430">
@@ -560,14 +582,14 @@ Carlos G.</p><br>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Thu Jul 06, 2023 06:33 PM
       </div>
-      <div class="content"><p><r>Estimado Carlos<br/><br>
-<br/><br>
-Gracias por el aporte<br/><br>
-La verdad que todos los sistemas que tengo usan TDbf sin ningún problema.<br/><br>
-<br/><br>
-Saludos y te dejo mi correo.<br/><br>
-<EMAIL email="olexyn@gmail.com">olexyn@gmail.com</EMAIL></r></p></div>
-      <div class="signature"><t>Leonardo G.</t></div>
+      <div class="content">Estimado Carlos<br>
+<br>
+Gracias por el aporte<br>
+La verdad que todos los sistemas que tengo usan TDbf sin ningún problema.<br>
+<br>
+Saludos y te dejo mi correo.<br>
+<a href="mailto:olexyn@gmail.com">olexyn@gmail.com</a></div>
+      <div class="signature">Leonardo G.</div>
     </div>
   </div>
   <div class="post" id="p261431">
@@ -583,12 +605,11 @@ Saludos y te dejo mi correo.<br/><br>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Thu Jul 06, 2023 06:36 PM
       </div>
-      <div class="content"><p><t>Ahora que analizo tu respuesta, me parece que tienes razón, esta generando los indices cada ves que abro la base, lo único que no estoy encontrando es la forma de acceder a los indices desde TDBF<br/><br>
-Creo que por ahí viene el problema.<br/><br>
-Voy a analizar como lo puedo resolver.<br/><br>
-<br/><br>
-Gracias</t></p></div>
-      <div class="signature"><t>Leonardo G.</t></div>
+      <div class="content"><p>Ahora que analizo tu respuesta, me parece que tienes razón, esta generando los indices cada ves que abro la base, lo único que no estoy encontrando es la forma de acceder a los indices desde TDBF</p>
+<p>Creo que por ahí viene el problema.</p>
+<p>Voy a analizar como lo puedo resolver.</p>
+<p>Gracias</p></div>
+      <div class="signature">Leonardo G.</div>
     </div>
   </div>
   <div class="post" id="p261440">
@@ -604,19 +625,19 @@ Gracias</t></p></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Thu Jul 06, 2023 09:49 PM
       </div>
-      <div class="content"><p><r>Estimado Joao<br/><br>
-<br/><br>
-Adjunto link con un caso particular, desde el puesto donde esta instalado siempre funciona, pero al tratar de acceder desde <br/><br>
-otra estacion se cuelga el programa.<br/><br>
-<br/><br>
-<URL url="https://mega.nz/file/s2ME2DRC#2n_YxCn-vZNiJocDEMh4guaskfptYuYC06FHKsjMAv8"><LINK_TEXT text="https://mega.nz/file/s2ME2DRC#2n_YxCn-v ... 6FHKsjMAv8">https://mega.nz/file/s2ME2DRC#2n_YxCn-vZNiJocDEMh4guaskfptYuYC06FHKsjMAv8</LINK_TEXT></URL><br/><br>
-<br/><br>
-Copilado con FWH 2.5 xHar 1.0.0<br/><br>
-TDbf 12<br/><br>
-<br/><br>
-En el programa se accede a pacientes, y también esta habilitada la opción Utilidades, Reorganizar por si se corrompe los indices.<br/><br>
-En mi caco como comente lo probé en una red con windows 10</r></p></div>
-      <div class="signature"><t>Leonardo G.</t></div>
+      <div class="content">Estimado Joao<br>
+<br>
+Adjunto link con un caso particular, desde el puesto donde esta instalado siempre funciona, pero al tratar de acceder desde <br>
+otra estacion se cuelga el programa.<br>
+<br>
+<a href="https://mega.nz/file/s2ME2DRC#2n_YxCn-vZNiJocDEMh4guaskfptYuYC06FHKsjMAv8" rel="noopener"><a href="https://mega.nz/file/s2ME2DRC#2n_YxCn-v ... 6FHKsjMAv8" rel="noopener">https://mega.nz/file/s2ME2DRC#2n_YxCn-vZNiJocDEMh4guaskfptYuYC06FHKsjMAv8</a></a><br>
+<br>
+Copilado con FWH 2.5 xHar 1.0.0<br>
+TDbf 12<br>
+<br>
+En el programa se accede a pacientes, y también esta habilitada la opción Utilidades, Reorganizar por si se corrompe los indices.<br>
+En mi caco como comente lo probé en una red con windows 10</div>
+      <div class="signature">Leonardo G.</div>
     </div>
   </div>
   <div class="post" id="p261445">
@@ -632,29 +653,34 @@ En mi caco como comente lo probé en una red con windows 10</r></p></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Fri Jul 07, 2023 09:01 AM
       </div>
-      <div class="content"><p><t>Las modificaciones que tuve que aplicar a TDBF para que funcionara en versiones recientes de Harbour y Fivewin son:<br/><br>
-<br/><br>
- &gt; 26/05/2008<br/><br>
-   Cambiado TField() por TDBFField() en TDBF.PRG<br/><br>
-   Y también cambiado TField por TDBFField en TDBFFIEL.PRG, en la definición de la clase.<br/><br>
-   Creo que esta clase (TField) existe en TDataBase de FWH.<br/><br>
- &lt;<br/><br>
- &gt; 20/03/2009<br/><br>
- - La DATA hDataFile estaba definida como AS NUMERIC y con la nueva versión de<br/><br>
-   Harbour (9.02), y el cambio del 'valor' hDataFile por pDataFile en la<br/><br>
-   estructura _DBFAREA de HbRddDbf.h, esta definición era incompatible; de ahí<br/><br>
-   que ahora en la declaración de DATA hDAtaFile se haya omitido AS NUMERIC.<br/><br>
- - En el fichero HBFORCE.C, en la definición de HB_FUNC( DBFHDL ), cambiar<br/><br>
-      hb_retni( pArea-&gt;hDataFile );   por   hb_retptr( pArea-&gt;pDataFile );<br/><br>
-    y<br/><br>
-      hb_retni( 0 );     por     hb_retptr( 0 );<br/><br>
- &lt; 20/03/2009<br/><br>
-<br/><br>
-Las fechas son aproximadas, cuando actualicé mi FWH.</t></p></div>
-      <div class="signature"><t><p>Un Saludo<br/><br>
+      <div class="content"><p>Las modificaciones que tuve que aplicar a TDBF para que funcionara en versiones recientes de Harbour y Fivewin son:</p>
+<p>&gt; 26/05/2008</p>
+<p>Cambiado TField() por TDBFField() en TDBF.PRG</p>
+<p>Y también cambiado TField por TDBFField en TDBFFIEL.PRG, en la definición de la clase.</p>
+<p>Creo que esta clase (TField) existe en TDataBase de FWH.</p>
+<p>&lt;</p>
+<p>&gt; 20/03/2009</p>
+<ul>
+<li>La DATA hDataFile estaba definida como AS NUMERIC y con la nueva versión de</li>
+</ul>
+<p>Harbour (9.02), y el cambio del 'valor' hDataFile por pDataFile en la</p>
+<p>estructura _DBFAREA de HbRddDbf.h, esta definición era incompatible; de ahí</p>
+<p>que ahora en la declaración de DATA hDAtaFile se haya omitido AS NUMERIC.</p>
+<ul>
+<li>
+<p>En el fichero HBFORCE.C, en la definición de HB_FUNC( DBFHDL ), cambiar</p>
+<p>hb_retni( pArea-&gt;hDataFile );   por   hb_retptr( pArea-&gt;pDataFile );</p>
+<p>y</p>
+<p>hb_retni( 0 );     por     hb_retptr( 0 );</p>
+</li>
+</ul>
+<p>&lt; 20/03/2009</p>
+<p>Las fechas son aproximadas, cuando actualicé mi FWH.</p></div>
+      <div class="signature"><p>Un Saludo<br>
+<br>
 Carlos G.</p><br>
 <br>
-<p>FiveWin 25.12 + Harbour 3.2.0dev (r2502110321), BCC 7.7 Windows 11 Home</p></t></div>
+<p>FiveWin 25.12 + Harbour 3.2.0dev (r2502110321), BCC 7.7 Windows 11 Home</p></div>
     </div>
   </div>
   <div class="post" id="p261446">
@@ -670,13 +696,11 @@ Carlos G.</p><br>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Fri Jul 07, 2023 11:07 AM
       </div>
-      <div class="content"><p><t>Muy amable Carlos<br/><br>
-<br/><br>
-Voy a analizarlo para ver como implementar.<br/><br>
-<br/><br>
-Un cordial saludo<br/><br>
-Leonardo</t></p></div>
-      <div class="signature"><t>Leonardo G.</t></div>
+      <div class="content"><p>Muy amable Carlos</p>
+<p>Voy a analizarlo para ver como implementar.</p>
+<p>Un cordial saludo</p>
+<p>Leonardo</p></div>
+      <div class="signature">Leonardo G.</div>
     </div>
   </div>
   <div class="post" id="p261458">
@@ -692,34 +716,34 @@ Leonardo</t></p></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Fri Jul 07, 2023 02:38 PM
       </div>
-      <div class="content"><r><QUOTE author="lgolexyn"><s><blockquote><cite>lgolexyn wrote:</cite></s>Ahora que analizo tu respuesta, me parece que tienes razón, esta generando los indices cada ves que abro la base, lo único que no estoy encontrando es la forma de acceder a los indices desde TDBF<br/><br>
-Creo que por ahí viene el problema.<br/><br>
-Voy a analizar como lo puedo resolver.<br/><br>
-<br/><br>
-Gracias<e></blockquote></e></QUOTE><br>
+      <div class="content"><blockquote><cite>lgolexyn wrote:</cite>Ahora que analizo tu respuesta, me parece que tienes razón, esta generando los indices cada ves que abro la base, lo único que no estoy encontrando es la forma de acceder a los indices desde TDBF<br>
+Creo que por ahí viene el problema.<br>
+Voy a analizar como lo puedo resolver.<br>
 <br>
-Hola de nuevo estimado amigo.<br/><br>
-<br/><br>
-Tienes que usar condicion de abrir bases de datos con su respectivo indices.<br/><br>
-<br/><br>
-Por ejemplo<br/><br>
-Caso 1 para generar indices<br/><br>
-<br/><br>
-if !existeIndices(tabla)  // aqui indica que si no existe indice que la genere<br/><br>
-    index to NUMREGISTRO TAG TABLA<br/><br>
-endif<br/><br>
-<br/><br>
-Caso 2 para abrir tablas y su respectivo indices<br/><br>
-si abres la tabla1()<br/><br>
-use tabla new alias tabla<br/><br>
-set index to tabla<br/><br>
-<br/><br>
-<br/><br>
-<br/><br>
-Es asi como se debe de controlar....espero haberte dado la idea mi estimado amigo.<br/><br>
-<br/><br>
-Saludos y buen dia.</r></div>
-      <div class="signature"><t></t></div>
+Gracias</blockquote>
+
+Hola de nuevo estimado amigo.<br>
+<br>
+Tienes que usar condicion de abrir bases de datos con su respectivo indices.<br>
+<br>
+Por ejemplo<br>
+Caso 1 para generar indices<br>
+<br>
+if !existeIndices(tabla)  // aqui indica que si no existe indice que la genere<br>
+    index to NUMREGISTRO TAG TABLA<br>
+endif<br>
+<br>
+Caso 2 para abrir tablas y su respectivo indices<br>
+si abres la tabla1()<br>
+use tabla new alias tabla<br>
+set index to tabla<br>
+<br>
+<br>
+<br>
+Es asi como se debe de controlar....espero haberte dado la idea mi estimado amigo.<br>
+<br>
+Saludos y buen dia.</div>
+      <div class="signature"></div>
     </div>
   </div>
   <div class="post" id="p261474">
@@ -735,11 +759,10 @@ Saludos y buen dia.</r></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Fri Jul 07, 2023 11:14 PM
       </div>
-      <div class="content"><p><t>Entendido con respecto a los indices y apertura de tablas<br/><br>
-Tengo que analizar todo para ver como encarar el tema<br/><br>
-<br/><br>
-Gracias Estimado</t></p></div>
-      <div class="signature"><t>Leonardo G.</t></div>
+      <div class="content"><p>Entendido con respecto a los indices y apertura de tablas</p>
+<p>Tengo que analizar todo para ver como encarar el tema</p>
+<p>Gracias Estimado</p></div>
+      <div class="signature">Leonardo G.</div>
     </div>
   </div>
   <div class="post" id="p261502">
@@ -755,16 +778,12 @@ Gracias Estimado</t></p></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Sat Jul 08, 2023 01:59 PM
       </div>
-      <div class="content"><p><t>Gentleman ... for what it is worth I gave up on .dbf many years ago in favor of SQL and ADO .. For local network apps I find MS Access is an excellent database choice but for large enterprise apps I like Sql Server.<br/><br>
-<br/><br>
-ADO does NOT require any 3rd party connection libraries ( like odbc ) and all the ADO drivers ( connectivity ) are contained on every Microsoft windows 10 workstation .. <br/><br>
-<br/><br>
-ADO is very much like the syntax of TDatabase .. have a look at the FW samples and the example AdoRick.prg ... Rao has also simplified the ADO syntax into FW wrappers ....\source\function\adofuncs.prg which are already built into FiveWin .. there is no need to include adofuncs.prg into your link list .. <br/><br>
-<br/><br>
-If you use Tdatabase .. you should have no difficult understanding the ADO syntax .. <br/><br>
-<br/><br>
-Rick Lipkin</t></p></div>
-      <div class="signature"><t></t></div>
+      <div class="content"><p>Gentleman ... for what it is worth I gave up on .dbf many years ago in favor of SQL and ADO .. For local network apps I find MS Access is an excellent database choice but for large enterprise apps I like Sql Server.</p>
+<p>ADO does NOT require any 3rd party connection libraries ( like odbc ) and all the ADO drivers ( connectivity ) are contained on every Microsoft windows 10 workstation .. </p>
+<p>ADO is very much like the syntax of TDatabase .. have a look at the FW samples and the example AdoRick.prg ... Rao has also simplified the ADO syntax into FW wrappers ....\source\function\adofuncs.prg which are already built into FiveWin .. there is no need to include adofuncs.prg into your link list .. </p>
+<p>If you use Tdatabase .. you should have no difficult understanding the ADO syntax .. </p>
+<p>Rick Lipkin</p></div>
+      <div class="signature"></div>
     </div>
   </div>
   <div class="post" id="p261510">
@@ -780,21 +799,16 @@ Rick Lipkin</t></p></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Sat Jul 08, 2023 06:04 PM
       </div>
-      <div class="content"><p><t>Hola amigo:<br/><br>
-<br/><br>
-No uso TDbf pero tengo entendido que como todos los productos de Manu es de gran calidad, no me cabe la menor duda.<br/><br>
-Mi primer consejo seria consultar con Manu y que el te diga la mejor manera de funcionar para entornos en red (dale unos dias que siempre esta liado), supongo que con la clase tendras algun ejemplo donde poder<br/><br>
-investigar.<br/><br>
-<br/><br>
-Luego la funcion que utilizas abre paciente veo que creas las tablas cada vez que entras(supongo que no ya que las borrarias)  y los indices. ?<br/><br>
-<br/><br>
-Sigue los consejos de ACC69 y ten en cuenta que en indices .CDX como veo que estas usando al abrir la tabla si el indice tiene el mismo nombre no es necesario que los abras, ya<br/><br>
-que por defecto se abre automaticamente.<br/><br>
-<br/><br>
-Seguro que lo solucionas rapidamente.<br/><br>
-<br/><br>
-Jose.</t></p></div>
-      <div class="signature"><t>Fwh 24.07 64 bits + Harbour 64 bits 3.2dev(r2407221137) + MSVC64</t></div>
+      <div class="content"><p>Hola amigo:</p>
+<p>No uso TDbf pero tengo entendido que como todos los productos de Manu es de gran calidad, no me cabe la menor duda.</p>
+<p>Mi primer consejo seria consultar con Manu y que el te diga la mejor manera de funcionar para entornos en red (dale unos dias que siempre esta liado), supongo que con la clase tendras algun ejemplo donde poder</p>
+<p>investigar.</p>
+<p>Luego la funcion que utilizas abre paciente veo que creas las tablas cada vez que entras(supongo que no ya que las borrarias)  y los indices. ?</p>
+<p>Sigue los consejos de ACC69 y ten en cuenta que en indices .CDX como veo que estas usando al abrir la tabla si el indice tiene el mismo nombre no es necesario que los abras, ya</p>
+<p>que por defecto se abre automaticamente.</p>
+<p>Seguro que lo solucionas rapidamente.</p>
+<p>Jose.</p></div>
+      <div class="signature">Fwh 24.07 64 bits + Harbour 64 bits 3.2dev(r2407221137) + MSVC64</div>
     </div>
   </div>
   <div class="post" id="p261528">
@@ -810,17 +824,14 @@ Jose.</t></p></div>
         <span class="subject">Re: Lentitud al abrir una dbf en red</span><br>
         Posted: Mon Jul 10, 2023 05:58 AM
       </div>
-      <div class="content"><p><t>Hola Leonardo.<br/><br>
-<br/><br>
-Soy Manu Expósito, hice TDbf hace muchos años como ejercicio de aprendizaje para mi y de paso lo cedí a dominio público para que todo el mundo pudiera usarla libremente...<br/><br>
-<br/><br>
-No sé si ya se solucionó el tema. Si no lo hizo podríamos intentar arreglarlo para que TDbf siga unos años más en la palestra.<br/><br>
-<br/><br>
-Como seguro que si le meto mano de nuevo habrá cambios me gustaría que los que tengáis algún cambio implantado me lo hicierais llegar, (Carlos)<br/><br>
-<br/><br>
-Un saludo</t></p></div>
-      <div class="signature"><t>______________________________________________________________________________<br/><br>
-Sevilla - Andalucía</t></div>
+      <div class="content"><p>Hola Leonardo.</p>
+<p>Soy Manu Expósito, hice TDbf hace muchos años como ejercicio de aprendizaje para mi y de paso lo cedí a dominio público para que todo el mundo pudiera usarla libremente...</p>
+<p>No sé si ya se solucionó el tema. Si no lo hizo podríamos intentar arreglarlo para que TDbf siga unos años más en la palestra.</p>
+<p>Como seguro que si le meto mano de nuevo habrá cambios me gustaría que los que tengáis algún cambio implantado me lo hicierais llegar, (Carlos)</p>
+<p>Un saludo</p></div>
+      <div class="signature">______________________________________________________________________________<br>
+<br>
+Sevilla - Andalucía</div>
     </div>
   </div><div class="pagination">Page: <strong>1</strong> <a href="topic-43423-page-2.html">2</a> <a href="topic-43423-page-3.html">3</a> (32 posts)</div>
   <div class="footer">

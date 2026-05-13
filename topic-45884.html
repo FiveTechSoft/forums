@@ -26,42 +26,42 @@
         <span class="subject">SMB vs. Socket – warum ein Microservice für DBF stabiler ist</span><br>
         Posted: Tue Aug 26, 2025 08:52 AM
       </div>
-      <div class="content"><p><r>SMB vs. Socket – warum ein Microservice für DBF stabiler ist<br/><br>
-<br/><br>
-Bei klassischen DBF-Anwendungen greifen die Clients über ein Netzlaufwerk (X:\ oder \Server\Share\…) auf die Daten zu. Damit ist immer das SMB-Protokoll im Spiel:<br/><br>
-<br/><br>
-Jeder Client öffnet die Datei direkt über den Netzwerk-Redirector.<br/><br>
-<br/><br>
-Locks (FLOCK/RLOCK) müssen über SMB ans Server-Filesystem weitergereicht werden.<br/><br>
-<br/><br>
-Risiken: zusätzliche Latenz, Oplocks/Leases, AV-Filtertreiber, Netzwerkaussetzer.<br/><br>
-<br/><br>
-Anders beim Socket-basierten Microservice:<br/><br>
-<br/><br>
-Nur ein Prozess am Server öffnet die DBF-Dateien – lokal über Laufwerksbuchstaben (D:\DATAWIN\…), also direkt über den Festplattencontroller, ohne SMB.<br/><br>
-<br/><br>
-Alle Clients sprechen diesen Prozess über Sockets (TCP/HTTP/WebSocket) an.<br/><br>
-<br/><br>
-Vorteile:<br/><br>
-<br/><br>
-Kein SMB, kein Redirector → eine Fehlerquelle weniger.<br/><br>
-<br/><br>
-Sauberes Locking: der Service entscheidet, wann FLOCK/RLOCK gesetzt und gelöst wird.<br/><br>
-<br/><br>
-Linearisiert: konkurrierende Requests laufen in einer Queue → keine Rennbedingungen.<br/><br>
-<br/><br>
-Robust gegen Netzabbrüche: nur der Socket bricht ab, die DBF bleibt konsistent.<br/><br>
-<br/><br>
-Volle Kontrolle über Logging, Timeouts, Konflikt-Handling.<br/><br>
-<br/><br>
-<EMOJI seq="1f449" tseq="1f449">&#128073;</EMOJI> Kurz:<br/><br>
-<br/><br>
-SMB = viele Handles, viel Koordination, anfällig.<br/><br>
-<br/><br>
-Socket-Service = ein Handle, eine Instanz, volle Kontrolle.<br/><br>
-<br/><br>
-Gerade bei DBF/CDX lohnt sich der Schritt weg vom Netzlaufwerk hin zum Microservice – stabiler, schneller, einfacher zu überwachen.</r></p></div>
-      <div class="signature"><t></t></div>
+      <div class="content">SMB vs. Socket – warum ein Microservice für DBF stabiler ist<br>
+<br>
+Bei klassischen DBF-Anwendungen greifen die Clients über ein Netzlaufwerk (X:\ oder \\Server\Share\…) auf die Daten zu. Damit ist immer das SMB-Protokoll im Spiel:<br>
+<br>
+Jeder Client öffnet die Datei direkt über den Netzwerk-Redirector.<br>
+<br>
+Locks (FLOCK/RLOCK) müssen über SMB ans Server-Filesystem weitergereicht werden.<br>
+<br>
+Risiken: zusätzliche Latenz, Oplocks/Leases, AV-Filtertreiber, Netzwerkaussetzer.<br>
+<br>
+Anders beim Socket-basierten Microservice:<br>
+<br>
+Nur ein Prozess am Server öffnet die DBF-Dateien – lokal über Laufwerksbuchstaben (D:\DATAWIN\…), also direkt über den Festplattencontroller, ohne SMB.<br>
+<br>
+Alle Clients sprechen diesen Prozess über Sockets (TCP/HTTP/WebSocket) an.<br>
+<br>
+Vorteile:<br>
+<br>
+Kein SMB, kein Redirector → eine Fehlerquelle weniger.<br>
+<br>
+Sauberes Locking: der Service entscheidet, wann FLOCK/RLOCK gesetzt und gelöst wird.<br>
+<br>
+Linearisiert: konkurrierende Requests laufen in einer Queue → keine Rennbedingungen.<br>
+<br>
+Robust gegen Netzabbrüche: nur der Socket bricht ab, die DBF bleibt konsistent.<br>
+<br>
+Volle Kontrolle über Logging, Timeouts, Konflikt-Handling.<br>
+<br>
+<EMOJI seq="1f449" tseq="1f449">&#128073;</EMOJI> Kurz:<br>
+<br>
+SMB = viele Handles, viel Koordination, anfällig.<br>
+<br>
+Socket-Service = ein Handle, eine Instanz, volle Kontrolle.<br>
+<br>
+Gerade bei DBF/CDX lohnt sich der Schritt weg vom Netzlaufwerk hin zum Microservice – stabiler, schneller, einfacher zu überwachen.</div>
+      <div class="signature"></div>
     </div>
   </div>
   <div class="post" id="p281144">
@@ -77,39 +77,57 @@ Gerade bei DBF/CDX lohnt sich der Schritt weg vom Netzlaufwerk hin zum Microserv
         <span class="subject">Re: SMB vs. Socket – warum ein Microservice für DBF stabiler ist</span><br>
         Posted: Tue Aug 26, 2025 09:01 AM
       </div>
-      <div class="content"><p><t>SMB (Netzlaufwerk)<br/><br>
-<br/><br>
-[Client A] -----\<br/><br>
-                 \<br/><br>
-[Client B] -------&gt; [SMB Redirector] -&gt; [Netzwerk] -&gt; [Server FS + NTFS]<br/><br>
-                 /<br/><br>
-[Client C] -----/<br/><br>
-<br/><br>
-- Jeder Client öffnet DBF direkt über SMB<br/><br>
-- Jede DBF-Operation = viele Roundtrips über das Netz<br/><br>
-- Locks (FLOCK/RLOCK) werden übers Netz verhandelt<br/><br>
-- Viel "chatter" = langsam + störanfällig<br/><br>
-<br/><br>
-Socket-Microservice<br/><br>
-<br/><br>
-[Client A] ----\<br/><br>
-                \<br/><br>
-[Client B] -------&gt; [Socket Service @Server] -&gt; [NTFS lokal]<br/><br>
-                /<br/><br>
-[Client C] ----/<br/><br>
-<br/><br>
-- Nur der Service hält DBF-Dateien offen (lokal D:\…)<br/><br>
-- Clients schicken kompakte Requests (Seek, Update…) per Socket<br/><br>
-- Wenige Roundtrips: Request -&gt; Result<br/><br>
-- Locks &amp; I/O werden direkt am Server-Kernel durchgesetzt<br/><br>
-- Stabil + oft 5–10× schneller<br/><br>
-<br/><br>
-Damit sieht man sofort:<br/><br>
-<br/><br>
-SMB = viele direkte Filehandles + Netzwerkverkehr<br/><br>
-<br/><br>
-Socket-Service = ein zentraler Filehandle, minimale Netzlast, sauberes Locking</t></p></div>
-      <div class="signature"><t></t></div>
+      <div class="content"><p>SMB (Netzlaufwerk)</p>
+<p>[Client A] -----\</p>
+<pre><code>             \
+</code></pre>
+<p>[Client B] -------&gt; [SMB Redirector] -&gt; [Netzwerk] -&gt; [Server FS + NTFS]</p>
+<pre><code>             /
+</code></pre>
+<p>[Client C] -----/</p>
+<ul>
+<li>
+<p>Jeder Client öffnet DBF direkt über SMB</p>
+</li>
+<li>
+<p>Jede DBF-Operation = viele Roundtrips über das Netz</p>
+</li>
+<li>
+<p>Locks (FLOCK/RLOCK) werden übers Netz verhandelt</p>
+</li>
+<li>
+<p>Viel "chatter" = langsam + störanfällig</p>
+</li>
+</ul>
+<p>Socket-Microservice</p>
+<p>[Client A] ----\</p>
+<pre><code>            \
+</code></pre>
+<p>[Client B] -------&gt; [Socket Service @Server] -&gt; [NTFS lokal]</p>
+<pre><code>            /
+</code></pre>
+<p>[Client C] ----/</p>
+<ul>
+<li>
+<p>Nur der Service hält DBF-Dateien offen (lokal D:\…)</p>
+</li>
+<li>
+<p>Clients schicken kompakte Requests (Seek, Update…) per Socket</p>
+</li>
+<li>
+<p>Wenige Roundtrips: Request -&gt; Result</p>
+</li>
+<li>
+<p>Locks &amp; I/O werden direkt am Server-Kernel durchgesetzt</p>
+</li>
+<li>
+<p>Stabil + oft 5–10× schneller</p>
+</li>
+</ul>
+<p>Damit sieht man sofort:</p>
+<p>SMB = viele direkte Filehandles + Netzwerkverkehr</p>
+<p>Socket-Service = ein zentraler Filehandle, minimale Netzlast, sauberes Locking</p></div>
+      <div class="signature"></div>
     </div>
   </div>
   <div class="post" id="p281145">
@@ -125,57 +143,57 @@ Socket-Service = ein zentraler Filehandle, minimale Netzlast, sauberes Locking</
         <span class="subject">Re: SMB vs. Socket – warum ein Microservice für DBF stabiler ist</span><br>
         Posted: Tue Aug 26, 2025 09:04 AM
       </div>
-      <div class="content"><r>ChatGPT<br/><br>
-Hier eine grobe Geschwindigkeits-Gegenüberstellung (Erfahrungswerte aus typischen DBF-Workloads). Annahmen: 1 Gbit LAN, 0.3–1.0 ms RTT; WAN ca. 20–40 ms RTT. Socket-Service arbeitet lokal auf D:\… und sendet nur kompakte Antworten.<br/><br>
-<br/><br>
-<IMG src="https://winhotel-sandbox.com/harbourino/msspeed.jpg"><s><img src="</s><URL url="https://winhotel-sandbox.com/harbourino/msspeed.jpg">https://winhotel-sandbox.com/harbourino/msspeed.jpg</URL><e>" alt="" loading="lazy"></e></IMG><br/><br>
-<br/><br>
-Warum dieser Unterschied?<br/><br>
-<br/><br>
-SMB: jede Klein-Operation erzeugt mehrere Roundtrips (Open/Read/Lock/Meta), Lock-Verhandlungen gehen übers Netz, AV/Redirector/Oplocks dazwischen.<br/><br>
-<br/><br>
-Socket: ein Prozess hält die DBFs lokal offen, aggregiert Requests, führt Locking im Kernel lokal aus, überträgt nur Ergebnisdaten.<br/><br>
-<br/><br>
-Mini-Benchmark-Ideen (realistisch, schnell messbar)<br/><br>
-<br/><br>
-Random seek batch: 1.000 zufällige RecNos → DbGoTo() + FieldGet(); Zeit messen.<br/><br>
-<br/><br>
-Bulk update: 10k Records RLOCK()-&gt;FieldPut()-&gt;DBCOMMIT(); Zeit messen.<br/><br>
-<br/><br>
-Contention: 2 Clients, einer hält RLOCK-Bursts; anderer misst mittlere Wartezeit/Retry.<br/><br>
-<br/><br>
-Tipp: messt je 3× und nehmt den Median. Auf WAN/ VPN steigen die Faktoren drastisch (häufig &gt;20×), weil der Socket-Service RTT-Kosten eliminiert.<br/><br>
-<br/><br>
-<br/><br>
-<br/><br>
-im Socket-Ansatz braucht das Senden der Antwort natürlich Zeit. Aber der Unterschied ist:<br/><br>
-<br/><br>
-Bei SMB erzeugt jede Kleinoperation (Seek, Skip, RLock …) mehrere Roundtrips (Kernel ↔ Redirector ↔ Netzwerk ↔ Server ↔ NTFS). Oft 2–3 Pakete pro Operation.<br/><br>
-<br/><br>
-Beim Socket-Microservice hast du einen Roundtrip pro Anfrage (Request → Service, Response zurück). Das Ergebnis (z. B. ein Record als JSON) muss übertragen werden – das kostet auch Zeit, ist aber minimal im Vergleich.<br/><br>
-<br/><br>
-Konkrete Größenordnung<br/><br>
-<br/><br>
-Antwortgröße:<br/><br>
-<br/><br>
-Ein einzelner DBF-Record (z. B. 200 Bytes als JSON) → über 1 Gbit-LAN &lt; 0.1 ms reine Übertragungszeit.<br/><br>
-<br/><br>
-Selbst 10k Records (~2 MB JSON) → ca. 20 ms.<br/><br>
-<br/><br>
-SMB-Overhead:<br/><br>
-<br/><br>
-1.000 Random Seeks = 1.000× SMB-Roundtrips. Bei 0.5 ms RTT → allein 0.5 s Netzzeit, plus Redirector/Server-Verarbeitung.<br/><br>
-<br/><br>
- Die Netzzeit für die Antwort ist im Benchmark also eingerechnet. In meinen Faktoren oben sind die Socket-Zeiten bereits inklusive Senden/Empfangen.<br/><br>
-<br/><br>
-Zusammenfassung<br/><br>
-<br/><br>
-Socket-Service: Netzzeit ≈ reine Payload (Record/Batch), 1 Roundtrip.<br/><br>
-<br/><br>
-SMB: Netzzeit ≈ viele Roundtrips pro Record, auch für Metadaten + Locks.<br/><br>
-<br/><br>
-Antwortsenden kostet natürlich etwas, aber der Overhead ist im Vergleich winzig.</r></div>
-      <div class="signature"><t></t></div>
+      <div class="content">ChatGPT<br>
+Hier eine grobe Geschwindigkeits-Gegenüberstellung (Erfahrungswerte aus typischen DBF-Workloads). Annahmen: 1 Gbit LAN, 0.3–1.0 ms RTT; WAN ca. 20–40 ms RTT. Socket-Service arbeitet lokal auf D:\… und sendet nur kompakte Antworten.<br>
+<br>
+<img src="https://winhotel-sandbox.com/harbourino/msspeed.jpg" alt="" loading="lazy"><br>
+<br>
+Warum dieser Unterschied?<br>
+<br>
+SMB: jede Klein-Operation erzeugt mehrere Roundtrips (Open/Read/Lock/Meta), Lock-Verhandlungen gehen übers Netz, AV/Redirector/Oplocks dazwischen.<br>
+<br>
+Socket: ein Prozess hält die DBFs lokal offen, aggregiert Requests, führt Locking im Kernel lokal aus, überträgt nur Ergebnisdaten.<br>
+<br>
+Mini-Benchmark-Ideen (realistisch, schnell messbar)<br>
+<br>
+Random seek batch: 1.000 zufällige RecNos → DbGoTo() + FieldGet(); Zeit messen.<br>
+<br>
+Bulk update: 10k Records RLOCK()-&gt;FieldPut()-&gt;DBCOMMIT(); Zeit messen.<br>
+<br>
+Contention: 2 Clients, einer hält RLOCK-Bursts; anderer misst mittlere Wartezeit/Retry.<br>
+<br>
+Tipp: messt je 3× und nehmt den Median. Auf WAN/ VPN steigen die Faktoren drastisch (häufig &gt;20×), weil der Socket-Service RTT-Kosten eliminiert.<br>
+<br>
+<br>
+<br>
+im Socket-Ansatz braucht das Senden der Antwort natürlich Zeit. Aber der Unterschied ist:<br>
+<br>
+Bei SMB erzeugt jede Kleinoperation (Seek, Skip, RLock …) mehrere Roundtrips (Kernel ↔ Redirector ↔ Netzwerk ↔ Server ↔ NTFS). Oft 2–3 Pakete pro Operation.<br>
+<br>
+Beim Socket-Microservice hast du einen Roundtrip pro Anfrage (Request → Service, Response zurück). Das Ergebnis (z. B. ein Record als JSON) muss übertragen werden – das kostet auch Zeit, ist aber minimal im Vergleich.<br>
+<br>
+Konkrete Größenordnung<br>
+<br>
+Antwortgröße:<br>
+<br>
+Ein einzelner DBF-Record (z. B. 200 Bytes als JSON) → über 1 Gbit-LAN &lt; 0.1 ms reine Übertragungszeit.<br>
+<br>
+Selbst 10k Records (~2 MB JSON) → ca. 20 ms.<br>
+<br>
+SMB-Overhead:<br>
+<br>
+1.000 Random Seeks = 1.000× SMB-Roundtrips. Bei 0.5 ms RTT → allein 0.5 s Netzzeit, plus Redirector/Server-Verarbeitung.<br>
+<br>
+ Die Netzzeit für die Antwort ist im Benchmark also eingerechnet. In meinen Faktoren oben sind die Socket-Zeiten bereits inklusive Senden/Empfangen.<br>
+<br>
+Zusammenfassung<br>
+<br>
+Socket-Service: Netzzeit ≈ reine Payload (Record/Batch), 1 Roundtrip.<br>
+<br>
+SMB: Netzzeit ≈ viele Roundtrips pro Record, auch für Metadaten + Locks.<br>
+<br>
+Antwortsenden kostet natürlich etwas, aber der Overhead ist im Vergleich winzig.</div>
+      <div class="signature"></div>
     </div>
   </div>
   <div class="giscus-wrap">

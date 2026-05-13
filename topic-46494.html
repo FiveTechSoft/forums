@@ -26,7 +26,8 @@
         <span class="subject">XBrowse con MySQL - no respeta Collation Latin1_spanish_ci</span><br>
         Posted: Fri May 01, 2026 01:08 AM
       </div>
-      <div class="content"><p><t><p>Antonio / Mr Rao / Amigos</p></p>
+      <div class="content"><p>Antonio / Mr Rao / Amigos</p>
+
 <p>Hola a todos, solicito guía por favor.</p>
 
 <p>A la base de datos MySQL/MaríaDB de mi software le he establecido CHARSET Latin1.</p>
@@ -49,12 +50,11 @@
 
 <p>Uso HB MSVSC + FWH 24.04 + MySQL/MaríaDB/DBFCDX (64 bits)</p>
 
-<p>Muchas Gracias!</p>
-<p></t></p></div>
-      <div class="signature"><r>José Concha Leiva - Chile<br/><br>
-"Querer, saber y hacer, es poder"<br/><br>
-HB MSVSC + FWH 24.04 + MySQL/MaríaDB/DBFCDX (64 bits)<br/><br>
-<URL url="https://zenitx.com">https://zenitx.com</URL></r></div>
+<p>Muchas Gracias!</p></div>
+      <div class="signature">José Concha Leiva - Chile<br>
+"Querer, saber y hacer, es poder"<br>
+HB MSVSC + FWH 24.04 + MySQL/MaríaDB/DBFCDX (64 bits)<br>
+<a href="https://zenitx.com" rel="noopener">https://zenitx.com</a></div>
     </div>
   </div>
   <div class="post" id="p285052">
@@ -70,97 +70,119 @@ HB MSVSC + FWH 24.04 + MySQL/MaríaDB/DBFCDX (64 bits)<br/><br>
         <span class="subject">Re: XBrowse con MySQL - no respeta Collation Latin1_spanish_ci</span><br>
         Posted: Fri May 01, 2026 07:18 AM
       </div>
-      <div class="content"><p><r><p>Estimado José,</p></p>
-<H2 slug="an-lisis-del-problema"><s>## </s>Análisis del problema</H2>
+      <div class="content"><p>Estimado José,</p>
 
-<p>El diagnóstico es correcto: <C><s>`</s>FWMariaRowSet<e>`</e></C> (y su clase padre <C><s>`</s>FWRowSet<e>`</e></C>) realizan <STRONG><s>**</s>ordenamiento en memoria<e>**</e></STRONG> del array <C><s>`</s>::aData<e>`</e></C> usando <C><s>`</s>ASort()<e>`</e></C> de Harbour, que <STRONG><s>**</s>no respeta<e>**</e></STRONG> la collation <C><s>`</s>latin1_spanish_ci<e>`</e></C> de MySQL. Esto ocurre en varios puntos del código:</p>
+<H2 slug="an-lisis-del-problema">Análisis del problema</H2>
 
-<H3 slug="causa-ra-z"><s>### </s>Causa raíz</H3>
+<p>El diagnóstico es correcto: <C>FWMariaRowSet</C> (y su clase padre <C>FWRowSet</C>) realizan <STRONG>ordenamiento en memoria</STRONG> del array <C>::aData</C> usando <C>ASort()</C> de Harbour, que <STRONG>no respeta</STRONG> la collation <C>latin1_spanish_ci</C> de MySQL. Esto ocurre en varios puntos del código:</p>
 
-<p><STRONG><s>**</s>1. Durante el <C><s>`</s>SetUp()<e>`</e></C> inicial<e>**</e></STRONG>, el RowSet parsea la cláusula <C><s>`</s>ORDER BY<e>`</e></C> del SQL y crea bloques de ordenamiento internos:</p>
+<H3 slug="causa-ra-z">Causa raíz</H3>
 
-<p><CODE lang="prg"><s><code>prg&lt;/s&gt;&lt;i&gt;
-&lt;/i&gt;::aOrder := ::SortStr2Cols( AfterAtNum( "ORDER BY", Upper( ::Source ) ) )
-::MakeSortBlocks( ::aOrder )</code> <a href="#0-cite-0">0-cite-0</a> </p>
-<p>Esto establece <code>::nOrder</code> y <code>::bSort</code>, lo que significa que el RowSet "sabe" que hay un orden activo.</p>
-<p><strong>2. En <code>SortData()</code></strong>, se ejecuta el re-ordenamiento en memoria con comparación binaria:</p>
-<p><code>prg
-ASort( ::aData, nFrom, nLast, ::bSort )</code> <a href="#0-cite-1">0-cite-1</a> </p>
-<p><strong>3. En <code>Requery()</code></strong>, después de recargar datos, si <code>::bSort</code> no está vacío, se llama a <code>::SortData()</code>, destruyendo el orden que trajo MySQL:</p>
-<p><code>prg
+<p><STRONG>1. Durante el <C>SetUp()</C> inicial</STRONG>, el RowSet parsea la cláusula <C>ORDER BY</C> del SQL y crea bloques de ordenamiento internos:</p>
+
+<div class="codebox"><div class="codehead"><span>Code (prg):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">::aOrder := ::SortStr2Cols( AfterAtNum( "ORDER BY", Upper( ::Source ) ) )
+::MakeSortBlocks( ::aOrder )
+``` [0-cite-0](#0-cite-0) 
+
+Esto establece `::nOrder` y `::bSort`, lo que significa que el RowSet "sabe" que hay un orden activo.
+
+**2. En `SortData()`**, se ejecuta el re-ordenamiento en memoria con comparación binaria:
+
+```prg
+ASort( ::aData, nFrom, nLast, ::bSort )
+``` [0-cite-1](#0-cite-1) 
+
+**3. En `Requery()`**, después de recargar datos, si `::bSort` no está vacío, se llama a `::SortData()`, destruyendo el orden que trajo MySQL:
+
+```prg
 if ! Empty( ::bSort )
    ::SortData()
-endif</code> <a href="#0-cite-2">0-cite-2</a> </p>
-<p><strong>4. <code>SetXBrowse()</code> asigna automáticamente <code>cSortOrder</code></strong> a cada columna (línea 988), lo que habilita el ordenamiento al hacer clic en cabeceras:</p>
-<p><code>prg
-:cSortOrder := cCol</code> <a href="#0-cite-3">0-cite-3</a> </p>
-<p><strong>5. En <code>FWRowSet::SetOrder()</code></strong> (la clase padre), para campos de texto usa <code>StrICmp()</code> que es case-insensitive pero <strong>no es locale-aware</strong> (no respeta reglas de ñ, tildes, etc.):</p>
-<p><code>prg
-ASort( ::aData, 1, nLimit, { |x,y| StrICmp( x[ nFld ], y[ nFld ] ) &amp;lt; 0 } )</code> <a href="#0-cite-4">0-cite-4</a> </p>
-<hr>
-<h3>Soluciones posibles</h3>
-<h4>Solución 1: Evitar el re-ordenamiento interno (la más práctica)</h4>
-<p>Después de crear el RowSet y antes de asignarlo al XBrowse, limpie el orden interno para que el RowSet no re-ordene los datos que ya vienen correctamente ordenados desde MySQL:</p>
-<p>```prg<br>
-oRs := oCn:RowSet( cSql )  // datos vienen con ORDER BY correcto</p>
-<p>// Limpiar el orden interno para que no re-ordene<br>
-oRs:aOrder := { 0 }<br>
-oRs:bSort  := nil</p>
-<p>// Configurar XBrowse SIN autosort<br>
-XBROWSER oRs SETUP ( oBrw:lAutoSort := .f. )<i><br>
-</i><e>```</e></CODE></p>
-<p>Y después de <C><s>`</s>SetXBrowse<e>`</e></C> o <C><s>`</s>CreateFromCode<e>`</e></C>, limpie el <C><s>`</s>cSortOrder<e>`</e></C> de cada columna para evitar que al hacer clic en cabeceras se re-ordene:</p>
+endif
+``` [0-cite-2](#0-cite-2) 
 
-<p><CODE lang="prg"><s><code>prg&lt;/s&gt;&lt;i&gt;
-&lt;/i&gt;// Después de CreateFromCode()
-AEval( oBrw:aCols, { |oCol| oCol:cSortOrder := "" } )&lt;i&gt;
-&lt;/i&gt;&lt;e&gt;</code></e></CODE></p>
-<H4 slug="soluci-n-2-no-usar-autosort-y-limpiar-csortorder"><s>#### </s>Solución 2: No usar AUTOSORT y limpiar cSortOrder</H4>
+**4. `SetXBrowse()` asigna automáticamente `cSortOrder`** a cada columna (línea 988), lo que habilita el ordenamiento al hacer clic en cabeceras:
+
+```prg
+:cSortOrder := cCol
+``` [0-cite-3](#0-cite-3) 
+
+**5. En `FWRowSet::SetOrder()`** (la clase padre), para campos de texto usa `StrICmp()` que es case-insensitive pero **no es locale-aware** (no respeta reglas de ñ, tildes, etc.):
+
+```prg
+ASort( ::aData, 1, nLimit, { |x,y| StrICmp( x[ nFld ], y[ nFld ] ) &lt; 0 } )
+``` [0-cite-4](#0-cite-4) 
+
+---
+
+### Soluciones posibles
+
+#### Solución 1: Evitar el re-ordenamiento interno (la más práctica)
+
+Después de crear el RowSet y antes de asignarlo al XBrowse, limpie el orden interno para que el RowSet no re-ordene los datos que ya vienen correctamente ordenados desde MySQL:
+
+```prg
+oRs := oCn:RowSet( cSql )  // datos vienen con ORDER BY correcto
+
+// Limpiar el orden interno para que no re-ordene
+oRs:aOrder := { 0 }
+oRs:bSort  := nil
+
+// Configurar XBrowse SIN autosort
+XBROWSER oRs SETUP ( oBrw:lAutoSort := .f. )</code></pre></div>
+
+<p>Y después de <C>SetXBrowse</C> o <C>CreateFromCode</C>, limpie el <C>cSortOrder</C> de cada columna para evitar que al hacer clic en cabeceras se re-ordene:</p>
+
+<div class="codebox"><div class="codehead"><span>Code (prg):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Después de CreateFromCode()
+AEval( oBrw:aCols, { |oCol| oCol:cSortOrder := "" } )</code></pre></div>
+
+<H4 slug="soluci-n-2-no-usar-autosort-y-limpiar-csortorder">Solución 2: No usar AUTOSORT y limpiar cSortOrder</H4>
 
 <p>Si construye el browse manualmente:</p>
 
-<p><CODE lang="prg"><s>```prg</s><i><br>
-</i>oRs := oCn:RowSet( cSql )</p>
-<p>@ 0,0 XBROWSE oBrw OF oWnd ;<br>
-   COLUMNS "CAMPO1", "CAMPO2" ;<br>
-   LINES NOBORDER CELL</p>
-<p>// NO usar AUTOSORT<br>
-// Limpiar cSortOrder de todas las columnas<br>
-AEval( oBrw:aCols, { |oCol| oCol:cSortOrder := "" } )</p>
-<p>// Limpiar el sort interno del RowSet<br>
-oRs:aOrder := { 0 }<br>
-oRs:bSort  := nil</p>
-<p>oBrw:CreateFromCode()<i><br>
-</i><e>```</e></CODE></p>
-<H4 slug="soluci-n-3-re-ordenar-desde-el-servidor-al-hacer-clic-en-cabecera"><s>#### </s>Solución 3: Re-ordenar desde el servidor al hacer clic en cabecera</H4>
+<div class="codebox"><div class="codehead"><span>Code (prg):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">oRs := oCn:RowSet( cSql )
 
-<p>Si necesita que el usuario pueda cambiar el orden haciendo clic en cabeceras pero respetando la collation, puede interceptar el evento de ordenamiento para hacer un <C><s>`</s>Requery<e>`</e></C> con un nuevo <C><s>`</s>ORDER BY<e>`</e></C> en lugar de ordenar en memoria:</p>
+@ 0,0 XBROWSE oBrw OF oWnd ;
+   COLUMNS "CAMPO1", "CAMPO2" ;
+   LINES NOBORDER CELL
 
-<p><CODE lang="prg"><s>```prg</s><i><br>
-</i>// Después de configurar el browse:<br>
-oRs:aOrder := { 0 }<br>
-oRs:bSort  := nil<br>
-AEval( oBrw:aCols, { |oCol| oCol:cSortOrder := "" } )</p>
-<p>// Si quiere re-habilitar sort por cabecera pero desde el servidor:<br>
-oBrw:bOnSort := { |oBrw, oCol| MyServerSort( oBrw, oCol ) }<i><br>
-</i><e>```</e></CODE></p>
-<p>Donde <C><s>`</s>MyServerSort<e>`</e></C> modifica el SQL con el nuevo <C><s>`</s>ORDER BY<e>`</e></C> y hace <C><s>`</s>Requery()<e>`</e></C> (asegurándose de limpiar <C><s>`</s>bSort<e>`</e></C> después del requery).</p>
+// NO usar AUTOSORT
+// Limpiar cSortOrder de todas las columnas
+AEval( oBrw:aCols, { |oCol| oCol:cSortOrder := "" } )
 
-<HR>
-<p>---</HR></p>
-<H3 slug="resumen"><s>### </s>Resumen</H3>
+// Limpiar el sort interno del RowSet
+oRs:aOrder := { 0 }
+oRs:bSort  := nil
 
-<p>El problema <STRONG><s>**</s>no es de XBrowse<e>**</e></STRONG> directamente, sino de <C><s>`</s>FWMariaRowSet<e>`</e></C> que:</p>
-<p><LIST type="decimal"><LI><s>1. </s>Parsea el <C><s><code>&lt;/s&gt;ORDER BY&lt;e&gt;</code></e></C> del SQL y crea bloques de ordenamiento en memoria</LI></p>
-<LI><s>2. </s>Usa <C><s>`</s>ASort()<e>`</e></C> con comparación binaria/<C><s>`</s>StrICmp()<e>`</e></C> que no respeta <C><s>`</s>latin1_spanish_ci<e>`</e></C></LI>
-<LI><s>3. </s>Re-aplica ese ordenamiento en <C><s>`</s>Requery()<e>`</e></C> y cuando se hace clic en cabeceras</LI>
-<p></LIST></p>
-<p>La solución más directa es <STRONG><s>**</s>limpiar <C><s>`</s>oRs:aOrder<e>`</e></C>, <C><s>`</s>oRs:bSort<e>`</e></C><e>**</e></STRONG> y los <C><s>`</s>cSortOrder<e>`</e></C> de las columnas del browse para que no se aplique ningún ordenamiento en memoria y se respete el orden que trae el <C><s>`</s>ORDER BY<e>`</e></C> de MySQL.</p>
-<p></r></p></div>
-      <div class="signature"><r>regards, saludos<br/><br>
-<br/><br>
-Antonio Linares<br/><br>
-<URL url="http://www.fivetechsoft.com">www.fivetechsoft.com</URL></r></div>
+oBrw:CreateFromCode()</code></pre></div>
+
+<H4 slug="soluci-n-3-re-ordenar-desde-el-servidor-al-hacer-clic-en-cabecera">Solución 3: Re-ordenar desde el servidor al hacer clic en cabecera</H4>
+
+<p>Si necesita que el usuario pueda cambiar el orden haciendo clic en cabeceras pero respetando la collation, puede interceptar el evento de ordenamiento para hacer un <C>Requery</C> con un nuevo <C>ORDER BY</C> en lugar de ordenar en memoria:</p>
+
+<div class="codebox"><div class="codehead"><span>Code (prg):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Después de configurar el browse:
+oRs:aOrder := { 0 }
+oRs:bSort  := nil
+AEval( oBrw:aCols, { |oCol| oCol:cSortOrder := "" } )
+
+// Si quiere re-habilitar sort por cabecera pero desde el servidor:
+oBrw:bOnSort := { |oBrw, oCol| MyServerSort( oBrw, oCol ) }</code></pre></div>
+
+<p>Donde <C>MyServerSort</C> modifica el SQL con el nuevo <C>ORDER BY</C> y hace <C>Requery()</C> (asegurándose de limpiar <C>bSort</C> después del requery).</p>
+
+<HR>---</HR>
+
+<H3 slug="resumen">Resumen</H3>
+
+<p>El problema <STRONG>no es de XBrowse</STRONG> directamente, sino de <C>FWMariaRowSet</C> que:</p>
+<ol><li>Parsea el <C>ORDER BY</C> del SQL y crea bloques de ordenamiento en memoria</li>
+<li>Usa <C>ASort()</C> con comparación binaria/<C>StrICmp()</C> que no respeta <C>latin1_spanish_ci</C></li>
+<li>Re-aplica ese ordenamiento en <C>Requery()</C> y cuando se hace clic en cabeceras</li></ol>
+
+<p>La solución más directa es <STRONG>limpiar <C>oRs:aOrder</C>, <C>oRs:bSort</C></STRONG> y los <C>cSortOrder</C> de las columnas del browse para que no se aplique ningún ordenamiento en memoria y se respete el orden que trae el <C>ORDER BY</C> de MySQL.</p></div>
+      <div class="signature">regards, saludos<br>
+<br>
+Antonio Linares<br>
+<a href="http://www.fivetechsoft.com" rel="noopener">www.fivetechsoft.com</a></div>
     </div>
   </div>
   <div class="post" id="p285066">
@@ -176,19 +198,19 @@ Antonio Linares<br/><br>
         <span class="subject">Re: XBrowse con MySQL - no respeta Collation Latin1_spanish_ci</span><br>
         Posted: Fri May 01, 2026 01:36 PM
       </div>
-      <div class="content"><p><t><p>Estimado Antonio</p></p>
+      <div class="content"><p>Estimado Antonio</p>
+
 <p>Hola. Gracias por la pronta y completa respuesta, haré lo que indicas y probaré.</p>
 
 <p>Es una pena que el ordenamiento por cabecera sin tener que recargar no respete el collation en este caso; pero por algo será, y después de todo si la consulta está bien elaborada tampoco es tan lento realmente 'reordenar' las filas en el navegador.</p>
 
 <p>Quizás podría aplicar esta solución de recargar solo para las columnas de texto, conservando el reordenamiento actual para las de fechas y números ¿desde tu perspectiva y experiencia te parece conveniente?</p>
 
-<p>Gracias nuevamente. Saludos.</p>
-<p></t></p></div>
-      <div class="signature"><r>José Concha Leiva - Chile<br/><br>
-"Querer, saber y hacer, es poder"<br/><br>
-HB MSVSC + FWH 24.04 + MySQL/MaríaDB/DBFCDX (64 bits)<br/><br>
-<URL url="https://zenitx.com">https://zenitx.com</URL></r></div>
+<p>Gracias nuevamente. Saludos.</p></div>
+      <div class="signature">José Concha Leiva - Chile<br>
+"Querer, saber y hacer, es poder"<br>
+HB MSVSC + FWH 24.04 + MySQL/MaríaDB/DBFCDX (64 bits)<br>
+<a href="https://zenitx.com" rel="noopener">https://zenitx.com</a></div>
     </div>
   </div>
   <div class="post" id="p285069">
@@ -204,15 +226,15 @@ HB MSVSC + FWH 24.04 + MySQL/MaríaDB/DBFCDX (64 bits)<br/><br>
         <span class="subject">Re: XBrowse con MySQL - no respeta Collation Latin1_spanish_ci</span><br>
         Posted: Fri May 01, 2026 03:17 PM
       </div>
-      <div class="content"><p><t><p>Estimado José,</p></p>
+      <div class="content"><p>Estimado José,</p>
+
 <p>No tengo experiencia en este tema, me he limitado a consultar DeepWiki sobre el repositorio de FWH.</p>
 
-<p>Quien realmente conocía este tema es nuestro querido Rao, que ya no está entre nosotros</p>
-<p></t></p></div>
-      <div class="signature"><r>regards, saludos<br/><br>
-<br/><br>
-Antonio Linares<br/><br>
-<URL url="http://www.fivetechsoft.com">www.fivetechsoft.com</URL></r></div>
+<p>Quien realmente conocía este tema es nuestro querido Rao, que ya no está entre nosotros</p></div>
+      <div class="signature">regards, saludos<br>
+<br>
+Antonio Linares<br>
+<a href="http://www.fivetechsoft.com" rel="noopener">www.fivetechsoft.com</a></div>
     </div>
   </div>
   <div class="giscus-wrap">

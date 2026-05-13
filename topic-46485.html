@@ -26,348 +26,275 @@
         <span class="subject">Coversación entre Claude Code y API remoto</span><br>
         Posted: Fri Apr 24, 2026 12:16 PM
       </div>
-      <div class="content"><p><r><p>Le he pedido a CC que analizase su propia conversación con el API remoto <EMOJI seq="1f44d-1f3fb" tseq="1f44d-1f3fb">&#128077;&#127995;</EMOJI></p></p>
+      <div class="content"><p>Le he pedido a CC que analizase su propia conversación con el API remoto <EMOJI seq="1f44d-1f3fb" tseq="1f44d-1f3fb">&#128077;&#127995;</EMOJI></p>
+
 <p>Ha construido un proxy y ha guardado toda la conversación. Luego le he pedido que la analice:</p>
 
-<p>Cómo funciona la conversación entre Claude Code y la API</p>
-<pre><code>                                                
-                                                      &lt;br/&gt;
-</code></pre>
-<p>Visión general</p>
-<pre><code>                                                                                          
-                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>Cada vez que pulsas Enter en Claude Code, no se envía solo tu mensaje. Se envía un HTTP POST enorme que     <br/>
-  contiene el estado completo de toda la conversación. La API es completamente stateless — no recuerda nada   <br/>
-  entre llamadas.</p>
-<pre><code>                                                                                         
-              &lt;br/&gt;
-</code></pre>
-<p>┌─────────────────────────────────────────────────────────────────┐                                         <br/>
-  │  Claude Code (cliente)         api.anthropic.com                │<br/>
-  │                                                                  │                                        <br/>
-  │  Turno 1:                                                        │<br/>
-  │  POST /v1/messages?beta=true ──────────────────────────────►    │                                         <br/>
-  │  { system, tools, messages: [msg0] }                            │                                         <br/>
-  │                                                      ◄─── SSE   │                                         <br/>
-  │                                                                  │                                        <br/>
-  │  Turno 2:                                                        │                                        <br/>
-  │  POST /v1/messages?beta=true ──────────────────────────────►    │<br/>
-  │  { system, tools, messages: [msg0, msg1, msg2, msg3] }         │                                          <br/>
-  │                                                      ◄─── SSE   │                                         <br/>
-  │                                                                  │<br/>
-  │  Turno N:                                                        │                                        <br/>
-  │  POST /v1/messages?beta=true ──────────────────────────────►    │                                         <br/>
-  │  { system, tools, messages: [msg0 ... msgN-1] }                │<br/>
-  │                                                      ◄─── SSE   │                                         <br/>
+<p>Cómo funciona la conversación entre Claude Code y la API</p>                                                    
+                                                          <br>
+  <p>Visión general</p>                                                                                              
+                                                                                                              <br>
+  <p>Cada vez que pulsas Enter en Claude Code, no se envía solo tu mensaje. Se envía un HTTP POST enorme que     <br>
+  contiene el estado completo de toda la conversación. La API es completamente stateless — no recuerda nada   <br>
+  entre llamadas.</p>                                                                                             
+                  <br>
+  <p>┌─────────────────────────────────────────────────────────────────┐                                         <br>
+  │  Claude Code (cliente)         api.anthropic.com                │<br>
+  │                                                                  │                                        <br>
+  │  Turno 1:                                                        │<br>
+  │  POST /v1/messages?beta=true ──────────────────────────────►    │                                         <br>
+  │  { system, tools, messages: [msg0] }                            │                                         <br>
+  │                                                      ◄─── SSE   │                                         <br>
+  │                                                                  │                                        <br>
+  │  Turno 2:                                                        │                                        <br>
+  │  POST /v1/messages?beta=true ──────────────────────────────►    │<br>
+  │  { system, tools, messages: [msg0, msg1, msg2, msg3] }         │                                          <br>
+  │                                                      ◄─── SSE   │                                         <br>
+  │                                                                  │<br>
+  │  Turno N:                                                        │                                        <br>
+  │  POST /v1/messages?beta=true ──────────────────────────────►    │                                         <br>
+  │  { system, tools, messages: [msg0 ... msgN-1] }                │<br>
+  │                                                      ◄─── SSE   │                                         <br>
   └─────────────────────────────────────────────────────────────────┘</p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<HR>
-<p>---             </HR><br>
-<br>
-<p>Estructura del request</p></p>
-<pre><code>                                                                                  
-              &lt;br/&gt;
-</code></pre>
-<p>{<br/>
-    "model":      "claude-sonnet-4-6",<br/>
-    "max_tokens": 32000,<br/>
-    "stream":     true,                                                                                       <br/>
-    "system":     [ ... ],   ← instrucciones permanentes<br/>
-    "tools":      [ ... ],   ← 28 herramientas disponibles                                                    <br/>
-    "messages":   [ ... ]    ← historial completo de la conversación<br/>
-  }</p>
-<pre><code>                                                                                                       
-              &lt;br/&gt;
-</code></pre>
-<HR>
-<p>---                                                                                                         </HR><br>
-<br>
-<p>1 — system: las instrucciones permanentes</p></p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>El system prompt llega dividido en 3 bloques, cada uno con una estrategia de caché diferente:</p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>"system": [     <br/>
-    {                                                                                                         <br/>
-      "type": "text",<br/>
-      "cache_control": null,                                                                                  <br/>
-      "text": "x-anthropic-billing-header: cc_version=2.1.119.918; cc_entrypoint=sdk-cli; cch=9aaa4;"<br/>
-    },                                                                                                        <br/>
-    {             <br/>
-      "type": "text",                                                                                         <br/>
-      "cache_control": { "type": "ephemeral", "ttl": "1h" },<br/>
-      "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK."                                <br/>
-    },                                                                                                        <br/>
-    {<br/>
-      "type": "text",                                                                                         <br/>
-      "cache_control": { "type": "ephemeral", "ttl": "1h" },<br/>
-      "text": "You are an interactive agent that helps users with software engineering tasks..."              <br/>
-                           ↑ <SUB><s>~</s>26</SUB>.000 caracteres de instrucciones                                              <br/>
-    }                                                                                                         <br/>
-  ]</p>
-<pre><code>                                                                                                       
-                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>cache_control: ephemeral ttl=1h significa que Anthropic guarda en caché ese bloque durante 1 hora. Si se    <br/>
-  repite idéntico en el siguiente request (lo cual siempre ocurre), no se cobra ni se procesa de nuevo — es la<br/>
-   razón por la que Claude Code es más eficiente de lo que parece.</p>
-<pre><code>                                        
-              &lt;br/&gt;
-</code></pre>
-<HR>
-<p>---</HR><br>
-<br>
-<p>2 — tools: las 28 herramientas</p></p>
-<pre><code>                            &lt;br/&gt;
-</code></pre>
-<p>Cada herramienta se define una vez y se envía en todos los requests:</p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>{<br/>
-    "name": "Bash",                                                                                           <br/>
-    "description": "Executes a given bash command and returns its output...",<br/>
-    "input_schema": {                                                                                         <br/>
-      "type": "object",                                                                                       <br/>
-      "properties": {                                                                                         <br/>
-        "command":     { "type": "string" },                                                                  <br/>
-        "description": { "type": "string" },<br/>
-        "timeout":     { "type": "number" },<br/>
-        "run_in_background": { "type": "boolean" }                                                            <br/>
-      },<br/>
-      "required": ["command"]                                                                                 <br/>
-    }             <br/>
+                                                                                                              <br>
+<HR>  ---             </HR>
+  <p>Estructura del request</p>                                                                                      
+                  <br>
+  <p>{<br>
+    "model":      "claude-sonnet-4-6",<br>
+    "max_tokens": 32000,<br>
+    "stream":     true,                                                                                       <br>
+    "system":     [ ... ],   ← instrucciones permanentes<br>
+    "tools":      [ ... ],   ← 28 herramientas disponibles                                                    <br>
+    "messages":   [ ... ]    ← historial completo de la conversación<br>
+  }</p>                                                                                                           
+                  <br>
+<HR>  ---                                                                                                         </HR>
+  <p>1 — system: las instrucciones permanentes</p>
+                                                                                                              <br>
+  <p>El system prompt llega dividido en 3 bloques, cada uno con una estrategia de caché diferente:</p>
+                                                                                                              <br>
+  <p>"system": [     <br>
+    {                                                                                                         <br>
+      "type": "text",<br>
+      "cache_control": null,                                                                                  <br>
+      "text": "x-anthropic-billing-header: cc_version=2.1.119.918; cc_entrypoint=sdk-cli; cch=9aaa4;"<br>
+    },                                                                                                        <br>
+    {             <br>
+      "type": "text",                                                                                         <br>
+      "cache_control": { "type": "ephemeral", "ttl": "1h" },<br>
+      "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK."                                <br>
+    },                                                                                                        <br>
+    {<br>
+      "type": "text",                                                                                         <br>
+      "cache_control": { "type": "ephemeral", "ttl": "1h" },<br>
+      "text": "You are an interactive agent that helps users with software engineering tasks..."              <br>
+                           ↑ <SUB>26</SUB>.000 caracteres de instrucciones                                              <br>
+    }                                                                                                         <br>
+  ]</p>                                                                                                           
+                                                                                                              <br>
+  <p>cache_control: ephemeral ttl=1h significa que Anthropic guarda en caché ese bloque durante 1 hora. Si se    <br>
+  repite idéntico en el siguiente request (lo cual siempre ocurre), no se cobra ni se procesa de nuevo — es la<br>
+   razón por la que Claude Code es más eficiente de lo que parece.</p>                                            
+                  <br>
+<HR>  ---</HR>
+  <p>2 — tools: las 28 herramientas</p>
+                                <br>
+  <p>Cada herramienta se define una vez y se envía en todos los requests:</p>
+                                                                                                              <br>
+  <p>{<br>
+    "name": "Bash",                                                                                           <br>
+    "description": "Executes a given bash command and returns its output...",<br>
+    "input_schema": {                                                                                         <br>
+      "type": "object",                                                                                       <br>
+      "properties": {                                                                                         <br>
+        "command":     { "type": "string" },                                                                  <br>
+        "description": { "type": "string" },<br>
+        "timeout":     { "type": "number" },<br>
+        "run_in_background": { "type": "boolean" }                                                            <br>
+      },<br>
+      "required": ["command"]                                                                                 <br>
+    }             <br>
   }</p>
 
-<p>Las 28 herramientas en tu instalación: Agent, AskUserQuestion, Bash, CronCreate, CronDelete, CronList, Edit,<br/>
-   EnterPlanMode, EnterWorktree, ExitPlanMode, ExitWorktree, Glob, Grep, Monitor, NotebookEdit,<br/>
-  PushNotification, Read, RemoteTrigger, ScheduleWakeup, Skill, TaskOutput, TaskStop, TodoWrite, WebFetch,    <br/>
+  <p>Las 28 herramientas en tu instalación: Agent, AskUserQuestion, Bash, CronCreate, CronDelete, CronList, Edit,<br>
+   EnterPlanMode, EnterWorktree, ExitPlanMode, ExitWorktree, Glob, Grep, Monitor, NotebookEdit,<br>
+  PushNotification, Read, RemoteTrigger, ScheduleWakeup, Skill, TaskOutput, TaskStop, TodoWrite, WebFetch,    <br>
   WebSearch, Write, + 2 de Google Drive MCP.</p>
 
-<HR>
-<p>---</HR><br>
-<br>
-<p>3 — messages: el historial</p></p>
-<pre><code>                        &lt;br/&gt;
-</code></pre>
-<p>Este es el núcleo. En tu sesión de hoy, al final había 201 mensajes. Hay 5 tipos de partes de mensaje:</p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>Tipo A — Mensaje de usuario (texto simple)</p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>{               <br/>
-    "role": "user",<br/>
-    "content": [                                                                                              <br/>
-      { "type": "text", "text": "me gustaria ver cual es la conversacion..." }<br/>
-    ]                                                                                                         <br/>
+<HR>  ---</HR>
+  <p>3 — messages: el historial</p>
+                            <br>
+  <p>Este es el núcleo. En tu sesión de hoy, al final había 201 mensajes. Hay 5 tipos de partes de mensaje:</p>
+                                                                                                              <br>
+  <p>Tipo A — Mensaje de usuario (texto simple)</p>
+                                                                                                              <br>
+  <p>{               <br>
+    "role": "user",<br>
+    "content": [                                                                                              <br>
+      { "type": "text", "text": "me gustaria ver cual es la conversacion..." }<br>
+    ]                                                                                                         <br>
+  }</p>               
+                                                                                                              <br>
+  <p>Tipo B — Respuesta del asistente (solo texto)</p>                                                               
+   <br>
+  <p>{                                                                                                           <br>
+    "role": "assistant",<br>
+    "content": [<br>
+      {<br>
+        "type": "thinking",<br>
+        "thinking": "",<br>
+        "signature": "EuQrClsIDRgCKkB+FBBr..."  ← bloque de razonamiento interno (cifrado)<br>
+      },                                                                                                      <br>
+      {<br>
+        "type": "text",                                                                                       <br>
+        "text": "Aquí está lo que encontré. La conversación completa se guarda en..."<br>
+      }                                                                                                       <br>
+    ]<br>
+  }</p>                                                                                                           
+                  <br>
+  <p>Tipo C — Asistente solicitando ejecutar una herramienta</p>                                                     
+   <br>
+  <p>{                                                                                                           <br>
+    "role": "assistant",<br>
+    "content": [<br>
+      {<br>
+        "type": "tool_use",<br>
+        "id": "toulu_01Ru3wLkJGi1FFkT2YTA22Hx",   ← ID único de esta llamada<br>
+        "name": "Bash",                                                                                       <br>
+        "input": {<br>
+          "command": "ls ~/.claude/projects/-Users-usuario-temp/ | head -10",                                 <br>
+          "description": "List conversation files for current project"                                        <br>
+        }<br>
+      }                                                                                                       <br>
+    ]                                                                                                         <br>
   }</p>
-<pre><code>           
-                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>Tipo B — Respuesta del asistente (solo texto)</p>
-<pre><code>
-</code></pre>
-<p><br/><br>
-<br>
-<p>{                                                                                                           <br/>
-    "role": "assistant",<br/>
-    "content": [<br/>
-      {<br/>
-        "type": "thinking",<br/>
-        "thinking": "",<br/>
-        "signature": "EuQrClsIDRgCKkB+FBBr..."  ← bloque de razonamiento interno (cifrado)<br/>
-      },                                                                                                      <br/>
-      {<br/>
-        "type": "text",                                                                                       <br/>
-        "text": "Aquí está lo que encontré. La conversación completa se guarda en..."<br/>
-      }                                                                                                       <br/>
-    ]<br/>
-  }</p></p>
-<pre><code>                                                                                                       
-              &lt;br/&gt;
-</code></pre>
-<p>Tipo C — Asistente solicitando ejecutar una herramienta</p>
-<pre><code>
-</code></pre>
-<p><br/><br>
-<br>
-<p>{                                                                                                           <br/>
-    "role": "assistant",<br/>
-    "content": [<br/>
-      {<br/>
-        "type": "tool_use",<br/>
-        "id": "toulu_01Ru3wLkJGi1FFkT2YTA22Hx",   ← ID único de esta llamada<br/>
-        "name": "Bash",                                                                                       <br/>
-        "input": {<br/>
-          "command": "ls ~/.claude/projects/-Users-usuario-temp/ | head -10",                                 <br/>
-          "description": "List conversation files for current project"                                        <br/>
-        }<br/>
-      }                                                                                                       <br/>
-    ]                                                                                                         <br/>
-  }</p></p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>Tipo D — Usuario devolviendo el resultado de la herramienta</p>
+                                                                                                              <br>
+  <p>Tipo D — Usuario devolviendo el resultado de la herramienta</p>
 
-<p>{<br/>
-    "role": "user",<br/>
-    "content": [                                                                                              <br/>
-      {<br/>
-        "type": "tool_result",                                                                                <br/>
-        "tool_use_id": "toolu_01Ru3wLkJGi1FFkT2YTA22Hx",  ← mismo ID<br/>
-        "content":                                                                                            <br/>
-  "3a75ff99-0429-46d5-8f44-22a0cc3efae3.jsonl\nab53faa9-38cc-4ce9-8154-fdc0fad02064.jsonl\nmemory",           <br/>
-        "is_error": false                                                                                     <br/>
-      }                                                                                                       <br/>
-    ]             <br/>
+  <p>{<br>
+    "role": "user",<br>
+    "content": [                                                                                              <br>
+      {<br>
+        "type": "tool_result",                                                                                <br>
+        "tool_use_id": "toolu_01Ru3wLkJGi1FFkT2YTA22Hx",  ← mismo ID<br>
+        "content":                                                                                            <br>
+  "3a75ff99-0429-46d5-8f44-22a0cc3efae3.jsonl\nab53faa9-38cc-4ce9-8154-fdc0fad02064.jsonl\nmemory",           <br>
+        "is_error": false                                                                                     <br>
+      }                                                                                                       <br>
+    ]             <br>
   }</p>
 
-<p>Tipo E — Asistente con texto Y herramienta en el mismo turno</p>
-<pre><code>
-</code></pre>
-<p><br/><br>
-<br>
-<p>{                                                                                                           <br/>
-    "role": "assistant",                                                                                      <br/>
-    "content": [<br/>
-      { "type": "thinking", "thinking": "", "signature": "..." },                                             <br/>
-      { "type": "text",     "text": "Voy a arrancar el proxy en background..." },<br/>
-      {                                                                                                       <br/>
-        "type": "tool_use",<br/>
-        "id": "toulu_011DdmrMpGQXdL7KWMHF8qPz",                                                               <br/>
-        "name": "Bash",                                                                                       <br/>
-        "input": { "command": "python3 anthropic_proxy.py &amp;\nsleep 1\necho \"PID=$!\"" }                      <br/>
-      }                                                                                                       <br/>
-    ]                                                                                                         <br/>
-  }</p></p>
-<pre><code>                                                                                                       
-              &lt;br/&gt;
-</code></pre>
-<HR>
-<p>---</HR><br>
-<br>
-<p>4 — El ciclo completo de un "turno"</p></p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>Usuario escribe Enter<br/>
-          │                                                                                                   <br/>
-          ▼       <br/>
-  ┌───────────────────────────────────────────────┐                                                           <br/>
-  │  Request N                                     │<br/>
-  │  messages: [A, B, C, D, ..., Nuevo_msg_user]  │                                                           <br/>
-  └───────────────────────────────────────────────┘                                                           <br/>
-          │  POST → api.anthropic.com<br/>
-          ▼                                                                                                   <br/>
-  ┌───────────────────────────────────────────────┐<br/>
-  │  La API responde (streaming SSE):              │                                                          <br/>
-  │  ¿Quiere hablar?  → devuelve tipo B            │                                                          <br/>
-  │  ¿Quiere actuar?  → devuelve tipo C o E        │                                                          <br/>
-  └───────────────────────────────────────────────┘                                                           <br/>
-          │                                                                                                   <br/>
-          ├── Si devuelve texto → se muestra en terminal → FIN del turno                                      <br/>
-          │                                                                                                   <br/>
-          └── Si devuelve tool_use:                                                                           <br/>
-                      │                                                                                       <br/>
-                      ▼                                                                                       <br/>
-              Claude Code ejecuta la herramienta localmente<br/>
-              (Bash, Read, Edit, Write...)                                                                    <br/>
-                      │                                                                                       <br/>
-                      ▼<br/>
-              Request N+1 automático:                                                                         <br/>
-              messages: [..., msg_user, msg_assistant_tool_use, msg_user_tool_result]                         <br/>
-                      │                                                                                       <br/>
-                      └──► vuelve al principio (puede haber 20+ iteraciones)</p>
-<pre><code>                              
-                                                                                                          &lt;br/&gt;
-</code></pre>
-<HR>
-<p>---             </HR><br>
-<br>
-<p>5 — Desglose real de los 201 mensajes</p></p>
-<pre><code>                                                                   
-              &lt;br/&gt;
-</code></pre>
-<p>Así quedó distribuida la conversación de hoy (proxy setup session):</p>
+  <p>Tipo E — Asistente con texto Y herramienta en el mismo turno</p>                                                
+   <br>
+  <p>{                                                                                                           <br>
+    "role": "assistant",                                                                                      <br>
+    "content": [<br>
+      { "type": "thinking", "thinking": "", "signature": "..." },                                             <br>
+      { "type": "text",     "text": "Voy a arrancar el proxy en background..." },<br>
+      {                                                                                                       <br>
+        "type": "tool_use",<br>
+        "id": "toulu_011DdmrMpGQXdL7KWMHF8qPz",                                                               <br>
+        "name": "Bash",                                                                                       <br>
+        "input": { "command": "python3 anthropic_proxy.py &amp;\nsleep 1\necho \"PID=$!\"" }                      <br>
+      }                                                                                                       <br>
+    ]                                                                                                         <br>
+  }</p>                                                                                                           
+                  <br>
+<HR>  ---</HR>
+  <p>4 — El ciclo completo de un "turno"</p>
+                                                                                                              <br>
+  <p>Usuario escribe Enter<br>
+          │                                                                                                   <br>
+          ▼       <br>
+  ┌───────────────────────────────────────────────┐                                                           <br>
+  │  Request N                                     │<br>
+  │  messages: [A, B, C, D, ..., Nuevo_msg_user]  │                                                           <br>
+  └───────────────────────────────────────────────┘                                                           <br>
+          │  POST → api.anthropic.com<br>
+          ▼                                                                                                   <br>
+  ┌───────────────────────────────────────────────┐<br>
+  │  La API responde (streaming SSE):              │                                                          <br>
+  │  ¿Quiere hablar?  → devuelve tipo B            │                                                          <br>
+  │  ¿Quiere actuar?  → devuelve tipo C o E        │                                                          <br>
+  └───────────────────────────────────────────────┘                                                           <br>
+          │                                                                                                   <br>
+          ├── Si devuelve texto → se muestra en terminal → FIN del turno                                      <br>
+          │                                                                                                   <br>
+          └── Si devuelve tool_use:                                                                           <br>
+                      │                                                                                       <br>
+                      ▼                                                                                       <br>
+              Claude Code ejecuta la herramienta localmente<br>
+              (Bash, Read, Edit, Write...)                                                                    <br>
+                      │                                                                                       <br>
+                      ▼<br>
+              Request N+1 automático:                                                                         <br>
+              messages: [..., msg_user, msg_assistant_tool_use, msg_user_tool_result]                         <br>
+                      │                                                                                       <br>
+                      └──► vuelve al principio (puede haber 20+ iteraciones)</p>                                  
+                                                                                                              <br>
+<HR>  ---             </HR>
+  <p>5 — Desglose real de los 201 mensajes</p>                                                                       
+                  <br>
+  <p>Así quedó distribuida la conversación de hoy (proxy setup session):</p>
 
-<p>95  user  → tool_result         (Claude Code devolviendo resultados de comandos)<br/>
-   75  asst  → tool_use            (Claude pidiendo ejecutar algo)                                            <br/>
-   20  asst  → text + tool_use     (Claude explicando Y pidiendo ejecutar)<br/>
-    5  asst  → text                (Claude solo respondiendo en texto)                                        <br/>
-    3  user  → text                (tus mensajes escritos)                                                    <br/>
-    3  user  → (sistema/transición)                                                                           <br/>
-  ─────                                                                                                       <br/>
-  201  total</p>
-<pre><code>  
-                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>Es decir: de cada 201 mensajes, solo 3 fueron texto que escribiste tú. El 98% es el protocolo de            <br/>
-  herramientas.</p>
-<pre><code>                                                                                           
-                                                                                                          &lt;br/&gt;
-</code></pre>
-<HR>
-<p>---             </HR><br>
-<br>
-<p>6 — Qué pasa cuando el contexto se llena</p></p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>Cuando la conversación se acerca al límite (<SUB><s>~</s>200K</SUB> tokens), Claude Code comprime el historial antes de<br/>
-  enviarlo. En el request llegaría esto:</p>
-<pre><code>                                                                  
-              &lt;br/&gt;
-</code></pre>
-<p>"messages": [                                                                                               <br/>
-    {             <br/>
-      "role": "user",<br/>
-      "content": [{<br/>
-        "type": "text",                                                                                       <br/>
-        "text": "&lt;parameter name=\"summary\"&gt;Resumen de los primeros 150 mensajes:\n- El usuario pidió ver la <br/>
-  conversación con el modelo\n- Se creó anthropic_proxy.py para interceptar tráfico\n- Se depuró un error SSL <br/>
-  en la versión inicial\n- Se descubrió que OAuth no funciona en /v1/messages directo\n- Se reescribió el <br/>
-  proxy con httpx y se resolvió el gzip...\n&lt;/parameter&gt;"                                                     <br/>
-      }]          <br/>
-    },<br/>
-    { "role": "assistant", "content": [...] },  ← mensajes recientes, intactos<br/>
-    ...                                                                                                       <br/>
-    { "role": "user",      "content": [{ "type": "text", "text": "y cuando quiera desactivarlo?" }] }<br/>
-  ]</p>
-<pre><code>                                                                                                       
-              &lt;br/&gt;
-</code></pre>
-<p>Con el proxy activo esto sería perfectamente visible: el número de mensajes bajaría de golpe (de 180 a 40,  <br/>
+   <p>95  user  → tool_result         (Claude Code devolviendo resultados de comandos)<br>
+   75  asst  → tool_use            (Claude pidiendo ejecutar algo)                                            <br>
+   20  asst  → text + tool_use     (Claude explicando Y pidiendo ejecutar)<br>
+    5  asst  → text                (Claude solo respondiendo en texto)                                        <br>
+    3  user  → text                (tus mensajes escritos)                                                    <br>
+    3  user  → (sistema/transición)                                                                           <br>
+  ─────                                                                                                       <br>
+  201  total</p>      
+                                                                                                              <br>
+  <p>Es decir: de cada 201 mensajes, solo 3 fueron texto que escribiste tú. El 98% es el protocolo de            <br>
+  herramientas.</p>                                                                                               
+                                                                                                              <br>
+<HR>  ---             </HR>
+  <p>6 — Qué pasa cuando el contexto se llena</p>
+                                                                                                              <br>
+  <p>Cuando la conversación se acerca al límite (<SUB>200K</SUB> tokens), Claude Code comprime el historial antes de<br>
+  enviarlo. En el request llegaría esto:</p>                                                                      
+                  <br>
+  <p>"messages": [                                                                                               <br>
+    {             <br>
+      "role": "user",<br>
+      "content": [{<br>
+        "type": "text",                                                                                       <br>
+        "text": "&lt;parameter name=\"summary\"&gt;Resumen de los primeros 150 mensajes:\n- El usuario pidió ver la <br>
+  conversación con el modelo\n- Se creó anthropic_proxy.py para interceptar tráfico\n- Se depuró un error SSL <br>
+  en la versión inicial\n- Se descubrió que OAuth no funciona en /v1/messages directo\n- Se reescribió el <br>
+  proxy con httpx y se resolvió el gzip...\n&lt;/parameter&gt;"                                                     <br>
+      }]          <br>
+    },<br>
+    { "role": "assistant", "content": [...] },  ← mensajes recientes, intactos<br>
+    ...                                                                                                       <br>
+    { "role": "user",      "content": [{ "type": "text", "text": "y cuando quiera desactivarlo?" }] }<br>
+  ]</p>                                                                                                           
+                  <br>
+  <p>Con el proxy activo esto sería perfectamente visible: el número de mensajes bajaría de golpe (de 180 a 40,  <br>
   por ejemplo) y aparecería ese bloque &lt;parameter name="summary"&gt;.</p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<HR>
-<p>---             </HR><br>
+                                                                                                              <br>
+<HR>  ---             </HR>
+  <p>7 — La respuesta (streaming SSE)</p>
+                                  <br>
+  <p>La API no devuelve JSON completo sino un stream de eventos:</p>
+                                                                                                              <br>
+  <p>data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking",...}}<br>
+  data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"..."}}                     <br>
+  data: {"type":"content_block_stop","index":0}                                                               <br>
+  data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}                    <br>
+  data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hola"}}                            <br>
+  data: {"type":"content_block_stop","index":1}                                                               <br>
+  data: {"type":"message_delta","usage":{"output_tokens":3}}                                                  <br>
+  data: {"type":"message_stop"}</p>                                                                               
+                  <br>
+  <p>Claude Code va leyendo estos eventos y mostrando el texto en terminal en tiempo real. Cuando detecta un     <br>
+  tool_use block completo, lo ejecuta sin esperar al final del stream.</p></div>
+      <div class="signature">regards, saludos<br>
 <br>
-<p>7 — La respuesta (streaming SSE)</p></p>
-<pre><code>                              &lt;br/&gt;
-</code></pre>
-<p>La API no devuelve JSON completo sino un stream de eventos:</p>
-<pre><code>                                                                                                          &lt;br/&gt;
-</code></pre>
-<p>data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking",...}}<br/>
-  data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"..."}}                     <br/>
-  data: {"type":"content_block_stop","index":0}                                                               <br/>
-  data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}                    <br/>
-  data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hola"}}                            <br/>
-  data: {"type":"content_block_stop","index":1}                                                               <br/>
-  data: {"type":"message_delta","usage":{"output_tokens":3}}                                                  <br/>
-  data: {"type":"message_stop"}</p>
-<pre><code>                                                                           
-              &lt;br/&gt;
-</code></pre>
-<p>Claude Code va leyendo estos eventos y mostrando el texto en terminal en tiempo real. Cuando detecta un     <br/>
-  tool_use block completo, lo ejecuta sin esperar al final del stream.</p>
-<p></r></p></div>
-      <div class="signature"><r>regards, saludos<br/><br>
-<br/><br>
-Antonio Linares<br/><br>
-<URL url="http://www.fivetechsoft.com">www.fivetechsoft.com</URL></r></div>
+Antonio Linares<br>
+<a href="http://www.fivetechsoft.com" rel="noopener">www.fivetechsoft.com</a></div>
     </div>
   </div>
   <div class="post" id="p284953">
@@ -383,15 +310,15 @@ Antonio Linares<br/><br>
         <span class="subject">Re: Coversación entre Claude Code y API remoto</span><br>
         Posted: Fri Apr 24, 2026 12:24 PM
       </div>
-      <div class="content"><r><p><URL url="https://github.com/juliusbrussee/caveman"><s><a href="</s>https://github.com/juliusbrussee/caveman<e>" rel="noopener"></s>https://github.com/juliusbrussee/caveman<e></a></e></URL></p><br>
+      <div class="content"><p><a href="https://github.com/juliusbrussee/caveman" rel="noopener">https://github.com/juliusbrussee/caveman</a></p>
+
+<blockquote><p>why use many token when few token do trick — Claude Code skill that cuts 65% of tokens by talking like caveman</p></blockquote>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">instala este skill https://github.com/juliusbrussee/caveman</code></pre></div></div>
+      <div class="signature">regards, saludos<br>
 <br>
-<QUOTE><s><blockquote></s><p>why use many token when few token do trick — Claude Code skill that cuts 65% of tokens by talking like caveman</p><e></blockquote></e></QUOTE><br>
-<br>
-<CODE><s><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">&lt;/s&gt;instala este skill https://github.com/juliusbrussee/caveman&lt;e&gt;</code></pre></div></e></CODE></r></div>
-      <div class="signature"><r>regards, saludos<br/><br>
-<br/><br>
-Antonio Linares<br/><br>
-<URL url="http://www.fivetechsoft.com">www.fivetechsoft.com</URL></r></div>
+Antonio Linares<br>
+<a href="http://www.fivetechsoft.com" rel="noopener">www.fivetechsoft.com</a></div>
     </div>
   </div>
   <div class="giscus-wrap">
