@@ -186,7 +186,11 @@ table.forumlist tr:nth-child(even) td { background: var(--row-alt); }
 .body { padding:12px 16px; color: var(--fg); }
 .body .meta { border-bottom:1px solid var(--border); padding-bottom:6px; margin-bottom:10px;
   font-size:11px; color: var(--fg-muted); }
-.body .subject { font-weight:bold; color: var(--link); font-size:12px; }
+.body h3.subject, .body .subject { font-weight:bold; color: var(--link); font-size:12px;
+  display:inline; margin:0; padding:0; }
+.body h3.subject:target, .post:has(h3.subject:target) {
+  background: rgba(255,209,102,0.12); transition: background 0.3s;
+}
 .body .content { font-size:13px; line-height:1.55; color: var(--fg); word-wrap:break-word; }
 .body .content p { margin:0 0 10px 0; }
 .body .content code { background: var(--c03); border:1px solid var(--border);
@@ -977,7 +981,7 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
                 avatar_html = '<div class="avatar"></div>'
             loc_html = f'<div class="location">{esc(location)}</div>' if location else ""
             display_html = user_link(resolve_uid(uid, display), display, colour or "105289")
-            rendered.append(f"""  <div class="post" id="p{pid}">
+            rendered.append(f"""  <div class="post">
     <div class="poster">
       <div class="name">{display_html}</div>
       <div class="rank">Posts: {posts_count}</div>
@@ -987,7 +991,7 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
     </div>
     <div class="body">
       <div class="meta">
-        <span class="subject">{esc(subj or title)}</span><br>
+        <h3 id="p{pid}" class="subject">{esc(subj or title)}</h3>
         Posted: {fmt_time(ptime)}
       </div>
       <div class="content">{body_html}</div>
