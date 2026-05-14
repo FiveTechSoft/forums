@@ -108,7 +108,18 @@ html[data-theme="dark"] {
   --quote-bg:#1a2638;
   --link:#5cb0ff;
   --link-hover:#ff7a8c;
+  --user-hi:#ffd166;
+  --date-hi:#e8eef6;
 }
+html[data-theme="dark"] .lastpost { color: var(--date-hi); }
+html[data-theme="dark"] .lastpost a { color: var(--date-hi); }
+html[data-theme="dark"] .lastpost a:hover { color: var(--link-hover); }
+html[data-theme="dark"] .forum-desc a[href^="user-"],
+html[data-theme="dark"] .lastpost a[href^="user-"],
+html[data-theme="dark"] .forum-desc span[style*="color"],
+html[data-theme="dark"] .lastpost span[style*="color"] { color: var(--user-hi) !important; font-weight:bold; }
+html[data-theme="dark"] .poster .name a,
+html[data-theme="dark"] .poster .name span { color: var(--user-hi) !important; }
 body {
   margin:0; font-family: Verdana, Arial, Helvetica, sans-serif; font-size:12px;
   background: var(--bg); color: var(--fg);
@@ -606,11 +617,12 @@ def page_header(title: str, depth: int = 0) -> str:
   <div class="header">
     <a class="logo" href="{base}index.html"><img src="{base}site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a>
     <div class="header-text"><h1>FiveTech Support Forums</h1>
-    <div class="sub">FiveWin / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div>
+    <div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div>
     <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button>
   </div>
   <div class="navbar">
     <a href="{base}index.html">Board index</a>
+    <a href="{base}active-topics.html">Active topics</a>
     <a href="{base}search.html">Search</a>
     <a href="https://github.com/{GISCUS_REPO}/discussions" target="_blank">All discussions</a>
     <a href="https://github.com/login" target="_blank">Login (GitHub)</a>
@@ -1001,10 +1013,11 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
             f'  <div class="header">'
             f'<a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a>'
             f'<div class="header-text"><h1>FiveTech Support Forums</h1>'
-            f'<div class="sub">FiveWin / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div>'
+            f'<div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div>'
             f'<button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>\n'
             f'  <div class="navbar">'
             f'<a href="index.html">Board index</a>'
+            f'<a href="active-topics.html">Active topics</a>'
             f'<a href="https://github.com/{GISCUS_REPO}/discussions" target="_blank">All discussions</a>'
             f'<a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>\n'
         )
@@ -1012,6 +1025,61 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
         fn = f"topic-{topic_id}.html" if p == 0 else f"topic-{topic_id}-page-{p+1}.html"
         with open(os.path.join(out_dir, fn), "w", encoding="utf-8") as f:
             f.write(out)
+
+
+ACTIVE_TOPICS_LIMIT = 100
+
+
+def render_active_topics(conn: sqlite3.Connection, out_dir: str) -> None:
+    """Top N most-recently-active topics across all forums, newest first."""
+    cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT t.topic_id, t.forum_id, t.topic_title, "
+        "t.topic_poster, t.topic_first_poster_name, t.topic_first_poster_colour, "
+        "t.topic_time, t.topic_views, "
+        "t.topic_last_post_id, COALESCE(t.topic_last_poster_id,0), "
+        "t.topic_last_poster_name, t.topic_last_post_time, "
+        "f.forum_name, "
+        "(SELECT COUNT(*) FROM phpbb_posts p WHERE p.topic_id=t.topic_id) AS nposts "
+        "FROM phpbb_topics t JOIN phpbb_forums f USING(forum_id) "
+        "WHERE COALESCE(t.topic_moved_id,0)=0 AND COALESCE(t.topic_visibility,1)=1 "
+        "ORDER BY t.topic_last_post_time DESC LIMIT ?",
+        (ACTIVE_TOPICS_LIMIT,),
+    ).fetchall()
+    items = []
+    for (tid, fid, title, p_uid, poster, colour, ttime, views,
+         lpid, lp_uid, lname, ltime, fname, nposts) in rows:
+        p_uid = resolve_uid(p_uid, poster)
+        lp_uid = resolve_uid(lp_uid, lname)
+        poster_html = user_link(p_uid, poster, colour or "555")
+        last_name_html = user_link(lp_uid, lname)
+        if lpid:
+            lpage = get_post_page(cur, tid, lpid)
+            last_href = topic_post_url(tid, lpid, lpage)
+        else:
+            last_href = f"topic-{tid}.html"
+        items.append(
+            f'      <tr><td><span class="forum-icon"></span>&nbsp;'
+            f'<a class="forum-title" href="topic-{tid}.html">{esc(title)}</a>'
+            f'<div class="forum-desc">in <a href="forum-{fid}.html">{esc(fname)}</a> '
+            f'· by {poster_html} · {fmt_time(ttime)} · {nposts} posts</div></td>'
+            f'<td class="num">{views}</td>'
+            f'<td class="lastpost">by {last_name_html}<br>'
+            f'<a href="{last_href}" title="Go to last post">{fmt_time(ltime)}</a></td></tr>'
+        )
+    body = [
+        '  <div class="crumbs"><a href="index.html">Board index</a> Active topics</div>',
+        f'  <div class="cat">Active topics (latest {ACTIVE_TOPICS_LIMIT})</div>',
+        '  <table class="forumlist">',
+        '    <thead><tr><th>Topic</th><th class="num">Views</th>'
+        '<th class="lastpost">Last post</th></tr></thead>',
+        '    <tbody>',
+        "\n".join(items),
+        '    </tbody></table>',
+    ]
+    out = page_header("Active topics - FiveTech Support Forums") + "\n".join(body) + page_footer()
+    with open(os.path.join(out_dir, "active-topics.html"), "w", encoding="utf-8") as f:
+        f.write(out)
 
 
 def render_user(conn: sqlite3.Connection, out_dir: str, uid: int,
@@ -1126,8 +1194,9 @@ def main() -> None:
         if nm and nm not in _name_to_uid:
             _name_to_uid[nm] = uid
 
-    print("[2/4] index + forums...")
+    print("[2/4] index + forums + active topics...")
     render_index(conn, args.out_dir)
+    render_active_topics(conn, args.out_dir)
     if args.limit_forum:
         forums = [(args.limit_forum,)]
     else:
