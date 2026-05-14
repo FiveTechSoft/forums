@@ -281,7 +281,9 @@ pre.mermaid { background: var(--c02); border:1px solid var(--border); padding:10
   .forum-title { font-size:17px; }
   .forum-desc { font-size:15px; }
   .num { text-align:left; width:auto; font-size:15px; }
-  .num::before { content:attr(data-label) ": "; color: var(--fg-muted); font-weight:normal; }
+  .num[data-label]::before, .lastpost[data-label]::before {
+    content:attr(data-label) ": "; color: var(--fg-muted); font-weight:normal;
+  }
   .lastpost { width:auto; font-size:15px; color: var(--fg-muted); }
   .post { grid-template-columns:1fr; }
   .poster { border-right:none; border-bottom:1px solid var(--border);
@@ -838,7 +840,8 @@ def render_index(conn: sqlite3.Connection, out_dir: str) -> None:
                 f'      <tr><td><span class="forum-icon"></span>&nbsp;'
                 f'<a class="forum-title" href="forum-{fid}.html">{esc(fname)}</a>'
                 f'<div class="forum-desc">{esc(strip_xml(fdesc))}</div></td>'
-                f'<td class="num">{ft}</td><td class="num">{fp}</td>'
+                f'<td class="num" data-label="Topics">{ft}</td>'
+                f'<td class="num" data-label="Posts">{fp}</td>'
                 f'<td class="lastpost">{last_str}</td></tr>'
             )
         body.append("    </tbody></table>")
@@ -893,7 +896,7 @@ def render_forum(conn: sqlite3.Connection, out_dir: str, forum_id: int, page_siz
                 f'      <tr><td><span class="forum-icon"></span>&nbsp;'
                 f'<a class="forum-title" href="topic-{tid}.html">{esc(title)}</a>{sticky}'
                 f'<div class="forum-desc">by {poster_html} · {fmt_time(ttime)}</div></td>'
-                f'<td class="num">{views}</td>'
+                f'<td class="num" data-label="Views">{views}</td>'
                 f'<td class="lastpost">by {last_name_html}<br>'
                 f'<a href="{last_href}" title="Go to last post">{fmt_time(ltime)}</a></td></tr>'
             )
@@ -1098,7 +1101,7 @@ def render_active_topics(conn: sqlite3.Connection, out_dir: str) -> None:
             f'<a class="forum-title" href="topic-{tid}.html">{esc(title)}</a>'
             f'<div class="forum-desc">in <a href="forum-{fid}.html">{esc(fname)}</a> '
             f'· by {poster_html} · {fmt_time(ttime)} · {nposts} posts</div></td>'
-            f'<td class="num">{views}</td>'
+            f'<td class="num" data-label="Views">{views}</td>'
             f'<td class="lastpost">by {last_name_html}<br>'
             f'<a href="{last_href}" title="Go to last post">{fmt_time(ltime)}</a></td></tr>'
         )
@@ -1148,7 +1151,7 @@ def render_user(conn: sqlite3.Connection, out_dir: str, uid: int,
                 f'      <tr><td><a class="forum-title" href="{href}">{esc(subj or ttitle)}</a>'
                 f'<div class="forum-desc">in <a href="forum-{fid}.html">{esc(fname)}</a> &middot; '
                 f'<a href="topic-{tid}.html">{esc(ttitle)}</a></div></td>'
-                f'<td class="lastpost">{fmt_time(ptime)}</td></tr>'
+                f'<td class="lastpost" data-label="Posted">{fmt_time(ptime)}</td></tr>'
             )
         page_links = ""
         if pages > 1:
