@@ -263,10 +263,43 @@ pre.mermaid { background: var(--c02); border:1px solid var(--border); padding:10
 .memberlist img.avatar-img { width:40px; height:40px; }
 
 @media (max-width:700px) {
-  .header { flex-direction:column; align-items:flex-start; }
+  body { font-size:15px; -webkit-text-size-adjust:100%; }
+  .wrap { padding:4px; }
+  .header { flex-direction:row; flex-wrap:wrap; align-items:center; padding:10px 12px; gap:10px; }
+  .header .logo img { max-height:42px; }
+  .header h1 { font-size:18px; }
+  .header .sub { font-size:12px; }
+  .navbar { padding:8px 10px; font-size:14px; line-height:2; }
+  .navbar a { margin-right:12px; }
+  .crumbs { font-size:13px; padding:8px 4px; }
+  .cat { font-size:14px; padding:8px 10px; }
+  .cat .newbtn { position:static; display:inline-block; margin-left:8px; font-size:12px; }
+  table.forumlist, table.forumlist tbody, table.forumlist tr, table.forumlist td { display:block; width:100%; }
+  table.forumlist thead { display:none; }
+  table.forumlist tr { border-bottom:1px solid var(--border); padding:10px 8px; }
+  table.forumlist td { border:0; padding:2px 0; }
+  .forum-title { font-size:15px; }
+  .forum-desc { font-size:13px; }
+  .num { text-align:left; width:auto; font-size:13px; }
+  .num::before { content:attr(data-label) ": "; color: var(--fg-muted); font-weight:normal; }
+  .lastpost { width:auto; font-size:13px; color: var(--fg-muted); }
   .post { grid-template-columns:1fr; }
-  .poster { border-right:none; border-bottom:1px solid var(--border); }
-  .num, .lastpost { display:none; }
+  .poster { border-right:none; border-bottom:1px solid var(--border);
+    display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:8px 10px; }
+  .poster .name { font-size:15px; }
+  .poster .rank, .poster .joined, .poster .location { margin:0; }
+  .poster img.avatar-img, .poster .avatar { width:48px; height:48px; margin:0; }
+  .body { padding:10px 12px; }
+  .body .content { font-size:15px; }
+  .body .content pre, .codebox pre { font-size:12px; }
+  .pagination { font-size:13px; }
+  .pagination a, .pagination strong { padding:4px 8px; }
+  .footer { font-size:11px; padding:12px; }
+  .userprofile-meta { gap:10px; }
+  .memberlist th { display:none; }
+  .memberlist, .memberlist tbody, .memberlist tr, .memberlist td { display:block; width:100%; }
+  .memberlist tr { border-bottom:1px solid var(--border); padding:8px; }
+  .memberlist td { border:0; padding:2px 0; }
 }
 """
 
@@ -602,6 +635,7 @@ def page_header(title: str, depth: int = 0) -> str:
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
 <link rel="icon" href="{base}favicon.ico">
 <link rel="stylesheet" href="{css}">
@@ -1003,6 +1037,7 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
         head = (
             f'<!doctype html>\n<html lang="es">\n<head>\n'
             f'<meta charset="utf-8">\n'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f'<title>{esc(title)} - FiveTech Support Forums</title>\n'
             f'<meta property="og:title" content="{og_key}">\n'
             f'<link rel="icon" href="favicon.ico">\n'
