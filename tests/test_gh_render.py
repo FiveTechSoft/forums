@@ -155,5 +155,8 @@ def test_render_index_counts_github_topics(tmp_path):
         content = (tmp_path / "index.html").read_text(encoding="utf-8")
         # phpBB 3 topics + 1 GitHub topic = 4
         assert '<td class="num" data-label="Topics">4</td>' in content
+        # the GitHub topic is the only activity, so it owns the last-activity cell
+        assert 'href="gh-topic-12.html"' in content
+        assert "octocat" in content
     finally:
         conn.close()

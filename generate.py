@@ -877,7 +877,7 @@ def render_index(conn: sqlite3.Connection, out_dir: str,
                 )
                 last_ts = ltime
             for g in gh_list:
-                if g["updated_ts"] > last_ts:
+                if g["updated_ts"] >= last_ts:
                     last_ts = g["updated_ts"]
                     last_str = (
                         f'by <a href="{esc(g["author_url"])}" target="_blank" '
