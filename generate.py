@@ -916,7 +916,8 @@ def render_forum(conn: sqlite3.Connection, out_dir: str, forum_id: int,
     for t in topics:
         (tid, title, p_uid, poster, colour, ttime,
          lpid, lp_uid, lname, ltime, views, ttype) = t
-        sticky = " [sticky]" if ttype and ttype >= 1 else ""
+        is_sticky = bool(ttype and ttype >= 1)
+        sticky = " [sticky]" if is_sticky else ""
         p_uid = resolve_uid(p_uid, poster)
         lp_uid = resolve_uid(lp_uid, lname)
         poster_html = user_link(p_uid, poster, colour or "555")
@@ -934,7 +935,7 @@ def render_forum(conn: sqlite3.Connection, out_dir: str, forum_id: int,
             f'<td class="lastpost">by {last_name_html}<br>'
             f'<a href="{last_href}" title="Go to last post">{fmt_time(ltime)}</a></td></tr>'
         )
-        entries.append((1 if (ttype and ttype >= 1) else 0, ltime or ttime or 0, row))
+        entries.append((1 if is_sticky else 0, ltime or ttime or 0, row))
 
     for gt in (gh_topics or []):
         reply_count = len(gt["comments"])

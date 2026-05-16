@@ -6,42 +6,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import generate
 
 
-def _mini_db(path):
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE phpbb_forums (forum_id INT, forum_name TEXT);
-        CREATE TABLE phpbb_topics (
-            topic_id INT, topic_title TEXT, topic_poster INT,
-            topic_first_poster_name TEXT, topic_first_poster_colour TEXT,
-            topic_time INT, topic_last_post_id INT, topic_last_poster_id INT,
-            topic_last_poster_name TEXT, topic_last_post_time INT,
-            topic_views INT, topic_type INT, topic_moved_id INT, forum_id INT);
-        CREATE TABLE phpbb_posts (post_id INT, topic_id INT, post_time INT);
-        INSERT INTO phpbb_forums VALUES (1, 'FiveWin');
-        INSERT INTO phpbb_topics VALUES
-            (100,'Old phpBB topic',1,'phpbbuser','555',1715000000,
-             900,1,'phpbbuser',1715000000,5,0,0,1);
-        INSERT INTO phpbb_posts VALUES (900,100,1715000000);
-        """
-    )
-    conn.commit()
-    return conn
-
-
-def test_render_forum_merges_github_topics(tmp_path):
-    db = str(tmp_path / "mini.db")
-    conn = _mini_db(db)
-    gh_topics = [_sample_topic()]  # updated_ts 1715851800 > phpBB 1715000000
-    generate.render_forum(conn, str(tmp_path), 1, gh_topics=gh_topics)
-    content = (tmp_path / "forum-1.html").read_text(encoding="utf-8")
-    assert "Old phpBB topic" in content
-    assert "How to center a window" in content
-    assert 'href="gh-topic-12.html"' in content
-    # GitHub topic is newer, so it sorts above the phpBB one.
-    assert content.index("gh-topic-12.html") < content.index("topic-100.html")
-
-
 def test_render_github_body_converts_markdown():
     html = generate.render_github_body("Use `oWnd:Center()` now.")
     assert "<code>oWnd:Center()</code>" in html
@@ -104,6 +68,45 @@ def _sample_topic():
             }
         ],
     }
+
+
+def _mini_db(path):
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE phpbb_forums (forum_id INT, forum_name TEXT);
+        CREATE TABLE phpbb_topics (
+            topic_id INT, topic_title TEXT, topic_poster INT,
+            topic_first_poster_name TEXT, topic_first_poster_colour TEXT,
+            topic_time INT, topic_last_post_id INT, topic_last_poster_id INT,
+            topic_last_poster_name TEXT, topic_last_post_time INT,
+            topic_views INT, topic_type INT, topic_moved_id INT, forum_id INT);
+        CREATE TABLE phpbb_posts (post_id INT, topic_id INT, post_time INT);
+        INSERT INTO phpbb_forums VALUES (1, 'FiveWin');
+        INSERT INTO phpbb_topics VALUES
+            (100,'Old phpBB topic',1,'phpbbuser','555',1715000000,
+             900,1,'phpbbuser',1715000000,5,0,0,1);
+        INSERT INTO phpbb_posts VALUES (900,100,1715000000);
+        """
+    )
+    conn.commit()
+    return conn
+
+
+def test_render_forum_merges_github_topics(tmp_path):
+    db = str(tmp_path / "mini.db")
+    conn = _mini_db(db)
+    try:
+        gh_topics = [_sample_topic()]  # updated_ts 1715851800 > phpBB 1715000000
+        generate.render_forum(conn, str(tmp_path), 1, gh_topics=gh_topics)
+        content = (tmp_path / "forum-1.html").read_text(encoding="utf-8")
+        assert "Old phpBB topic" in content
+        assert "How to center a window" in content
+        assert 'href="gh-topic-12.html"' in content
+        # GitHub topic is newer, so it sorts above the phpBB one.
+        assert content.index("gh-topic-12.html") < content.index("topic-100.html")
+    finally:
+        conn.close()
 
 
 def test_render_github_topic_no_comments(tmp_path):
