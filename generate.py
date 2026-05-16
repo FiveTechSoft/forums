@@ -1217,6 +1217,7 @@ def render_active_topics(conn: sqlite3.Connection, out_dir: str,
     Merges phpBB topics and GitHub-sourced topics, ranked by last activity.
     """
     cur = conn.cursor()
+    phpbb_limit = ACTIVE_TOPICS_LIMIT + len(gh_topics or [])
     rows = cur.execute(
         "SELECT t.topic_id, t.forum_id, t.topic_title, "
         "t.topic_poster, t.topic_first_poster_name, t.topic_first_poster_colour, "
@@ -1228,7 +1229,7 @@ def render_active_topics(conn: sqlite3.Connection, out_dir: str,
         "FROM phpbb_topics t JOIN phpbb_forums f USING(forum_id) "
         "WHERE COALESCE(t.topic_moved_id,0)=0 AND COALESCE(t.topic_visibility,1)=1 "
         "ORDER BY t.topic_last_post_time DESC LIMIT ?",
-        (ACTIVE_TOPICS_LIMIT,),
+        (phpbb_limit,),
     ).fetchall()
     # (sort_ts, row_html) entries from both sources, ranked together below.
     entries: list[tuple[int, str]] = []
@@ -1254,28 +1255,29 @@ def render_active_topics(conn: sqlite3.Connection, out_dir: str,
         )
         entries.append((ltime or ttime or 0, row))
 
-    fname_map = {fid: name for fid, name in
-                 cur.execute("SELECT forum_id, forum_name FROM phpbb_forums")}
-    for gt in (gh_topics or []):
-        fname = fname_map.get(gt["forum_id"], "")
-        author_html = (
-            f'<a href="{esc(gt["author_url"])}" target="_blank" rel="noopener">'
-            f'{esc(gt["author"])}</a>'
-        )
-        nposts = 1 + len(gt["comments"])
-        row = (
-            f'      <tr><td><span class="forum-icon"></span>&nbsp;'
-            f'<a class="forum-title" href="gh-topic-{gt["number"]}.html">'
-            f'{esc(gt["title"])}</a>'
-            f'<div class="forum-desc">in '
-            f'<a href="forum-{gt["forum_id"]}.html">{esc(fname)}</a> '
-            f'· by {author_html} · {fmt_time(gt["created_ts"])} '
-            f'· {nposts} posts · via GitHub</div></td>'
-            f'<td class="num" data-label="Replies">{len(gt["comments"])}</td>'
-            f'<td class="lastpost">'
-            f'<a href="gh-topic-{gt["number"]}.html">{fmt_time(gt["updated_ts"])}</a></td></tr>'
-        )
-        entries.append((gt["updated_ts"] or gt["created_ts"] or 0, row))
+    if gh_topics:
+        fname_map = {fid: name for fid, name in
+                     cur.execute("SELECT forum_id, forum_name FROM phpbb_forums")}
+        for gt in gh_topics:
+            fname = fname_map.get(gt["forum_id"], "")
+            author_html = (
+                f'<a href="{esc(gt["author_url"])}" target="_blank" rel="noopener">'
+                f'{esc(gt["author"])}</a>'
+            )
+            nposts = 1 + len(gt["comments"])
+            row = (
+                f'      <tr><td><span class="forum-icon"></span>&nbsp;'
+                f'<a class="forum-title" href="gh-topic-{gt["number"]}.html">'
+                f'{esc(gt["title"])}</a>'
+                f'<div class="forum-desc">in '
+                f'<a href="forum-{gt["forum_id"]}.html">{esc(fname)}</a> '
+                f'· by {author_html} · {fmt_time(gt["created_ts"])} '
+                f'· {nposts} posts · via GitHub</div></td>'
+                f'<td class="num" data-label="Replies">{len(gt["comments"])}</td>'
+                f'<td class="lastpost">'
+                f'<a href="gh-topic-{gt["number"]}.html">{fmt_time(gt["updated_ts"])}</a></td></tr>'
+            )
+            entries.append((gt["updated_ts"] or gt["created_ts"] or 0, row))
 
     entries.sort(key=lambda e: e[0], reverse=True)
     items = [row for _, row in entries[:ACTIVE_TOPICS_LIMIT]]
