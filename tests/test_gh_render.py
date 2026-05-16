@@ -133,6 +133,40 @@ def test_render_github_topic_writes_page(tmp_path):
     assert "giscus.app" not in content
 
 
+def test_render_active_topics_includes_github(tmp_path):
+    db = str(tmp_path / "active.db")
+    conn = sqlite3.connect(db)
+    # Schema must carry every column render_active_topics' SQL selects.
+    conn.executescript(
+        """
+        CREATE TABLE phpbb_forums (forum_id INT, forum_name TEXT);
+        CREATE TABLE phpbb_topics (
+            topic_id INT, forum_id INT, topic_title TEXT,
+            topic_poster INT, topic_first_poster_name TEXT,
+            topic_first_poster_colour TEXT, topic_time INT, topic_views INT,
+            topic_last_post_id INT, topic_last_poster_id INT,
+            topic_last_poster_name TEXT, topic_last_post_time INT,
+            topic_moved_id INT, topic_visibility INT);
+        CREATE TABLE phpbb_posts (post_id INT, topic_id INT, post_time INT);
+        INSERT INTO phpbb_forums VALUES (1,'FiveWin');
+        INSERT INTO phpbb_topics VALUES
+            (100,1,'Old phpBB topic',1,'phpbbuser','555',1715000000,5,
+             900,1,'phpbbuser',1715000000,0,1);
+        INSERT INTO phpbb_posts VALUES (900,100,1715000000);
+        """
+    )
+    conn.commit()
+    try:
+        generate.render_active_topics(conn, str(tmp_path), gh_topics=[_sample_topic()])
+        content = (tmp_path / "active-topics.html").read_text(encoding="utf-8")
+        assert "How to center a window" in content
+        assert 'href="gh-topic-12.html"' in content
+        # GitHub topic (updated 1715851800) is newer than the phpBB one.
+        assert content.index("gh-topic-12.html") < content.index("topic-100.html")
+    finally:
+        conn.close()
+
+
 def test_render_index_counts_github_topics(tmp_path):
     db = str(tmp_path / "mini2.db")
     conn = sqlite3.connect(db)

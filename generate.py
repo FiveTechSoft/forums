@@ -1210,8 +1210,12 @@ def render_github_topic(topic: dict, forum_name: str, out_dir: str) -> None:
 ACTIVE_TOPICS_LIMIT = 100
 
 
-def render_active_topics(conn: sqlite3.Connection, out_dir: str) -> None:
-    """Top N most-recently-active topics across all forums, newest first."""
+def render_active_topics(conn: sqlite3.Connection, out_dir: str,
+                         gh_topics: list[dict] | None = None) -> None:
+    """Top N most-recently-active topics across all forums, newest first.
+
+    Merges phpBB topics and GitHub-sourced topics, ranked by last activity.
+    """
     cur = conn.cursor()
     rows = cur.execute(
         "SELECT t.topic_id, t.forum_id, t.topic_title, "
@@ -1226,7 +1230,8 @@ def render_active_topics(conn: sqlite3.Connection, out_dir: str) -> None:
         "ORDER BY t.topic_last_post_time DESC LIMIT ?",
         (ACTIVE_TOPICS_LIMIT,),
     ).fetchall()
-    items = []
+    # (sort_ts, row_html) entries from both sources, ranked together below.
+    entries: list[tuple[int, str]] = []
     for (tid, fid, title, p_uid, poster, colour, ttime, views,
          lpid, lp_uid, lname, ltime, fname, nposts) in rows:
         p_uid = resolve_uid(p_uid, poster)
@@ -1238,7 +1243,7 @@ def render_active_topics(conn: sqlite3.Connection, out_dir: str) -> None:
             last_href = topic_post_url(tid, lpid, lpage)
         else:
             last_href = f"topic-{tid}.html"
-        items.append(
+        row = (
             f'      <tr><td><span class="forum-icon"></span>&nbsp;'
             f'<a class="forum-title" href="topic-{tid}.html">{esc(title)}</a>'
             f'<div class="forum-desc">in <a href="forum-{fid}.html">{esc(fname)}</a> '
@@ -1247,6 +1252,33 @@ def render_active_topics(conn: sqlite3.Connection, out_dir: str) -> None:
             f'<td class="lastpost">by {last_name_html}<br>'
             f'<a href="{last_href}" title="Go to last post">{fmt_time(ltime)}</a></td></tr>'
         )
+        entries.append((ltime or ttime or 0, row))
+
+    fname_map = {fid: name for fid, name in
+                 cur.execute("SELECT forum_id, forum_name FROM phpbb_forums")}
+    for gt in (gh_topics or []):
+        fname = fname_map.get(gt["forum_id"], "")
+        author_html = (
+            f'<a href="{esc(gt["author_url"])}" target="_blank" rel="noopener">'
+            f'{esc(gt["author"])}</a>'
+        )
+        nposts = 1 + len(gt["comments"])
+        row = (
+            f'      <tr><td><span class="forum-icon"></span>&nbsp;'
+            f'<a class="forum-title" href="gh-topic-{gt["number"]}.html">'
+            f'{esc(gt["title"])}</a>'
+            f'<div class="forum-desc">in '
+            f'<a href="forum-{gt["forum_id"]}.html">{esc(fname)}</a> '
+            f'· by {author_html} · {fmt_time(gt["created_ts"])} '
+            f'· {nposts} posts · via GitHub</div></td>'
+            f'<td class="num" data-label="Replies">{len(gt["comments"])}</td>'
+            f'<td class="lastpost">'
+            f'<a href="gh-topic-{gt["number"]}.html">{fmt_time(gt["updated_ts"])}</a></td></tr>'
+        )
+        entries.append((gt["updated_ts"] or gt["created_ts"] or 0, row))
+
+    entries.sort(key=lambda e: e[0], reverse=True)
+    items = [row for _, row in entries[:ACTIVE_TOPICS_LIMIT]]
     body = [
         '  <div class="crumbs"><a href="index.html">Board index</a> Active topics</div>',
         f'  <div class="cat">Active topics (latest {ACTIVE_TOPICS_LIMIT})</div>',
@@ -1393,8 +1425,8 @@ def main() -> None:
 
     print("[2/4] index + forums + active topics...")
     render_index(conn, args.out_dir, gh_by_forum=gh_by_forum)
-    # GitHub topics are merged into Active Topics in Task 11; not wired yet.
-    render_active_topics(conn, args.out_dir)
+    all_gh_topics = [t for tlist in gh_by_forum.values() for t in tlist]
+    render_active_topics(conn, args.out_dir, gh_topics=all_gh_topics)
     if args.limit_forum:
         forums = [(args.limit_forum,)]
     else:
