@@ -607,6 +607,18 @@ def esc(s: str) -> str:
     return html.escape(s or "", quote=True)
 
 
+def safe_url(url: str) -> str:
+    """Return url only if it uses an http(s) scheme; otherwise empty string.
+
+    Guards href/src attributes against javascript:/data: schemes in
+    user-influenced URLs (GitHub author/avatar links) that bypass nh3.
+    """
+    u = (url or "").strip()
+    if u.lower().startswith(("https://", "http://")):
+        return u
+    return ""
+
+
 # Cache of {topic_id: {post_id: page_within_topic}} so each topic's post ordering
 # is computed once and reused for every "jump to last post" / "user posts" link.
 # Keyed on POSTS_PER_PAGE which is constant; if it ever varies we'd key the cache too.
@@ -880,7 +892,7 @@ def render_index(conn: sqlite3.Connection, out_dir: str,
                 if g["updated_ts"] >= last_ts:
                     last_ts = g["updated_ts"]
                     last_str = (
-                        f'by <a href="{esc(g["author_url"])}" target="_blank" '
+                        f'by <a href="{esc(safe_url(g["author_url"]))}" target="_blank" '
                         f'rel="noopener">{esc(g["author"])}</a><br>'
                         f'<a href="gh-topic-{g["number"]}.html">'
                         f'{fmt_time(g["updated_ts"])}</a>'
@@ -955,7 +967,7 @@ def render_forum(conn: sqlite3.Connection, out_dir: str, forum_id: int,
     for gt in (gh_topics or []):
         reply_count = len(gt["comments"])
         author_html = (
-            f'<a href="{esc(gt["author_url"])}" target="_blank" rel="noopener">'
+            f'<a href="{esc(safe_url(gt["author_url"]))}" target="_blank" rel="noopener">'
             f'{esc(gt["author"])}</a>'
         )
         state_tag = "" if gt["state"] == "open" else " [closed]"
@@ -1150,11 +1162,11 @@ def _gh_post_block(author: str, author_url: str, avatar_url: str,
     Caller must pass already-sanitized HTML as body_html.
     """
     if author_url:
-        name_html = f'<a href="{esc(author_url)}" target="_blank" rel="noopener">{esc(author)}</a>'
+        name_html = f'<a href="{esc(safe_url(author_url))}" target="_blank" rel="noopener">{esc(author)}</a>'
     else:
         name_html = esc(author)
     if avatar_url:
-        avatar_html = f'<img class="avatar avatar-img" src="{esc(avatar_url)}" alt="" loading="lazy">'
+        avatar_html = f'<img class="avatar avatar-img" src="{esc(safe_url(avatar_url))}" alt="" loading="lazy">'
     else:
         avatar_html = '<div class="avatar"></div>'
     return f"""  <div class="post">
@@ -1261,7 +1273,7 @@ def render_active_topics(conn: sqlite3.Connection, out_dir: str,
         for gt in gh_topics:
             fname = fname_map.get(gt["forum_id"], "")
             author_html = (
-                f'<a href="{esc(gt["author_url"])}" target="_blank" rel="noopener">'
+                f'<a href="{esc(safe_url(gt["author_url"]))}" target="_blank" rel="noopener">'
                 f'{esc(gt["author"])}</a>'
             )
             nposts = 1 + len(gt["comments"])
@@ -1389,14 +1401,19 @@ def main() -> None:
     # is not given, so phpBB-only runs behave exactly as before.
     gh_by_forum: dict[int, list[dict]] = {}
     if args.gh_repo:
-        import gh_source
-        token = os.environ.get("GITHUB_TOKEN", "")
-        fmap = gh_source.load_forum_map(args.forum_map)
-        print(f"[gh] fetching issues from {args.gh_repo} ...")
-        gh_topics = gh_source.build_topics(args.gh_repo, token, fmap)
-        for t in gh_topics:
-            gh_by_forum.setdefault(t["forum_id"], []).append(t)
-        print(f"[gh] {len(gh_topics)} GitHub topics across {len(gh_by_forum)} forums")
+        try:
+            import gh_source
+            token = os.environ.get("GITHUB_TOKEN", "")
+            fmap = gh_source.load_forum_map(args.forum_map)
+            print(f"[gh] fetching issues from {args.gh_repo} ...")
+            gh_topics = gh_source.build_topics(args.gh_repo, token, fmap)
+            for t in gh_topics:
+                gh_by_forum.setdefault(t["forum_id"], []).append(t)
+            print(f"[gh] {len(gh_topics)} GitHub topics across {len(gh_by_forum)} forums")
+        except Exception as e:
+            print(f"[gh] WARNING: GitHub fetch failed ({e}); "
+                  f"building without GitHub topics")
+            gh_by_forum = {}
 
     # Load user data first — index/forum pages now link usernames so we need
     # the username->uid map populated before any rendering step runs.

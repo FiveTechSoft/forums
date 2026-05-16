@@ -70,6 +70,21 @@ def _sample_topic():
     }
 
 
+def test_render_github_topic_drops_javascript_author_url(tmp_path):
+    topic = _sample_topic()
+    topic["author_url"] = "javascript:alert(1)"
+    generate.render_github_topic(topic, "FiveWin", str(tmp_path))
+    content = (tmp_path / "gh-topic-12.html").read_text(encoding="utf-8")
+    assert "javascript:alert" not in content
+
+
+def test_safe_url_filters_schemes():
+    assert generate.safe_url("https://github.com/x") == "https://github.com/x"
+    assert generate.safe_url("http://example.com") == "http://example.com"
+    assert generate.safe_url("javascript:alert(1)") == ""
+    assert generate.safe_url("") == ""
+
+
 def _mini_db(path):
     conn = sqlite3.connect(path)
     conn.executescript(
