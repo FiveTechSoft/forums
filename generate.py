@@ -26,6 +26,15 @@ try:
 except ImportError:
     _MD = None
 
+try:
+    import nh3
+    # Markdown fenced code produces <pre><code class="language-x">; allow the
+    # class attribute on those tags so syntax highlighting survives sanitizing.
+    _NH3_ATTRS = {**nh3.ALLOWED_ATTRIBUTES, "code": {"class"}, "pre": {"class"}}
+except ImportError:
+    nh3 = None
+    _NH3_ATTRS = {}
+
 
 # Secret redaction. Patterns match common live-credential formats. We replace the
 # match with [REDACTED:type] so the post still reads sensibly but no functional
@@ -570,16 +579,18 @@ def bbcode_to_html(text: str) -> str:
 def render_github_body(text: str) -> str:
     """Render a GitHub issue/comment body (Markdown) to safe HTML.
 
-    Secrets are redacted before rendering. Falls back to escaped <pre> text
-    when the optional 'markdown' library is not installed.
+    Secrets are redacted before rendering. The rendered HTML is sanitized with
+    nh3 so user-authored issue/comment content cannot inject scripts or
+    dangerous URL schemes. Falls back to escaped <pre> text when either the
+    'markdown' or 'nh3' library is absent (safe, but unstyled).
     """
     if not text:
         return ""
     text = redact_secrets(text)
-    if _MD is None:
+    if _MD is None or nh3 is None:
         return f"<pre>{esc(text)}</pre>"
     _MD.reset()
-    return _MD.convert(text)
+    return nh3.clean(_MD.convert(text), attributes=_NH3_ATTRS)
 
 
 POSTS_PER_PAGE = 15
