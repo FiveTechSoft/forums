@@ -1393,6 +1393,7 @@ def main() -> None:
 
     print("[2/4] index + forums + active topics...")
     render_index(conn, args.out_dir, gh_by_forum=gh_by_forum)
+    # GitHub topics are merged into Active Topics in Task 11; not wired yet.
     render_active_topics(conn, args.out_dir)
     if args.limit_forum:
         forums = [(args.limit_forum,)]
@@ -1421,14 +1422,18 @@ def main() -> None:
             print(f"   {n} topics in {time.time()-t0:.1f}s")
     print(f"   {n} topics generated.")
 
-    forum_name_by_id = {fid: name for fid, name in
-                        cur.execute("SELECT forum_id, forum_name FROM phpbb_forums")}
-    g = 0
-    for fid, tlist in gh_by_forum.items():
-        for topic in tlist:
-            render_github_topic(topic, forum_name_by_id.get(fid, ""), args.out_dir)
-            g += 1
-    print(f"   {g} GitHub topic pages generated.")
+    if gh_by_forum:
+        forum_name_by_id = {fid: name for fid, name in
+                            cur.execute("SELECT forum_id, forum_name FROM phpbb_forums")}
+        allowed_fids = {fid for (fid,) in forums}
+        g = 0
+        for fid, tlist in gh_by_forum.items():
+            if fid not in allowed_fids:
+                continue  # forum excluded by --limit-forum; skip its GitHub topics
+            for topic in tlist:
+                render_github_topic(topic, forum_name_by_id.get(fid, ""), args.out_dir)
+                g += 1
+        print(f"   {g} GitHub topic pages generated.")
 
     print("[4/4] user pages...")
     # Bulk-fetch every post grouped by author. Sorted so each user's slice is
