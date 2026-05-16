@@ -891,7 +891,8 @@ def strip_xml(s: str) -> str:
     return re.sub(r"<[^>]+>", "", s)
 
 
-def render_forum(conn: sqlite3.Connection, out_dir: str, forum_id: int, page_size: int = 50) -> None:
+def render_forum(conn: sqlite3.Connection, out_dir: str, forum_id: int,
+                 page_size: int = 50, gh_topics: list[dict] | None = None) -> None:
     cur = conn.cursor()
     forum = cur.execute(
         "SELECT forum_name FROM phpbb_forums WHERE forum_id=?", (forum_id,)
@@ -909,31 +910,58 @@ def render_forum(conn: sqlite3.Connection, out_dir: str, forum_id: int, page_siz
         "ORDER BY topic_type DESC, topic_last_post_time DESC",
         (forum_id,),
     ).fetchall()
-    pages = max(1, (len(topics) + page_size - 1) // page_size)
+    # Unified entry list: (sticky_rank, sort_ts, row_html). sticky_rank 1 keeps
+    # phpBB sticky topics on top; GitHub topics are always rank 0.
+    entries: list[tuple[int, int, str]] = []
+    for t in topics:
+        (tid, title, p_uid, poster, colour, ttime,
+         lpid, lp_uid, lname, ltime, views, ttype) = t
+        sticky = " [sticky]" if ttype and ttype >= 1 else ""
+        p_uid = resolve_uid(p_uid, poster)
+        lp_uid = resolve_uid(lp_uid, lname)
+        poster_html = user_link(p_uid, poster, colour or "555")
+        last_name_html = user_link(lp_uid, lname)
+        if lpid:
+            lpage = get_post_page(cur, tid, lpid)
+            last_href = topic_post_url(tid, lpid, lpage)
+        else:
+            last_href = f"topic-{tid}.html"
+        row = (
+            f'      <tr><td><span class="forum-icon"></span>&nbsp;'
+            f'<a class="forum-title" href="topic-{tid}.html">{esc(title)}</a>{sticky}'
+            f'<div class="forum-desc">by {poster_html} · {fmt_time(ttime)}</div></td>'
+            f'<td class="num" data-label="Views">{views}</td>'
+            f'<td class="lastpost">by {last_name_html}<br>'
+            f'<a href="{last_href}" title="Go to last post">{fmt_time(ltime)}</a></td></tr>'
+        )
+        entries.append((1 if (ttype and ttype >= 1) else 0, ltime or ttime or 0, row))
+
+    for gt in (gh_topics or []):
+        reply_count = len(gt["comments"])
+        author_html = (
+            f'<a href="{esc(gt["author_url"])}" target="_blank" rel="noopener">'
+            f'{esc(gt["author"])}</a>'
+        )
+        state_tag = "" if gt["state"] == "open" else " [closed]"
+        row = (
+            f'      <tr><td><span class="forum-icon"></span>&nbsp;'
+            f'<a class="forum-title" href="gh-topic-{gt["number"]}.html">'
+            f'{esc(gt["title"])}</a>{state_tag}'
+            f'<div class="forum-desc">by {author_html} · {fmt_time(gt["created_ts"])} '
+            f'· via GitHub</div></td>'
+            f'<td class="num" data-label="Replies">{reply_count}</td>'
+            f'<td class="lastpost">'
+            f'<a href="gh-topic-{gt["number"]}.html">{fmt_time(gt["updated_ts"])}</a></td></tr>'
+        )
+        entries.append((0, gt["updated_ts"] or gt["created_ts"] or 0, row))
+
+    # Sticky first, then newest activity first.
+    entries.sort(key=lambda e: (e[0], e[1]), reverse=True)
+
+    pages = max(1, (len(entries) + page_size - 1) // page_size)
     for p in range(pages):
-        chunk = topics[p * page_size : (p + 1) * page_size]
-        rows = []
-        for t in chunk:
-            (tid, title, p_uid, poster, colour, ttime,
-             lpid, lp_uid, lname, ltime, views, ttype) = t
-            sticky = " [sticky]" if ttype and ttype >= 1 else ""
-            p_uid = resolve_uid(p_uid, poster)
-            lp_uid = resolve_uid(lp_uid, lname)
-            poster_html = user_link(p_uid, poster, colour or "555")
-            last_name_html = user_link(lp_uid, lname)
-            if lpid:
-                lpage = get_post_page(cur, tid, lpid)
-                last_href = topic_post_url(tid, lpid, lpage)
-            else:
-                last_href = f"topic-{tid}.html"
-            rows.append(
-                f'      <tr><td><span class="forum-icon"></span>&nbsp;'
-                f'<a class="forum-title" href="topic-{tid}.html">{esc(title)}</a>{sticky}'
-                f'<div class="forum-desc">by {poster_html} · {fmt_time(ttime)}</div></td>'
-                f'<td class="num" data-label="Views">{views}</td>'
-                f'<td class="lastpost">by {last_name_html}<br>'
-                f'<a href="{last_href}" title="Go to last post">{fmt_time(ltime)}</a></td></tr>'
-            )
+        chunk = entries[p * page_size : (p + 1) * page_size]
+        rows = [e[2] for e in chunk]
         page_links = ""
         if pages > 1:
             page_links = " ".join(
