@@ -131,3 +131,29 @@ def test_render_github_topic_writes_page(tmp_path):
     # Reply path for GitHub topics is a link to the issue, not Giscus.
     assert "https://github.com/FiveTechSoft/forums/issues/12" in content
     assert "giscus.app" not in content
+
+
+def test_render_index_counts_github_topics(tmp_path):
+    db = str(tmp_path / "mini2.db")
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE phpbb_forums
+            (forum_id INT, forum_name TEXT, parent_id INT, left_id INT,
+             forum_desc TEXT, forum_topics_approved INT, forum_posts_approved INT);
+        CREATE TABLE phpbb_topics
+            (topic_id INT, topic_last_post_id INT, topic_last_poster_id INT,
+             topic_last_poster_name TEXT, topic_last_post_time INT, forum_id INT);
+        INSERT INTO phpbb_forums VALUES (0,'Category',0,1,'',0,0);
+        INSERT INTO phpbb_forums VALUES (1,'FiveWin',0,2,'desc',3,7);
+        """
+    )
+    conn.commit()
+    try:
+        gh_by_forum = {1: [_sample_topic()]}  # 1 GitHub topic, 1 comment
+        generate.render_index(conn, str(tmp_path), gh_by_forum=gh_by_forum)
+        content = (tmp_path / "index.html").read_text(encoding="utf-8")
+        # phpBB 3 topics + 1 GitHub topic = 4
+        assert '<td class="num" data-label="Topics">4</td>' in content
+    finally:
+        conn.close()

@@ -830,7 +830,8 @@ document.addEventListener('click', function(e) {
 """
 
 
-def render_index(conn: sqlite3.Connection, out_dir: str) -> None:
+def render_index(conn: sqlite3.Connection, out_dir: str,
+                 gh_by_forum: dict[int, list[dict]] | None = None) -> None:
     cur = conn.cursor()
     # categories (parent_id=0, type=0 means category)
     cats = cur.execute(
@@ -851,6 +852,9 @@ def render_index(conn: sqlite3.Connection, out_dir: str) -> None:
             (cat_id,),
         ).fetchall()
         for fid, fname, fdesc, ft, fp in children:
+            gh_list = (gh_by_forum or {}).get(fid, [])
+            ft = (ft or 0) + len(gh_list)
+            fp = (fp or 0) + sum(1 + len(g["comments"]) for g in gh_list)
             last = cur.execute(
                 "SELECT topic_id, topic_last_post_id, "
                 "COALESCE(topic_last_poster_id,0), topic_last_poster_name, "
@@ -860,6 +864,7 @@ def render_index(conn: sqlite3.Connection, out_dir: str) -> None:
                 (fid,),
             ).fetchone()
             last_str = ""
+            last_ts = 0
             if last and last[4]:
                 ltid, lpid, lpuid, lpname, ltime = last
                 lpuid = resolve_uid(lpuid, lpname)
@@ -870,6 +875,16 @@ def render_index(conn: sqlite3.Connection, out_dir: str) -> None:
                     f'by {name_html}<br>'
                     f'<a href="{href}" title="Go to last post">{fmt_time(ltime)}</a>'
                 )
+                last_ts = ltime
+            for g in gh_list:
+                if g["updated_ts"] > last_ts:
+                    last_ts = g["updated_ts"]
+                    last_str = (
+                        f'by <a href="{esc(g["author_url"])}" target="_blank" '
+                        f'rel="noopener">{esc(g["author"])}</a><br>'
+                        f'<a href="gh-topic-{g["number"]}.html">'
+                        f'{fmt_time(g["updated_ts"])}</a>'
+                    )
             body.append(
                 f'      <tr><td><span class="forum-icon"></span>&nbsp;'
                 f'<a class="forum-title" href="forum-{fid}.html">{esc(fname)}</a>'
