@@ -6,11 +6,12 @@ imported to forums.db. Requires:
   - GITHUB_TOKEN in env (for generate.py issue fetch and for git push)
 
 Usage:
-  python deploy.py [--db forums.db] [--repo-dir forums-repo] [--no-push]
+  python deploy.py [--db forums.db] [--repo-dir forums-repo] [--out forums-out] [--no-push]
 """
 from __future__ import annotations
 
 import argparse
+import glob
 import os
 import shutil
 import subprocess
@@ -34,6 +35,16 @@ def main() -> None:
     ap.add_argument("--no-push", action="store_true",
                     help="build and stage into the repo dir but do not commit/push")
     args = ap.parse_args()
+
+    if not os.path.isdir(os.path.join(args.repo_dir, ".git")):
+        sys.exit(f"--repo-dir {args.repo_dir!r} is not a git repository")
+
+    # Clear stale generated pages so a removed topic/forum page cannot be
+    # resurrected on the next deploy. The avatars/ subdir and other assets are
+    # left intact — generate.py reuses them.
+    if os.path.isdir(args.out):
+        for stale in glob.glob(os.path.join(args.out, "*.html")):
+            os.remove(stale)
 
     # 1. Build the site (phpBB + GitHub Issues).
     if run([sys.executable, "generate.py", args.db, args.out,
