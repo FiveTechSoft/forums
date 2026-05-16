@@ -1099,6 +1099,66 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
             f.write(out)
 
 
+def _gh_post_block(author: str, author_url: str, avatar_url: str,
+                   ts: int, subject: str, body_html: str) -> str:
+    """One .post block for a GitHub topic page (issue body or a comment)."""
+    if author_url:
+        name_html = f'<a href="{esc(author_url)}" target="_blank" rel="noopener">{esc(author)}</a>'
+    else:
+        name_html = esc(author)
+    if avatar_url:
+        avatar_html = f'<img class="avatar avatar-img" src="{esc(avatar_url)}" alt="" loading="lazy">'
+    else:
+        avatar_html = '<div class="avatar"></div>'
+    return f"""  <div class="post">
+    <div class="poster">
+      <div class="name">{name_html}</div>
+      <div class="rank">GitHub user</div>
+      {avatar_html}
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 class="subject">{esc(subject)}</h3>
+        Posted: {fmt_time(ts)}
+      </div>
+      <div class="content">{body_html}</div>
+    </div>
+  </div>"""
+
+
+def render_github_topic(topic: dict, forum_name: str, out_dir: str) -> None:
+    """Write gh-topic-<number>.html for one GitHub-sourced topic."""
+    blocks = [_gh_post_block(
+        topic["author"], topic["author_url"], topic["avatar_url"],
+        topic["created_ts"], topic["title"],
+        render_github_body(topic["body_md"]),
+    )]
+    for c in topic["comments"]:
+        blocks.append(_gh_post_block(
+            c["author"], c["author_url"], c["avatar_url"],
+            c["created_ts"], "Re: " + topic["title"],
+            render_github_body(c["body_md"]),
+        ))
+    reply = f"""
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <p><a class="newbtn" href="{esc(topic['url'])}" target="_blank" rel="noopener">Reply on GitHub</a></p>
+  </div>
+"""
+    crumbs = (
+        f'  <div class="crumbs"><a href="index.html">Board index</a> '
+        f'<a href="forum-{topic["forum_id"]}.html">{esc(forum_name)}</a> '
+        f'{esc(topic["title"])}</div>\n'
+    )
+    out = (
+        page_header(f'{topic["title"]} - FiveTech Support Forums')
+        + crumbs + "\n".join(blocks) + reply + page_footer()
+    )
+    fn = f'gh-topic-{topic["number"]}.html'
+    with open(os.path.join(out_dir, fn), "w", encoding="utf-8") as f:
+        f.write(out)
+
+
 ACTIVE_TOPICS_LIMIT = 100
 
 
