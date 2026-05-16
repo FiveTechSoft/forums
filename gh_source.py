@@ -6,7 +6,6 @@ recorded JSON fixtures, so no network access is needed to run them.
 from __future__ import annotations
 
 import json
-import urllib.request
 from dataclasses import dataclass
 
 
