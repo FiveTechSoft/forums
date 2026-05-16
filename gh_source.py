@@ -38,7 +38,7 @@ def iso_to_ts(s: str) -> int:
     return calendar.timegm(parsed)
 
 
-def _api_get(url: str, token: str) -> tuple[list, str | None]:
+def _api_get(url: str, token: str) -> tuple[list[dict], str | None]:
     """GET a GitHub API URL. Returns (parsed JSON list, next-page URL or None)."""
     req = urllib.request.Request(url)
     req.add_header("Accept", "application/vnd.github+json")

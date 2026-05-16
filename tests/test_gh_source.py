@@ -29,4 +29,7 @@ def test_parse_issues_filters_prs_and_unlabeled():
     assert t["forum_id"] == 1
     assert t["author"] == "octocat"
     assert t["created_ts"] == 1715767200
+    assert t["updated_ts"] == 1715860800
+    assert t["body_md"] == "I want to center my window on screen."
+    assert t["url"] == "https://github.com/FiveTechSoft/forums/issues/12"
     assert t["comments"] == []
