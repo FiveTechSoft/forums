@@ -1101,7 +1101,10 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
 
 def _gh_post_block(author: str, author_url: str, avatar_url: str,
                    ts: int, subject: str, body_html: str) -> str:
-    """One .post block for a GitHub topic page (issue body or a comment)."""
+    """One .post block for a GitHub topic page (issue body or a comment).
+
+    Caller must pass already-sanitized HTML as body_html.
+    """
     if author_url:
         name_html = f'<a href="{esc(author_url)}" target="_blank" rel="noopener">{esc(author)}</a>'
     else:
@@ -1139,6 +1142,7 @@ def render_github_topic(topic: dict, forum_name: str, out_dir: str) -> None:
             c["created_ts"], "Re: " + topic["title"],
             render_github_body(c["body_md"]),
         ))
+    # Reuse the .giscus-wrap CSS box for visual consistency; this holds a plain link, not a Giscus widget.
     reply = f"""
   <div class="giscus-wrap">
     <h3>Continue the discussion</h3>

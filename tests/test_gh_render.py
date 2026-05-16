@@ -69,6 +69,17 @@ def _sample_topic():
     }
 
 
+def test_render_github_topic_no_comments(tmp_path):
+    topic = _sample_topic()
+    topic["comments"] = []
+    generate.render_github_topic(topic, "FiveWin", str(tmp_path))
+    content = (tmp_path / "gh-topic-12.html").read_text(encoding="utf-8")
+    assert "How to center a window" in content
+    assert "Reply on GitHub" in content
+    # only the issue body block, no "Re:" comment blocks
+    assert "Re: How to center a window" not in content
+
+
 def test_render_github_topic_writes_page(tmp_path):
     generate.render_github_topic(_sample_topic(), "FiveWin", str(tmp_path))
     page = tmp_path / "gh-topic-12.html"
