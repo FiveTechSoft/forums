@@ -1335,6 +1335,10 @@ def main() -> None:
                     help="Generate only this forum_id (and its topics)")
     ap.add_argument("--limit-topics", type=int, default=0,
                     help="Generate at most N topics per forum")
+    ap.add_argument("--gh-repo", default="",
+                    help="owner/name of the GitHub repo whose Issues are forum topics")
+    ap.add_argument("--forum-map", default="forum-map.json",
+                    help="path to forum-map.json (label -> phpBB forum_id)")
     args = ap.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -1346,6 +1350,19 @@ def main() -> None:
     conn = sqlite3.connect(args.db)
     conn.execute("PRAGMA query_only = 1")
     cur = conn.cursor()
+
+    # GitHub-sourced topics, grouped by phpBB forum_id. Empty when --gh-repo
+    # is not given, so phpBB-only runs behave exactly as before.
+    gh_by_forum: dict[int, list[dict]] = {}
+    if args.gh_repo:
+        import gh_source
+        token = os.environ.get("GITHUB_TOKEN", "")
+        fmap = gh_source.load_forum_map(args.forum_map)
+        print(f"[gh] fetching issues from {args.gh_repo} ...")
+        gh_topics = gh_source.build_topics(args.gh_repo, token, fmap)
+        for t in gh_topics:
+            gh_by_forum.setdefault(t["forum_id"], []).append(t)
+        print(f"[gh] {len(gh_topics)} GitHub topics across {len(gh_by_forum)} forums")
 
     # Load user data first — index/forum pages now link usernames so we need
     # the username->uid map populated before any rendering step runs.
@@ -1375,7 +1392,7 @@ def main() -> None:
             _name_to_uid[nm] = uid
 
     print("[2/4] index + forums + active topics...")
-    render_index(conn, args.out_dir)
+    render_index(conn, args.out_dir, gh_by_forum=gh_by_forum)
     render_active_topics(conn, args.out_dir)
     if args.limit_forum:
         forums = [(args.limit_forum,)]
@@ -1384,7 +1401,7 @@ def main() -> None:
             "SELECT forum_id FROM phpbb_forums WHERE forum_type=1 ORDER BY left_id"
         ).fetchall()
     for (fid,) in forums:
-        render_forum(conn, args.out_dir, fid)
+        render_forum(conn, args.out_dir, fid, gh_topics=gh_by_forum.get(fid, []))
 
     print("[3/4] topics...")
     n = 0
@@ -1403,6 +1420,15 @@ def main() -> None:
         if n % 500 == 0:
             print(f"   {n} topics in {time.time()-t0:.1f}s")
     print(f"   {n} topics generated.")
+
+    forum_name_by_id = {fid: name for fid, name in
+                        cur.execute("SELECT forum_id, forum_name FROM phpbb_forums")}
+    g = 0
+    for fid, tlist in gh_by_forum.items():
+        for topic in tlist:
+            render_github_topic(topic, forum_name_by_id.get(fid, ""), args.out_dir)
+            g += 1
+    print(f"   {g} GitHub topic pages generated.")
 
     print("[4/4] user pages...")
     # Bulk-fetch every post grouped by author. Sorted so each user's slice is
