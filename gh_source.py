@@ -99,3 +99,42 @@ def parse_issues(raw_issues: list[dict], fmap: ForumMap) -> list[dict]:
             "comments": [],
         })
     return topics
+
+
+def parse_comments(raw_comments: list[dict]) -> list[dict]:
+    """Convert raw issue-comment JSON into normalized comment records."""
+    out: list[dict] = []
+    for c in raw_comments:
+        user = c.get("user") or {}
+        out.append({
+            "author": user.get("login", "unknown"),
+            "author_url": user.get("html_url", ""),
+            "avatar_url": user.get("avatar_url", ""),
+            "created_ts": iso_to_ts(c.get("created_at", "")),
+            "body_md": c.get("body") or "",
+        })
+    return out
+
+
+def fetch_issue_comments(repo: str, number: int, token: str) -> list[dict]:
+    """Fetch all comments for one issue."""
+    url = f"{API_ROOT}/repos/{repo}/issues/{number}/comments?per_page=100"
+    out: list[dict] = []
+    while url:
+        data, url = _api_get(url, token)
+        out.extend(data)
+    return out
+
+
+def build_topics(repo: str, token: str, fmap: ForumMap) -> list[dict]:
+    """Full pipeline: fetch issues + comments, return normalized topic records.
+
+    This is the only function that hits the network end to end; unit tests
+    exercise parse_issues / parse_comments directly with fixtures instead.
+    """
+    raw_issues = fetch_repo_issues(repo, token)
+    topics = parse_issues(raw_issues, fmap)
+    for t in topics:
+        raw_comments = fetch_issue_comments(repo, t["number"], token)
+        t["comments"] = parse_comments(raw_comments)
+    return topics

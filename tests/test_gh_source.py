@@ -33,3 +33,14 @@ def test_parse_issues_filters_prs_and_unlabeled():
     assert t["body_md"] == "I want to center my window on screen."
     assert t["url"] == "https://github.com/FiveTechSoft/forums/issues/12"
     assert t["comments"] == []
+
+
+def test_parse_comments_returns_normalized_records():
+    with open(os.path.join(FIXTURES, "comments_12.json"), encoding="utf-8") as f:
+        raw = json.load(f)
+    comments = gh_source.parse_comments(raw)
+    assert len(comments) == 1
+    c = comments[0]
+    assert c["author"] == "contributor"
+    assert c["created_ts"] == 1715851800
+    assert "oWnd:Center()" in c["body_md"]
