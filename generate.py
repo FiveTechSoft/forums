@@ -158,7 +158,7 @@ img { max-width:100%; height:auto; }
 .navbar a { margin-right:14px; font-weight:bold; }
 .crumbs { padding:8px 0; font-size:11px; color: var(--fg-muted); }
 .crumbs a::after { content:" »"; color: var(--c06); }
-.last-update { font-size:12px; opacity:0.75; margin-top:10px; text-align:right; }
+.nav-last-update { float:right; color: var(--fg-muted); font-weight:normal; }
 .cat {
   background: var(--header-bg); color:#fff;
   padding:6px 10px; font-weight:bold; font-size:12px;
@@ -673,9 +673,13 @@ def user_link(uid: int, name: str, colour: str = "") -> str:
 STYLE_HREF = "style.css"
 
 
-def page_header(title: str, depth: int = 0) -> str:
+def page_header(title: str, depth: int = 0, last_update: str = "") -> str:
     css = ("../" * depth) + STYLE_HREF
     base = ("../" * depth) or ""
+    last_update_html = (
+        f'<span class="nav-last-update">Last update on {last_update}</span>'
+        if last_update else ""
+    )
     return f"""<!doctype html>
 <html lang="es">
 <head>
@@ -704,7 +708,7 @@ def page_header(title: str, depth: int = 0) -> str:
     <a href="{base}active-topics.html">Active topics</a>
     <a href="{base}search.html">Search</a>
     <a href="https://github.com/{GISCUS_REPO}/discussions" target="_blank">All discussions</a>
-    <a href="https://github.com/login" target="_blank">Login (GitHub)</a>
+    <a href="https://github.com/login" target="_blank">Login (GitHub)</a>{last_update_html}
   </div>
 """
 
@@ -849,10 +853,7 @@ def render_index(conn: sqlite3.Connection, out_dir: str,
     cats = cur.execute(
         "SELECT forum_id, forum_name FROM phpbb_forums WHERE parent_id=0 ORDER BY left_id"
     ).fetchall()
-    body = [
-        f'  <div class="last-update">Last update on '
-        f'{datetime.now(timezone.utc).strftime("%a %b %d, %Y %I:%M %p")} UTC</div>'
-    ]
+    body = []
     for cat_id, cat_name in cats:
         body.append(f'  <div class="cat">{esc(cat_name)}</div>')
         body.append('  <table class="forumlist">')
@@ -906,7 +907,9 @@ def render_index(conn: sqlite3.Connection, out_dir: str,
                 f'<td class="lastpost">{last_str}</td></tr>'
             )
         body.append("    </tbody></table>")
-    out = page_header("FiveTech Support Forums") + "\n".join(body) + page_footer()
+    stamp = datetime.now(timezone.utc).strftime("%a %b %d, %Y %I:%M %p") + " UTC"
+    out = (page_header("FiveTech Support Forums", last_update=stamp)
+           + "\n".join(body) + page_footer())
     with open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8") as f:
         f.write(out)
 
