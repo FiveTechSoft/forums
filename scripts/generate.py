@@ -56,6 +56,8 @@ def redact_secrets(text: str) -> str:
 
 GISCUS_REPO = "FiveTechSoft/forums"
 GISCUS_REPO_ID = "R_kgDOSYw8Sw"
+# Set at the start of main(); shown in the navbar of every generated page.
+BUILD_TIME = ""
 GISCUS_CATEGORY = "General"
 GISCUS_CATEGORY_ID = "DIC_kwDOSYw8S84C8qKa"
 
@@ -147,6 +149,7 @@ img { max-width:100%; height:auto; }
   padding:6px 12px; font-size:11px;
 }
 .navbar a { margin-right:14px; font-weight:bold; }
+.nav-last-update { float:right; color: var(--fg-muted); font-weight:normal; }
 .crumbs { padding:8px 0; font-size:11px; color: var(--fg-muted); }
 .crumbs a::after { content:" »"; color: var(--c06); }
 .cat {
@@ -666,6 +669,7 @@ def page_header(title: str, depth: int = 0) -> str:
     <a href="{base}search.html">Search</a>
     <a href="https://github.com/{GISCUS_REPO}/discussions" target="_blank">All discussions</a>
     <a href="https://github.com/login" target="_blank">Login (GitHub)</a>
+    <span class="nav-last-update">Last update on {BUILD_TIME}</span>
   </div>
 """
 
@@ -1061,7 +1065,8 @@ def render_topic(conn: sqlite3.Connection, out_dir: str, topic_id: int,
             f'<a href="index.html">Board index</a>'
             f'<a href="active-topics.html">Active topics</a>'
             f'<a href="https://github.com/{GISCUS_REPO}/discussions" target="_blank">All discussions</a>'
-            f'<a href="https://github.com/login" target="_blank">Login (GitHub)</a></div>\n'
+            f'<a href="https://github.com/login" target="_blank">Login (GitHub)</a>'
+            f'<span class="nav-last-update">Last update on {BUILD_TIME}</span></div>\n'
         )
         out = head + body + page_footer()
         fn = f"topic-{topic_id}.html" if p == 0 else f"topic-{topic_id}-page-{p+1}.html"
@@ -1198,6 +1203,9 @@ def main() -> None:
     ap.add_argument("--limit-topics", type=int, default=0,
                     help="Generate at most N topics per forum")
     args = ap.parse_args()
+
+    global BUILD_TIME
+    BUILD_TIME = datetime.now(timezone.utc).strftime("%a %b %d, %Y %I:%M %p UTC")
 
     os.makedirs(args.out_dir, exist_ok=True)
     # Write fresh CSS using prosilver-style palette via CSS variables.
