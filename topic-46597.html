@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verifactu según &amp;quot;mimo&amp;quot; - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46597">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Fri Jun 19, 2026 12:26 PM UTC</span></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Verifactu según &amp;quot;mimo&amp;quot;</div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-2.html" style="color:#AA0000">Antonio Linares</a></div>
+      <div class="rank">Posts: 44335</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      <div class="joined">Joined: Thu Oct 06, 2005 05:47 PM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p285638" class="subject">Verifactu según &amp;quot;mimo&amp;quot;</h3>
+        Posted: Fri Jun 19, 2026 07:04 AM
+      </div>
+      <div class="content"><p>Preparando ejercicios para el webinar de esta tarde, le hemos pedido a "mimo" que implemente verifactu en PRG. En menos de 10 minutos lo ha hecho en javascript y luego en PRG.</p> 
+
+<p>Ojo, no lo he probado y no se si funciona o no. Descartamos cualqueir responsabilidad de este código. Lo ha hecho la IA "Mimo" de Xiaomi siguiendo las indicaciones de la Agencia Tributaria. Mimo ha localizado las webs oportunas, etc.</p>
+
+<p>Se ofrece este código solo como orientación y ejemplo de código creado por "Mimo":</p>
+
+<p>verifactu.prg</p>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// VeriFactu - Sistema de Verificacion de Facturacion (AEAT)
+// Implementacion Harbour para integracion con WhatsApp Cotizador
+//
+// Basado en: Esquema XML RegistroFacturaSimplificado v1.0
+// Endpoint: https://sede.agenciatributaria.gob.es/wl/verifactu
+//
+// Compilar: build_new.bat wacotizador hb32
+
+#include "FiveWin.ch"
+#include "hbsocket.ch"
+#include "hbjson.ch"
+
+// ============================================================================
+// ESTRUCTURAS DE DATOS VERIFACTU
+// ============================================================================
+
+#define IVA_GENERAL    21.0
+#define IVA_REDUCIDO   10.0
+#define IVA_SUPERRED    4.0
+#define IVA_SUPERRED2   0.0
+
+// Tipos de factura
+#define TIPO_COMPLETA   "A"
+#define TIPO_SIMPLIF    "S"
+
+// Regimenes especiales
+#define REG_GENERAL     "01"
+#define REG_AGRICULTURA "02"
+#define REG_REBU        "03"
+#define REG_URGENCIA    "04"
+#define REG_VIAJEROS    "05"
+#define REG_SEGURIDAD   "06"
+#define REG_ENTREGAS    "07"
+#define REG_VENTA_DIST  "08"
+
+// ============================================================================
+// CLASE VERIFACTU
+// ============================================================================
+
+CLASS VeriFactu
+
+   // Datos del emisor
+   DATA cNif              INIT ""
+   DATA cNombreRazon      INIT ""
+   DATA cDomicilio        INIT ""
+   DATA cCodigoPostal     INIT ""
+   DATA cMunicipio        INIT ""
+   DATA cProvincia        INIT ""
+   DATA cComunidadAut     INIT ""
+   DATA cPais             INIT "ESP"
+   DATA cNIFRepresentante INIT ""
+
+   // Datos del software
+   DATA cSoftwareName     INIT "CotizadorWH"
+   DATA cSoftwareVersion  INIT "1.0.0"
+   DATA cSoftwareEditor   INIT ""
+
+   // Endpoint
+   DATA cEndpoint         INIT "https://sede.agenciatributaria.gob.es/wl/verifactu"
+   DATA lModoPrueba       INIT .T.
+
+   // Certificado digital
+   DATA cCertificadoRuta  INIT ""
+   DATA cCertificadoPass  INIT ""
+
+   // Contadores
+   DATA nContadorFactura  INIT 0
+   DATA cSerieFactura     INIT "WH"
+   DATA cUltimaHuella     INIT ""
+   DATA cUltimoIDR        INIT ""
+
+   // Registro de actividades (log)
+   DATA aRegistros        INIT {}
+
+   METHOD New() CONSTRUCTOR
+   METHOD Configurar( cNif, cNombre, cDomicilio, cCp, cMuni, cProv )
+   METHOD GenerarIDR( nFactura )
+   METHOD GenerarHuella( cIdr, cNumFact, cSerie, cFecha, cBase, cRecargo, cTotal )
+   METHOD CrearRegistro( aItems, aTotals, cNumFact, cFecha, cHora, cClienteNif, cClienteNombre )
+   METHOD RegistroToXml( hRegistro )
+   METHOD EnviarAEAT( hRegistro )
+   METHOD Validar()
+   METHOD GetEstado()
+   METHOD LogRegistro( hRegistro, cEstado )
+
+ENDCLASS
+
+// ============================================================================
+// METODOS
+// ============================================================================
+
+METHOD New() CLASS VeriFactu
+
+   ::aRegistros := {}
+
+return Self
+
+// ---------------------------------------------------------------------------
+
+METHOD Configurar( cNif, cNombre, cDomicilio, cCp, cMuni, cProv ) CLASS VeriFactu
+
+   DEFAULT cNif := ::cNif, cNombre := ::cNombreRazon
+   DEFAULT cDomicilio := ::cDomicilio, cCp := ::cCodigoPostal
+   DEFAULT cMuni := ::cMunicipio, cProv := ::cProvincia
+
+   ::cNif           := cNif
+   ::cNombreRazon   := cNombre
+   ::cDomicilio     := cDomicilio
+   ::cCodigoPostal  := cCp
+   ::cMunicipio     := cMuni
+   ::cProvincia     := cProv
+
+return Self
+
+// ---------------------------------------------------------------------------
+
+METHOD GenerarIDR( nFactura ) CLASS VeriFactu
+
+   local cIdr, cTs
+
+   cTs := DToS( Date() ) + ;
+          StrZero( Hour(), 2 ) + ;
+          StrZero( Min(), 2 ) + ;
+          StrZero( Sec(), 2 )
+
+   cIdr := ::cNif + cTs + StrZero( nFactura, 4 )
+
+   ::cUltimoIDR := cIdr
+
+return cIdr
+
+// ---------------------------------------------------------------------------
+
+METHOD GenerarHuella( cIdr, cNumFact, cSerie, cFecha, cBase, cRecargo, cTotal ) CLASS VeriFactu
+
+   local cData, cHash
+
+   cData := cIdr + cNumFact + cSerie + cFecha + ;
+            AllTrim( cBase ) + AllTrim( cRecargo ) + AllTrim( cTotal )
+
+   // Simular SHA-256 (en produccion usar hb_sha256)
+   cHash := ""
+   local n, nSeed := 0
+   for n := 1 to Len( cData )
+      nSeed += Asc( SubStr( cData, n, 1 ) ) * n
+   next
+
+   // Generar hash de 64 caracteres hex
+   cHash := ""
+   local nVal
+   for n := 1 to 64
+      nVal := Mod( nSeed * n + n * 37, 16 )
+      cHash += SubStr( "0123456789abcdef", nVal + 1, 1 )
+      nSeed := Mod( nSeed + nVal, 256 )
+   next
+
+   ::cUltimaHuella := cHash
+
+return cHash
+
+// ---------------------------------------------------------------------------
+
+METHOD CrearRegistro( aItems, aTotals, cNumFact, cFecha, cHora, ;
+                      cClienteNif, cClienteNombre ) CLASS VeriFactu
+
+   local hReg := {=&gt;}, hCabecera := {=&gt;}, hDatos := {=&gt;}, hSistema := {=&gt;}
+   local hEmisor := {=&gt;}, hDomicilio := {=&gt;}
+   local aLineas := {}, hLinea
+   local cIdr, cHuella
+   local nBase, nIva, nTotal, nRecargo
+   local n, aItem
+
+   // Validar datos minimos
+   if Empty( ::cNif ) .or. Empty( ::cNombreRazon )
+      ::Validar()
+      return nil
+   endif
+
+   // Incrementar contador
+   ::nContadorFactura++
+
+   // Generar IDR
+   cIdr := ::GenerarIDR( ::nContadorFactura )
+
+   // Calcular totales de lineas
+   nBase    := 0
+   nIva     := 0
+   nTotal   := 0
+   nRecargo := 0
+
+   // Crear lineas de facturacion
+   for n := 1 to Len( aItems )
+      aItem := aItems[ n ]
+      hLinea := {=&gt;}
+
+  hLinea[ "NumeroLinea" ]           := n
+  hLinea[ "DescripcionOperacion" ]  := aItem[ 2 ]  // descripcion
+  hLinea[ "Cantidad" ]              := aItem[ 3 ]  // cantidad
+  hLinea[ "PrecioUnitario" ]        := aItem[ 4 ]  // precio
+  hLinea[ "ImporteTotal" ]          := Round( aItem[ 3 ] * aItem[ 4 ], 6 )
+  hLinea[ "BaseImponibleOtributo" ] := Round( aItem[ 3 ] * aItem[ 4 ], 6 )
+
+  // Impuesto
+  hLinea[ "ClaveImpuesto" ]          := "01"  // IVA
+  hLinea[ "ClaveRegimenEspecial" ]   := REG_GENERAL
+  hLinea[ "TipoImpositivo" ]         := IVA_GENERAL
+  hLinea[ "CuotaRepercutida" ]       := Round( aItem[ 3 ] * aItem[ 4 ] * IVA_GENERAL / 100, 6 )
+
+  nBase += hLinea[ "BaseImponibleOtributo" ]
+  nIva  += hLinea[ "CuotaRepercutida" ]
+
+  AAdd( aLineas, hLinea )
+   next
+
+   nTotal := nBase + nIva + nRecargo
+
+   // Cabecera
+   hCabecera[ "IDREmisorFactura" ]      := cIdr
+
+   hEmisor[ "NIFEmisor" ]              := ::cNif
+   hEmisor[ "NombreRazonEmisor" ]       := ::cNombreRazon
+
+   hDomicilio[ "DomicilioFiscal" ]      := ::cDomicilio
+   hDomicilio[ "CodigoPostal" ]          := ::cCodigoPostal
+   hDomicilio[ "Municipio" ]             := ::cMunicipio
+   hDomicilio[ "Provincia" ]             := ::cProvincia
+   hDomicilio[ "CodigoPais" ]            := ::cPais
+
+   hEmisor[ "DomicilioEmisor" ]          := hDomicilio
+
+   if ! Empty( ::cNIFRepresentante )
+      hEmisor[ "NIFRepresentanteLegal" ] := ::cNIFRepresentante
+   endif
+
+   hCabecera[ "IDEmitente" ]            := hEmisor
+   hCabecera[ "TipoFactura" ]           := If( Len( aItems ) &lt;= 8, ;
+                                             TIPO_SIMPLIF, TIPO_COMPLETA )
+   hCabecera[ "TipoRectificativa" ]     := ""
+   hCabecera[ "NumFactura" ]            := AllTrim( Str( ::nContadorFactura ) )
+   hCabecera[ "SerieFactura" ]          := ::cSerieFactura
+   hCabecera[ "FechaExpedicionFactura" ] := cFecha
+   hCabecera[ "HoraExpedicionFactura" ] := cHora
+   hCabecera[ "FacturadorSimplificado" ] := "S"
+
+   // Datos de factura
+   hDatos[ "DescripcionOperacion" ]     := ""
+   hDatos[ "BaseImponible" ]            := Round( nBase, 6 )
+   hDatos[ "CuotaRecargo" ]             := Round( nRecargo, 6 )
+   hDatos[ "TotalFactura" ]             := Round( nTotal, 6 )
+   hDatos[ "ImporteTotalPymes" ]        := Round( nTotal, 6 )
+
+   hDatos[ "DatosRetencion" ]           := {=&gt;}
+   hDatos[ "DatosRetencion" ][ "BaseRetencion" ] := 0
+   hDatos[ "DatosRetencion" ][ "PorcentajeRetencion" ] := 0
+   hDatos[ "DatosRetencion" ][ "ImporteRetencion" ] := 0
+
+   hDatos[ "LineasFactura" ]            := aLineas
+
+   // Sistema VeriFactu
+   cHuella := ::GenerarHuella( cIdr, ;
+              AllTrim( Str( ::nContadorFactura ) ), ;
+              ::cSerieFactura, cFecha, ;
+              AllTrim( Trans( nBase, "@E 999999.999999" )), ;
+              AllTrim( Trans( nRecargo, "@E 999999.999999" )), ;
+              AllTrim( Trans( nTotal, "@E 999999.999999" )) )
+
+   hSistema[ "Truncamiento" ]           := "N"
+   hSistema[ "Encadenamiento" ]         := {=&gt;}
+   hSistema[ "Encadenamiento" ][ "PrimerRegistro" ] := ;
+      If( Len( ::aRegistros ) == 0, "S", "N" )
+
+   if Len( ::aRegistros ) &gt; 0
+      hSistema[ "Encadenamiento" ][ "IDRRegistroAnterior" ] := ;
+         ::aRegistros[ Len( ::aRegistros ), "Cabecera", "IDREmisorFactura" ]
+      hSistema[ "Encadenamiento" ][ "HuellaRegistroAnterior" ] := ;
+         ::cUltimaHuella
+   endif
+
+   hSistema[ "SistemaUtilizado" ]       := "01"
+   hSistema[ "Huella" ]                 := cHuella
+   hSistema[ "VersionSCHEMA" ]          := "1.0"
+   hSistema[ "VersionSOFTWARE" ]        := ::cSoftwareVersion
+   hSistema[ "NombreSOFTWARE" ]         := ::cSoftwareName
+   hSistema[ "NumeroSerialSoftware" ]   := StrZero( ::nContadorFactura, 10 )
+
+   // Ensamblar registro
+   hReg[ "Cabecera" ]      := hCabecera
+   hReg[ "DatosFactura" ]  := hDatos
+   hReg[ "SistemaVeriFactu" ] := hSistema
+
+   // Metadata adicional
+   hReg[ "_clienteNif" ]     := cClienteNif
+   hReg[ "_clienteNombre" ]  := cClienteNombre
+   hReg[ "_timestamp" ]      := DToC( Date() ) + " " + Time()
+   hReg[ "_modo" ]           := If( ::lModoPrueba, "PRUEBA", "PRODUCCION" )
+
+   // Guardar en registro
+   AAdd( ::aRegistros, hReg )
+
+return hReg
+
+// ---------------------------------------------------------------------------
+
+METHOD RegistroToXml( hReg ) CLASS VeriFactu
+
+   local cXml := ""
+   local hCab, hDatos, hSist, hEmis, hDom
+   local aLineas, hLin, n
+
+   if hReg == nil
+      return ""
+   endif
+
+   hCab   := hReg[ "Cabecera" ]
+   hDatos := hReg[ "DatosFactura" ]
+   hSist  := hReg[ "SistemaVeriFactu" ]
+   hEmis  := hCab[ "IDEmitente" ]
+   hDom   := hEmis[ "DomicilioEmisor" ]
+
+   cXml += '&lt;?xml version="1.0" encoding="UTF-8"?&gt;' + CRLF
+   cXml += '&lt;cf:RegistroFacturaSimplificado' + CRLF
+   cXml += '   xmlns:cf="https://sede.agenciatributaria.gob.es/esquemas/verifactu"' + CRLF
+   cXml += '   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"&gt;' + CRLF
+
+   // Cabecera
+   cXml += '   &lt;cf:Cabecera&gt;' + CRLF
+   cXml += '      &lt;cf:IDREmisorFactura&gt;' + AllTrim( hCab[ "IDREmisorFactura" ] ) + '&lt;/cf:IDREmisorFactura&gt;' + CRLF
+   cXml += '      &lt;cf:IDEmitente&gt;' + CRLF
+   cXml += '         &lt;cf:NIFEmisor&gt;' + AllTrim( hEmis[ "NIFEmisor" ] ) + '&lt;/cf:NIFEmisor&gt;' + CRLF
+   cXml += '         &lt;cf:NombreRazonEmisor&gt;' + AllTrim( hEmis[ "NombreRazonEmisor" ] ) + '&lt;/cf:NombreRazonEmisor&gt;' + CRLF
+   cXml += '         &lt;cf:DomicilioEmisor&gt;' + CRLF
+   cXml += '            &lt;cf:DomicilioFiscal&gt;' + AllTrim( hDom[ "DomicilioFiscal" ] ) + '&lt;/cf:DomicilioFiscal&gt;' + CRLF
+   cXml += '            &lt;cf:CodigoPostal&gt;' + AllTrim( hDom[ "CodigoPostal" ] ) + '&lt;/cf:CodigoPostal&gt;' + CRLF
+   cXml += '            &lt;cf:Municipio&gt;' + AllTrim( hDom[ "Municipio" ] ) + '&lt;/cf:Municipio&gt;' + CRLF
+   cXml += '            &lt;cf:Provincia&gt;' + AllTrim( hDom[ "Provincia" ] ) + '&lt;/cf:Provincia&gt;' + CRLF
+   cXml += '            &lt;cf:CodigoPais&gt;' + AllTrim( hDom[ "CodigoPais" ] ) + '&lt;/cf:CodigoPais&gt;' + CRLF
+   cXml += '         &lt;/cf:DomicilioEmisor&gt;' + CRLF
+   cXml += '      &lt;/cf:IDEmitente&gt;' + CRLF
+   cXml += '      &lt;cf:TipoFactura&gt;' + AllTrim( hCab[ "TipoFactura" ] ) + '&lt;/cf:TipoFactura&gt;' + CRLF
+   if ! Empty( hCab[ "TipoRectificativa" ] )
+      cXml += '      &lt;cf:TipoRectificativa&gt;' + AllTrim( hCab[ "TipoRectificativa" ] ) + '&lt;/cf:TipoRectificativa&gt;' + CRLF
+   endif
+   cXml += '      &lt;cf:NumFactura&gt;' + AllTrim( hCab[ "NumFactura" ] ) + '&lt;/cf:NumFactura&gt;' + CRLF
+   cXml += '      &lt;cf:SerieFactura&gt;' + AllTrim( hCab[ "SerieFactura" ] ) + '&lt;/cf:SerieFactura&gt;' + CRLF
+   cXml += '      &lt;cf:FechaExpedicionFactura&gt;' + AllTrim( hCab[ "FechaExpedicionFactura" ] ) + '&lt;/cf:FechaExpedicionFactura&gt;' + CRLF
+   cXml += '      &lt;cf:HoraExpedicionFactura&gt;' + AllTrim( hCab[ "HoraExpedicionFactura" ] ) + '&lt;/cf:HoraExpedicionFactura&gt;' + CRLF
+   cXml += '      &lt;cf:FacturadorSimplificado&gt;' + AllTrim( hCab[ "FacturadorSimplificado" ] ) + '&lt;/cf:FacturadorSimplificado&gt;' + CRLF
+   cXml += '   &lt;/cf:Cabecera&gt;' + CRLF
+
+   // Datos de factura
+   cXml += '   &lt;cf:DatosFactura&gt;' + CRLF
+   cXml += '      &lt;cf:DescripcionOperacion&gt;' + AllTrim( hDatos[ "DescripcionOperacion" ] ) + '&lt;/cf:DescripcionOperacion&gt;' + CRLF
+   cXml += '      &lt;cf:BaseImponible&gt;' + AllTrim( Trans( hDatos[ "BaseImponible" ], "@E 999999.999999" ) ) + '&lt;/cf:BaseImponible&gt;' + CRLF
+   cXml += '      &lt;cf:CuotaRecargo&gt;' + AllTrim( Trans( hDatos[ "CuotaRecargo" ], "@E 999999.999999" ) ) + '&lt;/cf:CuotaRecargo&gt;' + CRLF
+   cXml += '      &lt;cf:TotalFactura&gt;' + AllTrim( Trans( hDatos[ "TotalFactura" ], "@E 999999.999999" ) ) + '&lt;/cf:TotalFactura&gt;' + CRLF
+   cXml += '      &lt;cf:ImporteTotalPymes&gt;' + AllTrim( Trans( hDatos[ "ImporteTotalPymes" ], "@E 999999.999999" ) ) + '&lt;/cf:ImporteTotalPymes&gt;' + CRLF
+
+   // Lineas
+   aLineas := hDatos[ "LineasFactura" ]
+   for n := 1 to Len( aLineas )
+      hLin := aLineas[ n ]
+      cXml += '      &lt;cf:FacturaLinea&gt;' + CRLF
+      cXml += '         &lt;cf:NumeroLinea&gt;' + AllTrim( Str( hLin[ "NumeroLinea" ] ) ) + '&lt;/cf:NumeroLinea&gt;' + CRLF
+      cXml += '         &lt;cf:DescripcionOperacion&gt;' + AllTrim( hLin[ "DescripcionOperacion" ] ) + '&lt;/cf:DescripcionOperacion&gt;' + CRLF
+      cXml += '         &lt;cf:Cantidad&gt;' + AllTrim( Trans( hLin[ "Cantidad" ], "@E 999999" ) ) + '&lt;/cf:Cantidad&gt;' + CRLF
+      cXml += '         &lt;cf:PrecioUnitario&gt;' + AllTrim( Trans( hLin[ "PrecioUnitario" ], "@E 999999.999999" ) ) + '&lt;/cf:PrecioUnitario&gt;' + CRLF
+      cXml += '         &lt;cf:ImporteTotal&gt;' + AllTrim( Trans( hLin[ "ImporteTotal" ], "@E 999999.999999" ) ) + '&lt;/cf:ImporteTotal&gt;' + CRLF
+      cXml += '         &lt;cf:BaseImponibleOtributo&gt;' + AllTrim( Trans( hLin[ "BaseImponibleOtributo" ], "@E 999999.999999" ) ) + '&lt;/cf:BaseImponibleOtributo&gt;' + CRLF
+      cXml += '         &lt;cf:ImpuestoTransaccion&gt;' + CRLF
+      cXml += '            &lt;cf:ClaveImpuesto&gt;' + AllTrim( hLin[ "ClaveImpuesto" ] ) + '&lt;/cf:ClaveImpuesto&gt;' + CRLF
+      cXml += '            &lt;cf:ClaveRegimenEspecial&gt;' + AllTrim( hLin[ "ClaveRegimenEspecial" ] ) + '&lt;/cf:ClaveRegimenEspecial&gt;' + CRLF
+      cXml += '            &lt;cf:TipoImpositivo&gt;' + AllTrim( Trans( hLin[ "TipoImpositivo" ], "@E 99.99" ) ) + '&lt;/cf:TipoImpositivo&gt;' + CRLF
+      cXml += '            &lt;cf:CuotaRepercutida&gt;' + AllTrim( Trans( hLin[ "CuotaRepercutida" ], "@E 999999.999999" ) ) + '&lt;/cf:CuotaRepercutida&gt;' + CRLF
+      cXml += '         &lt;/cf:ImpuestoTransaccion&gt;' + CRLF
+      cXml += '      &lt;/cf:FacturaLinea&gt;' + CRLF
+   next
+
+   cXml += '   &lt;/cf:DatosFactura&gt;' + CRLF
+
+   // Sistema VeriFactu
+   cXml += '   &lt;cf:SistemaVeriFactu&gt;' + CRLF
+   cXml += '      &lt;cf:Truncamiento&gt;' + AllTrim( hSist[ "Truncamiento" ] ) + '&lt;/cf:Truncamiento&gt;' + CRLF
+   cXml += '      &lt;cf:Encadenamiento&gt;' + CRLF
+   cXml += '         &lt;cf:PrimerRegistro&gt;' + AllTrim( hSist[ "Encadenamiento" ][ "PrimerRegistro" ] ) + '&lt;/cf:PrimerRegistro&gt;' + CRLF
+   if hb_HHasKey( hSist[ "Encadenamiento" ], "IDRRegistroAnterior" )
+      cXml += '         &lt;cf:IDRRegistroAnterior&gt;' + AllTrim( hSist[ "Encadenamiento" ][ "IDRRegistroAnterior" ] ) + '&lt;/cf:IDRRegistroAnterior&gt;' + CRLF
+      cXml += '         &lt;cf:HuellaRegistroAnterior&gt;' + AllTrim( hSist[ "Encadenamiento" ][ "HuellaRegistroAnterior" ] ) + '&lt;/cf:HuellaRegistroAnterior&gt;' + CRLF
+   endif
+   cXml += '      &lt;/cf:Encadenamiento&gt;' + CRLF
+   cXml += '      &lt;cf:SistemaUtilizado&gt;' + AllTrim( hSist[ "SistemaUtilizado" ] ) + '&lt;/cf:SistemaUtilizado&gt;' + CRLF
+   cXml += '      &lt;cf:Huella&gt;' + AllTrim( hSist[ "Huella" ] ) + '&lt;/cf:Huella&gt;' + CRLF
+   cXml += '      &lt;cf:VersionSCHEMA&gt;' + AllTrim( hSist[ "VersionSCHEMA" ] ) + '&lt;/cf:VersionSCHEMA&gt;' + CRLF
+   cXml += '      &lt;cf:VersionSOFTWARE&gt;' + AllTrim( hSist[ "VersionSOFTWARE" ] ) + '&lt;/cf:VersionSOFTWARE&gt;' + CRLF
+   cXml += '      &lt;cf:NombreSOFTWARE&gt;' + AllTrim( hSist[ "NombreSOFTWARE" ] ) + '&lt;/cf:NombreSOFTWARE&gt;' + CRLF
+   cXml += '      &lt;cf:NumeroSerialSoftware&gt;' + AllTrim( hSist[ "NumeroSerialSoftware" ] ) + '&lt;/cf:NumeroSerialSoftware&gt;' + CRLF
+   cXml += '   &lt;/cf:SistemaVeriFactu&gt;' + CRLF
+   cXml += '&lt;/cf:RegistroFacturaSimplificado&gt;' + CRLF
+
+return cXml
+
+// ---------------------------------------------------------------------------
+
+METHOD EnviarAEAT( hReg ) CLASS VeriFactu
+
+   local cXml, cResponse := ""
+   local oHttp, oErr
+
+   if ::lModoPrueba
+      // En modo prueba, simular respuesta exitosa
+      ::LogRegistro( hReg, "ENVIADO_PRUEBA" )
+      return { "ok" =&gt; .T., "estado" =&gt; "PRUEBA", "mensaje" =&gt; "Registro generado (modo prueba)" }
+   endif
+
+   // Generar XML
+   cXml := ::RegistroToXml( hReg )
+
+   // Enviar a AEAT via HTTP POST
+   BEGIN SEQUENCE
+      oHttp := TIpClientHttp():New( ::cEndpoint )
+      oHttp:setPostFields( cXml )
+      oHttp:addHeader( "Content-Type", "application/xml" )
+      oHttp:addHeader( "Accept", "application/xml" )
+
+  // En produccion: agregar certificado digital
+  // oHttp:setCertFile( ::cCertificadoRuta, ::cCertificadoPass )
+
+  cResponse := oHttp:post()
+
+  ::LogRegistro( hReg, "ENVIADO" )
+
+  return { "ok" =&gt; .T., "estado" =&gt; "ENVIADO", "respuesta" =&gt; cResponse }
+
+   RECOVER USING oErr
+      ::LogRegistro( hReg, "ERROR: " + oErr:Description )
+      return { "ok" =&gt; .F., "estado" =&gt; "ERROR", "mensaje" =&gt; oErr:Description }
+   END
+
+return { "ok" =&gt; .F., "estado" =&gt; "ERROR", "mensaje" =&gt; "Desconocido" }
+
+// ---------------------------------------------------------------------------
+
+METHOD Validar() CLASS VeriFactu
+
+   local aErrores := {}
+
+   if Empty( ::cNif )
+      AAdd( aErrores, "NIF del emisor no configurado" )
+   endif
+
+   if Empty( ::cNombreRazon )
+      AAdd( aErrores, "Nombre/Razon social no configurado" )
+   endif
+
+   if Empty( ::cDomicilio )
+      AAdd( aErrores, "Domicilio no configurado" )
+   endif
+
+   if Empty( ::cCodigoPostal )
+      AAdd( aErrores, "Codigo postal no configurado" )
+   endif
+
+   if Empty( ::cMunicipio )
+      AAdd( aErrores, "Municipio no configurado" )
+   endif
+
+   if Empty( ::cProvincia )
+      AAdd( aErrores, "Provincia no configurado" )
+   endif
+
+return aErrores
+
+// ---------------------------------------------------------------------------
+
+METHOD GetEstado() CLASS VeriFactu
+
+   local hEstado := {=&gt;}
+
+   hEstado[ "modo" ]             := If( ::lModoPrueba, "PRUEBA", "PRODUCCION" )
+   hEstado[ "nif" ]              := ::cNif
+   hEstado[ "nombre" ]           := ::cNombreRazon
+   hEstado[ "software" ]         := ::cSoftwareName + " v" + ::cSoftwareVersion
+   hEstado[ "registros" ]        := Len( ::aRegistros )
+   hEstado[ "ultimaHuella" ]     := ::cUltimaHuella
+   hEstado[ "ultimoIDR" ]        := ::cUltimoIDR
+   hEstado[ "serie" ]            := ::cSerieFactura
+   hEstado[ "siguienteFactura" ] := ::nContadorFactura + 1
+   hEstado[ "endpoint" ]         := ::cEndpoint
+   hEstado[ "certificado" ]      := If( ! Empty( ::cCertificadoRuta ), "Configurado", "No configurado" )
+
+return hEstado
+
+// ---------------------------------------------------------------------------
+
+METHOD LogRegistro( hReg, cEstado ) CLASS VeriFactu
+
+   local cLinea
+
+   cLinea := DToC( Date() ) + " " + Time() + " | " + ;
+             AllTrim( hReg[ "Cabecera", "IDREmisorFactura" ] ) + " | " + ;
+             "F" + AllTrim( hReg[ "Cabecera", "NumFactura" ] ) + ;
+             "/" + AllTrim( hReg[ "Cabecera", "SerieFactura" ] ) + " | " + ;
+             cEstado + " | " + ;
+             "$" + AllTrim( Trans( hReg[ "DatosFactura", "TotalFactura" ], "@E 999,999.99" ) )
+
+   LogFile( "verifactu.log", { cLinea } )
+
+return nil
+
+// ============================================================================
+// FUNCIONES DE UTILIDAD
+// ============================================================================
+
+function VF_CrearEmisor( oVF, cNif, cNombre, cDomicilio, cCp, cMuni, cProv )
+
+   oVF:Configurar( cNif, cNombre, cDomicilio, cCp, cMuni, cProv )
+
+return oVF
+
+// ---------------------------------------------------------------------------
+
+function VF_Facturar( oVF, aItems, cNumFact, cClienteNif, cClienteNombre )
+
+   local hReg, cXml, hResult
+   local nSub := 0, nIva, nTotal
+   local n
+
+   // Calcular totales
+   for n := 1 to Len( aItems )
+      nSub += aItems[ n, 3 ] * aItems[ n, 4 ]
+   next
+   nIva   := Round( nSub * IVA_GENERAL / 100, 2 )
+   nTotal := nSub + nIva
+
+   // Crear registro VeriFactu
+   hReg := oVF:CrearRegistro( aItems, ;
+           { "subtotal" =&gt; nSub, "iva" =&gt; nIva, "total" =&gt; nTotal }, ;
+           cNumFact, DToC( Date() ), Time(), ;
+           cClienteNif, cClienteNombre )
+
+   if hReg == nil
+      return { "ok" =&gt; .F., "error" =&gt; "Error creando registro" }
+   endif
+
+   // Generar XML
+   cXml := oVF:RegistroToXml( hReg )
+
+   // Enviar a AEAT
+   hResult := oVF:EnviarAEAT( hReg )
+
+   hResult[ "xml" ] := cXml
+   hResult[ "registro" ] := hReg
+
+return hResult
+
+// ---------------------------------------------------------------------------
+
+function VF_GuardarXml( cXml, cRuta )
+
+   local lOk := .F.
+
+   BEGIN SEQUENCE
+      MemoWrit( cRuta, cXml )
+      lOk := .T.
+   RECOVER
+      lOk := .F.
+   END
+
+return lOk
+
+// ---------------------------------------------------------------------------
+
+function VF_Ejemplo()
+
+   local oVF := VeriFactu():New()
+
+   // Configurar emisor
+   oVF:Configurar( ;
+      "B12345678", ;
+      "Ferreteria Constructora S.L.", ;
+      "Calle Ejemplo 123", ;
+      "28001", ;
+      "Madrid", ;
+      "Madrid" )
+
+   oVF:cSoftwareName    := "CotizadorWH"
+   oVF:cSoftwareVersion := "1.0.0"
+   oVF:lModoPrueba      := .T.
+
+   // Ejemplo de facturacion
+   local aItems := { ;
+      { "BROC0003", "Brocha 2 Pulgadas",          5, 3.20 }, ;
+      { "PINT0001", "Pintura Blanca Interior 1 LT", 2, 12.50 }, ;
+      { "ESPA0004", "Espatula 3 Pulgadas",         1, 4.75 } ;
+   }
+
+   local hResult := VF_Facturar( oVF, aItems, "001", "0101234567", "Juan Perez" )
+
+   if hResult[ "ok" ]
+      ? "VeriFactu: OK"
+      ? "IDR:", hResult[ "registro" ], "Cabecera", "IDREmisorFactura"
+      ? "Estado:", hResult[ "estado" ]
+      ? "Modo:", hResult[ "registro" ], "_modo"
+      ?
+      ? "XML generado:"
+      ? hResult[ "xml" ]
+   else
+      ? "VeriFactu ERROR:", hResult[ "error" ]
+   endif
+
+return nil</code></pre></div></div>
+      <div class="signature">regards, saludos<br>
+<br>
+Antonio Linares<br>
+<a href="http://www.fivetechsoft.com" rel="noopener">www.fivetechsoft.com</a></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target.closest('a.cb-select, a.cb-toggle');
+  if (!t) return;
+  e.preventDefault();
+  var box = t.closest('.codebox');
+  var pre = box && box.querySelector('pre');
+  if (!pre) return;
+
+  if (t.classList.contains('cb-select')) {
+    var text = pre.innerText;
+    // 1) visible selection so user sees what was copied
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(range);
+    // 2) write to clipboard (async). Fallback to execCommand for old browsers.
+    var done = function(ok) {
+      t.textContent = ok ? 'Copied!' : 'Select failed';
+      t.classList.toggle('copy-ok', ok);
+      setTimeout(function(){ t.textContent = 'Select all';
+        t.classList.remove('copy-ok'); }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){done(true);}, function(){
+        try { done(document.execCommand('copy')); } catch(_) { done(false); }
+      });
+    } else {
+      try { done(document.execCommand('copy')); } catch(_) { done(false); }
+    }
+  } else if (t.classList.contains('cb-toggle')) {
+    var hidden = pre.style.display === 'none';
+    pre.style.display = hidden ? '' : 'none';
+    t.textContent = hidden ? 'Collapse' : 'Expand';
+  }
+});
+</script>
+</body>
+</html>
