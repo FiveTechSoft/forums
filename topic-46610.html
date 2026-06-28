@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TOTP in fivewin - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46610">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Sun Jun 28, 2026 11:40 AM UTC</span></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> TOTP in fivewin</div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-4653.html" style="color:#105289">NWKL</a></div>
+      <div class="rank">Posts: 39</div>
+      <img class="avatar avatar-img" src="avatars/4653.jpg" alt="" loading="lazy">
+      <div class="joined">Joined: Thu Aug 04, 2022 12:45 PM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p285734" class="subject">TOTP in fivewin</h3>
+        Posted: Sat Jun 27, 2026 09:10 PM
+      </div>
+      <div class="content"><p>TOTP<br>
+A contribution to the community: use an offline TOTP authenticator for your applications. I searched the forum but didn't find anything, so I implemented this for use in my own systems; if others have similar solutions, this could be incorporated or improved.<br>
+It includes a complete example; since it's in Brazilian Portuguese, you might want to use a translator.<br>
+use with google or ms authenticator.</p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+ * totp_qr.prg - Demo FiveWin: gera segredo TOTP, mostra o QR-Code na tela
+ *               (Google Authenticator / Microsoft Authenticator) e valida
+ *               o codigo digitado. Self-contained (usa totp.prg).
+ *
+ * QR: matriz via hbzebra -&gt; BMP 24-bit gerado em Harbour (escala inteira,
+ *     zona quieta) -&gt; exibido 1:1 num TBitmap (sem gaps, sem corte, sem stretch).
+ * SOMENTE ASCII.
+ */
+
+#include "fivewin.ch"
+
+PROCEDURE Main()
+   LOCAL cIssuer  := "GaiaDemo"
+   LOCAL cAccount := "operador@empresa"
+   LOCAL cRegFile := hb_DirBase() + "totp_registro.txt"
+   // Loop: abre no modo certo conforme o estado. Botoes que mudam o estado
+   // (registrar / refazer cadastro) fecham e reabrem no outro modo.
+   DO WHILE RunScreen( cIssuer, cAccount, cRegFile )
+   ENDDO
+   RETURN
+
+STATIC FUNCTION RunScreen( cIssuer, cAccount, cRegFile )
+   LOCAL oDlg, oFont, oFontB, oFontM, oSayNow, oTmr, oGet
+   LOCAL cSecret  := EnrollLoadOrNew( cRegFile, cAccount )
+   LOCAL cURI     := TOTP_AuthURI( cIssuer, cAccount, cSecret )
+   LOCAL cCode    := Space( 6 )
+   LOCAL cBmp     := hb_DirBase() + "qr.bmp"
+   LOCAL nDim     := WriteQRBmp( cBmp, cURI, 240 )
+   LOCAL lReg     := ( EnrollStatusCode( cRegFile, cAccount ) == "REGISTRADO" )
+   LOCAL lReopen  := .F.
+
+   DEFINE FONT oFont  NAME "Segoe UI" SIZE 0, -13
+   DEFINE FONT oFontB NAME "Segoe UI" SIZE 0, -15 BOLD
+   DEFINE FONT oFontM NAME "Consolas" SIZE 0, -13
+
+   DEFINE DIALOG oDlg ;
+      TITLE IIF( lReg, "Login 2FA (TOTP)", "Cadastro 2FA (TOTP)" ) ;
+      SIZE 400, 460 PIXEL FONT oFont
+
+   IF lReg
+      // ===================== MODO LOGIN (ja cadastrado) =====================
+      @  10, 10 SAY "MODO LOGIN - 2FA ja cadastrado (sem QR)"      SIZE 360, 16 PIXEL OF oDlg FONT oFontB
+      @  30, 10 SAY "Conta: " + cAccount                          SIZE 360, 13 PIXEL OF oDlg
+      @  52, 10 SAY "Abra o app autenticador e digite o codigo atual:" SIZE 360, 13 PIXEL OF oDlg FONT oFontB
+      @  70, 10 GET oGet VAR cCode PICTURE "999999" SIZE 60, 18 PIXEL OF oDlg FONT oFontM
+      @  69, 78 BUTTON "Entrar" SIZE 100, 20 PIXEL OF oDlg ;
+         ACTION DoLogin( cSecret, cCode )
+      @ 102, 10 SAY "Codigo atual (DEMO, p/ testar sem celular):"  SIZE 360, 13 PIXEL OF oDlg
+      @ 118, 10 SAY oSayNow PROMPT TOTP_Now( cSecret )            SIZE 120, 18 PIXEL OF oDlg FONT oFontB
+      @ 148, 10 SAY "Status: " + EnrollStatus( cRegFile, cAccount ) SIZE 360, 13 PIXEL OF oDlg FONT oFontB
+      @ 176, 10 BUTTON "Refazer cadastro (apagar 2FA)" SIZE 190, 20 PIXEL OF oDlg ;
+         ACTION ( ResetEnroll( cRegFile, cAccount ), lReopen := .T., oDlg:End() )
+   ELSE
+      // ===================== MODO CADASTRO (ativar 2FA) =====================
+      @  10, 10 SAY "MODO CADASTRO - ative o 2FA"                  SIZE 360, 16 PIXEL OF oDlg FONT oFontB
+      @  30, 10 SAY "Conta: " + cAccount + "   Emissor: " + cIssuer SIZE 360, 13 PIXEL OF oDlg
+      @  46, 10 SAY "Chave manual: " + cSecret                     SIZE 360, 13 PIXEL OF oDlg FONT oFontM
+      @  70, 10 BUTTON "1) Mostrar QR p/ escanear" SIZE 160, 22 PIXEL OF oDlg ;
+         ACTION ShowQRWin( cBmp, nDim )
+      @ 106, 10 SAY "2) Digite o codigo p/ confirmar o cadastro:"  SIZE 360, 13 PIXEL OF oDlg FONT oFontB
+      @ 122, 10 GET oGet VAR cCode PICTURE "999999" SIZE 60, 18 PIXEL OF oDlg FONT oFontM
+      @ 121, 78 BUTTON "Validar e registrar" SIZE 140, 20 PIXEL OF oDlg ;
+         ACTION IIF( DoEnroll( cRegFile, cAccount, cSecret, cCode ), ;
+                     ( lReopen := .T., oDlg:End() ), NIL )
+      @ 152, 10 SAY "Codigo atual (DEMO, p/ testar sem celular):"  SIZE 360, 13 PIXEL OF oDlg
+      @ 168, 10 SAY oSayNow PROMPT TOTP_Now( cSecret )             SIZE 120, 18 PIXEL OF oDlg FONT oFontB
+      @ 194, 10 SAY "Status: " + EnrollStatus( cRegFile, cAccount ) SIZE 360, 13 PIXEL OF oDlg FONT oFontB
+   ENDIF
+
+   DEFINE TIMER oTmr INTERVAL 1000 OF oDlg ;
+      ACTION ( oSayNow:SetText( TOTP_Now( cSecret ) ) )
+   ACTIVATE TIMER oTmr
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   RELEASE FONT oFont, oFontB, oFontM
+   RETURN lReopen
+
+// Janelinha modal SO com o QR (renderiza limpo: nenhum controle na faixa Y).
+// Usuario escaneia e fecha; volta p/ a tela principal validar.
+STATIC FUNCTION ShowQRWin( cBmp, nDim )
+   LOCAL oQ, hBmp := ReadBitmap( 0, cBmp )
+   IF hBmp == 0 ; RETURN NIL ; ENDIF
+   DEFINE DIALOG oQ TITLE "Escaneie no autenticador e feche" ;
+      SIZE nDim + 56, nDim + 90 PIXEL
+   oQ:bPainted := {| hDC | DrawBitmap( hDC, hBmp, 18, 18, nDim, nDim ) }
+   ACTIVATE DIALOG oQ CENTERED
+   DeleteObject( hBmp )
+   RETURN NIL
+
+// ---------------------------------------------------------------------------
+// ENROLLMENT / persistencia (arquivo texto: conta|segredo|status|quando)
+// ---------------------------------------------------------------------------
+STATIC FUNCTION EnrollLoadOrNew( cFile, cAccount )
+   LOCAL aReg := EnrollLoad( cFile ), nPos, cSecret
+   nPos := AScan( aReg, {| r | r[ 1 ] == cAccount } )
+   IF nPos &gt; 0
+      RETURN aReg[ nPos ][ 2 ]               // reusa segredo ja gerado
+   ENDIF
+   cSecret := TOTP_NewSecret()               // 1a vez: gera e salva como PENDENTE
+   AAdd( aReg, { cAccount, cSecret, "PENDENTE", "" } )
+   EnrollSave( cFile, aReg )
+   RETURN cSecret
+
+// CADASTRO: valida o 1o codigo e marca REGISTRADO. Retorna .T. se registrou.
+STATIC FUNCTION DoEnroll( cFile, cAccount, cSecret, cCode )
+   LOCAL aReg, nPos
+   IF !TOTP_Validate( cSecret, cCode )
+      MsgStop( "Codigo invalido. Confira a hora do dispositivo." + hb_eol() + ;
+               "(o codigo muda a cada 30s)", "Falhou" )
+      RETURN .F.
+   ENDIF
+   aReg := EnrollLoad( cFile )
+   nPos := AScan( aReg, {| r | r[ 1 ] == cAccount } )
+   IF nPos &gt; 0
+      aReg[ nPos ][ 3 ] := "REGISTRADO"
+      aReg[ nPos ][ 4 ] := DToC( Date() ) + " " + Time()
+      EnrollSave( cFile, aReg )
+   ENDIF
+   MsgInfo( "Codigo VALIDO. 2FA ATIVADO para " + cAccount + "." + hb_eol() + ;
+            "Da proxima vez voce entra so com o codigo (sem QR).", "Cadastro OK" )
+   RETURN .T.
+
+// LOGIN recorrente: valida o codigo contra o segredo guardado. SEM QR, sem regravar.
+STATIC FUNCTION DoLogin( cSecret, cCode )
+   IF TOTP_Validate( cSecret, cCode )
+      MsgInfo( "Codigo correto. ACESSO LIBERADO.", "Login OK" )
+   ELSE
+      MsgStop( "Codigo invalido. Use o codigo ATUAL do app (muda a cada 30s).", "Negado" )
+   ENDIF
+   RETURN NIL
+
+// Apaga o cadastro da conta -&gt; volta p/ MODO CADASTRO (novo segredo/QR).
+STATIC FUNCTION ResetEnroll( cFile, cAccount )
+   LOCAL aReg := EnrollLoad( cFile )
+   LOCAL nPos := AScan( aReg, {| r | r[ 1 ] == cAccount } )
+   IF nPos &gt; 0
+      hb_ADel( aReg, nPos, .T. )
+      EnrollSave( cFile, aReg )
+   ENDIF
+   RETURN NIL
+
+STATIC FUNCTION EnrollStatusCode( cFile, cAccount )
+   LOCAL aReg := EnrollLoad( cFile )
+   LOCAL nPos := AScan( aReg, {| r | r[ 1 ] == cAccount } )
+   RETURN IIF( nPos &gt; 0, aReg[ nPos ][ 3 ], "PENDENTE" )
+
+STATIC FUNCTION EnrollStatus( cFile, cAccount )
+   LOCAL aReg := EnrollLoad( cFile )
+   LOCAL nPos := AScan( aReg, {| r | r[ 1 ] == cAccount } )
+   RETURN IIF( nPos &gt; 0, aReg[ nPos ][ 3 ] + ;
+               IIF( Empty( aReg[ nPos ][ 4 ] ), "", " (" + aReg[ nPos ][ 4 ] + ")" ), "PENDENTE" )
+
+STATIC FUNCTION EnrollLoad( cFile )
+   LOCAL cTxt := hb_MemoRead( cFile ), aOut := {}, aLines, c, aF
+   aLines := hb_ATokens( cTxt, Chr( 10 ) )
+   FOR EACH c IN aLines
+      c := StrTran( c, Chr( 13 ), "" )
+      IF Empty( c ) ; LOOP ; ENDIF
+      aF := hb_ATokens( c, "|" )
+      DO WHILE Len( aF ) &lt; 4 ; AAdd( aF, "" ) ; ENDDO
+      AAdd( aOut, { aF[ 1 ], aF[ 2 ], aF[ 3 ], aF[ 4 ] } )
+   NEXT
+   RETURN aOut
+
+STATIC FUNCTION EnrollSave( cFile, aReg )
+   LOCAL c := "", r
+   FOR EACH r IN aReg
+      c += r[ 1 ] + "|" + r[ 2 ] + "|" + r[ 3 ] + "|" + r[ 4 ] + hb_eol()
+   NEXT
+   hb_MemoWrit( cFile, c )
+   RETURN NIL
+
+// ---------------------------------------------------------------------------
+// Gera a matriz do QR (array de strings "0"/"1") via hbzebra. nMods por ref.
+STATIC FUNCTION QRMatrix( cURI, nMods )
+   LOCAL pQR, nW := 0, nH := 0, aRows, y
+   pQR := hb_zebra_create_qrcode( cURI, 0 )
+   IF Empty( pQR ) .OR. hb_zebra_geterror( pQR ) != 0
+      nMods := 0 ; RETURN NIL
+   ENDIF
+   hb_zebra_draw( pQR, {| x, y, w, h | nW := Max( nW, x + w ), nH := Max( nH, y + h ) }, 0, 0, 1, 1 )
+   aRows := Array( nH )
+   FOR y := 1 TO nH ; aRows[ y ] := Replicate( "0", nW ) ; NEXT
+   hb_zebra_draw( pQR, {| x, y, w, h | FillRows( aRows, x, y, w, h ) }, 0, 0, 1, 1 )
+   hb_zebra_destroy( pQR )
+   nMods := nH                                  // QR e quadrado (nW == nH)
+   RETURN aRows
+
+STATIC FUNCTION FillRows( aRows, x, y, w, h )
+   LOCAL i, j
+   FOR j := y TO y + h - 1
+      FOR i := x TO x + w - 1
+         aRows[ j + 1 ] := Stuff( aRows[ j + 1 ], i + 1, 1, "1" )
+      NEXT
+   NEXT
+   RETURN NIL
+
+// ---------------------------------------------------------------------------
+// Escreve um BMP 24-bit do QR (escala inteira + zona quieta). Retorna o lado px.
+STATIC FUNCTION WriteQRBmp( cFile, cURI, nTargetPx )
+   LOCAL nMods := 0, aRows := QRMatrix( cURI, @nMods )
+   LOCAL nQuiet := 4, nUnits, nScale, nDim, nRowBytes, nPad, cPad
+   LOCAL cW := Chr(255) + Chr(255) + Chr(255)   // pixel branco (BGR)
+   LOCAL cB := Chr(0) + Chr(0) + Chr(0)         // pixel preto
+   LOCAL aOut, u, x, cRow, cPix, cData := "", nFileSize, cHdr, i
+
+   IF nMods == 0 ; RETURN 0 ; ENDIF
+   nUnits := nMods + 2 * nQuiet
+   nScale := Max( 3, Int( nTargetPx / nUnits ) )
+   nDim   := nUnits * nScale
+   nRowBytes := nDim * 3
+   nPad   := ( 4 - ( nRowBytes % 4 ) ) % 4
+   cPad   := Replicate( Chr(0), nPad )
+
+   // pixel-row (com padding) de cada unidade vertical, top-&gt;bottom
+   aOut := Array( nUnits )
+   FOR u := 1 TO nUnits
+      IF u &lt;= nQuiet .OR. u &gt; nQuiet + nMods
+         cPix := Replicate( cW, nDim )                       // zona quieta (linha toda)
+      ELSE
+         cRow := aRows[ u - nQuiet ]
+         cPix := Replicate( cW, nQuiet * nScale )            // quieta esquerda
+         FOR x := 1 TO nMods
+            cPix += Replicate( IIF( SubStr( cRow, x, 1 ) == "1", cB, cW ), nScale )
+         NEXT
+         cPix += Replicate( cW, nQuiet * nScale )            // quieta direita
+      ENDIF
+      aOut[ u ] := cPix + cPad
+   NEXT
+
+   // BMP e bottom-up: de baixo p/ cima, cada unidade repetida nScale vezes
+   FOR u := nUnits TO 1 STEP -1
+      FOR i := 1 TO nScale ; cData += aOut[ u ] ; NEXT
+   NEXT
+
+   nFileSize := 54 + Len( cData )
+   cHdr := "BM" + L32( nFileSize ) + L32( 0 ) + L32( 54 ) + ;
+           L32( 40 ) + L32( nDim ) + L32( nDim ) + L16( 1 ) + L16( 24 ) + L32( 0 ) + ;
+           L32( Len( cData ) ) + L32( 2835 ) + L32( 2835 ) + L32( 0 ) + L32( 0 )
+   hb_MemoWrit( cFile, cHdr + cData )
+   RETURN nDim
+
+STATIC FUNCTION L32( n )
+   RETURN Chr( n % 256 ) + Chr( Int( n / 256 ) % 256 ) + ;
+          Chr( Int( n / 65536 ) % 256 ) + Chr( Int( n / 16777216 ) % 256 )
+
+STATIC FUNCTION L16( n )
+   RETURN Chr( n % 256 ) + Chr( Int( n / 256 ) % 256 )</code></pre></div>
+
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/*
+ * totp.prg - nucleo TOTP/HOTP (RFC 6238 / 4226) - Harbour puro
+ * Usa hb_HMAC_SHA1 do core (hbrtl). SEM OpenSSL. SOMENTE ASCII (compat CP1252).
+ * Provado contra os vetores da RFC 6238 Apendice B.
+ */
+
+#define TOTP_STEP     30
+#define TOTP_DIGITS    6
+
+// ---- Valida o codigo digitado. nWindow=1 tolera +-30s de relogio fora de sync.
+FUNCTION TOTP_Validate( cSecretB32, cCode, nWindow )
+   LOCAL nCounter := Int( UnixTimeUTC() / TOTP_STEP ), w
+   hb_default( @nWindow, 1 )
+   cCode := AllTrim( cCode )
+   FOR w := -nWindow TO nWindow
+      IF cCode == HOTP( Base32Decode( cSecretB32 ), nCounter + w, TOTP_DIGITS )
+         RETURN .T.
+      ENDIF
+   NEXT
+   RETURN .F.
+
+// ---- Codigo TOTP do instante atual
+FUNCTION TOTP_Now( cSecretB32 )
+   RETURN HOTP( Base32Decode( cSecretB32 ), Int( UnixTimeUTC() / TOTP_STEP ), TOTP_DIGITS )
+
+// ---- Segredo aleatorio em Base32 (p/ enrollment/QR)
+FUNCTION TOTP_NewSecret( nBytes )
+   LOCAL cRaw := "", i
+   hb_default( @nBytes, 20 )
+   FOR i := 1 TO nBytes
+      cRaw += Chr( hb_RandomInt( 0, 255 ) )
+   NEXT
+   RETURN Base32Encode( cRaw )
+
+// ---- URI otpauth:// p/ o QR (string que Google/MS Authenticator leem)
+FUNCTION TOTP_AuthURI( cIssuer, cAccount, cSecretB32 )
+   RETURN "otpauth://totp/" + cIssuer + ":" + cAccount + ;
+          "?secret=" + cSecretB32 + "&amp;issuer=" + cIssuer + ;
+          "&amp;digits=" + LTrim( Str( TOTP_DIGITS ) ) + ;
+          "&amp;period=" + LTrim( Str( TOTP_STEP ) ) + "&amp;algorithm=SHA1"
+
+// ---- HOTP RFC 4226: cKey ja em bytes, nCounter inteiro
+FUNCTION HOTP( cKey, nCounter, nDigits )
+   LOCAL cMsg := "", nC := nCounter, i, cHash, nOff, nBin, nOtp
+   FOR i := 1 TO 8                       // contador -&gt; 8 bytes big-endian
+      cMsg := Chr( nC % 256 ) + cMsg
+      nC := Int( nC / 256 )
+   NEXT
+   // hb_HMAC_SHA1 devolve 40 chars HEX -&gt; converter p/ 20 bytes raw
+   cHash := hb_HexToStr( hb_HMAC_SHA1( cMsg, cKey ) )
+   nOff  := Asc( SubStr( cHash, 20, 1 ) ) % 16
+   nBin  := ( Asc( SubStr( cHash, nOff + 1, 1 ) ) % 128 ) * 16777216 + ;
+            Asc( SubStr( cHash, nOff + 2, 1 ) ) * 65536 + ;
+            Asc( SubStr( cHash, nOff + 3, 1 ) ) * 256 + ;
+            Asc( SubStr( cHash, nOff + 4, 1 ) )
+   nOtp := nBin % ( 10 ^ nDigits )
+   RETURN PadL( LTrim( Str( nOtp, 18 ) ), nDigits, "0" )
+
+// ---- Segundos Unix em UTC (TOTP exige UTC, nao hora local)
+FUNCTION UnixTimeUTC()
+   LOCAL nLocal := Round( ( hb_DateTime() - hb_SToT( "19700101000000" ) ) * 86400, 0 )
+   RETURN nLocal - hb_UTCOffset()
+
+// ---- Base32 decode (RFC 4648)
+FUNCTION Base32Decode( cB32 )
+   LOCAL cAlf := "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+   LOCAL cUp := Upper( cB32 ), c, n, i, nBuf := 0, nBits := 0, cOut := ""
+   FOR i := 1 TO Len( cUp )
+      c := SubStr( cUp, i, 1 )
+      IF c == "=" .OR. c == " " ; LOOP ; ENDIF
+      n := At( c, cAlf ) - 1
+      IF n &lt; 0 ; LOOP ; ENDIF
+      nBuf := nBuf * 32 + n
+      nBits += 5
+      IF nBits &gt;= 8
+         nBits -= 8
+         cOut += Chr( Int( nBuf / ( 2 ^ nBits ) ) % 256 )
+         nBuf := nBuf % ( 2 ^ nBits )
+      ENDIF
+   NEXT
+   RETURN cOut
+
+// ---- Base32 encode (RFC 4648)
+FUNCTION Base32Encode( cRaw )
+   LOCAL cAlf := "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+   LOCAL i, nBuf := 0, nBits := 0, cOut := ""
+   FOR i := 1 TO Len( cRaw )
+      nBuf := nBuf * 256 + Asc( SubStr( cRaw, i, 1 ) )
+      nBits += 8
+      DO WHILE nBits &gt;= 5
+         nBits -= 5
+         cOut += SubStr( cAlf, ( Int( nBuf / ( 2 ^ nBits ) ) % 32 ) + 1, 1 )
+         nBuf := nBuf % ( 2 ^ nBits )
+      ENDDO
+   NEXT
+   IF nBits &gt; 0
+      cOut += SubStr( cAlf, ( ( nBuf * ( 2 ^ ( 5 - nBits ) ) ) % 32 ) + 1, 1 )
+   ENDIF
+   RETURN cOut</code></pre></div>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">@echo off
+setlocal
+REM ===========================================================================
+REM  build.bat - compila a demo TOTP+QR (FiveWin 32-bit / MSVC).
+REM  *** EDITE OS 3 CAMINHOS ABAIXO para o SEU ambiente e rode: build.bat ***
+REM ===========================================================================
+
+REM 1) Pasta do Harbour (que contem \bin\hbmk2.exe, \include, \lib, \contrib)
+set "HB_DIR=H:\DEVAI\_UtlAI\Harbour32msvc"
+
+REM 2) Pasta da FiveWin (que contem \include e \lib com FiveH32.lib)
+set "FWH_DIR=H:\DEVAI\_UtlAI\FWH260632"
+
+REM 3) Script que prepara o MSVC de 32-bit no ambiente (vcvars32.bat ou similar).
+REM    Ex. Visual Studio: "C:\Program Files\...\VC\Auxiliary\Build\vcvars32.bat"
+set "MSVC_ENV=H:\DEVAI\_UtlAI\msvc\setup_x86.bat"
+
+REM ===========================================================================
+echo Preparando MSVC 32-bit...
+call "%MSVC_ENV%" &gt;nul 2&gt;&amp;1
+if errorlevel 1 ( echo [ERRO] MSVC_ENV falhou: %MSVC_ENV% &amp; exit /b 1 )
+
+REM Limpa variaveis que poderiam forcar arquitetura/compilador errados
+set "HB_CPU="
+set "HB_COMPILER="
+set "HBMK2="
+set "HBMK_OPTIONS="
+set "HB_INSTALL_PREFIX=%HB_DIR%"
+
+cd /d "%~dp0"
+if exist totp_qr.exe del /q totp_qr.exe
+
+echo Compilando...
+REM (sem -inc: a compilacao incremental cacheia e ignora mudancas de layout)
+"%HB_DIR%\bin\hbmk2.exe" totp_qr.hbp -comp=msvc -cpu=x86 ^
+   -I"%FWH_DIR%\include" -L"%FWH_DIR%\lib"
+
+if exist totp_qr.exe (
+   echo.
+   echo [OK] Gerado: totp_qr.exe   -- rode: totp_qr.exe
+   exit /b 0
+) else (
+   echo.
+   echo [FALHOU] veja os erros acima.
+   exit /b 1
+)</code></pre></div>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">/* qrdump.prg - gera o MESMO QR da demo e despeja a matriz em texto (0/1),
+ * p/ o teste automatizado decodificar com opencv e conferir a URI.
+ * Console; usa hbzebra (mesma engine que a FiveWin usa via FWZEBRA). */
+
+#include "simpleio.ch"
+
+PROCEDURE Main()
+   LOCAL cSecret := TOTP_NewSecret()
+   LOCAL cURI    := TOTP_AuthURI( "GaiaDemo", "operador@empresa", cSecret )
+   LOCAL pQR, nW := 0, nH := 0, aGrid, x, y
+
+   pQR := hb_zebra_create_qrcode( cURI, 0 )
+   IF Empty( pQR ) .OR. hb_zebra_geterror( pQR ) != 0
+      OutStd( "ERRO QR" + hb_eol() ) ; RETURN
+   ENDIF
+
+   // 1a passada: medir o tamanho (modulos) com pin=1
+   hb_zebra_draw( pQR, {| x, y, w, h | nW := Max( nW, x + w ), nH := Max( nH, y + h ) }, 0, 0, 1, 1 )
+
+   aGrid := Array( nH )
+   FOR y := 1 TO nH ; aGrid[ y ] := Replicate( "0", nW ) ; NEXT
+
+   // 2a passada: marcar os modulos pretos
+   hb_zebra_draw( pQR, {| x, y, w, h | FillGrid( aGrid, x, y, w, h ) }, 0, 0, 1, 1 )
+
+   OutStd( "URI:" + cURI + hb_eol() )
+   OutStd( "TOTP_NOW:" + TOTP_Now( cSecret ) + hb_eol() )
+   FOR y := 1 TO nH ; OutStd( aGrid[ y ] + hb_eol() ) ; NEXT
+
+   hb_zebra_destroy( pQR )
+   RETURN
+
+STATIC FUNCTION FillGrid( aGrid, x, y, w, h )
+   LOCAL i, j
+   FOR j := y TO y + h - 1
+      FOR i := x TO x + w - 1
+         aGrid[ j + 1 ] := Stuff( aGrid[ j + 1 ], i + 1, 1, "1" )
+      NEXT
+   NEXT
+   RETURN NIL</code></pre></div>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour"># Projeto FiveWin 32-bit (MSVC) - app TOTP + QR
+-gui
+totp_qr.prg
+totp.prg
+-o${hb_targetname}
+# --- FiveWin ---
+-lFiveH32
+-lFiveHC32
+# --- QR-Code (hbzebra, puxado pelo REQUEST FWZEBRA) ---
+-lhbzebra
+# --- libs de sistema exigidas pela FiveWin/MSVC32 ---
+-lgdiplus
+-lole32
+-lOleDlg
+-lversion
+-luxtheme
+-lmsvcrt
+-llegacy_stdio_definitions
+# --- contribs Harbour usadas pela FiveWin ---
+xhb.hbc
+hbct.hbc
+hbwin.hbc
+hbmzip.hbc
+hbziparc.hbc
+hbtip.hbc
+# --- CRT: usa o dinamico msvcrt, remove o estatico ---
+-ldflag=/NODEFAULTLIB:libcmt
+-dFWH_CC_MSVC32</code></pre></div></div>
+      <div class="signature"></div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target.closest('a.cb-select, a.cb-toggle');
+  if (!t) return;
+  e.preventDefault();
+  var box = t.closest('.codebox');
+  var pre = box && box.querySelector('pre');
+  if (!pre) return;
+
+  if (t.classList.contains('cb-select')) {
+    var text = pre.innerText;
+    // 1) visible selection so user sees what was copied
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(range);
+    // 2) write to clipboard (async). Fallback to execCommand for old browsers.
+    var done = function(ok) {
+      t.textContent = ok ? 'Copied!' : 'Select failed';
+      t.classList.toggle('copy-ok', ok);
+      setTimeout(function(){ t.textContent = 'Select all';
+        t.classList.remove('copy-ok'); }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){done(true);}, function(){
+        try { done(document.execCommand('copy')); } catch(_) { done(false); }
+      });
+    } else {
+      try { done(document.execCommand('copy')); } catch(_) { done(false); }
+    }
+  } else if (t.classList.contains('cb-toggle')) {
+    var hidden = pre.style.display === 'none';
+    pre.style.display = hidden ? '' : 'none';
+    t.textContent = hidden ? 'Collapse' : 'Expand';
+  }
+});
+</script>
+</body>
+</html>
