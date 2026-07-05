@@ -12,12 +12,12 @@
 <body>
 <div class="wrap">
   <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
-  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Sat Jul 04, 2026 11:35 AM UTC</span></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Sun Jul 05, 2026 11:36 AM UTC</span></div>
   <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> New: FWH Remote View &amp;#128187;&amp;#128065;️☁️</div>
-<div class="pagination">Page: <a href="topic-46564.html">1</a> <strong>2</strong> (17 posts)</div>  <div class="post">
+<div class="pagination">Page: <a href="topic-46564.html">1</a> <strong>2</strong> (19 posts)</div>  <div class="post">
     <div class="poster">
       <div class="name"><a href="user-2.html" style="color:#AA0000">Antonio Linares</a></div>
-      <div class="rank">Posts: 44380</div>
+      <div class="rank">Posts: 44385</div>
       <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
       <div class="joined">Joined: Thu Oct 06, 2005 05:47 PM</div>
       
@@ -59,7 +59,166 @@ Antonio Linares<br>
 <p>Salu2</p></div>
       <div class="signature"></div>
     </div>
-  </div><div class="pagination">Page: <a href="topic-46564.html">1</a> <strong>2</strong> (17 posts)</div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-1844.html" style="color:#105289">shri_fwh</a></div>
+      <div class="rank">Posts: 339</div>
+      <div class="avatar"></div>
+      <div class="joined">Joined: Mon Dec 07, 2009 02:49 PM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p285783" class="subject">Re: New: FWH Remote View &amp;#128187;&amp;#128065;️☁️</h3>
+        Posted: Sun Jul 05, 2026 06:06 AM
+      </div>
+      <div class="content"><p>Dear Antonio ,</p>
+
+<p>Thanks a lot for these .EXEs. I tried them and its working in the browsers but it seems that only one user can run the exe because when I interacting to the application via browser the same operation also  on .EXEs behavior. If two users interacts with the same .EXE what will happen ?</p></div>
+      <div class="signature">Thanks <br>
+<br>
+Shridhar <br>
+<br>
+FWH 24.04, BCC 7 32 bit, MariaDB</div>
+    </div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-2.html" style="color:#AA0000">Antonio Linares</a></div>
+      <div class="rank">Posts: 44385</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      <div class="joined">Joined: Thu Oct 06, 2005 05:47 PM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p285784" class="subject">Re: New: FWH Remote View &amp;#128187;&amp;#128065;️☁️</h3>
+        Posted: Sun Jul 05, 2026 06:16 AM
+      </div>
+      <div class="content"><p>We use Harbour threads to attend different users from the same EXE doing different tasks:</p>
+
+<p>testrvmulti.prg</p>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "FiveWin.ch"
+
+//----------------------------------------------------------------------------//
+// Remote View multi-cliente con UNA VENTANA POR CLIENTE + MONITOR.
+//
+// Cada cliente tiene su PROPIA ventana, en su propio hilo y puerto, con su
+// propio estado (contador de clicks). La ventana principal es un MONITOR que
+// muestra en vivo todos los clientes (puerto y clicks).
+//
+//   http://localhost:8080  -&gt;  ventana del cliente 1
+//   http://localhost:8081  -&gt;  ventana del cliente 2
+//   ...
+//
+// Reparto de responsabilidades:
+//   - GUI en UN SOLO hilo (el principal). FiveWin no es seguro con GUI en
+//     varios hilos a la vez, asi que TODAS las ventanas viven aqui. Cada
+//     "ventana de cliente" es un DIALOGO MODELESS (ACTIVATE DIALOG NOWAIT),
+//     bombeado por el loop de la ventana monitor.
+//   - SERVING en N hilos: un hilo por dialogo con RemoteViewServe() sobre su
+//     propio puerto. Estado del server aislado por TLS.
+//
+// Requiere la VM multihilo:  build_new.bat testrvmulti mt
+//----------------------------------------------------------------------------//
+
+#define N_CLIENTS  3
+#define BASE_PORT  8080
+
+// Contadores de clicks por cliente (compartidos: el ACTION de cada dialogo los
+// incrementa, el monitor los lee).
+STATIC s_aClicks
+
+FUNCTION Main()
+
+   local oMon, oTimer
+   local aDlg := {}
+   local aSay := {}
+   local oSay
+   local i
+
+   s_aClicks := Array( N_CLIENTS )
+   AFill( s_aClicks, 0 )
+
+   // 1. Crear las N ventanas-cliente (dialogos modeless) en ESTE hilo.
+   for i := 1 TO N_CLIENTS
+      AAdd( aDlg, OpenClientDlg( i, BASE_PORT + i - 1 ) )
+   next
+
+   // 2. Un hilo de serving por ventana, cada uno en su puerto.
+   for i := 1 TO N_CLIENTS
+      hb_threadStart( {| h, p | RemoteViewServe( h, p, 200, 200 ) }, ;
+                      aDlg[ i ]:hWnd, BASE_PORT + i - 1 )
+   next
+
+   // 3. Ventana principal = MONITOR de clientes. Su loop bombea los dialogos.
+   DEFINE WINDOW oMon TITLE "Remote View - Monitor de clientes" FROM 2, 2 TO 15, 54
+
+   @ 0.4, 2 SAY "Cliente      Puerto        Clicks" OF oMon SIZE 360, 18
+
+   for i := 1 TO N_CLIENTS
+      @ 1.2 + i * 1.1, 2 SAY oSay PROMPT "" OF oMon SIZE 360, 18
+      AAdd( aSay, oSay )
+   next
+
+   // Refresco en vivo del monitor desde los contadores compartidos.
+   DEFINE TIMER oTimer OF oMon INTERVAL 400 ACTION RefreshMonitor( aSay )
+
+   ACTIVATE WINDOW oMon ;
+      ON INIT ( oTimer:Activate(), RefreshMonitor( aSay ) ) ;
+      VALID ( RemoteViewStopAll(), AEval( aDlg, {| o | o:End() } ), .T. )
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+
+STATIC FUNCTION RefreshMonitor( aSay )
+
+   local i
+
+   for i := 1 TO Len( aSay )
+      aSay[ i ]:SetText( "  " + Str( i, 3 ) + "          " + ;
+                         LTrim( Str( BASE_PORT + i - 1 ) ) + "          " + ;
+                         LTrim( Str( s_aClicks[ i ] ) ) )
+   next
+
+RETURN NIL
+
+//----------------------------------------------------------------------------//
+// Crea un dialogo modeless que hace de "ventana" de un cliente, con su propio
+// contador de clicks (estado independiente, monitorizado por la principal).
+//----------------------------------------------------------------------------//
+
+STATIC FUNCTION OpenClientDlg( nIdx, nPort )
+
+   local oDlg, oSay, oBtn
+
+   DEFINE DIALOG oDlg ;
+      TITLE "Cliente " + LTrim( Str( nIdx ) ) + " - puerto " + LTrim( Str( nPort ) ) ;
+      SIZE 280, 130 PIXEL
+
+   @ 12, 12 SAY oSay PROMPT "Clicks: 0" SIZE 240, 18 PIXEL OF oDlg
+
+   @ 44, 12 BUTTON oBtn PROMPT "Pulsa" ;
+      SIZE 80, 12 PIXEL OF oDlg ;
+      ACTION ( s_aClicks[ nIdx ]++, ;
+               oSay:SetText( "Clicks: " + LTrim( Str( s_aClicks[ nIdx ] ) ) ) )
+
+   // Modeless: se crea y muestra, pero NO bloquea; lo bombea el loop del
+   // monitor. Lo escalonamos en pantalla para que no se solapen.
+   ACTIVATE DIALOG oDlg NOWAIT ;
+      ON INIT oDlg:Move( 20 + nIdx * 40, 20 + nIdx * 60, , , .T. )
+
+RETURN oDlg
+
+//----------------------------------------------------------------------------//</code></pre></div></div>
+      <div class="signature">regards, saludos<br>
+<br>
+Antonio Linares<br>
+<a href="http://www.fivetechsoft.com" rel="noopener">www.fivetechsoft.com</a></div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-46564.html">1</a> <strong>2</strong> (19 posts)</div>
   <div class="giscus-wrap">
     <h3>Continue the discussion</h3>
     <script src="https://giscus.app/client.js"
