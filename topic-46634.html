@@ -12,7 +12,7 @@
 <body>
 <div class="wrap">
   <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
-  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Thu Jul 23, 2026 11:42 AM UTC</span></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Fri Jul 24, 2026 11:37 AM UTC</span></div>
   <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> How to save excel cell/ osheet:cell(ni,i) picture out to a jpg file ?</div>
   <div class="post">
     <div class="poster">
@@ -53,6 +53,65 @@ Mobile:(86)13802729058<br>
 Email:<a href="mailto:100200651@qq.com">100200651@qq.com</a><br>
 QQ:100200651<br>
 Weixin: qq100200651</div>
+    </div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-2.html" style="color:#AA0000">Antonio Linares</a></div>
+      <div class="rank">Posts: 44405</div>
+      <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
+      <div class="joined">Joined: Thu Oct 06, 2005 05:47 PM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p285872" class="subject">Re: How to save excel cell/ osheet:cell(ni,i) picture out to a jpg file ?</h3>
+        Posted: Fri Jul 24, 2026 03:32 AM
+      </div>
+      <div class="content"><p>Dear Shuming,</p>
+
+<p>Pictures inside an Excel sheet are not accessible via <C>oSheet:Cells(nI,i):picture</C> — that property doesn't exist in Excel's OLE object model. Images live in the sheet's <C>Shapes</C> collection, not on cells. To grab one and save it as a bmp/jpg, the reliable route through FWH is: use OLE to copy the shape to the clipboard, then let FWH read the clipboard bitmap and write it to disk.</p>
+
+<H2 slug="key-building-blocks-in-fwh">Key building blocks in FWH</H2>
+
+<ul><li><C>FW_SaveImage( uImage, cFile, nJpegQuality )</C> — when the first argument is empty/<C>nil</C>, it reads the bitmap directly from the clipboard and saves it to <C>cFile</C>, deducing the format (bmp/jpg/png/gif/tif) from the file extension. <a href="#0-cite-0" rel="noopener">0-cite-0</a> </li>
+<li><C>TClipBoard():New( 2 ):GetBitmap()</C> — returns an <C>HBITMAP</C> handle from the clipboard, which you can also feed to <C>FW_SaveImage()</C>. <a href="#0-cite-1" rel="noopener">0-cite-1</a> </li>
+<li><C>oImage:SaveImage( cFile, nFmt, nQuality )</C> on a <C>TImage</C> — saves the currently held bitmap (0=BMP, 1/2=JPG, 13=PNG). <a href="#0-cite-2" rel="noopener">0-cite-2</a></li> </ul>
+
+<H2 slug="approach">Approach</H2>
+
+<p>Iterate <C>oSheet:Shapes</C>, and for each shape use its <C>TopLeftCell</C> to know which cell (<C>nI</C>, <C>i</C>) it sits on. Then call the shape's <C>CopyPicture</C> method (Excel COM: <C>CopyPicture( xlScreen := 1, xlBitmap := 2 )</C>) to put it on the clipboard, and save it with <C>FW_SaveImage</C>:</p>
+
+<div class="codebox"><div class="codehead"><span>Code (harbour):</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// oSheet is your ActiveSheet
+local oShapes := oSheet:Shapes
+local oShape, nRow, nCol, cFile, n
+
+for n := 1 to oShapes:Count
+   oShape := oShapes:Item( n )
+   nRow   := oShape:TopLeftCell:Row       // row where the picture starts
+   nCol   := oShape:TopLeftCell:Column    // column where it starts
+
+   // copy this shape to the Windows clipboard as a bitmap
+   oShape:CopyPicture( 1, 2 )             // xlScreen, xlBitmap
+
+   cFile := "cell_" + LTrim(Str(nRow)) + "_" + LTrim(Str(nCol)) + ".jpg"
+
+   // first arg empty -&gt; FW_SaveImage reads the bitmap from the clipboard
+   FW_SaveImage( nil, cFile, 90 )         // 90 = JPEG quality; use .bmp ext for bitmap
+next</code></pre></div>
+
+<p>Notes:</p>
+<ul><li>Use a <C>.bmp</C> extension in <C>cFile</C> to save as bitmap, or <C>.jpg</C>/<C>.png</C> for other formats — <C>FW_SaveImage()</C> picks the encoder from the extension. <a href="#0-cite-3" rel="noopener">0-cite-3</a> </li>
+<li>If you prefer working with a handle explicitly, do <C>local hBmp := TClipBoard():New(2):GetBitmap()</C> after <C>CopyPicture</C>, then <C>FW_SaveImage( hBmp, cFile, 90 )</C>. <a href="#0-cite-1" rel="noopener">0-cite-1</a> </li>
+<li>If a cell can contain multiple pictures or you need only the one anchored to a specific <C>(nI,i)</C>, filter with <C>if nRow == nI .and. nCol == i</C>.</li></ul>
+
+<p>One caveat: <C>CopyPicture</C> is an Excel COM (<C>TOleAuto</C>) call, so it only works with the OLE-automation path you're already using (<C>ExcelObj()</C> / <C>oExcel:ActiveSheet()</C>), not with the native <C>TWorkSheet</C>/<C>TXlsxReader</C> readers, which do not expose embedded shapes. <a href="#0-cite-4" rel="noopener">0-cite-4</a></p> 
+
+<p>If you want me to turn this into a complete, tested sample program in the repo, let me know and I can lay out a plan for it.</p></div>
+      <div class="signature">regards, saludos<br>
+<br>
+Antonio Linares<br>
+<a href="http://www.fivetechsoft.com" rel="noopener">www.fivetechsoft.com</a></div>
     </div>
   </div>
   <div class="giscus-wrap">
