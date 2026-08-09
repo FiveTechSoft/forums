@@ -12,12 +12,12 @@
 <body>
 <div class="wrap">
   <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
-  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Sat Aug 08, 2026 11:33 AM UTC</span></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Sun Aug 09, 2026 11:34 AM UTC</span></div>
   <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> TWebCam</div>
-<div class="pagination">Page: <a href="topic-46513.html">1</a> <strong>2</strong> (17 posts)</div>  <div class="post">
+<div class="pagination">Page: <a href="topic-46513.html">1</a> <strong>2</strong> (18 posts)</div>  <div class="post">
     <div class="poster">
       <div class="name"><a href="user-2.html" style="color:#AA0000">Antonio Linares</a></div>
-      <div class="rank">Posts: 44440</div>
+      <div class="rank">Posts: 44441</div>
       <img class="avatar avatar-img" src="avatars/2.jpg" alt="" loading="lazy">
       <div class="joined">Joined: Thu Oct 06, 2005 05:47 PM</div>
       
@@ -1561,7 +1561,1540 @@ WebCams unlike old "avicap32.dll" functionality.</p>
 <p>-Ramesh Babu P</p></div>
       <div class="signature"></div>
     </div>
-  </div><div class="pagination">Page: <a href="topic-46513.html">1</a> <strong>2</strong> (17 posts)</div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-1193.html" style="color:#105289">richard-service</a></div>
+      <div class="rank">Posts: 867</div>
+      <img class="avatar avatar-img" src="avatars/1193.jpg" alt="" loading="lazy">
+      <div class="joined">Joined: Tue Oct 16, 2007 08:57 AM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p285972" class="subject">Re: TWebCam</h3>
+        Posted: Sun Aug 09, 2026 09:02 AM
+      </div>
+      <div class="content"><blockquote><cite>Antonio Linares wrote:</cite>
+<p>Dear Ramesh,</p>
+
+<p>Here you have it</p>
+
+<p>dshow.prg</p>
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Webcam live preview + snapshot (FiveWin)
+//
+// Uses Media Foundation via self-contained C code embedded below
+// (#pragma BEGINDUMP): no external mfcam.dll is needed at runtime.
+// MF/COM entry points are resolved at runtime with LoadLibrary /
+// GetProcAddress (ole32, mfplat, mf, mfreadwrite), so it builds with
+// BCC32 without mf*.lib or the MF SDK headers.
+// FaceTime + Win11: DirectShow delivers black frames; MF works
+// (verified with camtest_mf64.exe).
+//
+// The TMfWebCam class below mirrors the TWebCam-style API:
+//    Connect() / Disconnect()
+//    Clipboard( oBmp )
+//    Save( oBmp, cFile, nQuality )     BMP/JPG/PNG/... via GDI+
+//    Source( nProperty, nValue, lAuto ) camera controls (see WC_SRC_*)
+//    Format( { nW, nH } )              available resolutions / set one
+//    GetStatus()
+//    Resize( nW, nH, lSetFormat )
+//
+// Build:
+//   build_new.bat dshow xb32          (xHarbour + BCC32)
+//   build_new.bat dshow xhbc          (xHarbour commercial + VC98)
+//
+// Left IMAGE = live preview.  Right IMAGE = snapshot.
+
+#include "FiveWin.ch"
+
+#define GWL_STYLE       -16
+#define WS_CLIPCHILDREN 0x02000000
+
+// Source() properties (nProperty)
+#define WC_SRC_CAMERACTL   1   // query: which control interfaces exist
+#define WC_SRC_BRIGHTNESS  2
+#define WC_SRC_CONTRAST    3
+#define WC_SRC_EXPOSURE    4
+#define WC_SRC_WHITEBAL    5
+#define WC_SRC_ZOOM        6
+#define WC_SRC_PAN         7
+#define WC_SRC_TILT        8
+#define WC_SRC_FOCUS       9
+#define WC_SRC_GAIN        10
+#define WC_SRC_BACKLIGHT   11
+
+// control interfaces (C side)
+#define WC_IF_PROCAMP      0   // IAMVideoProcAmp
+#define WC_IF_CAMCTL       1   // IAMCameraControl
+
+// flags (same values as VideoProcAmp_Flags / CameraControl_Flags)
+#define WC_FLAG_AUTO       1
+#define WC_FLAG_MANUAL     2
+
+// GetStatus() array offsets
+#define WC_ST_CONNECTED    1
+#define WC_ST_DEVICE       2
+#define WC_ST_WIDTH        3
+#define WC_ST_HEIGHT       4
+#define WC_ST_FRAMES       5
+#define WC_ST_BLACK        6
+
+//----------------------------------------------------------------------------//
+
+CLASS TMfWebCam
+
+   DATA oLive                          // preview control (TImage/TBitmap)
+   DATA oWnd                           // parent window
+   DATA oTimer                         // preview pump timer
+   DATA nRateRefresh INIT 66           // ms between preview frames
+   DATA isConnected  INIT .F.
+   DATA cDevice      INIT ""           // friendly name of the camera
+   DATA cFrameFile   INIT ".\dshow_frame.bmp"
+   DATA bError
+
+   METHOD New( oLive, nRate, bError ) CONSTRUCTOR
+
+   METHOD Connect()
+   METHOD Disconnect()
+
+   METHOD Clipboard( oBmp )
+   METHOD Save( oBmp, cFile, nQuality )
+   METHOD Source( nProperty, nValue, lAuto )
+   METHOD Format( nWidth, nHeight )
+   METHOD GetStatus()
+   METHOD Resize( nWidth, nHeight, lSetFormat )
+
+   METHOD Tick()                       // internal: preview pump
+   METHOD End() INLINE ::Disconnect()
+
+ENDCLASS
+
+//----------------------------------------------------------------------------//
+
+METHOD New( oLive, nRate, bError ) CLASS TMfWebCam
+
+   DEFAULT nRate  := 66, ;
+           bError := {| cText | MsgAlert( cText, "Webcam" ) }
+
+   ::oLive        := oLive
+   ::oWnd         := If( oLive != NIL, oLive:oWnd, GetWndDefault() )
+   ::nRateRefresh := nRate
+   ::bError       := bError
+
+return Self
+
+//----------------------------------------------------------------------------//
+
+METHOD Connect() CLASS TMfWebCam
+
+   local aSt
+
+   if ::isConnected
+      return .T.
+   endif
+
+   if MfCamOpen() == 0
+      Eval( ::bError, "Media Foundation could not open the camera." + CRLF + ;
+                      "Close browser/Teams if they use it." )
+      return .F.
+   endif
+
+   ::isConnected := .T.
+   aSt := MfCamStatus()
+   ::cDevice := aSt[ 6 ]
+
+   if ::oLive != NIL
+      ::oTimer := TTimer():New( ::nRateRefresh, {|| ::Tick() }, ::oWnd )
+      ::oTimer:Activate()
+      ::Tick()
+   endif
+
+return .T.
+
+//----------------------------------------------------------------------------//
+
+METHOD Disconnect() CLASS TMfWebCam
+
+   if ::oTimer != NIL
+      ::oTimer:Deactivate()
+      ::oTimer:End()
+      ::oTimer := NIL
+   endif
+
+   if ::isConnected
+      MfCamClose()
+      ::isConnected := .F.
+   endif
+
+return NIL
+
+//----------------------------------------------------------------------------//
+
+METHOD Tick() CLASS TMfWebCam
+
+   if ! ::isConnected .or. ::oLive == NIL
+      return NIL
+   endif
+
+   if MfCamSaveBmp( ::cFrameFile ) != 0 .and. File( ::cFrameFile )
+      ::oLive:LoadImage( , ::cFrameFile )
+      ::oLive:Refresh()
+   endif
+
+return NIL
+
+//----------------------------------------------------------------------------//
+
+// Grabs the current frame into oBmp (a TBitmap/TImage) and copies it
+// to the Windows clipboard. If oBmp is omitted a temporary one is used.
+
+METHOD Clipboard( oBmp ) CLASS TMfWebCam
+
+   local lOwn := .F.
+
+   if ! ::isConnected
+      Eval( ::bError, "Camera is not connected" )
+      return .F.
+   endif
+
+   if MfCamSaveBmp( ::cFrameFile ) == 0
+      Eval( ::bError, "Snapshot failed" )
+      return .F.
+   endif
+
+   if oBmp == NIL
+      oBmp := TBitmap():New( 0, 0, 0, 0, , ::cFrameFile, .T., ::oWnd )
+      lOwn := .T.
+   else
+      oBmp:LoadImage( , ::cFrameFile )
+   endif
+
+   oBmp:CopyToClipboard()
+   oBmp:Refresh()
+
+   if lOwn
+      oBmp:End()
+   endif
+
+return .T.
+
+//----------------------------------------------------------------------------//
+
+// Saves the current frame (or oBmp if given) to cFile.
+// BMP goes straight to disk; other formats go through GDI+ with
+// nQuality (JPEG quality 1-100).
+
+METHOD Save( oBmp, cFile, nQuality ) CLASS TMfWebCam
+
+   local lOwn := .F.
+   local cExt
+
+   if ! ::isConnected
+      Eval( ::bError, "Camera is not connected" )
+      return .F.
+   endif
+
+   DEFAULT cFile    := "WebCam_D" + DToS( Date() ) + "T" + StrTran( Time(), ":" ) + ".bmp", ;
+           nQuality := 90
+
+   cExt := Lower( FileExt( cFile ) )
+
+   // plain BMP straight from the camera, no GDI+ roundtrip
+   if ( Empty( cExt ) .or. cExt == ".bmp" ) .and. oBmp == NIL
+      if Empty( cExt )
+         cFile += ".bmp"
+      endif
+      if MfCamSaveBmp( cFile ) == 0
+         Eval( ::bError, "Error saving file " + cFile )
+         return .F.
+      endif
+      return .T.
+   endif
+
+   // other formats (or a caller bitmap): snapshot -&gt; bitmap -&gt; GDI+ encoder
+   if oBmp == NIL
+      if MfCamSaveBmp( ::cFrameFile ) == 0
+         Eval( ::bError, "Snapshot failed" )
+         return .F.
+      endif
+      oBmp := TBitmap():New( 0, 0, 0, 0, , ::cFrameFile, .T., ::oWnd )
+      lOwn := .T.
+   endif
+
+   do case
+      case cExt == ".jpg" .or. cExt == ".jpeg"
+         cExt := "image/jpeg"
+      case cExt == ".png"
+         cExt := "image/png"
+      case cExt == ".gif"
+         cExt := "image/gif"
+      case cExt == ".tif" .or. cExt == ".tiff"
+         cExt := "image/tiff"
+      otherwise
+         cExt := "image/bmp"
+   endcase
+
+   if ! Gdip_SaveImage( oBmp:hBitmap, cFile, cExt, ;
+                        If( cExt == "image/jpeg", nQuality, NIL ) )
+      Eval( ::bError, "Error saving file " + cFile )
+      if lOwn
+         oBmp:End()
+      endif
+      return .F.
+   endif
+
+   if lOwn
+      oBmp:End()
+   endif
+
+return .T.
+
+//----------------------------------------------------------------------------//
+
+// nProperty: WC_SRC_* (see top of file)
+//   - WC_SRC_CAMERACTL (1) returns 0/1/2/3: which control interfaces the
+//     camera exposes (1 = video proc amp, 2 = camera control, 3 = both)
+//   - properties 2..11 return NIL if unsupported, else an array:
+//       { nValue, nMin, nMax, nStep, nDefault, nFlags }
+//     nFlags: 1 = auto, 2 = manual
+//   - pass nValue to set the property; lAuto .T. switches it to auto mode
+//   - Source() with no arguments returns an array with one entry per
+//     property 2..11 (NIL where unsupported)
+
+METHOD Source( nProperty, nValue, lAuto ) CLASS TMfWebCam
+
+   local aRet
+   //             bright     contrast   exposure   white bal  zoom
+   local aMap := { { 0, 0 }, { 0, 1 }, { 1, 4 }, { 0, 7 }, { 1, 3 }, ;
+                   { 1, 0 }, { 1, 1 }, { 1, 6 }, { 0, 9 }, { 0, 8 } }
+   //             pan        tilt       focus      gain       backlight
+
+   if ! ::isConnected
+      Eval( ::bError, "Camera is not connected" )
+      return NIL
+   endif
+
+   if nProperty == NIL                 // summary of all properties
+      aRet := {}
+      AEval( { 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }, ;
+             {| n | AAdd( aRet, ::Source( n ) ) } )
+      return aRet
+   endif
+
+   if nProperty == WC_SRC_CAMERACTL
+      return MfCamPropAvail()
+   endif
+
+   if nProperty &lt; 2 .or. nProperty &gt; 11
+      return NIL
+   endif
+
+return MfCamProp( aMap[ nProperty - 1 ][ 1 ], aMap[ nProperty - 1 ][ 2 ], ;
+                  nValue, If( lAuto != NIL .and. lAuto, WC_FLAG_AUTO, ;
+                              WC_FLAG_MANUAL ) )
+
+//----------------------------------------------------------------------------//
+
+// Format()              --&gt; array of { { nW, nH }, ... } available resolutions
+// Format( { nW, nH } )  --&gt; .T./.F. switches the camera to that resolution
+// Format( nW, nH )      --&gt; same
+
+METHOD Format( nWidth, nHeight ) CLASS TMfWebCam
+
+   if nWidth == NIL
+      return If( ::isConnected, MfCamFormats(), {} )
+   endif
+
+   if ValType( nWidth ) == "A"
+      nHeight := nWidth[ 2 ]
+      nWidth  := nWidth[ 1 ]
+   endif
+
+   if ! ::isConnected
+      Eval( ::bError, "Camera is not connected" )
+      return .F.
+   endif
+
+return MfCamSetFormat( nWidth, nHeight ) == 1
+
+//----------------------------------------------------------------------------//
+
+// --&gt; { lConnected, cDevice, nWidth, nHeight, nFrames, nBlackFrames }
+
+METHOD GetStatus() CLASS TMfWebCam
+
+   local aSt := MfCamStatus()   // { lOpen, nW, nH, nGood, nBlack, cDevice }
+
+   ::cDevice := aSt[ 6 ]
+
+return { aSt[ 1 ], aSt[ 6 ], aSt[ 2 ], aSt[ 3 ], aSt[ 4 ], aSt[ 5 ] }
+
+//----------------------------------------------------------------------------//
+
+// Resizes the preview control; with lSetFormat .T. also switches the
+// camera to that resolution (must be one of ::Format()).
+
+METHOD Resize( nWidth, nHeight, lSetFormat ) CLASS TMfWebCam
+
+   DEFAULT lSetFormat := .F.
+
+   if lSetFormat
+      if ! ::Format( nWidth, nHeight )
+         return .F.
+      endif
+   endif
+
+   if ::oLive != NIL
+      ::oLive:Move( ::oLive:nTop, ::oLive:nLeft, nWidth, nHeight, .T. )
+   endif
+
+return .T.
+
+//----------------------------------------------------------------------------//
+
+static function FileExt( cFile )
+
+   local nAt := RAt( ".", cFile )
+
+   if nAt &gt; 0 .and. nAt &gt; RAt( "\", cFile ) .and. nAt &gt; RAt( "/", cFile )
+      return SubStr( cFile, nAt )   // includes the dot, e.g. ".jpg"
+   endif
+
+return ""
+
+//----------------------------------------------------------------------------//
+
+function Main()
+
+   local oDlg, oFont, oCam, oLive, oSnap
+   local cSnap := ".\dshowphoto.bmp"
+   local nW := 640, nH := 480
+
+   DEFINE FONT oFont NAME "Segoe UI" SIZE 0, -13
+
+   DEFINE DIALOG oDlg SIZE 1040, 700 PIXEL TRUEPIXEL ;
+      TITLE "Webcam (Media Foundation)" FONT oFont
+
+   @ 10, 10 IMAGE oLive OF oDlg SIZE nW, nH PIXEL ADJUST
+
+   @ 10, nW + 30 SAY "Snapshot" OF oDlg PIXEL
+   @ 30, nW + 30 IMAGE oSnap OF oDlg SIZE 320, 240 PIXEL ADJUST
+
+   @ nH + 20, 10 SAY "Live preview (Media Foundation)" OF oDlg PIXEL
+
+   @ nH + 20, nW + 30 BUTTON "&amp;Connect" OF oDlg SIZE 90, 28 PIXEL ;
+      ACTION oCam:Connect()
+
+   @ nH + 20, nW + 130 BUTTON "&amp;Disconnect" OF oDlg SIZE 90, 28 PIXEL ;
+      ACTION oCam:Disconnect()
+
+   @ nH + 60, nW + 30 BUTTON "Take &amp;photo" OF oDlg SIZE 100, 28 PIXEL ;
+      ACTION ( oCam:Save( NIL, cSnap ), ;
+               oSnap:LoadImage( , cSnap ), oSnap:Refresh() )
+
+   @ nH + 60, nW + 150 BUTTON "Save &amp;JPG" OF oDlg SIZE 100, 28 PIXEL ;
+      ACTION ( oCam:Save( NIL, ".\dshowphoto.jpg", 90 ), ;
+               oSnap:LoadImage( , ".\dshowphoto.jpg" ), oSnap:Refresh() )
+
+   @ nH + 100, nW + 30 BUTTON "Clip&amp;board" OF oDlg SIZE 100, 28 PIXEL ;
+      ACTION oCam:Clipboard( oSnap )
+
+   @ nH + 100, nW + 150 BUTTON "&amp;Format..." OF oDlg SIZE 100, 28 PIXEL ;
+      ACTION DlgFormat( oCam )
+
+   @ nH + 140, nW + 30 BUTTON "&amp;Source..." OF oDlg SIZE 100, 28 PIXEL ;
+      ACTION DlgSource( oCam )
+
+   @ nH + 140, nW + 150 BUTTON "&amp;Status" OF oDlg SIZE 100, 28 PIXEL ;
+      ACTION DlgStatus( oCam )
+
+   @ nH + 180, nW + 30 BUTTON "&amp;Exit" OF oDlg SIZE 100, 28 PIXEL ;
+      ACTION oDlg:End()
+
+   oCam := TMfWebCam():New( oLive, 66 )
+
+   oDlg:bInit := {|| SetWindowLong( oDlg:hWnd, GWL_STYLE, ;
+                      nOr( GetWindowLong( oDlg:hWnd, GWL_STYLE ), ;
+                           WS_CLIPCHILDREN ) ), ;
+                     oCam:Connect() }
+
+   ACTIVATE DIALOG oDlg CENTERED ;
+      VALID ( oCam:Disconnect(), .T. )
+
+   oFont:End()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function DlgFormat( oCam )
+
+   local oDlg, oFont
+   local aFmt := oCam:Format()
+   local aTxt := {}
+   local cSel, nAt
+
+   if Empty( aFmt )
+      MsgAlert( "No formats reported. Is the camera connected?", "Format" )
+      return nil
+   endif
+
+   AEval( aFmt, {| a | AAdd( aTxt, LTrim( Str( a[ 1 ] ) ) + " x " + ;
+                                    LTrim( Str( a[ 2 ] ) ) ) } )
+   cSel := aTxt[ 1 ]
+
+   DEFINE FONT oFont NAME "Segoe UI" SIZE 0, -13
+
+   DEFINE DIALOG oDlg SIZE 300, 150 PIXEL TRUEPIXEL ;
+      TITLE "Camera resolution" FONT oFont
+
+   @ 15, 15 SAY "Available resolutions" OF oDlg PIXEL
+   @ 35, 15 COMBOBOX cSel ITEMS aTxt OF oDlg SIZE 200, 200 PIXEL
+
+   @ 80, 15 BUTTON "&amp;OK" OF oDlg SIZE 80, 26 PIXEL ;
+      ACTION ( nAt := AScan( aTxt, cSel ), ;
+               If( nAt &gt; 0, ( oCam:Format( aFmt[ nAt ] ), ;
+                   oCam:Resize( Min( aFmt[ nAt ][ 1 ], 640 ), ;
+                                Min( aFmt[ nAt ][ 2 ], 480 ) ) ), ), ;
+               oDlg:End() )
+
+   @ 80, 110 BUTTON "&amp;Cancel" OF oDlg SIZE 80, 26 PIXEL ACTION oDlg:End()
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   oFont:End()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function SrcNames()
+
+return { "Camera Control", "Brightness", "Contrast", "Exposure", ;
+         "White Balance", "Zoom", "Pan", "Tilt", "Focus", "Gain", ;
+         "Backlight Compensation" }
+
+//----------------------------------------------------------------------------//
+
+static function DlgSource( oCam )
+
+   local oDlg, oFont
+   local aNames := SrcNames()
+   local cProp := aNames[ 2 ]
+   local nVal  := 0
+
+   DEFINE FONT oFont NAME "Segoe UI" SIZE 0, -13
+
+   DEFINE DIALOG oDlg SIZE 330, 200 PIXEL TRUEPIXEL ;
+      TITLE "Camera source" FONT oFont
+
+   @ 12, 15 SAY "Property" OF oDlg PIXEL
+   @ 30, 15 COMBOBOX cProp ITEMS aNames OF oDlg SIZE 220, 200 PIXEL
+
+   @ 70, 15 SAY "Value" OF oDlg PIXEL
+   @ 88, 15 GET nVal OF oDlg SIZE 100, 24 PIXEL PICTURE "9999999"
+
+   @ 130, 15 BUTTON "&amp;Get" OF oDlg SIZE 85, 26 PIXEL ;
+      ACTION SrcShow( oCam, cProp, aNames )
+
+   @ 130, 115 BUTTON "&amp;Set" OF oDlg SIZE 85, 26 PIXEL ;
+      ACTION SrcSet( oCam, cProp, aNames, nVal, .F. )
+
+   @ 130, 215 BUTTON "Set &amp;auto" OF oDlg SIZE 85, 26 PIXEL ;
+      ACTION SrcSet( oCam, cProp, aNames, nVal, .T. )
+
+   ACTIVATE DIALOG oDlg CENTERED
+
+   oFont:End()
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function SrcShow( oCam, cProp, aNames )
+
+   local nIdx := AScan( aNames, cProp )
+   local uInfo, nAvail
+
+   if nIdx == 0
+      return nil
+   endif
+
+   uInfo := oCam:Source( nIdx )
+
+   if nIdx == WC_SRC_CAMERACTL
+      nAvail := If( HB_ISNUMERIC( uInfo ), uInfo, 0 )
+      MsgInfo( "Camera control interfaces:" + CRLF + CRLF + ;
+               "Video Proc Amp (brightness, contrast, ...): " + ;
+               If( nAnd( nAvail, 1 ) != 0, "YES", "no" ) + CRLF + ;
+               "Camera Control (zoom, pan, tilt, ...): " + ;
+               If( nAnd( nAvail, 2 ) != 0, "YES", "no" ), cProp )
+      return nil
+   endif
+
+   if uInfo == NIL
+      MsgAlert( cProp + " is not supported by this camera", "Source" )
+   else
+      MsgInfo( "Current : " + LTrim( Str( uInfo[ 1 ] ) ) + CRLF + ;
+               "Minimum : " + LTrim( Str( uInfo[ 2 ] ) ) + CRLF + ;
+               "Maximum : " + LTrim( Str( uInfo[ 3 ] ) ) + CRLF + ;
+               "Step    : " + LTrim( Str( uInfo[ 4 ] ) ) + CRLF + ;
+               "Default : " + LTrim( Str( uInfo[ 5 ] ) ) + CRLF + ;
+               "Mode    : " + If( nAnd( uInfo[ 6 ], WC_FLAG_AUTO ) != 0, ;
+                                   "auto", "manual" ), cProp )
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function SrcSet( oCam, cProp, aNames, nVal, lAuto )
+
+   local nIdx := AScan( aNames, cProp )
+   local uInfo
+
+   if nIdx &lt;= WC_SRC_CAMERACTL
+      MsgAlert( "Select a property (Brightness, Contrast, ...)", "Source" )
+      return nil
+   endif
+
+   if lAuto
+      uInfo := oCam:Source( nIdx )        // keep current value, switch to auto
+      if uInfo != NIL
+         oCam:Source( nIdx, uInfo[ 1 ], .T. )
+      endif
+   else
+      uInfo := oCam:Source( nIdx, nVal, .F. )
+   endif
+
+   if uInfo == NIL
+      MsgAlert( cProp + " is not supported by this camera", "Source" )
+   else
+      SrcShow( oCam, cProp, aNames )
+   endif
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+static function DlgStatus( oCam )
+
+   local aSt := oCam:GetStatus()
+   local aFmt := oCam:Format()
+
+   MsgInfo( "Connected : " + If( aSt[ WC_ST_CONNECTED ], "yes", "no" ) + CRLF + ;
+            "Device    : " + aSt[ WC_ST_DEVICE ] + CRLF + ;
+            "Resolution: " + LTrim( Str( aSt[ WC_ST_WIDTH ] ) ) + " x " + ;
+                             LTrim( Str( aSt[ WC_ST_HEIGHT ] ) ) + CRLF + ;
+            "Frames    : " + LTrim( Str( aSt[ WC_ST_FRAMES ] ) ) + ;
+            " (black: " + LTrim( Str( aSt[ WC_ST_BLACK ] ) ) + ")" + CRLF + ;
+            "Formats   : " + LTrim( Str( Len( aFmt ) ) ) + ;
+            " resolution(s) available", "Webcam status" )
+
+return nil
+
+//----------------------------------------------------------------------------//
+
+#pragma BEGINDUMP
+
+/* =====================================================================
+ * Media Foundation webcam ÔÇö self-contained C (converted from mfcam.cpp)
+ *
+ * BCC32 ships no mfapi.h / mfidl.h / mfreadwrite.h and this build does
+ * not link mf*.lib, so everything MF-related is declared locally:
+ * GUIDs, minimal COM vtables (called by index) and function pointers
+ * resolved at runtime via LoadLibrary/GetProcAddress from ole32.dll,
+ * mfplat.dll, mf.dll and mfreadwrite.dll. No mfcam.dll is needed.
+ *
+ * Harbour API (used by the UI above):
+ *    MfCamOpen()            --&gt; 1 ok / 0 fail
+ *    MfCamClose()
+ *    MfCamSaveBmp( cFile )  --&gt; 1 ok / 0 fail
+ *    MfCamStatus()          --&gt; { lOpen, nW, nH, nGood, nBlack, cDevice }
+ *    MfCamFormats()         --&gt; { { nW, nH }, ... }
+ *    MfCamSetFormat( nW, nH ) --&gt; 1 ok / 0 fail
+ *    MfCamPropAvail()       --&gt; 0 none, 1 procamp, 2 camctl, 3 both
+ *    MfCamProp( nIf, nProp [, nValue, nFlags] )
+ *                             --&gt; NIL or { nVal, nMin, nMax, nStep,
+ *                                          nDefault, nFlags }
+ * ===================================================================== */
+
+#include &lt;hbapi.h&gt;
+#include &lt;windows.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;wchar.h&gt;
+
+#ifndef HB_FALSE
+   #define HB_FALSE 0
+   #define HB_TRUE  1
+#endif
+
+#ifndef COINIT_APARTMENTTHREADED
+   #define COINIT_APARTMENTTHREADED 0x2
+#endif
+#ifndef RPC_E_CHANGED_MODE
+   #define RPC_E_CHANGED_MODE ( ( HRESULT ) 0x80010106L )
+#endif
+
+#define MFC_MF_VERSION         ( ( 2UL &lt;&lt; 16 ) | 0x70 )
+#define MFC_STARTUP_LITE       1
+#define MFC_FIRST_VIDEO_STREAM 0xFFFFFFFCL
+#define MFC_ENDOFSTREAM        0x2L
+
+/* COM vtable indexes (0-based), verified against the Windows SDK
+ * mfobjects.h / mfidl.h / mfreadwrite.h */
+#define IX_QI               0   /* IUnknown::QueryInterface             */
+#define IX_RELEASE          2   /* IUnknown::Release                    */
+#define IX_GETUINT64        8   /* IMFAttributes::GetUINT64             */
+#define IX_GETALLOCSTRING   13  /* IMFAttributes::GetAllocatedString    */
+#define IX_SETUINT32        21  /* IMFAttributes::SetUINT32             */
+#define IX_SETUINT64        22  /* IMFAttributes::SetUINT64             */
+#define IX_SETGUID          24  /* IMFAttributes::SetGUID               */
+#define IX_ACTIVATEOBJECT   33  /* IMFActivate::ActivateObject          */
+#define IX_SHUTDOWNOBJECT   34  /* IMFActivate::ShutdownObject          */
+#define IX_BUF_LOCK         3   /* IMFMediaBuffer::Lock                 */
+#define IX_BUF_UNLOCK       4   /* IMFMediaBuffer::Unlock               */
+#define IX_SMP_CONVERT      41  /* IMFSample::ConvertToContiguousBuffer */
+#define IX_RDR_GETNATMT     5   /* IMFSourceReader::GetNativeMediaType  */
+#define IX_RDR_GETCURMT     6   /* IMFSourceReader::GetCurrentMediaType */
+#define IX_RDR_SETCURMT     7   /* IMFSourceReader::SetCurrentMediaType */
+#define IX_RDR_READSAMPLE   9   /* IMFSourceReader::ReadSample          */
+
+/* IAMVideoProcAmp / IAMCameraControl (strmif.h) vtable indexes:
+ * 3 = GetRange, 4 = Set, 5 = Get                                    */
+#define IX_AMP_GETRANGE     3
+#define IX_AMP_SET          4
+#define IX_AMP_GET          5
+
+typedef struct MFCGUID_
+{
+   unsigned long  d1;
+   unsigned short d2;
+   unsigned short d3;
+   unsigned char  d4[ 8 ];
+} MFCGUID;
+
+static const MFCGUID IID_IMFMediaSource =          /* 279a808d-aec7-40c8-9c6b-a6b492c78a66 */
+   { 0x279a808dUL, 0xaec7, 0x40c8, { 0x9c, 0x6b, 0xa6, 0xb4, 0x92, 0xc7, 0x8a, 0x66 } };
+static const MFCGUID IID_IAMVideoProcAmp =         /* c6e13360-30ac-11d0-a18c-00a0c9118956 */
+   { 0xc6e13360UL, 0x30ac, 0x11d0, { 0xa1, 0x8c, 0x00, 0xa0, 0xc9, 0x11, 0x89, 0x56 } };
+static const MFCGUID IID_IAMCameraControl =        /* c6e13370-30ac-11d0-a18c-00a0c9118956 */
+   { 0xc6e13370UL, 0x30ac, 0x11d0, { 0xa1, 0x8c, 0x00, 0xa0, 0xc9, 0x11, 0x89, 0x56 } };
+static const MFCGUID MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE =  /* c60ac5fe-252a-478f-a0ef-bc8fa5f7cad3 */
+   { 0xc60ac5feUL, 0x252a, 0x478f, { 0xa0, 0xef, 0xbc, 0x8f, 0xa5, 0xf7, 0xca, 0xd3 } };
+static const MFCGUID MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID =  /* 8ac3587a-4ae7-42d8-99e0-0a6013eef90f */
+   { 0x8ac3587aUL, 0x4ae7, 0x42d8, { 0x99, 0xe0, 0x0a, 0x60, 0x13, 0xee, 0xf9, 0x0f } };
+static const MFCGUID MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME =  /* 60d0e559-52f8-4fa2-bbce-acdb34a8ec01 */
+   { 0x60d0e559UL, 0x52f8, 0x4fa2, { 0xbb, 0xce, 0xac, 0xdb, 0x34, 0xa8, 0xec, 0x01 } };
+static const MFCGUID MF_MT_MAJOR_TYPE =            /* 48eba18e-f8c9-4687-bf11-0a74c9f96a8f */
+   { 0x48eba18eUL, 0xf8c9, 0x4687, { 0xbf, 0x11, 0x0a, 0x74, 0xc9, 0xf9, 0x6a, 0x8f } };
+static const MFCGUID MF_MT_SUBTYPE =               /* f7e34c9a-42e8-4714-b74b-cb29d72c35e5 */
+   { 0xf7e34c9aUL, 0x42e8, 0x4714, { 0xb7, 0x4b, 0xcb, 0x29, 0xd7, 0x2c, 0x35, 0xe5 } };
+static const MFCGUID MF_MT_FRAME_SIZE =            /* 1652c33d-d6b2-4012-b834-72030849a37d */
+   { 0x1652c33dUL, 0xd6b2, 0x4012, { 0xb8, 0x34, 0x72, 0x03, 0x08, 0x49, 0xa3, 0x7d } };
+static const MFCGUID MFMediaType_Video =           /* 73646976-0000-0010-8000-00aa00389b71 */
+   { 0x73646976UL, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 } };
+static const MFCGUID MFVideoFormat_RGB32 =         /* 00000016-0000-0010-8000-00aa00389b71 */
+   { 0x00000016UL, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 } };
+static const MFCGUID MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING =  /* fb394f3d-ccf1-42ee-bbb3-f9b845d5681d */
+   { 0xfb394f3dUL, 0xccf1, 0x42ee, { 0xbb, 0xb3, 0xf9, 0xb8, 0x45, 0xd5, 0x68, 0x1d } };
+
+/* --- dynamically resolved API (ole32 / mfplat / mf / mfreadwrite) --- */
+
+typedef HRESULT ( WINAPI * PFN_CoInitializeEx )( LPVOID, DWORD );
+typedef void    ( WINAPI * PFN_CoUninitialize )( void );
+typedef void    ( WINAPI * PFN_CoTaskMemFree )( LPVOID );
+typedef HRESULT ( WINAPI * PFN_MFStartup )( ULONG, DWORD );
+typedef HRESULT ( WINAPI * PFN_MFShutdown )( void );
+typedef HRESULT ( WINAPI * PFN_MFCreateAttributes )( void **, unsigned int );
+typedef HRESULT ( WINAPI * PFN_MFCreateMediaType )( void ** );
+typedef HRESULT ( WINAPI * PFN_MFEnumDeviceSources )( void *, void ***, unsigned int * );
+typedef HRESULT ( WINAPI * PFN_MFCreateSourceReaderFromMediaSource )( void *, void *, void ** );
+
+static PFN_CoInitializeEx   s_pCoInitializeEx = NULL;
+static PFN_CoUninitialize   s_pCoUninitialize = NULL;
+static PFN_CoTaskMemFree    s_pCoTaskMemFree  = NULL;
+static PFN_MFStartup        s_pMFStartup      = NULL;
+static PFN_MFShutdown       s_pMFShutdown     = NULL;
+static PFN_MFCreateAttributes s_pMFCreateAttributes = NULL;
+static PFN_MFCreateMediaType  s_pMFCreateMediaType  = NULL;
+static PFN_MFEnumDeviceSources s_pMFEnumDeviceSources = NULL;
+static PFN_MFCreateSourceReaderFromMediaSource s_pMFCreateSourceReader = NULL;
+
+static int s_libs_state = -1;   /* -1 not tried, 0 failed, 1 ok */
+
+static int MfLoadLibs( void )
+{
+   HMODULE hOle, hPlat, hMf, hRw;
+
+   if( s_libs_state &gt;= 0 )
+      return s_libs_state;
+
+   s_libs_state = 0;
+
+   hOle  = LoadLibraryA( "ole32.dll" );
+   hPlat = LoadLibraryA( "mfplat.dll" );
+   hMf   = LoadLibraryA( "mf.dll" );
+   hRw   = LoadLibraryA( "mfreadwrite.dll" );
+   if( ! hOle || ! hPlat || ! hMf || ! hRw )
+      return 0;
+
+   s_pCoInitializeEx = ( PFN_CoInitializeEx ) GetProcAddress( hOle, "CoInitializeEx" );
+   s_pCoUninitialize = ( PFN_CoUninitialize ) GetProcAddress( hOle, "CoUninitialize" );
+   s_pCoTaskMemFree  = ( PFN_CoTaskMemFree )  GetProcAddress( hOle, "CoTaskMemFree" );
+   s_pMFStartup      = ( PFN_MFStartup )      GetProcAddress( hPlat, "MFStartup" );
+   s_pMFShutdown     = ( PFN_MFShutdown )     GetProcAddress( hPlat, "MFShutdown" );
+   s_pMFCreateAttributes = ( PFN_MFCreateAttributes ) GetProcAddress( hPlat, "MFCreateAttributes" );
+   s_pMFCreateMediaType  = ( PFN_MFCreateMediaType )  GetProcAddress( hPlat, "MFCreateMediaType" );
+   s_pMFEnumDeviceSources = ( PFN_MFEnumDeviceSources ) GetProcAddress( hMf, "MFEnumDeviceSources" );
+   s_pMFCreateSourceReader = ( PFN_MFCreateSourceReaderFromMediaSource )
+                             GetProcAddress( hRw, "MFCreateSourceReaderFromMediaSource" );
+
+   if( ! s_pCoInitializeEx || ! s_pCoUninitialize || ! s_pCoTaskMemFree ||
+       ! s_pMFStartup || ! s_pMFShutdown || ! s_pMFCreateAttributes ||
+       ! s_pMFCreateMediaType || ! s_pMFEnumDeviceSources || ! s_pMFCreateSourceReader )
+      return 0;
+
+   /* keep the DLLs loaded for the process lifetime */
+   s_libs_state = 1;
+   return 1;
+}
+
+/* --- minimal COM helpers (call through the vtable by index) --- */
+
+typedef HRESULT ( WINAPI * PFN_ComQueryInterface )( void *, const MFCGUID *, void ** );
+typedef ULONG   ( WINAPI * PFN_ComRelease )( void * );
+typedef ULONG   ( WINAPI * PFN_ComAddRef )( void * );
+typedef HRESULT ( WINAPI * PFN_AttrGetUINT64 )( void *, const MFCGUID *, ULONGLONG * );
+typedef HRESULT ( WINAPI * PFN_AttrGetAllocatedString )( void *, const MFCGUID *, WCHAR **, unsigned int * );
+typedef HRESULT ( WINAPI * PFN_AttrSetUINT32 )( void *, const MFCGUID *, unsigned int );
+typedef HRESULT ( WINAPI * PFN_AttrSetUINT64 )( void *, const MFCGUID *, ULONGLONG );
+typedef HRESULT ( WINAPI * PFN_AttrSetGUID )( void *, const MFCGUID *, const MFCGUID * );
+typedef HRESULT ( WINAPI * PFN_ActActivateObject )( void *, const MFCGUID *, void ** );
+typedef HRESULT ( WINAPI * PFN_ActShutdownObject )( void * );
+typedef HRESULT ( WINAPI * PFN_BufLock )( void *, BYTE **, DWORD *, DWORD * );
+typedef HRESULT ( WINAPI * PFN_BufUnlock )( void * );
+typedef HRESULT ( WINAPI * PFN_SmpConvert )( void *, void ** );
+typedef HRESULT ( WINAPI * PFN_RdrGetNativeMediaType )( void *, DWORD, DWORD, void ** );
+typedef HRESULT ( WINAPI * PFN_RdrGetCurrentMediaType )( void *, DWORD, void ** );
+typedef HRESULT ( WINAPI * PFN_RdrSetCurrentMediaType )( void *, DWORD, DWORD *, void * );
+typedef HRESULT ( WINAPI * PFN_RdrReadSample )( void *, DWORD, DWORD, DWORD *, DWORD *, LONGLONG *, void ** );
+typedef HRESULT ( WINAPI * PFN_AmpGetRange )( void *, long, long *, long *, long *, long *, long * );
+typedef HRESULT ( WINAPI * PFN_AmpSet )( void *, long, long, long );
+typedef HRESULT ( WINAPI * PFN_AmpGet )( void *, long, long *, long * );
+
+static void ** MfVTable( void * obj )
+{
+   return * ( void *** ) obj;
+}
+
+static HRESULT MfQI( void * obj, const MFCGUID * iid, void ** ppv )
+{
+   return ( ( PFN_ComQueryInterface ) MfVTable( obj )[ IX_QI ] )( obj, iid, ppv );
+}
+
+static ULONG MfRelease( void * obj )
+{
+   return ( ( PFN_ComRelease ) MfVTable( obj )[ IX_RELEASE ] )( obj );
+}
+
+static ULONG MfAddRef( void * obj )
+{
+   return ( ( PFN_ComAddRef ) MfVTable( obj )[ 1 ] )( obj );
+}
+
+static HRESULT MfAttrGetUINT64( void * obj, const MFCGUID * key, ULONGLONG * val )
+{
+   return ( ( PFN_AttrGetUINT64 ) MfVTable( obj )[ IX_GETUINT64 ] )( obj, key, val );
+}
+
+static HRESULT MfAttrGetAllocatedString( void * obj, const MFCGUID * key,
+                                         WCHAR ** val, unsigned int * len )
+{
+   return ( ( PFN_AttrGetAllocatedString ) MfVTable( obj )[ IX_GETALLOCSTRING ] )
+          ( obj, key, val, len );
+}
+
+static HRESULT MfAttrSetUINT32( void * obj, const MFCGUID * key, unsigned int val )
+{
+   return ( ( PFN_AttrSetUINT32 ) MfVTable( obj )[ IX_SETUINT32 ] )( obj, key, val );
+}
+
+static HRESULT MfAttrSetGUID( void * obj, const MFCGUID * key, const MFCGUID * val )
+{
+   return ( ( PFN_AttrSetGUID ) MfVTable( obj )[ IX_SETGUID ] )( obj, key, val );
+}
+
+static HRESULT MfActivateObject( void * obj, const MFCGUID * iid, void ** ppv )
+{
+   return ( ( PFN_ActActivateObject ) MfVTable( obj )[ IX_ACTIVATEOBJECT ] )( obj, iid, ppv );
+}
+
+static HRESULT MfShutdownObject( void * obj )
+{
+   return ( ( PFN_ActShutdownObject ) MfVTable( obj )[ IX_SHUTDOWNOBJECT ] )( obj );
+}
+
+static HRESULT MfBufLock( void * obj, BYTE ** data, DWORD * maxLen, DWORD * curLen )
+{
+   return ( ( PFN_BufLock ) MfVTable( obj )[ IX_BUF_LOCK ] )( obj, data, maxLen, curLen );
+}
+
+static HRESULT MfBufUnlock( void * obj )
+{
+   return ( ( PFN_BufUnlock ) MfVTable( obj )[ IX_BUF_UNLOCK ] )( obj );
+}
+
+static HRESULT MfSampleConvert( void * obj, void ** ppBuf )
+{
+   return ( ( PFN_SmpConvert ) MfVTable( obj )[ IX_SMP_CONVERT ] )( obj, ppBuf );
+}
+
+static HRESULT MfReaderGetNativeMediaType( void * obj, DWORD stream, DWORD index, void ** ppType )
+{
+   return ( ( PFN_RdrGetNativeMediaType ) MfVTable( obj )[ IX_RDR_GETNATMT ] )
+          ( obj, stream, index, ppType );
+}
+
+static HRESULT MfReaderGetCurrentMediaType( void * obj, DWORD stream, void ** ppType )
+{
+   return ( ( PFN_RdrGetCurrentMediaType ) MfVTable( obj )[ IX_RDR_GETCURMT ] )
+          ( obj, stream, ppType );
+}
+
+static HRESULT MfReaderSetCurrentMediaType( void * obj, DWORD stream, DWORD * reserved, void * type )
+{
+   return ( ( PFN_RdrSetCurrentMediaType ) MfVTable( obj )[ IX_RDR_SETCURMT ] )
+          ( obj, stream, reserved, type );
+}
+
+static HRESULT MfReaderReadSample( void * obj, DWORD stream, DWORD flags,
+                                   DWORD * actual, DWORD * stFlags,
+                                   LONGLONG * ts, void ** ppSample )
+{
+   return ( ( PFN_RdrReadSample ) MfVTable( obj )[ IX_RDR_READSAMPLE ] )
+          ( obj, stream, flags, actual, stFlags, ts, ppSample );
+}
+
+/* --- webcam state --- */
+
+static void * g_reader   = NULL;   /* IMFSourceReader  */
+static void * g_activate = NULL;   /* IMFActivate      */
+static void * g_source   = NULL;   /* IMFMediaSource   */
+static void * g_proamp   = NULL;   /* IAMVideoProcAmp  */
+static void * g_camctl   = NULL;   /* IAMCameraControl */
+static char g_devName[ 256 ] = "";
+static int g_w = 0, g_h = 0;
+static int g_good = 0, g_black = 0;
+static BYTE * g_rgb = NULL;
+static int g_rgbSize = 0;
+static CRITICAL_SECTION g_cs;
+static int g_cs_init = 0;
+static int g_com = 0;
+static int g_mf = 0;
+
+static void MfCamCloseImpl( void );
+
+static void MfEnsureCs( void )
+{
+   if( ! g_cs_init )
+   {
+      InitializeCriticalSection( &amp;g_cs );
+      g_cs_init = 1;
+   }
+}
+
+static int MfNameIsBad( const WCHAR * name )
+{
+   WCHAR low[ 256 ];
+   size_t i, n;
+   if( ! name ) return 1;
+   n = wcslen( name );
+   if( n &gt; 255 ) n = 255;
+   for( i = 0; i &lt; n; i++ )
+   {
+      WCHAR c = name[ i ];
+      if( c &gt;= L'A' &amp;&amp; c &lt;= L'Z' ) c = ( WCHAR )( c + 32 );
+      low[ i ] = c;
+   }
+   low[ n ] = 0;
+   return wcsstr( low, L"remote desktop" ) != NULL || wcsstr( low, L"obs virtual" ) != NULL;
+}
+
+static HRESULT MfPickDevice( void ** ppActivate )
+{
+   void * attr = NULL;
+   void ** devices = NULL;
+   unsigned int count = 0, i, chosen = ( unsigned int ) -1;
+   WCHAR * name = NULL;
+   HRESULT hr;
+
+   *ppActivate = NULL;
+   hr = s_pMFCreateAttributes( &amp;attr, 1 );
+   if( FAILED( hr ) ) return hr;
+   hr = MfAttrSetGUID( attr, &amp;MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+                       &amp;MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID );
+   if( FAILED( hr ) ) { MfRelease( attr ); return hr; }
+
+   hr = s_pMFEnumDeviceSources( attr, &amp;devices, &amp;count );
+   MfRelease( attr );
+   if( FAILED( hr ) ) return hr;
+   if( count == 0 ) { s_pCoTaskMemFree( devices ); return HRESULT_FROM_WIN32( ERROR_NOT_FOUND ); }
+
+   for( i = 0; i &lt; count; i++ )
+   {
+      unsigned int len = 0;
+      name = NULL;
+      if( FAILED( MfAttrGetAllocatedString( devices[ i ], &amp;MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
+                                            &amp;name, &amp;len ) ) || ! name )
+         continue;
+      if( ! MfNameIsBad( name ) )
+      {
+         if( wcsstr( name, L"FaceTime" ) || wcsstr( name, L"Camera" ) || wcsstr( name, L"Webcam" ) )
+         {
+            if( chosen == ( unsigned int ) -1 || wcsstr( name, L"FaceTime" ) )
+               chosen = i;
+         }
+         else if( chosen == ( unsigned int ) -1 )
+            chosen = i;
+      }
+      s_pCoTaskMemFree( name );
+   }
+
+   if( chosen == ( unsigned int ) -1 )
+   {
+      for( i = 0; i &lt; count; i++ ) MfRelease( devices[ i ] );
+      s_pCoTaskMemFree( devices );
+      return HRESULT_FROM_WIN32( ERROR_NOT_FOUND );
+   }
+
+   /* remember the friendly name for MfCamStatus() */
+   {
+      unsigned int len = 0;
+      name = NULL;
+      if( SUCCEEDED( MfAttrGetAllocatedString( devices[ chosen ],
+                                               &amp;MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
+                                               &amp;name, &amp;len ) ) &amp;&amp; name )
+      {
+         wcstombs( g_devName, name, sizeof( g_devName ) - 1 );
+         g_devName[ sizeof( g_devName ) - 1 ] = 0;
+         s_pCoTaskMemFree( name );
+      }
+   }
+
+   *ppActivate = devices[ chosen ];
+   MfAddRef( *ppActivate );
+   for( i = 0; i &lt; count; i++ ) MfRelease( devices[ i ] );
+   s_pCoTaskMemFree( devices );
+   return S_OK;
+}
+
+static HRESULT MfConfigureReader( void * reader )
+{
+   void * type = NULL;
+   void * cur = NULL;
+   unsigned int w = 0, h = 0;
+   ULONGLONG fs = 0;
+   HRESULT hr;
+
+   hr = s_pMFCreateMediaType( &amp;type );
+   if( FAILED( hr ) ) return hr;
+   MfAttrSetGUID( type, &amp;MF_MT_MAJOR_TYPE, &amp;MFMediaType_Video );
+   MfAttrSetGUID( type, &amp;MF_MT_SUBTYPE, &amp;MFVideoFormat_RGB32 );
+   MfReaderSetCurrentMediaType( reader, MFC_FIRST_VIDEO_STREAM, NULL, type );
+   MfRelease( type );
+   /* if RGB32 fails, keep default and hope for conversion via ENABLE_VIDEO_PROCESSING */
+
+   hr = MfReaderGetCurrentMediaType( reader, MFC_FIRST_VIDEO_STREAM, &amp;cur );
+   if( SUCCEEDED( hr ) &amp;&amp; cur )
+   {
+      /* MFGetAttributeSize(): frame size is packed as HI32=width, LO32=height */
+      if( SUCCEEDED( MfAttrGetUINT64( cur, &amp;MF_MT_FRAME_SIZE, &amp;fs ) ) )
+      {
+         w = ( unsigned int ) ( fs &gt;&gt; 32 );
+         h = ( unsigned int ) ( fs &amp; 0xFFFFFFFF );
+      }
+      MfRelease( cur );
+   }
+   if( w == 0 || h == 0 ) { w = 640; h = 480; }
+
+   g_w = ( int ) w;
+   g_h = ( int ) h;
+   g_rgbSize = g_w * g_h * 3;
+   free( g_rgb );
+   g_rgb = ( BYTE * ) malloc( ( size_t ) g_rgbSize );
+   if( ! g_rgb ) return ( HRESULT ) 0x8007000EL; /* E_OUTOFMEMORY */
+   memset( g_rgb, 0, ( size_t ) g_rgbSize );
+   return S_OK;
+}
+
+static int MfIsBlack( const BYTE * p, int nbytes )
+{
+   int i, step = 64, nz = 0, n = 0;
+   for( i = 0; i &lt; nbytes; i += step )
+   {
+      n++;
+      if( p[ i ] &gt; 12 ) nz++;
+   }
+   return nz * 20 &lt; n;
+}
+
+static int MfSampleToRgb( void * sample )
+{
+   void * buf = NULL;
+   BYTE * data = NULL;
+   DWORD maxLen = 0, curLen = 0;
+   HRESULT hr;
+   int ok = 0;
+
+   hr = MfSampleConvert( sample, &amp;buf );
+   if( FAILED( hr ) ) return 0;
+   hr = MfBufLock( buf, &amp;data, &amp;maxLen, &amp;curLen );
+   if( FAILED( hr ) || ! data || curLen == 0 ) { MfRelease( buf ); return 0; }
+
+   if( ( int ) curLen &gt;= g_w * g_h * 4 )
+   {
+      int y, x;
+      for( y = 0; y &lt; g_h; y++ )
+      {
+         const BYTE * src = data + y * g_w * 4;
+         BYTE * dst = g_rgb + ( g_h - 1 - y ) * g_w * 3;
+         for( x = 0; x &lt; g_w; x++ )
+         {
+            dst[ 0 ] = src[ 0 ];
+            dst[ 1 ] = src[ 1 ];
+            dst[ 2 ] = src[ 2 ];
+            dst += 3;
+            src += 4;
+         }
+      }
+      ok = 1;
+   }
+   else if( ( int ) curLen &gt;= g_w * g_h * 3 )
+   {
+      int y;
+      for( y = 0; y &lt; g_h; y++ )
+         memcpy( g_rgb + ( g_h - 1 - y ) * g_w * 3, data + y * g_w * 3, ( size_t ) g_w * 3 );
+      ok = 1;
+   }
+
+   if( ok )
+   {
+      if( MfIsBlack( g_rgb, g_rgbSize ) ) g_black++;
+      else g_good++;
+   }
+
+   MfBufUnlock( buf );
+   MfRelease( buf );
+   return ok;
+}
+
+static int MfPullFrame( void )
+{
+   DWORD stream = 0, flags = 0;
+   LONGLONG ts = 0;
+   void * sample = NULL;
+   HRESULT hr;
+   int ok;
+
+   if( ! g_reader ) return 0;
+
+   hr = MfReaderReadSample( g_reader, MFC_FIRST_VIDEO_STREAM,
+                            0, &amp;stream, &amp;flags, &amp;ts, &amp;sample );
+   if( FAILED( hr ) || ! sample ) return 0;
+   if( flags &amp; MFC_ENDOFSTREAM ) { MfRelease( sample ); return 0; }
+
+   EnterCriticalSection( &amp;g_cs );
+   ok = MfSampleToRgb( sample );
+   LeaveCriticalSection( &amp;g_cs );
+   MfRelease( sample );
+   return ok;
+}
+
+static int MfCamOpenImpl( void )
+{
+   void * src = NULL;
+   void * ra = NULL;
+   HRESULT hr;
+
+   if( ! MfLoadLibs() ) return 0;
+
+   MfEnsureCs();
+   MfCamCloseImpl();   /* reset any previous session, as mfcam.cpp did */
+
+   hr = s_pCoInitializeEx( NULL, COINIT_APARTMENTTHREADED );
+   if( hr == S_OK || hr == S_FALSE ) g_com = 1;
+   else if( hr == RPC_E_CHANGED_MODE ) g_com = 0;
+   else return 0;
+
+   hr = s_pMFStartup( MFC_MF_VERSION, MFC_STARTUP_LITE );
+   if( FAILED( hr ) )
+   {
+      if( g_com ) s_pCoUninitialize();
+      g_com = 0;
+      return 0;
+   }
+   g_mf = 1;
+
+   hr = MfPickDevice( &amp;g_activate );
+   if( FAILED( hr ) || ! g_activate )
+   {
+      if( g_mf ) { s_pMFShutdown(); g_mf = 0; }
+      if( g_com ) { s_pCoUninitialize(); g_com = 0; }
+      return 0;
+   }
+
+   hr = MfActivateObject( g_activate, &amp;IID_IMFMediaSource, &amp;src );
+   if( FAILED( hr ) )
+   {
+      MfShutdownObject( g_activate );
+      MfRelease( g_activate );
+      g_activate = NULL;
+      if( g_mf ) { s_pMFShutdown(); g_mf = 0; }
+      if( g_com ) { s_pCoUninitialize(); g_com = 0; }
+      return 0;
+   }
+
+   hr = s_pMFCreateAttributes( &amp;ra, 2 );
+   if( SUCCEEDED( hr ) &amp;&amp; ra )
+   {
+      MfAttrSetUINT32( ra, &amp;MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, 1 );
+      hr = s_pMFCreateSourceReader( src, ra, &amp;g_reader );
+      MfRelease( ra );
+   }
+   else
+      hr = s_pMFCreateSourceReader( src, NULL, &amp;g_reader );
+
+   if( FAILED( hr ) || ! g_reader )
+   {
+      MfRelease( src );
+      MfShutdownObject( g_activate );
+      MfRelease( g_activate );
+      g_activate = NULL;
+      if( g_mf ) { s_pMFShutdown(); g_mf = 0; }
+      if( g_com ) { s_pCoUninitialize(); g_com = 0; }
+      return 0;
+   }
+
+   if( FAILED( MfConfigureReader( g_reader ) ) )
+   {
+      MfRelease( src );
+      MfRelease( g_reader );
+      g_reader = NULL;
+      MfShutdownObject( g_activate );
+      MfRelease( g_activate );
+      g_activate = NULL;
+      if( g_mf ) { s_pMFShutdown(); g_mf = 0; }
+      if( g_com ) { s_pCoUninitialize(); g_com = 0; }
+      return 0;
+   }
+
+   /* keep the media source alive: IAMVideoProcAmp / IAMCameraControl
+    * are queried from it for Source() */
+   g_source = src;
+
+   /* warm-up a few frames */
+   {
+      int i;
+      for( i = 0; i &lt; 5; i++ )
+         MfPullFrame();
+   }
+   return 1;
+}
+
+static void MfCamCloseImpl( void )
+{
+   MfEnsureCs();
+   EnterCriticalSection( &amp;g_cs );
+
+   if( g_proamp ) { MfRelease( g_proamp ); g_proamp = NULL; }
+   if( g_camctl ) { MfRelease( g_camctl ); g_camctl = NULL; }
+   if( g_source ) { MfRelease( g_source ); g_source = NULL; }
+   g_devName[ 0 ] = 0;
+   if( g_reader ) { MfRelease( g_reader ); g_reader = NULL; }
+   if( g_activate )
+   {
+      MfShutdownObject( g_activate );
+      MfRelease( g_activate );
+      g_activate = NULL;
+   }
+   free( g_rgb );
+   g_rgb = NULL;
+   g_rgbSize = 0;
+   g_w = g_h = 0;
+   g_good = g_black = 0;
+
+   LeaveCriticalSection( &amp;g_cs );
+
+   if( g_mf ) { s_pMFShutdown(); g_mf = 0; }
+   if( g_com ) { s_pCoUninitialize(); g_com = 0; }
+}
+
+static int MfCamSaveBmpImpl( const char * path )
+{
+   BITMAPFILEHEADER bmfh;
+   BITMAPINFOHEADER bih;
+   FILE * fp;
+   int rowSize, imgSize, y;
+   BYTE pad[ 4 ] = { 0, 0, 0, 0 };
+   int padn;
+
+   if( ! path || ! path[ 0 ] ) return 0;
+   if( ! MfPullFrame() ) return 0;
+   if( ! g_rgb || g_w &lt;= 0 ) return 0;
+
+   rowSize = ( ( g_w * 3 + 3 ) / 4 ) * 4;
+   imgSize = rowSize * g_h;
+   padn = rowSize - g_w * 3;
+
+   ZeroMemory( &amp;bih, sizeof( bih ) );
+   bih.biSize = sizeof( bih );
+   bih.biWidth = g_w;
+   bih.biHeight = g_h;
+   bih.biPlanes = 1;
+   bih.biBitCount = 24;
+   bih.biCompression = BI_RGB;
+   bih.biSizeImage = ( DWORD ) imgSize;
+
+   bmfh.bfType = 0x4D42;
+   bmfh.bfOffBits = sizeof( bmfh ) + sizeof( bih );
+   bmfh.bfSize = bmfh.bfOffBits + imgSize;
+   bmfh.bfReserved1 = bmfh.bfReserved2 = 0;
+
+   fp = fopen( path, "wb" );
+   if( ! fp ) return 0;
+
+   EnterCriticalSection( &amp;g_cs );
+   fwrite( &amp;bmfh, 1, sizeof( bmfh ), fp );
+   fwrite( &amp;bih, 1, sizeof( bih ), fp );
+   for( y = 0; y &lt; g_h; y++ )
+   {
+      fwrite( g_rgb + y * g_w * 3, 1, ( size_t ) g_w * 3, fp );
+      if( padn ) fwrite( pad, 1, ( size_t ) padn, fp );
+   }
+   LeaveCriticalSection( &amp;g_cs );
+
+   fclose( fp );
+   return 1;
+}
+
+/* --- camera controls (IAMVideoProcAmp / IAMCameraControl) ---
+ * The MF video capture source still answers QueryInterface for the
+ * legacy DirectShow control interfaces on most USB cameras.       */
+
+static void * MfPropIface( int nWhich )
+{
+   void ** cache = ( nWhich == 0 ) ? &amp;g_proamp : &amp;g_camctl;
+
+   if( * cache )
+      return * cache;
+   if( ! g_source )
+      return NULL;
+
+   if( FAILED( MfQI( g_source,
+                     ( nWhich == 0 ) ? &amp;IID_IAMVideoProcAmp : &amp;IID_IAMCameraControl,
+                     cache ) ) )
+      * cache = NULL;
+
+   return * cache;
+}
+
+static int MfCamSetFormatImpl( long lW, long lH )
+{
+   DWORD i = 0;
+   void * mt = NULL;
+   int done = 0;
+
+   if( ! g_reader ) return 0;
+
+   /* find the native media type with the requested frame size and
+    * select it, then re-run the RGB32 configuration on top */
+   while( ! done &amp;&amp;
+          SUCCEEDED( MfReaderGetNativeMediaType( g_reader, MFC_FIRST_VIDEO_STREAM, i, &amp;mt ) ) )
+   {
+      ULONGLONG fs = 0;
+      if( SUCCEEDED( MfAttrGetUINT64( mt, &amp;MF_MT_FRAME_SIZE, &amp;fs ) ) &amp;&amp;
+          ( long ) ( fs &gt;&gt; 32 ) == lW &amp;&amp; ( long ) ( fs &amp; 0xFFFFFFFF ) == lH )
+      {
+         if( SUCCEEDED( MfReaderSetCurrentMediaType( g_reader, MFC_FIRST_VIDEO_STREAM,
+                                                     NULL, mt ) ) )
+            done = 1;
+      }
+      MfRelease( mt );
+      i++;
+   }
+
+   if( done )
+   {
+      done = SUCCEEDED( MfConfigureReader( g_reader ) );
+      MfPullFrame();   /* warm-up */
+      MfPullFrame();
+   }
+   return done;
+}
+
+/* --- Harbour wrappers --- */
+
+/* MfCamOpen() --&gt; nOk (1/0) */
+HB_FUNC( MFCAMOPEN )
+{
+   hb_retni( MfCamOpenImpl() );
+}
+
+/* MfCamClose() */
+HB_FUNC( MFCAMCLOSE )
+{
+   MfCamCloseImpl();
+}
+
+/* MfCamSaveBmp( cFile ) --&gt; nOk (1/0) */
+HB_FUNC( MFCAMSAVEBMP )
+{
+   const char * sz = hb_parc( 1 );
+   hb_retni( ( sz &amp;&amp; sz[ 0 ] ) ? MfCamSaveBmpImpl( sz ) : 0 );
+}
+
+/* MfCamStatus() --&gt; { lOpen, nWidth, nHeight, nGoodFrames, nBlackFrames, cDevice } */
+HB_FUNC( MFCAMSTATUS )
+{
+   PHB_ITEM pArr = hb_itemArrayNew( 6 );
+
+   hb_arraySetL( pArr, 1, g_reader != NULL );
+   hb_arraySetNL( pArr, 2, g_w );
+   hb_arraySetNL( pArr, 3, g_h );
+   hb_arraySetNL( pArr, 4, g_good );
+   hb_arraySetNL( pArr, 5, g_black );
+   hb_arraySetC( pArr, 6, g_devName );
+
+   hb_itemReturnRelease( pArr );
+}
+
+/* MfCamFormats() --&gt; { { nW, nH }, ... } available resolutions */
+HB_FUNC( MFCAMFORMATS )
+{
+   PHB_ITEM pArr = hb_itemArrayNew( 0 );
+
+   if( g_reader )
+   {
+      DWORD i = 0;
+      void * mt = NULL;
+
+  while( SUCCEEDED( MfReaderGetNativeMediaType( g_reader, MFC_FIRST_VIDEO_STREAM,
+                                                i, &amp;mt ) ) )
+  {
+     ULONGLONG fs = 0;
+     if( SUCCEEDED( MfAttrGetUINT64( mt, &amp;MF_MT_FRAME_SIZE, &amp;fs ) ) )
+     {
+        long w = ( long ) ( fs &gt;&gt; 32 );
+        long h = ( long ) ( fs &amp; 0xFFFFFFFF );
+        HB_SIZE n;
+        int dup = 0;
+
+        for( n = 1; n &lt;= hb_arrayLen( pArr ) &amp;&amp; ! dup; n++ )
+        {
+           PHB_ITEM pSub = hb_arrayGetItemPtr( pArr, n );
+           if( pSub &amp;&amp; hb_arrayGetNL( pSub, 1 ) == w &amp;&amp; hb_arrayGetNL( pSub, 2 ) == h )
+              dup = 1;
+        }
+        if( ! dup )
+        {
+           PHB_ITEM pSub = hb_itemArrayNew( 2 );
+           hb_arraySetNL( pSub, 1, w );
+           hb_arraySetNL( pSub, 2, h );
+           hb_arrayAdd( pArr, pSub );
+           hb_itemRelease( pSub );
+        }
+     }
+     MfRelease( mt );
+     i++;
+  }
+   }
+
+   hb_itemReturnRelease( pArr );
+}
+
+/* MfCamSetFormat( nWidth, nHeight ) --&gt; 1 ok / 0 fail */
+HB_FUNC( MFCAMSETFORMAT )
+{
+   hb_retni( MfCamSetFormatImpl( hb_parnl( 1 ), hb_parnl( 2 ) ) );
+}
+
+/* MfCamPropAvail() --&gt; 0 none, 1 procamp, 2 camctl, 3 both */
+HB_FUNC( MFCAMPROPAVAIL )
+{
+   int n = 0;
+   if( MfPropIface( 0 ) ) n += 1;
+   if( MfPropIface( 1 ) ) n += 2;
+   hb_retni( n );
+}
+
+/* MfCamProp( nIf, nProp [, nValue, nFlags ] )
+ *   nIf: 0 = IAMVideoProcAmp, 1 = IAMCameraControl
+ *   pass nValue to set the property (nFlags: 1 = auto, 2 = manual)
+ *   --&gt; NIL if unsupported, else { nVal, nMin, nMax, nStep, nDefault, nFlags } */
+HB_FUNC( MFCAMPROP )
+{
+   void * iface = MfPropIface( hb_parni( 1 ) );
+   long lProp = hb_parnl( 2 );
+   long lMin = 0, lMax = 0, lStep = 0, lDef = 0, lCaps = 0;
+   long lVal = 0, lFlags = 0;
+   PHB_ITEM pArr;
+
+   if( ! iface )
+   {
+      hb_ret();
+      return;
+   }
+
+   if( HB_ISNUM( 3 ) )
+      ( ( PFN_AmpSet ) MfVTable( iface )[ IX_AMP_SET ] )
+         ( iface, lProp, hb_parnl( 3 ), HB_ISNUM( 4 ) ? hb_parnl( 4 ) : 2L );
+
+   if( FAILED( ( ( PFN_AmpGetRange ) MfVTable( iface )[ IX_AMP_GETRANGE ] )
+                  ( iface, lProp, &amp;lMin, &amp;lMax, &amp;lStep, &amp;lDef, &amp;lCaps ) ) ||
+       FAILED( ( ( PFN_AmpGet ) MfVTable( iface )[ IX_AMP_GET ] )
+                  ( iface, lProp, &amp;lVal, &amp;lFlags ) ) )
+   {
+      hb_ret();
+      return;
+   }
+
+   pArr = hb_itemArrayNew( 6 );
+   hb_arraySetNL( pArr, 1, lVal );
+   hb_arraySetNL( pArr, 2, lMin );
+   hb_arraySetNL( pArr, 3, lMax );
+   hb_arraySetNL( pArr, 4, lStep );
+   hb_arraySetNL( pArr, 5, lDef );
+   hb_arraySetNL( pArr, 6, lFlags );
+
+   hb_itemReturnRelease( pArr );
+}
+
+#pragma ENDDUMP</code></pre></div>
+</blockquote>
+
+<p>Dear Antonio,</p>
+
+<p>Working for Harbour+Bcc77 32bit.<br>
+But not working 64bit. Because Main Dialog does not display</p></div>
+      <div class="signature">Best Regards,<br>
+<br>
+<br>
+<br>
+Richard<br>
+<br>
+<br>
+<br>
+Harbour 3.2.0dev (r2503251254) =&gt; Borland C++ v7.7 32bit<br>
+<br>
+MySQL v8.0<br>
+<br>
+Harbour 3.2.0dev (r2503251254) =&gt; Borland C++ v7.7 64bit</div>
+    </div>
+  </div><div class="pagination">Page: <a href="topic-46513.html">1</a> <strong>2</strong> (18 posts)</div>
   <div class="giscus-wrap">
     <h3>Continue the discussion</h3>
     <script src="https://giscus.app/client.js"
