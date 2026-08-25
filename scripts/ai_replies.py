@@ -227,7 +227,9 @@ def build_context(question, max_chars=9000):
     return ctx[:max_chars]
 
 
-UA = {"User-Agent": "FiveTech-AI-Assistant/1.0 (GitHub Actions)"}
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9"}
 
 
 # ---------------------------------------------------------------- state
@@ -484,6 +486,7 @@ def run(dry=False, max_replies=None):
             candidates.extend(topics)
         except Exception as e:
             print(f"foro {fid}: ERROR {e}", file=sys.stderr)
+        time.sleep(3)  # cortesia: evita que el WAF del foro bloquee la IP del runner
 
     new = [c for c in candidates if str(c["topic"]) not in state]
     print(f"candidatos nuevos: {len(new)}")
