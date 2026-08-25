@@ -1,0 +1,59 @@
+name: AI forum replies
+
+on:
+  schedule:
+    # Cuatro veces al dia: 00:00, 06:00, 12:00 y 18:00 UTC
+    - cron: "0 0,6,12,18 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Solo detectar y generar, sin publicar"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ai-forum-replies
+  cancel-in-progress: false
+
+jobs:
+  reply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install requests
+
+      - name: Detect and answer unanswered questions
+        env:
+          FORUM_USERNAME: ${{ secrets.FORUM_USERNAME }}
+          FORUM_PASSWORD: ${{ secrets.FORUM_PASSWORD }}
+          # PAT con acceso de lectura a FiveTechSoft/fwh (repo privado de fuentes).
+          # Nunca se imprime ni se persiste; solo lo usa git via entorno.
+          FWH_TOKEN: ${{ secrets.FWH_TOKEN }}
+          AI_MAX_REPLIES: "5"
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ] || [ -z "$FORUM_USERNAME" ]; then
+            echo "Modo dry-run (sin publicar)"
+            python scripts/ai_replies.py run-dry 3
+          else
+            python scripts/ai_replies.py run
+          fi
+
+      - name: Commit state
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/state.json || true
+          git diff --cached --quiet && echo "Sin cambios" && exit 0
+          git commit -m "AI replies: state update [skip ci]"
+          git push
