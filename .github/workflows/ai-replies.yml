@@ -6,13 +6,9 @@ on:
     - cron: "0 0,6,12,18 * * *"
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: "Solo detectar y generar, sin publicar"
-        type: boolean
-        default: false
-
-permissions:
-  contents: write
+      max:
+        description: "Max respuestas en esta ejecucion"
+        default: "3"
 
 concurrency:
   group: ai-forum-replies
@@ -21,39 +17,17 @@ concurrency:
 jobs:
   reply:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install deps
-        run: pip install requests
-
-      - name: Detect and answer unanswered questions
+      - name: Trigger AI endpoint on fivetechsupport.com
         env:
-          FORUM_USERNAME: ${{ secrets.FORUM_USERNAME }}
-          FORUM_PASSWORD: ${{ secrets.FORUM_PASSWORD }}
-          # PAT con acceso de lectura a FiveTechSoft/fwh (repo privado de fuentes).
-          # Nunca se imprime ni se persiste; solo lo usa git via entorno.
-          FWH_TOKEN: ${{ secrets.FWH_TOKEN }}
-          AI_MAX_REPLIES: "5"
+          AI_ENDPOINT_URL: ${{ secrets.AI_ENDPOINT_URL }}
+          AI_ENDPOINT_KEY: ${{ secrets.AI_ENDPOINT_KEY }}
+          MAX: ${{ github.event.inputs.max || '3' }}
         run: |
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ] || [ -z "$FORUM_USERNAME" ]; then
-            echo "Modo dry-run (sin publicar)"
-            python scripts/ai_replies.py run-dry 3
-          else
-            python scripts/ai_replies.py run
-          fi
-
-      - name: Commit state
-        if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/state.json || true
-          git diff --cached --quiet && echo "Sin cambios" && exit 0
-          git commit -m "AI replies: state update [skip ci]"
-          git push
+          HTTP=$(curl -sS -o result.json -w "%{http_code}" --max-time 600 \
+            -X POST "$AI_ENDPOINT_URL?action=run&max=$MAX" \
+            -H "X-AI-Key: $AI_ENDPOINT_KEY")
+          echo "HTTP $HTTP"
+          cat result.json
+          test "$HTTP" = "200" || exit 1
