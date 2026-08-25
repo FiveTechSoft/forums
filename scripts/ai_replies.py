@@ -367,30 +367,33 @@ SYSTEM_PROMPT = (
 
 
 def generate_answer(question, context=""):
-    """Devuelve (texto_respuesta, modelo_usado). Prueba los modelos free en orden."""
+    """Devuelve (texto_respuesta, modelo_usado). Prueba los modelos free en orden,
+    con dos rondas de reintentos (el proxy Zen a veces da timeouts desde Actions)."""
     models = free_models()
     user_content = question
     if context:
         user_content += ("\n\n--- Contexto tecnico (documentacion FWH y fuentes "
                          f"relacionadas) ---\n{context}\n--- fin contexto ---")
     last = None
-    for model in models:
-        try:
-            status, data = _zen_request("POST", "/zen/v1/chat/completions", {
-                "model": model,
-                "messages": [{"role": "system", "content": SYSTEM_PROMPT},
-                             {"role": "user", "content": user_content}],
-                "max_tokens": 2000})
-            if status != 200:
-                last = f"HTTP {status}"
-                continue
-            resp = json.loads(data)
-            content = resp["choices"][0]["message"].get("content") or ""
-            if content.strip():
-                return content.strip(), resp.get("model", model)
-            last = "respuesta vacia"  # el modelo gasto los tokens en razonamiento
-        except Exception as e:
-            last = f"{type(e).__name__}: {e}"
+    for ronda in range(2):
+        for model in models:
+            try:
+                status, data = _zen_request("POST", "/zen/v1/chat/completions", {
+                    "model": model,
+                    "messages": [{"role": "system", "content": SYSTEM_PROMPT},
+                                 {"role": "user", "content": user_content}],
+                    "max_tokens": 2000}, timeout=120)
+                if status != 200:
+                    last = f"HTTP {status}"
+                    continue
+                resp = json.loads(data)
+                content = resp["choices"][0]["message"].get("content") or ""
+                if content.strip():
+                    return content.strip(), resp.get("model", model)
+                last = "respuesta vacia"  # el modelo gasto los tokens en razonamiento
+            except Exception as e:
+                last = f"{type(e).__name__}: {e}"
+        time.sleep(5)
     raise RuntimeError(f"Ningun modelo free respondio (ultimo error: {last})")
 
 
@@ -416,13 +419,14 @@ def login(session, user, pwd):
     p.feed(page)
     data = dict(p.inputs)
     data.update({"username": user, "password": pwd, "login": "Login"})
-    action = urljoin(BASE, re.search(r'(?s)<form[^>]+id="login"[^>]+action="([^"]+)"', page).group(1))
-    r = session.post(action, data=data, headers=UA, timeout=60)
-    page2 = r.text
-    if "mode=logout" not in page2 and 'data-l="LOGOUT"' not in page2 and ".&amp;sid=" not in page2:
-        # comprobacion robusta: la pagina de login exitoso no vuelve a mostrar el formulario
-        if 'id="login"' in page2:
-            raise RuntimeError("Login fallo: credenciales rechazadas o captcha activo")
+    m = (re.search(r'(?s)<form[^>]+id="login"[^>]+action="([^"]+)"', page)
+         or re.search(r'(?s)<form[^>]+action="([^"]*ucp\.php[^"]*)"', page))
+    action = urljoin(BASE, m.group(1)) if m else f"{BASE}ucp.php?mode=login"
+    session.post(action, data=data, headers=UA, timeout=60)
+    # verificacion estricta: en sesion iniciada el indice muestra el enlace logout
+    idx = get(session, f"{BASE}index.php")
+    if "mode=logout" not in idx:
+        raise RuntimeError("Login fallo: credenciales rechazadas o captcha activo")
     return True
 
 
