@@ -14,21 +14,23 @@ jobs:
           SERVER_USER: ${{ secrets.SERVER_USER }}
           SERVER_PASS: ${{ secrets.SERVER_PASS }}
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq sshpass curl
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
           export SSHPASS="$SERVER_PASS"
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
-          # Download the missing file from phpBB 3.3.x branch
-          curl -sL "https://raw.githubusercontent.com/phpbb/phpbb/refs/heads/release/3.3.x/phpbb/cache/driver/file.php" -o /tmp/file.php
-          echo "=== downloaded file ==="
-          wc -l /tmp/file.php
-          head -5 /tmp/file.php
-          # Upload and test
+          # Try multiple URLs for the file
+          curl -sL "https://raw.githubusercontent.com/phpbb/phpbb/release/3.3.x/phpbb/cache/driver/file.php" -o /tmp/file.php
+          if [ ! -s /tmp/file.php ]; then
+            curl -sL "https://raw.githubusercontent.com/phpbb/phpbb/master/phpbb/cache/driver/file.php" -o /tmp/file.php
+          fi
+          echo "=== downloaded file size ==="
+          wc -c /tmp/file.php
+          # Create directory + upload
+          sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" "mkdir -p /home4/fivetech/public_html/forums/phpbb/cache/driver"
           sshpass -e scp $SSH_OPTS /tmp/file.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/public_html/forums/phpbb/cache/driver/file.php"
+          # Verify + test
           sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" '
-            BB=/home4/fivetech/public_html/forums
             echo "=== verify ==="
-            ls -la $BB/phpbb/cache/driver/file.php
+            ls -la /home4/fivetech/public_html/forums/phpbb/cache/driver/file.php
             echo "=== test render ==="
             curl -s -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/" -o /tmp/after.html -w "http_code=%{http_code} size=%{size_download}\n"
             head -c 500 /tmp/after.html; echo
