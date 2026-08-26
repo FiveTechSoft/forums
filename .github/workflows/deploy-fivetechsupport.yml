@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Create AiBot via PHP
+      - name: Upload + test run.php
         env:
           SSH_HOST: ${{ secrets.SERVER2_HOST }}
           SSH_USER: ${{ secrets.SERVER2_USER }}
@@ -21,17 +21,20 @@ jobs:
 
           FORUM="/home1/fivetec1/public_html/forums"
 
-          echo "=== upload + run create_bot.php ==="
+          echo "=== upload run_fts.php ==="
           sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "mkdir -p $FORUM/_ai" 2>&1
-          sshpass -e scp $SSH_OPTS "$GITHUB_WORKSPACE/scripts/create_bot.php" "$SSH_USER@$SSH_HOST:$FORUM/_ai/create_bot.php" 2>&1
-          sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "cd $FORUM && php _ai/create_bot.php" 2>&1
+          sshpass -e scp $SSH_OPTS "$GITHUB_WORKSPACE/scripts/php-endpoint/run_fts.php" "$SSH_USER@$SSH_HOST:$FORUM/_ai/run.php" 2>&1
 
           echo ""
-          echo "=== verify ==="
+          echo "=== test run (1 reply) ==="
+          sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "cd $FORUM && php _ai/run.php 1" 2>&1
+
+          echo ""
+          echo "=== verify last post ==="
           sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" bash -s <<'VERIFY'
           FORUM="/home1/fivetec1/public_html/forums"
           DBNAME=$(sed -n "s/.*\$dbname\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
           DBUSER=$(sed -n "s/.*\$dbuser\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
           DBPASS=$(sed -n "s/.*\$dbpasswd\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
-          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username, user_type, group_id FROM phpbb_users WHERE username='AiBot [Bot]';" 2>/dev/null
+          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT post_id, topic_id, poster_id, LEFT(post_text, 200) as preview FROM phpbb_posts WHERE poster_id = 6418 ORDER BY post_time DESC LIMIT 3;" 2>/dev/null
           VERIFY
