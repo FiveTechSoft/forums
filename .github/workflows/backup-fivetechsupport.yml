@@ -17,71 +17,65 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
           export SSHPASS="$SSH_PASS"
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
-          sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" '
-            echo "=== detectar phpBB path ==="
-            FORUM=""
-            for p in /home4/fivetec1/public_html/forums /home4/fivetec1/public_html/forum /home4/fivetec1/www/forums /home4/fivetec1/www/forum; do
-              if [ -f "$p/config.php" ]; then FORUM="$p"; break; fi
-            done
-            if [ -z "$FORUM" ]; then
-              echo "Buscando config.php..."
-              FORUM=$(find /home4/fivetec1 -maxdepth 4 -name "config.php" -path "*/phpbb/*" -o -name "config.php" -path "*/forums/*" 2>/dev/null | head -1)
-              FORUM=$(dirname "$FORUM")
-            fi
-            echo "FORUM=$FORUM"
+          sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" bash -s <<'REMOTE'
+          set -e
 
-            if [ -z "$FORUM" ]; then
-              echo "ERROR: No se encontro phpBB"
-              exit 1
-            fi
+          echo "=== detectar phpBB path ==="
+          FORUM=""
+          for p in /home4/fivetec1/public_html/forums /home4/fivetec1/public_html/forum /home4/fivetec1/www/forums; do
+            if [ -f "$p/config.php" ]; then FORUM="$p"; break; fi
+          done
+          if [ -z "$FORUM" ]; then
+            FORUM=$(find /home4/fivetec1 -maxdepth 4 -name "config.php" 2>/dev/null | head -1)
+            FORUM=$(dirname "$FORUM")
+          fi
+          echo "FORUM=$FORUM"
 
-            echo ""
-            echo "=== backup DB credentials ==="
-            grep "dbhost\|dbname\|dbuser\|dbpass" "$FORUM/config.php" 2>/dev/null
+          if [ -z "$FORUM" ]; then
+            echo "ERROR: No se encontro phpBB"
+            exit 1
+          fi
 
-            echo ""
-            echo "=== dump database ==="
-            DBNAME=$(grep "dbname" "$FORUM/config.php" | head -1 | sed "s/.*=>.*['\"]\\(.*\\)['\"].*/\\1/")
-            DBUSER=$(grep "dbuser" "$FORUM/config.php" | head -1 | sed "s/.*=>.*['\"]\\(.*\\)['\"].*/\\1/")
-            DBPASS=$(grep "dbpass" "$FORUM/config.php" | head -1 | sed "s/.*=>.*['\"]\\(.*\\)['\"].*/\\1/")
-            DBHOST=$(grep "dbhost" "$FORUM/config.php" | head -1 | sed "s/.*=>.*['\"]\\(.*\\)['\"].*/\\1/")
-            echo "DB: $DBNAME @ $DBHOST user=$DBUSER"
+          echo ""
+          echo "=== backup DB credentials ==="
+          grep -E "dbhost|dbname|dbuser|dbpass" "$FORUM/config.php" 2>/dev/null
 
-            BACKUP_DIR="/home4/fivetec1/backups_pre_ai"
-            mkdir -p "$BACKUP_DIR"
-            mysqldump -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" > "$BACKUP_DIR/forums_db_$(date +%Y%m%d_%H%M%S).sql" 2>&1
-            echo "DB dump: $(ls -la $BACKUP_DIR/*.sql 2>/dev/null | tail -1)"
+          echo ""
+          echo "=== dump database ==="
+          DBNAME=$(grep "dbname" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
+          DBUSER=$(grep "dbuser" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
+          DBPASS=$(grep "dbpass" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
+          DBHOST=$(grep "dbhost" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
+          echo "DB: $DBNAME @ $DBHOST user=$DBUSER"
 
-            echo ""
-            echo "=== backup phpBB files (config + cache + phpbb dir) ==="
-            cd "$FORUM"
-            tar czf "$BACKUP_DIR/phpbb_files_$(date +%Y%m%d_%H%M%S).tar.gz" \
-              config.php \
-              phpbb/cache/ \
-              phpbb/error_log \
-              cache/ \
-              2>/dev/null
-            echo "Files backup: $(ls -la $BACKUP_DIR/*.tar.gz 2>/dev/null | tail -1)"
+          BACKUP_DIR="/home4/fivetec1/backups_pre_ai"
+          mkdir -p "$BACKUP_DIR"
+          mysqldump -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" > "$BACKUP_DIR/forums_db_$(date +%Y%m%d_%H%M%S).sql" 2>&1
+          echo "DB dump: $(ls -la $BACKUP_DIR/*.sql 2>/dev/null | tail -1)"
 
-            echo ""
-            echo "=== table stats ==="
-            mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "
-              SELECT COUNT(*) as topics FROM phpbb_topics;
-              SELECT COUNT(*) as posts FROM phpbb_posts;
-              SELECT COUNT(*) as users FROM phpbb_users;
-              SELECT user_id, username, user_type FROM phpbb_users WHERE user_type = 2;
-            " 2>/dev/null
+          echo ""
+          echo "=== backup phpBB files ==="
+          cd "$FORUM"
+          tar czf "$BACKUP_DIR/phpbb_files_$(date +%Y%m%d_%H%M%S).tar.gz" \
+            config.php \
+            phpbb/cache/ \
+            cache/ \
+            2>/dev/null || true
+          echo "Files backup: $(ls -la $BACKUP_DIR/*.tar.gz 2>/dev/null | tail -1)"
 
-            echo ""
-            echo "=== phpBB version ==="
-            grep "phpbb_version" "$FORUM/phpbb/"*.php 2>/dev/null | head -3 || grep "PHPBB_VERSION" "$FORUM/include/constants.php" 2>/dev/null || echo "checking composer..."
-            cat "$FORUM/composer.json" 2>/dev/null | grep -A1 "phpbb/phpbb-core" | head -3
+          echo ""
+          echo "=== table stats ==="
+          mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT COUNT(*) as topics FROM phpbb_topics; SELECT COUNT(*) as posts FROM phpbb_posts; SELECT COUNT(*) as users FROM phpbb_users;" 2>/dev/null
 
-            echo ""
-            echo "=== forum list ==="
-            mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "
-              SELECT forum_id, forum_name, forum_posts_approved, forum_topics_approved 
-              FROM phpbb_forums WHERE forum_id IN (1,3,32,30,5,11,4,45,2,6,33,31,8,12,7,46,20,21,23)
-              ORDER BY forum_id;
-            " 2>/dev/null
-          ' 2>&1
+          echo ""
+          echo "=== existing bots ==="
+          mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username, user_type FROM phpbb_users WHERE user_type = 2;" 2>/dev/null
+
+          echo ""
+          echo "=== phpBB version ==="
+          cat "$FORUM/composer.json" 2>/dev/null | grep -A1 "phpbb-core" | head -3
+
+          echo ""
+          echo "=== all backups ==="
+          ls -la "$BACKUP_DIR/"
+          REMOTE
