@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check phpBB error log
+      - name: Rebuild phpBB cache
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -18,16 +18,21 @@ jobs:
           export SSHPASS="$SERVER_PASS"
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
           sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" '
-            echo "=== PHP error log (last 30 lines) ==="
-            tail -30 /home4/fivetech/public_html/forums/phpbb/error_log 2>/dev/null || echo "no error_log"
+            echo "=== phpBB version ==="
+            grep "phpbb_version" /home4/fivetech/public_html/forums/phpbb/version.rb 2>/dev/null || grep "PHPBB_VERSION" /home4/fivetech/public_html/forums/include/constants.php 2>/dev/null || grep "phpbb_version" /home4/fivetech/public_html/forums/config.php 2>/dev/null || echo "checking composer..."
+            cat /home4/fivetech/public_html/forums/composer.json 2>/dev/null | grep -i version || echo "no version in composer.json"
             echo ""
-            echo "=== phpBB log (last 30 lines) ==="
-            tail -30 /home4/fivetech/public_html/forums/cache/logs/ 2>/dev/null || echo "no logs dir"
+            echo "=== check if there is a cli ==="
+            ls /home4/fivetech/public_html/forums/bin/ 2>/dev/null || echo "no bin dir"
             echo ""
-            echo "=== cache dir contents ==="
-            ls -la /home4/fivetech/public_html/forums/cache/ 2>/dev/null | head -20
+            echo "=== check PHP version ==="
+            php -v 2>/dev/null | head -1 || echo "no php cli"
             echo ""
-            echo "=== test index.php directly ==="
-            curl -sL -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/index.php" -o /tmp/idx.html -w "http_code=%{http_code} size=%{size_download}\n"
-            head -c 1000 /tmp/idx.html; echo
+            echo "=== purge cache by removing cache files ==="
+            rm -rf /home4/fivetech/public_html/forums/cache/production/*
+            echo "cache purged"
+            echo ""
+            echo "=== test render after cache purge ==="
+            curl -sL -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/" -o /tmp/after.html -w "http_code=%{http_code} size=%{size_download}\n"
+            head -c 1000 /tmp/after.html; echo
           ' 2>&1
