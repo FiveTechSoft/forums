@@ -22,11 +22,11 @@ if (!file_exists($config_file)) {
 
 // Parse DB credentials from config.php
 $content = file_get_contents($config_file);
-preg_match("/\\$dbname\s*=\s*'([^']*)'/", $content, $m);
+preg_match('/\$dbname\s*=\s*\'([^\']*)\'/', $content, $m);
 $dbname = $m[1] ?? '';
-preg_match("/\\$dbuser\s*=\s*'([^']*)'/", $content, $m);
+preg_match('/\$dbuser\s*=\s*\'([^\']*)\'/', $content, $m);
 $dbuser = $m[1] ?? '';
-preg_match("/\\$dbpasswd\s*=\s*'([^']*)'/", $content, $m);
+preg_match('/\$dbpasswd\s*=\s*\'([^\']*)\'/', $content, $m);
 $dbpass = $m[1] ?? '';
 
 if (!$dbname || !$dbuser) {
