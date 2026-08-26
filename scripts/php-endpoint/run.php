@@ -148,7 +148,7 @@ foreach (array_slice($candidates, 0, $max) as $row) {
             '" . $db->real_escape_string($full_message) . "',
             '" . $db->real_escape_string($uid) . "', '',
             1, 1, 1, 0,
-            1, 0
+            0, 0
         )";
         $db->query($sql);
         $post_id = $db->insert_id;
