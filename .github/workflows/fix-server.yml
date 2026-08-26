@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Find missing phpBB files
+      - name: Deep vendor/autoload diagnostic
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -20,23 +20,32 @@ jobs:
           sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" '
             FORUM=/home4/fivetech/public_html/forums
 
-            echo "=== vendor/phpbb structure ==="
-            ls -la $FORUM/vendor/phpbb/ 2>/dev/null || echo "no vendor/phpbb/"
+            echo "=== autoload_psr4.php full ==="
+            cat $FORUM/vendor/composer/autoload_psr4.php 2>/dev/null | head -30
 
-            echo "=== find cache service ==="
-            find $FORUM -name "service.php" -path "*/cache/*" 2>/dev/null | head -10
+            echo ""
+            echo "=== autoload_real.php ==="
+            cat $FORUM/vendor/composer/autoload_real.php 2>/dev/null | head -20
 
-            echo "=== Composer autoload classmap (cache entries) ==="
-            grep -i "cache" $FORUM/vendor/composer/autoload_classmap.php 2>/dev/null | head -20 || echo "no classmap"
+            echo ""
+            echo "=== vendor dir listing ==="
+            ls $FORUM/vendor/ 2>/dev/null
 
-            echo "=== Composer autoload_psr4 ==="
-            grep -i "phpbb" $FORUM/vendor/composer/autoload_psr4.php 2>/dev/null | head -10 || echo "no psr4"
+            echo ""
+            echo "=== check phpbb/cache/ dir ==="
+            ls $FORUM/phpbb/cache/ 2>/dev/null
 
-            echo "=== container cache rebuild attempt ==="
+            echo ""
+            echo "=== check if container files exist anywhere ==="
+            find $FORUM/cache -name "container_*" 2>/dev/null | head -10 || echo "none"
+
+            echo ""
+            echo "=== check Bluehost backups ==="
+            ls /home4/fivetech/backups/ 2>/dev/null | head -10 || echo "no backups dir"
+            find /home4/fivetech -maxdepth 2 -name "*.tar*" -o -name "*.zip" 2>/dev/null | head -10 || echo "no archives"
+
+            echo ""
+            echo "=== phpbbcli verbose test ==="
             cd $FORUM
-            php bin/phpbbcli.php cache:purge 2>&1 | head -20
-
-            echo "=== after purge test ==="
-            curl -sL -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/" -o /tmp/after.html -w "http_code=%{http_code} size=%{size_download}\n"
-            head -c 1500 /tmp/after.html; echo
+            php -d display_errors=1 bin/phpbbcli.php --version 2>&1 | head -20
           ' 2>&1
