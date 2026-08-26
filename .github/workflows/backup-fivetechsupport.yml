@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Explore + backup
+      - name: Full backup
         env:
           SSH_HOST: ${{ secrets.SERVER2_HOST }}
           SSH_USER: ${{ secrets.SERVER2_USER }}
@@ -18,25 +18,47 @@ jobs:
           export SSHPASS="$SSH_PASS"
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
           sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
-          echo "=== whoami + pwd ==="
-          whoami
-          pwd
+          FORUM="/home1/fivetec1/public_html/forums"
+
+          echo "=== DB credentials ==="
+          grep -E "dbhost|dbname|dbuser|dbpass" "$FORUM/config.php" 2>/dev/null
 
           echo ""
-          echo "=== home contents ==="
-          ls -la ~/
-          ls -la ~/public_html/ 2>/dev/null | head -20
-          ls -la ~/www/ 2>/dev/null | head -20
+          echo "=== dump database ==="
+          DBNAME=$(grep "dbname" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
+          DBUSER=$(grep "dbuser" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
+          DBPASS=$(grep "dbpass" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
+          DBHOST=$(grep "dbhost" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
+          echo "DB: $DBNAME @ $DBHOST user=$DBUSER"
+
+          BACKUP_DIR="/home1/fivetec1/backups_pre_ai"
+          mkdir -p "$BACKUP_DIR"
+          mysqldump -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" > "$BACKUP_DIR/forums_db_$(date +%Y%m%d_%H%M%S).sql" 2>&1
+          echo "DB dump done: $(ls -la $BACKUP_DIR/*.sql 2>/dev/null | tail -1)"
 
           echo ""
-          echo "=== find config.php ==="
-          find ~ -maxdepth 5 -name "config.php" 2>/dev/null
+          echo "=== backup phpBB config + cache ==="
+          cd "$FORUM"
+          tar czf "$BACKUP_DIR/phpbb_config_cache_$(date +%Y%m%d_%H%M%S).tar.gz" config.php phpbb/cache/ cache/ 2>/dev/null || true
+          echo "Files backup done: $(ls -la $BACKUP_DIR/*.tar.gz 2>/dev/null | tail -1)"
 
           echo ""
-          echo "=== find phpbb dirs ==="
-          find ~ -maxdepth 5 -type d -name "phpbb" 2>/dev/null
+          echo "=== table stats ==="
+          mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT COUNT(*) as topics FROM phpbb_topics; SELECT COUNT(*) as posts FROM phpbb_posts; SELECT COUNT(*) as users FROM phpbb_users;" 2>/dev/null
 
           echo ""
-          echo "=== disk usage ==="
-          du -sh ~/public_html/* 2>/dev/null | head -10
+          echo "=== existing bots ==="
+          mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username, user_type FROM phpbb_users WHERE user_type = 2;" 2>/dev/null
+
+          echo ""
+          echo "=== phpBB version ==="
+          cat "$FORUM/composer.json" 2>/dev/null | grep -A1 "phpbb-core" | head -3
+
+          echo ""
+          echo "=== support forums ==="
+          mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT forum_id, forum_name, forum_posts_approved, forum_topics_approved FROM phpbb_forums ORDER BY forum_id;" 2>/dev/null
+
+          echo ""
+          echo "=== all backups ==="
+          ls -la "$BACKUP_DIR/"
           REMOTE
