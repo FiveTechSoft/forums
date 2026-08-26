@@ -20,52 +20,50 @@ jobs:
           sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
           FORUM="/home1/fivetec1/public_html/forums"
 
-          echo "=== full config.php ==="
-          cat "$FORUM/config.php"
-
-          echo ""
           echo "=== parse DB credentials ==="
-          DBNAME=$(grep -oP "\\$dbname\\s*=\\s*'\\K[^']*" "$FORUM/config.php" | head -1)
-          DBUSER=$(grep -oP "\\$dbuser\\s*=\\s*'\\K[^']*" "$FORUM/config.php" | head -1)
-          DBPASS=$(grep -oP "\\$dbpasswd\\s*=\\s*'\\K[^']*" "$FORUM/config.php" | head -1)
-          DBHOST=$(grep -oP "\\$dbhost\\s*=\\s*'\\K[^']*" "$FORUM/config.php" | head -1)
-          echo "DBNAME=$DBNAME"
-          echo "DBUSER=$DBUSER"
-          echo "DBPASS=$DBPASS"
-          echo "DBHOST=$DBHOST"
+          DBNAME=$(sed -n "s/.*\$dbname\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
+          DBUSER=$(sed -n "s/.*\$dbuser\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
+          DBPASS=$(sed -n "s/.*\$dbpasswd\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
+          DBHOST=$(sed -n "s/.*\$dbhost\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
+          if [ -z "$DBHOST" ]; then DBHOST="localhost"; fi
+          echo "DBNAME=$DBNAME DBUSER=$DBUSER DBHOST=$DBHOST"
 
           BACKUP_DIR="/home1/fivetec1/backups_pre_ai"
           mkdir -p "$BACKUP_DIR"
 
           echo ""
           echo "=== dump database ==="
-          if [ -n "$DBNAME" ] && [ -n "$DBUSER" ]; then
-            MYSQL_HOST_FLAG=""
-            if [ -n "$DBHOST" ]; then MYSQL_HOST_FLAG="-h $DBHOST"; else MYSQL_HOST_FLAG="-h localhost"; fi
-            mysqldump $MYSQL_HOST_FLAG -u "$DBUSER" -p"$DBPASS" "$DBNAME" > "$BACKUP_DIR/forums_db_$(date +%Y%m%d_%H%M%S).sql" 2>&1
-            DUMP_SIZE=$(wc -c < "$BACKUP_DIR"/forums_db_*.sql 2>/dev/null | tail -1)
-            echo "DB dump size: $DUMP_SIZE bytes"
-          else
-            echo "ERROR: could not parse DB credentials"
+          mysqldump -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" > "$BACKUP_DIR/forums_db_$(date +%Y%m%d_%H%M%S).sql" 2>&1
+          DUMP_FILE=$(ls -t "$BACKUP_DIR"/forums_db_*.sql 2>/dev/null | head -1)
+          DUMP_SIZE=$(wc -c < "$DUMP_FILE" 2>/dev/null)
+          echo "DB dump: $DUMP_SIZE bytes -> $DUMP_FILE"
+
+          if [ "$DUMP_SIZE" -lt 1000 ]; then
+            echo "DB DUMP FAILED - showing error:"
+            head -5 "$DUMP_FILE"
+            echo ""
+            echo "=== trying with -S socket ==="
+            ls /var/run/mysqld/mysqld.sock 2>/dev/null || ls /tmp/mysql.sock 2>/dev/null || echo "no socket found"
+            mysqldump -u "$DBUSER" -p"$DBPASS" "$DBNAME" > "$BACKUP_DIR/forums_db_$(date +%Y%m%d_%H%M%S)_nosock.sql" 2>&1
+            DUMP_FILE2=$(ls -t "$BACKUP_DIR"/forums_db_*_nosock.sql 2>/dev/null | head -1)
+            DUMP_SIZE2=$(wc -c < "$DUMP_FILE2" 2>/dev/null)
+            echo "DB dump (no host): $DUMP_SIZE2 bytes"
+            if [ "$DUMP_SIZE2" -lt 1000 ]; then head -5 "$DUMP_FILE2"; fi
           fi
 
           echo ""
           echo "=== backup phpBB config + cache ==="
           cd "$FORUM"
           tar czf "$BACKUP_DIR/phpbb_config_cache_$(date +%Y%m%d_%H%M%S).tar.gz" config.php phpbb/cache/ cache/ 2>/dev/null || true
-          echo "Files backup done: $(ls -la $BACKUP_DIR/*.tar.gz 2>/dev/null | tail -1)"
+          echo "Files backup: $(ls -la $BACKUP_DIR/*.tar.gz 2>/dev/null | tail -1)"
 
           echo ""
           echo "=== table stats ==="
-          if [ -n "$DBNAME" ] && [ -n "$DBUSER" ]; then
-            mysql $MYSQL_HOST_FLAG -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT COUNT(*) as topics FROM phpbb_topics; SELECT COUNT(*) as posts FROM phpbb_posts; SELECT COUNT(*) as users FROM phpbb_users;" 2>&1
-          fi
+          mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT COUNT(*) as topics FROM phpbb_topics; SELECT COUNT(*) as posts FROM phpbb_posts; SELECT COUNT(*) as users FROM phpbb_users;" 2>&1
 
           echo ""
           echo "=== existing bots ==="
-          if [ -n "$DBNAME" ] && [ -n "$DBUSER" ]; then
-            mysql $MYSQL_HOST_FLAG -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username, user_type FROM phpbb_users WHERE user_type = 2;" 2>&1
-          fi
+          mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username, user_type FROM phpbb_users WHERE user_type = 2;" 2>&1
 
           echo ""
           echo "=== phpBB version ==="
