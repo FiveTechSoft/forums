@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Restore from backup
+      - name: Restore from backup zip
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -19,12 +19,24 @@ jobs:
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
           sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" '
             FORUM=/home4/fivetech/public_html/forums
+            BACKUP="/home4/fivetech/forums backup/forums_3314_new.zip"
 
-            echo "=== list backup contents (cache + vendor/phpbb) ==="
-            cd "/home4/fivetech/forums backup"
-            unzip -l forums_3314_new.zip 2>/dev/null | grep -E "cache/production/container|vendor/phpbb/phpbb/cache|phpbb/cache/service" | head -30
+            echo "=== extract service.php ==="
+            cd "$FORUM"
+            unzip -o -j "$BACKUP" "phpbb/cache/service.php" -d phpbb/cache/ 2>&1
+            echo "verify: $(wc -c < phpbb/cache/service.php) bytes"
 
             echo ""
-            echo "=== try phpBB-3.3.14.zip instead ==="
-            unzip -l phpBB-3.3.14.zip 2>/dev/null | grep -E "cache/production/container|vendor/phpbb/phpbb/cache|phpbb/cache/service" | head -30
+            echo "=== extract container files ==="
+            mkdir -p cache/production
+            unzip -o "$BACKUP" "cache/production/*" -d /tmp/backup_extract 2>&1
+            cp /tmp/backup_extract/cache/production/* cache/production/ 2>/dev/null
+            chown -R nobody:nobody cache/production/
+            chmod -R 777 cache/production/
+            echo "container files: $(ls cache/production/container_* 2>/dev/null | wc -l)"
+
+            echo ""
+            echo "=== test render ==="
+            curl -sL -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/" -o /tmp/after.html -w "http_code=%{http_code} size=%{size_download}\n"
+            head -c 1500 /tmp/after.html; echo
           ' 2>&1
