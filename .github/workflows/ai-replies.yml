@@ -2,7 +2,6 @@ name: AI forum replies
 
 on:
   schedule:
-    # Cuatro veces al dia: 00:00, 06:00, 12:00 y 18:00 UTC
     - cron: "0 0,6,12,18 * * *"
   workflow_dispatch:
     inputs:
@@ -24,21 +23,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Upload run.php to server
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
-        with:
-          local_path: ./scripts/php-endpoint/run.php
-          remote_path: /home4/fivetech/www/forums/_ai/
-          server: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASS }}
-
-      - name: Execute AI replies on server
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASS }}
-          script: |
-            cd /home4/fivetech/www/forums/_ai
-            php run.php ${{ github.event.inputs.max || '3' }}
+      - name: Deploy and run on server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_PASS: ${{ secrets.SERVER_PASS }}
+          MAX_REPLIES: ${{ github.event.inputs.max || '3' }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          export SSHPASS="$SERVER_PASS"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
+          # Upload run.php
+          sshpass -e scp $SSH_OPTS scripts/php-endpoint/run.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/www/forums/_ai/run.php"
+          # Execute
+          sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" "cd /home4/fivetech/www/forums/_ai && php run.php $MAX_REPLIES"
