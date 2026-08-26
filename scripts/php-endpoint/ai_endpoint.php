@@ -22,7 +22,7 @@
  */
 
 // ============================ CONFIG ======================================
-const AI_KEY         = 'CAMBIA_ESTA_CLAVE_SECRETA';   // debe coincidir con el secret AI_ENDPOINT_KEY de GitHub
+const AI_KEY         = 'r8W140GCWfwA7PAYx1vPTX9OB8UBPXp97OY6lzenfi4';
 const BOT_USERNAME   = 'AI Assistant';                 // usuario del foro que publica (debe existir)
 const MAX_DEFAULT    = 3;                              // respuestas por invocacion si no se indica max
 const ZEN_HOST       = 'api.fivetechsoft.com';
