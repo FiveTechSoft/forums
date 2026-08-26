@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Rebuild phpBB cache
+      - name: Rebuild cache + check version
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -17,22 +17,23 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
           export SSHPASS="$SERVER_PASS"
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
+
+          echo "=== download correct cache files for 3.3.x ==="
+          curl -sL "https://raw.githubusercontent.com/phpbb/phpbb/release/3.3.x/phpBB/phpbb/cache/driver/file.php" -o /tmp/file.php
+          curl -sL "https://raw.githubusercontent.com/phpbb/phpbb/release/3.3.x/phpBB/phpbb/cache/driver/base.php" -o /tmp/base.php
+          curl -sL "https://raw.githubusercontent.com/phpbb/phpbb/release/3.3.x/phpBB/phpbb/cache/driver/driver_interface.php" -o /tmp/driver_interface.php
+          echo "3.3.x sizes: file=$(wc -c < /tmp/file.php) base=$(wc -c < /tmp/base.php) iface=$(wc -c < /tmp/driver_interface.php)"
+
+          echo "=== upload 3.3.x versions ==="
+          sshpass -e scp $SSH_OPTS /tmp/file.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/public_html/forums/phpbb/cache/driver/file.php"
+          sshpass -e scp $SSH_OPTS /tmp/base.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/public_html/forums/phpbb/cache/driver/base.php"
+          sshpass -e scp $SSH_OPTS /tmp/driver_interface.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/public_html/forums/phpbb/cache/driver/driver_interface.php"
+
+          echo "=== rebuild cache via CLI ==="
           sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" '
-            echo "=== phpBB version ==="
-            grep "phpbb_version" /home4/fivetech/public_html/forums/phpbb/version.rb 2>/dev/null || grep "PHPBB_VERSION" /home4/fivetech/public_html/forums/include/constants.php 2>/dev/null || grep "phpbb_version" /home4/fivetech/public_html/forums/config.php 2>/dev/null || echo "checking composer..."
-            cat /home4/fivetech/public_html/forums/composer.json 2>/dev/null | grep -i version || echo "no version in composer.json"
-            echo ""
-            echo "=== check if there is a cli ==="
-            ls /home4/fivetech/public_html/forums/bin/ 2>/dev/null || echo "no bin dir"
-            echo ""
-            echo "=== check PHP version ==="
-            php -v 2>/dev/null | head -1 || echo "no php cli"
-            echo ""
-            echo "=== purge cache by removing cache files ==="
-            rm -rf /home4/fivetech/public_html/forums/cache/production/*
-            echo "cache purged"
-            echo ""
-            echo "=== test render after cache purge ==="
+            cd /home4/fivetech/public_html/forums
+            php bin/phpbbcli.php cache:purge 2>&1
+            echo "=== test render ==="
             curl -sL -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/" -o /tmp/after.html -w "http_code=%{http_code} size=%{size_download}\n"
-            head -c 1000 /tmp/after.html; echo
+            head -c 1200 /tmp/after.html; echo
           ' 2>&1
