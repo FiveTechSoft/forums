@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Restore + diagnose
+      - name: Find missing phpBB files
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -17,47 +17,26 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
           export SSHPASS="$SERVER_PASS"
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
-          BASE="https://raw.githubusercontent.com/phpbb/phpbb/master/phpBB/phpbb/cache/driver"
-
-          echo "=== re-download correct master-branch files ==="
-          curl -sL "$BASE/file.php" -o /tmp/file.php
-          curl -sL "$BASE/base.php" -o /tmp/base.php
-          curl -sL "$BASE/driver_interface.php" -o /tmp/driver_interface.php
-          echo "sizes: file=$(wc -c < /tmp/file.php) base=$(wc -c < /tmp/base.php) iface=$(wc -c < /tmp/driver_interface.php)"
-
-          echo "=== upload ==="
-          sshpass -e scp $SSH_OPTS /tmp/file.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/public_html/forums/phpbb/cache/driver/file.php"
-          sshpass -e scp $SSH_OPTS /tmp/base.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/public_html/forums/phpbb/cache/driver/base.php"
-          sshpass -e scp $SSH_OPTS /tmp/driver_interface.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/public_html/forums/phpbb/cache/driver/driver_interface.php"
-
-          echo "=== full diagnostic ==="
           sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" '
             FORUM=/home4/fivetech/public_html/forums
 
-            echo "--- file sizes ---"
-            wc -c $FORUM/phpbb/cache/driver/*.php
+            echo "=== vendor/phpbb structure ==="
+            ls -la $FORUM/vendor/phpbb/ 2>/dev/null || echo "no vendor/phpbb/"
 
-            echo "--- container cache files ---"
-            ls -la $FORUM/cache/production/container_* 2>/dev/null | head -5 || echo "no container files"
+            echo "=== find cache service ==="
+            find $FORUM -name "service.php" -path "*/cache/*" 2>/dev/null | head -10
 
-            echo "--- autoload classmap check for cache\\driver\\file ---"
-            grep "cache.*driver.*file" $FORUM/cache/production/autoload_classmap.php 2>/dev/null | head -3 || echo "not in classmap"
+            echo "=== Composer autoload classmap (cache entries) ==="
+            grep -i "cache" $FORUM/vendor/composer/autoload_classmap.php 2>/dev/null | head -20 || echo "no classmap"
 
-            echo "--- check vendor phpbb cache files ---"
-            ls $FORUM/vendor/phpbb/cache/ 2>/dev/null || echo "no vendor/phpbb/cache"
-            find $FORUM/vendor -path "*/cache/driver/file.php" 2>/dev/null || echo "not in vendor"
+            echo "=== Composer autoload_psr4 ==="
+            grep -i "phpbb" $FORUM/vendor/composer/autoload_psr4.php 2>/dev/null | head -10 || echo "no psr4"
 
-            echo "--- PHP error after render ---"
-            php -d display_errors=1 -r "
-              ini_set(\"error_reporting\", E_ALL);
-              ini_set(\"display_errors\", \"1\");
-              ini_set(\"log_errors\", \"0\");
-              chdir(\"$FORUM\");
-              include(\"$FORUM/app.php\");
-            " 2>&1 | head -30
-
-            echo ""
-            echo "--- phpbbcli version ---"
+            echo "=== container cache rebuild attempt ==="
             cd $FORUM
-            php bin/phpbbcli.php --version 2>&1 | head -5
+            php bin/phpbbcli.php cache:purge 2>&1 | head -20
+
+            echo "=== after purge test ==="
+            curl -sL -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/" -o /tmp/after.html -w "http_code=%{http_code} size=%{size_download}\n"
+            head -c 1500 /tmp/after.html; echo
           ' 2>&1
