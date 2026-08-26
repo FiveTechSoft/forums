@@ -1,0 +1,38 @@
+name: Fix server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fix phpBB 500 error
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_PASS: ${{ secrets.SERVER_PASS }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          export SSHPASS="$SERVER_PASS"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
+          sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" '
+            BB=/home4/fivetech/public_html/forums
+            echo "=== cache driver file ==="
+            ls -la $BB/phpbb/cache/driver/file.php 2>&1
+            echo "=== autoload ==="
+            ls -la $BB/vendor/autoload.php 2>&1
+            ls -la $BB/vendor/composer/autoload_classmap.php 2>&1
+            echo "=== cache dir ==="
+            ls -la $BB/phpbb/cache/ 2>&1 | head -10
+            echo "=== try clear cache ==="
+            rm -rf $BB/phpbb/cache/*.php 2>/dev/null
+            rm -rf $BB/phpbb/cache/data/ 2>/dev/null
+            echo "=== re-check after clear ==="
+            ls -la $BB/phpbb/cache/driver/file.php 2>&1
+            echo "=== test render ==="
+            curl -s -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/" -o /tmp/after.html -w "http_code=%{http_code} size=%{size_download}\n"
+            head -c 400 /tmp/after.html; echo
+          ' 2>&1
