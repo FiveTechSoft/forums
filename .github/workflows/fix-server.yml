@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Restore missing phpBB cache driver files
+      - name: Verify forum renders after fix
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -17,24 +17,16 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
           export SSHPASS="$SERVER_PASS"
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
-          BASE="https://raw.githubusercontent.com/phpbb/phpbb/master/phpBB/phpbb/cache/driver"
-
-          echo "=== downloading cache driver files ==="
-          curl -sL "$BASE/driver_interface.php" -o /tmp/driver_interface.php
-          curl -sL "$BASE/base.php" -o /tmp/base.php
-          curl -sL "$BASE/file.php" -o /tmp/file.php
-          echo "sizes: driver_interface=$(wc -c < /tmp/driver_interface.php) base=$(wc -c < /tmp/base.php) file=$(wc -c < /tmp/file.php)"
-
-          echo "=== creating directory ==="
-          sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" "mkdir -p /home4/fivetech/public_html/forums/phpbb/cache/driver"
-
-          echo "=== uploading files ==="
-          sshpass -e scp $SSH_OPTS /tmp/driver_interface.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/public_html/forums/phpbb/cache/driver/driver_interface.php"
-          sshpass -e scp $SSH_OPTS /tmp/base.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/public_html/forums/phpbb/cache/driver/base.php"
-          sshpass -e scp $SSH_OPTS /tmp/file.php "$SERVER_USER@$SERVER_HOST:/home4/fivetech/public_html/forums/phpbb/cache/driver/file.php"
-
-          echo "=== verify ==="
-          sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" 'ls -la /home4/fivetech/public_html/forums/phpbb/cache/driver/'
-
-          echo "=== test render ==="
-          sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" 'curl -s -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/" -o /tmp/after.html -w "http_code=%{http_code} size=%{size_download}\n"; head -c 500 /tmp/after.html; echo' 2>&1
+          sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" '
+            echo "=== cache driver files ==="
+            ls -la /home4/fivetech/public_html/forums/phpbb/cache/driver/
+            echo ""
+            echo "=== test with -L (follow redirects) ==="
+            curl -sL -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/" -o /tmp/after.html -w "http_code=%{http_code} size=%{size_download}\n"
+            echo ""
+            echo "=== first 800 chars ==="
+            head -c 800 /tmp/after.html; echo
+            echo ""
+            echo "=== check for phpBB markers ==="
+            grep -oi "phpbb\|powered by\|active.topics\|error" /tmp/after.html | head -20
+          ' 2>&1
