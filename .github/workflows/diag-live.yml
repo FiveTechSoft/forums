@@ -1,0 +1,28 @@
+name: Diag live server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Explore fivetec1 account
+        env:
+          SERVER2_HOST: ${{ secrets.SERVER2_HOST }}
+          SERVER2_USER: ${{ secrets.SERVER2_USER }}
+          SERVER2_PASS: ${{ secrets.SERVER2_PASS }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          export SSHPASS="$SERVER2_PASS"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
+          sshpass -e ssh $SSH_OPTS "$SERVER2_USER@$SERVER2_HOST" '
+            echo "=== HOME ==="; ls -d /home*/fivetec1 2>/dev/null; echo "=== PUBLIC_HTML ==="; ls /home4/fivetec1/public_html 2>&1 | head -25
+            echo "=== PHPBB SEARCH ==="; find /home4/fivetec1/public_html -maxdepth 3 -name search.php 2>/dev/null | head -5
+            echo "=== CONFIGS ==="; for f in $(find /home4/fivetech/public_html/forums /home4/fivetec1/public_html -maxdepth 3 -name config.php 2>/dev/null | head -5); do echo "--- $f"; grep -E "dbname|dbuser" $f; done
+            echo "=== RENDER LIVE PAGE ==="; curl -s -m 30 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -H "Host: forums.fivetechsupport.com" "http://127.0.0.1/search.php?search_id=active_topics&cb=2" -o /tmp/at.html -w "http_code=%{http_code} size=%{size_download}\n"
+            echo "gigabot mentions:"; grep -o -i "gigabot" /tmp/at.html | wc -l
+            echo "=== TOPIC TITLES SHOWN ==="; grep -oP "(?<=topictitle\">)[^<]+" /tmp/at.html | head -15
+          ' 2>&1
