@@ -26,10 +26,45 @@ jobs:
           echo "DB: $DBNAME"
 
           echo ""
-          echo "=== phpbb_users columns ==="
-          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "DESCRIBE phpbb_users;" 2>/dev/null | head -40
+          echo "=== check AiBot ==="
+          AIBOT_CHECK=$(mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -N -e "SELECT user_id FROM phpbb_users WHERE username='AiBot [Bot]';" 2>/dev/null)
+          echo "AiBot check: [$AIBOT_CHECK]"
+
+          if [ -z "$AIBOT_CHECK" ]; then
+            echo ""
+            echo "=== creating AiBot user ==="
+            mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "
+              INSERT INTO phpbb_users (
+                user_type, group_id, user_regdate, user_lastmark,
+                username, username_clean, user_password, user_email,
+                user_posts, user_lang, user_timezone, user_dateformat,
+                user_style, user_notify_pm, user_allow_pm,
+                user_allow_viewonline, user_allow_viewemail,
+                user_show_smilies, user_allow_bbcode, user_allow_html,
+                user_allow_smilies, user_board_legend, user_column_len
+              ) VALUES (
+                2, 6, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(),
+                'AiBot [Bot]', 'aibot [bot]', '', '',
+                0, 'en', 'UTC', 'D j M Y, H:i',
+                1, 1, 0,
+                1, 1,
+                1, 1, 0,
+                1, 0, 0
+              );
+            " 2>&1
+
+            AIBOT_ID=$(mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -N -e "SELECT user_id FROM phpbb_users WHERE username='AiBot [Bot]';" 2>/dev/null)
+            echo "Created AiBot with ID: $AIBOT_ID"
+
+            echo ""
+            echo "=== set bot group ==="
+            mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "INSERT INTO phpbb_users_groups (user_id, group_id, group_leader) VALUES ($AIBOT_ID, 6, 0) ON DUPLICATE KEY UPDATE group_leader=0;" 2>/dev/null
+          else
+            echo "AiBot already exists with ID: $AIBOT_CHECK"
+            AIBOT_ID="$AIBOT_CHECK"
+          fi
 
           echo ""
-          echo "=== show one existing bot row ==="
-          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT * FROM phpbb_users WHERE user_id=1572\G" 2>/dev/null | head -60
+          echo "=== verify ==="
+          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username, user_type, group_id FROM phpbb_users WHERE username='AiBot [Bot]';" 2>/dev/null
           REMOTE
