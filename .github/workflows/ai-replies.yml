@@ -10,6 +10,9 @@ on:
         description: "Max respuestas en esta ejecucion"
         default: "3"
 
+permissions:
+  contents: write
+
 concurrency:
   group: ai-forum-replies
   cancel-in-progress: false
@@ -17,17 +20,25 @@ concurrency:
 jobs:
   reply:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
-      - name: Trigger AI endpoint on fivetechsupport.com
-        env:
-          AI_ENDPOINT_URL: ${{ secrets.AI_ENDPOINT_URL }}
-          AI_ENDPOINT_KEY: ${{ secrets.AI_ENDPOINT_KEY }}
-          MAX: ${{ github.event.inputs.max || '3' }}
-        run: |
-          HTTP=$(curl -sS -o result.json -w "%{http_code}" --max-time 600 \
-            -X POST "$AI_ENDPOINT_URL?action=run&max=$MAX" \
-            -H "X-AI-Key: $AI_ENDPOINT_KEY")
-          echo "HTTP $HTTP"
-          cat result.json
-          test "$HTTP" = "200" || exit 1
+      - uses: actions/checkout@v4
+
+      - name: Upload run.php to server
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          local_path: ./scripts/php-endpoint/run.php
+          remote_path: /home4/fivetech/www/forums/_ai/
+          server: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASS }}
+
+      - name: Execute AI replies on server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASS }}
+          script: |
+            cd /home4/fivetech/www/forums/_ai
+            php run.php ${{ github.event.inputs.max || '3' }}
