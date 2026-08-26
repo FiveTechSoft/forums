@@ -1,6 +1,5 @@
 <?php
 ob_implicit_flush(true);
-ini_set('output_buffering', '0');
 
 $phpbb_root_path = '/home4/fivetech/public_html/forums/';
 include($phpbb_root_path . 'config.php');
@@ -9,84 +8,60 @@ include($phpbb_root_path . 'includes/constants.php');
 $db = new mysqli($dbhost, $dbuser, $dbpasswd, $dbname);
 $db->set_charset('utf8');
 
+$f = fopen('/home4/fivetech/www/forums/_ai/diag_out.txt', 'w');
+
 $sort_days = 7;
 $last_post_time_sql = ' AND t.topic_last_post_time > ' . (time() - ($sort_days * 24 * 3600));
-$visibility_sql = 't.topic_visibility IN (0)';
 
+// 1) All topics with vis=0 in last 7 days
 $sql = "SELECT t.topic_last_post_time, t.topic_id, t.topic_title, t.topic_visibility, t.topic_type
     FROM phpbb_topics t
     WHERE t.topic_moved_id = 0
         {$last_post_time_sql}
-        AND ({$visibility_sql})
+        AND t.topic_visibility IN (0)
     ORDER BY t.topic_last_post_time DESC
     LIMIT 30";
-
-echo "=== 1. ALL Active Topics (last 7 days, vis=0) ===\n";
 $result = $db->query($sql);
-echo "Total: " . $result->num_rows . "\n\n";
+fwrite($f, "=== 1. ALL Active Topics (last 7 days, vis=0) === Total: " . $result->num_rows . "\n");
 while ($row = $result->fetch_assoc()) {
-    echo "id={$row['topic_id']} vis={$row['topic_visibility']} type={$row['topic_type']} time=" . date('Y-m-d H:i', $row['topic_last_post_time']) . " \"{$row['topic_title']}\"\n";
+    fwrite($f, "id={$row['topic_id']} vis={$row['topic_visibility']} type={$row['topic_type']} time=" . date('Y-m-d H:i', $row['topic_last_post_time']) . " \"{$row['topic_title']}\"\n");
 }
 
-echo "\n=== 2. Bot topics (last_poster_id=1581) ===\n";
-$sql2 = "SELECT topic_id, topic_title, topic_visibility, topic_type, topic_last_poster_id,
-         topic_posts_approved, topic_posts_unapproved, topic_last_post_time,
-         topic_first_poster_name
-    FROM phpbb_topics
-    WHERE topic_last_poster_id = 1581
-    ORDER BY topic_last_post_time DESC";
-$result2 = $db->query($sql2);
+// 2) Bot topics
+fwrite($f, "\n=== 2. Bot topics (last_poster_id=1581) ===\n");
+$result2 = $db->query("SELECT topic_id, topic_title, topic_visibility, topic_type, topic_posts_approved, topic_posts_unapproved, topic_last_post_time, topic_first_poster_name FROM phpbb_topics WHERE topic_last_poster_id = 1581 ORDER BY topic_last_post_time DESC");
 while ($row = $result2->fetch_assoc()) {
-    echo "id={$row['topic_id']} vis={$row['topic_visibility']} type={$row['topic_type']} approved={$row['topic_posts_approved']} unapproved={$row['topic_posts_unapproved']} starter=\"{$row['topic_first_poster_name']}\" time=" . date('Y-m-d H:i', $row['topic_last_post_time']) . " \"{$row['topic_title']}\"\n";
+    fwrite($f, "id={$row['topic_id']} vis={$row['topic_visibility']} type={$row['topic_type']} approved={$row['topic_posts_approved']} unapproved={$row['topic_posts_unapproved']} starter=\"{$row['topic_first_poster_name']}\" time=" . date('Y-m-d H:i', $row['topic_last_post_time']) . " \"{$row['topic_title']}\"\n");
 }
 
-echo "\n=== 3. Posts in bot topics ===\n";
-$sql3 = "SELECT p.topic_id, p.post_id, p.post_visibility, p.poster_id, p.post_time
-    FROM phpbb_posts p
-    WHERE p.poster_id = 1581
-    ORDER BY p.post_time DESC
-    LIMIT 30";
-$result3 = $db->query($sql3);
+// 3) Posts by bot
+fwrite($f, "\n=== 3. Posts by bot ===\n");
+$result3 = $db->query("SELECT topic_id, post_id, post_visibility, poster_id, post_time FROM phpbb_posts WHERE poster_id = 1581 ORDER BY post_time DESC LIMIT 30");
 while ($row = $result3->fetch_assoc()) {
-    echo "topic={$row['topic_id']} post={$row['post_id']} vis={$row['post_visibility']} poster={$row['poster_id']} time=" . date('Y-m-d H:i', $row['post_time']) . "\n";
+    fwrite($f, "topic={$row['topic_id']} post={$row['post_id']} vis={$row['post_visibility']} time=" . date('Y-m-d H:i', $row['post_time']) . "\n");
 }
 
-echo "\n=== 4. Bot user info ===\n";
-$sql4 = "SELECT user_id, username, user_type, user_colour FROM phpbb_users WHERE user_id = 1581";
-$result4 = $db->query($sql4);
+// 4) Bot user
+fwrite($f, "\n=== 4. Bot user ===\n");
+$result4 = $db->query("SELECT user_id, username, user_type, user_colour FROM phpbb_users WHERE user_id = 1581");
 $row4 = $result4->fetch_assoc();
-echo "user_id={$row4['user_id']} username=\"{$row4['username']}\" type={$row4['user_type']} colour={$row4['user_colour']}\n";
+fwrite($f, "user_id={$row4['user_id']} name=\"{$row4['username']}\" type={$row4['user_type']} colour={$row4['user_colour']}\n");
 
-echo "\n=== 5. Bot topics last_post_time vs now ===\n";
-echo "Now: " . time() . " (" . date('Y-m-d H:i:s') . ")\n";
-$sql5 = "SELECT topic_id, topic_last_post_time, " . time() . " - topic_last_post_time as diff_seconds FROM phpbb_topics WHERE topic_last_poster_id = 1581";
-$result5 = $db->query($sql5);
+// 5) Timestamp check
+fwrite($f, "\n=== 5. Timestamp check ===\n");
+fwrite($f, "Now: " . time() . " (" . date('Y-m-d H:i:s') . ")\n");
+$result5 = $db->query("SELECT topic_id, topic_last_post_time, " . time() . " - topic_last_post_time as diff FROM phpbb_topics WHERE topic_last_poster_id = 1581");
 while ($row = $result5->fetch_assoc()) {
-    $days = round($row['diff_seconds'] / 86400, 2);
-    echo "id={$row['topic_id']} diff_days={$days} last_post=" . date('Y-m-d H:i:s', $row['topic_last_post_time']) . "\n";
+    fwrite($f, "id={$row['topic_id']} diff_days=" . round($row['diff']/86400,2) . " last=" . date('Y-m-d H:i:s', $row['topic_last_post_time']) . "\n");
 }
 
-echo "\n=== 6. Topic type distribution for bot topics ===\n";
-$sql6 = "SELECT topic_type, COUNT(*) as cnt FROM phpbb_topics WHERE topic_last_poster_id = 1581 GROUP BY topic_type";
-$result6 = $db->query($sql6);
+// 6) topic type dist
+fwrite($f, "\n=== 6. Topic type dist for bot topics ===\n");
+$result6 = $db->query("SELECT topic_type, COUNT(*) as cnt FROM phpbb_topics WHERE topic_last_poster_id = 1581 GROUP BY topic_type");
 while ($row = $result6->fetch_assoc()) {
-    echo "type={$row['topic_type']} count={$row['cnt']}\n";
+    fwrite($f, "type={$row['topic_type']} count={$row['cnt']}\n");
 }
 
-echo "\n=== 7. phpbb_topics_posted for bot user ===\n";
-$sql7 = "SELECT tp.topic_id, tp.user_id, tp.posted
-    FROM phpbb_topics_posted tp
-    WHERE tp.user_id = 1581
-    ORDER BY tp.topic_id DESC
-    LIMIT 20";
-$result7 = $db->query($sql7);
-if ($result7 && $result7->num_rows > 0) {
-    while ($row = $result7->fetch_assoc()) {
-        echo "topic={$row['topic_id']} user={$row['user_id']} posted={$row['posted']}\n";
-    }
-} else {
-    echo "No rows in phpbb_topics_posted for user 1581\n";
-}
-
+fwrite($f, "\n=== DONE ===\n");
+fclose($f);
 $db->close();
-echo "\n=== DONE ===\n";
