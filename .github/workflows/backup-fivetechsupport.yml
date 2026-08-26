@@ -20,21 +20,34 @@ jobs:
           sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
           FORUM="/home1/fivetec1/public_html/forums"
 
-          echo "=== DB credentials ==="
-          grep -E "dbhost|dbname|dbuser|dbpass" "$FORUM/config.php" 2>/dev/null
+          echo "=== full config.php ==="
+          cat "$FORUM/config.php"
 
           echo ""
-          echo "=== dump database ==="
-          DBNAME=$(grep "dbname" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
-          DBUSER=$(grep "dbuser" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
-          DBPASS=$(grep "dbpass" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
-          DBHOST=$(grep "dbhost" "$FORUM/config.php" | head -1 | sed "s/.*=> *['\"]\\(.*\\)['\"].*/\\1/")
-          echo "DB: $DBNAME @ $DBHOST user=$DBUSER"
+          echo "=== parse DB credentials ==="
+          DBNAME=$(grep -oP "\\$dbname\\s*=\\s*'\\K[^']*" "$FORUM/config.php" | head -1)
+          DBUSER=$(grep -oP "\\$dbuser\\s*=\\s*'\\K[^']*" "$FORUM/config.php" | head -1)
+          DBPASS=$(grep -oP "\\$dbpasswd\\s*=\\s*'\\K[^']*" "$FORUM/config.php" | head -1)
+          DBHOST=$(grep -oP "\\$dbhost\\s*=\\s*'\\K[^']*" "$FORUM/config.php" | head -1)
+          echo "DBNAME=$DBNAME"
+          echo "DBUSER=$DBUSER"
+          echo "DBPASS=$DBPASS"
+          echo "DBHOST=$DBHOST"
 
           BACKUP_DIR="/home1/fivetec1/backups_pre_ai"
           mkdir -p "$BACKUP_DIR"
-          mysqldump -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" > "$BACKUP_DIR/forums_db_$(date +%Y%m%d_%H%M%S).sql" 2>&1
-          echo "DB dump done: $(ls -la $BACKUP_DIR/*.sql 2>/dev/null | tail -1)"
+
+          echo ""
+          echo "=== dump database ==="
+          if [ -n "$DBNAME" ] && [ -n "$DBUSER" ]; then
+            MYSQL_HOST_FLAG=""
+            if [ -n "$DBHOST" ]; then MYSQL_HOST_FLAG="-h $DBHOST"; else MYSQL_HOST_FLAG="-h localhost"; fi
+            mysqldump $MYSQL_HOST_FLAG -u "$DBUSER" -p"$DBPASS" "$DBNAME" > "$BACKUP_DIR/forums_db_$(date +%Y%m%d_%H%M%S).sql" 2>&1
+            DUMP_SIZE=$(wc -c < "$BACKUP_DIR"/forums_db_*.sql 2>/dev/null | tail -1)
+            echo "DB dump size: $DUMP_SIZE bytes"
+          else
+            echo "ERROR: could not parse DB credentials"
+          fi
 
           echo ""
           echo "=== backup phpBB config + cache ==="
@@ -44,19 +57,19 @@ jobs:
 
           echo ""
           echo "=== table stats ==="
-          mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT COUNT(*) as topics FROM phpbb_topics; SELECT COUNT(*) as posts FROM phpbb_posts; SELECT COUNT(*) as users FROM phpbb_users;" 2>/dev/null
+          if [ -n "$DBNAME" ] && [ -n "$DBUSER" ]; then
+            mysql $MYSQL_HOST_FLAG -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT COUNT(*) as topics FROM phpbb_topics; SELECT COUNT(*) as posts FROM phpbb_posts; SELECT COUNT(*) as users FROM phpbb_users;" 2>&1
+          fi
 
           echo ""
           echo "=== existing bots ==="
-          mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username, user_type FROM phpbb_users WHERE user_type = 2;" 2>/dev/null
+          if [ -n "$DBNAME" ] && [ -n "$DBUSER" ]; then
+            mysql $MYSQL_HOST_FLAG -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username, user_type FROM phpbb_users WHERE user_type = 2;" 2>&1
+          fi
 
           echo ""
           echo "=== phpBB version ==="
           cat "$FORUM/composer.json" 2>/dev/null | grep -A1 "phpbb-core" | head -3
-
-          echo ""
-          echo "=== support forums ==="
-          mysql -h "$DBHOST" -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT forum_id, forum_name, forum_posts_approved, forum_topics_approved FROM phpbb_forums ORDER BY forum_id;" 2>/dev/null
 
           echo ""
           echo "=== all backups ==="
