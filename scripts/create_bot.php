@@ -9,8 +9,14 @@ define('PHPBB_INSTALLED', true);
 $forum_path = dirname(__DIR__); // parent of _ai/
 $config_file = $forum_path . '/config.php';
 
+echo "Config path: $config_file\n";
+echo "File exists: " . (file_exists($config_file) ? 'YES' : 'NO') . "\n";
+echo "File readable: " . (is_readable($config_file) ? 'YES' : 'NO') . "\n";
+echo "File size: " . filesize($config_file) . "\n";
+
 if (!file_exists($config_file)) {
     echo "ERROR: config.php not found at $config_file\n";
+    echo "Dir contents: " . implode(', ', array_slice(scandir($forum_path), 0, 10)) . "\n";
     exit(1);
 }
 
