@@ -8,20 +8,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Test live site from runner
-        run: |
-          echo "=== fivetechsoft.com/forums/ ==="
-          curl -sD - -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" "https://www.fivetechsoft.com/forums/" -o /tmp/soft.html -w "http_code=%{http_code} size=%{size_download}\n" 2>&1 | head -25
-          echo "=== body ==="
-          head -c 500 /tmp/soft.html 2>/dev/null; echo
-          echo "=== fivetechsoft.com/forums/search.php ==="
-          curl -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" "https://www.fivetechsoft.com/forums/search.php?search_id=active_topics&cb=5" -o /tmp/at.html -w "http_code=%{http_code} size=%{size_download}\n" 2>&1
-          grep -c -i "gigabot" /tmp/at.html 2>/dev/null
-          echo "=== error text ==="
-          grep -i "error\|500\|fatal\|warning" /tmp/soft.html 2>/dev/null | head -5
-          echo "=== fivetechsupport.com/forums/ ==="
-          curl -s -o /tmp/sup.html -w "http_code=%{http_code} size=%{size_download}\n" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" "https://forums.fivetechsupport.com/forums/" 2>&1
-
       - name: Diagnose from inside server
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -33,14 +19,19 @@ jobs:
           export SSHPASS="$SERVER_PASS"
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
           sshpass -e ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" '
-            echo "=== Apache vhosts matching forums ==="
-            grep -rn "fivetechsoft\|fivetechsupport\|ServerName\|ServerAlias\|DocumentRoot" /usr/local/apache/conf/httpd.conf 2>/dev/null | head -20
-            echo "=== domains in cpanel ==="
-            cat /etc/trueuserdomains 2>/dev/null | head -10
-            echo "=== vhost files ==="
-            ls /var/cpanel/userdata/fivetech/*.main* 2>/dev/null
-            echo "=== docsymlink ==="
-            readlink /home4/fivetech/public_html 2>/dev/null; ls -la /home4/fivetech/public_html/.htaccess 2>/dev/null; head -20 /home4/fivetech/public_html/.htaccess 2>/dev/null
-            echo "=== forums dir .htaccess ==="
-            head -20 /home4/fivetech/public_html/forums/.htaccess 2>/dev/null
+            echo "=== HTTP (not HTTPS) with correct Host ==="
+            curl -s -m 15 -H "Host: www.fivetechsoft.com" "http://127.0.0.1/forums/" -o /tmp/h1.html -w "soft_http: code=%{http_code} size=%{size_download}\n"
+            head -c 300 /tmp/h1.html; echo
+            echo "=== HTTP fivetechsupport ==="
+            curl -s -m 15 -H "Host: forums.fivetechsupport.com" "http://127.0.0.1/" -o /tmp/h2.html -w "support_http: code=%{http_code} size=%{size_download}\n"
+            head -c 300 /tmp/h2.html; echo
+            echo "=== PHP error log ==="
+            cat /home4/fivetech/public_html/forums/phpbb/error_log 2>/dev/null | tail -20
+            cat /home4/fivetech/public_html/forums/error_log 2>/dev/null | tail -20
+            echo "=== Apache error log ==="
+            tail -20 /home4/fivetech/logs/error_log 2>/dev/null
+            echo "=== cpanel domains ==="
+            cat /etc/trueuserdomains 2>/dev/null
+            echo "=== domains dir ==="
+            ls /var/cpanel/userdata/fivetech/ 2>/dev/null
           ' 2>&1
