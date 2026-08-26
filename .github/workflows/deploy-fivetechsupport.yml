@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Get full columns + create
+      - name: Create AiBot via PHP
         env:
           SSH_HOST: ${{ secrets.SERVER2_HOST }}
           SSH_USER: ${{ secrets.SERVER2_USER }}
@@ -17,16 +17,19 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
           export SSHPASS="$SSH_PASS"
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
-          sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+
+          FORUM="/home1/fivetec1/public_html/forums"
+
+          echo "=== upload + run create_bot.php ==="
+          sshpass -e scp $SSH_OPTS "scripts/create_bot.php" "$SSH_USER@$SSH_HOST:$FORUM/_ai/create_bot.php" 2>&1
+          sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "cd $FORUM && php _ai/create_bot.php" 2>&1
+
+          echo ""
+          echo "=== verify ==="
+          sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" bash -s <<'VERIFY'
           FORUM="/home1/fivetec1/public_html/forums"
           DBNAME=$(sed -n "s/.*\$dbname\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
           DBUSER=$(sed -n "s/.*\$dbuser\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
           DBPASS=$(sed -n "s/.*\$dbpasswd\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
-
-          echo "=== ALL columns ==="
-          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -N -e "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='phpbb_users' ORDER BY ORDINAL_POSITION;" 2>/dev/null
-
-          echo ""
-          echo "=== ALL NOT NULL columns with no default ==="
-          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_DEFAULT, EXTRA FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='phpbb_users' AND IS_NULLABLE='NO' AND COLUMN_DEFAULT IS NULL AND EXTRA NOT LIKE '%auto_increment%';" 2>/dev/null
-          REMOTE
+          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username, user_type, group_id FROM phpbb_users WHERE username='AiBot [Bot]';" 2>/dev/null
+          VERIFY
