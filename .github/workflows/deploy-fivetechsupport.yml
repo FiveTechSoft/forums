@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Create AiBot
+      - name: Get full columns + create
         env:
           SSH_HOST: ${{ secrets.SERVER2_HOST }}
           SSH_USER: ${{ secrets.SERVER2_USER }}
@@ -19,53 +19,14 @@ jobs:
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
           sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
           FORUM="/home1/fivetec1/public_html/forums"
-
           DBNAME=$(sed -n "s/.*\$dbname\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
           DBUSER=$(sed -n "s/.*\$dbuser\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
           DBPASS=$(sed -n "s/.*\$dbpasswd\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
-          echo "DB: $DBNAME"
+
+          echo "=== ALL columns ==="
+          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -N -e "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='phpbb_users' ORDER BY ORDINAL_POSITION;" 2>/dev/null
 
           echo ""
-          echo "=== check AiBot ==="
-          AIBOT_CHECK=$(mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -N -e "SELECT user_id FROM phpbb_users WHERE username='AiBot [Bot]';" 2>/dev/null)
-          echo "AiBot check: [$AIBOT_CHECK]"
-
-          if [ -z "$AIBOT_CHECK" ]; then
-            echo ""
-            echo "=== creating AiBot (minimal columns) ==="
-            mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "
-              INSERT INTO phpbb_users (
-                user_type, group_id, user_regdate, user_lastmark,
-                username, username_clean, user_password, user_email,
-                user_posts, user_lang, user_timezone, user_dateformat,
-                user_style, user_rank, user_colour,
-                user_notify_pm, user_allow_pm, user_allow_viewonline,
-                user_allow_viewemail, user_allow_massemail, user_options,
-                user_board_legend, user_column_len
-              ) VALUES (
-                2, 6, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(),
-                'AiBot [Bot]', 'aibot [bot]', '', '',
-                0, 'en', 'UTC', 'D j M Y, H:i',
-                1, 0, '9E8DA7',
-                1, 0, 1,
-                1, 0, 230271,
-                0, 0
-              );
-            " 2>&1
-            echo "INSERT done"
-
-            AIBOT_ID=$(mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -N -e "SELECT user_id FROM phpbb_users WHERE username='AiBot [Bot]';" 2>/dev/null)
-            echo "Created AiBot with ID: $AIBOT_ID"
-
-            echo ""
-            echo "=== set bot group ==="
-            mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "INSERT INTO phpbb_users_groups (user_id, group_id, group_leader) VALUES ($AIBOT_ID, 6, 0) ON DUPLICATE KEY UPDATE group_leader=0;" 2>/dev/null
-          else
-            echo "AiBot already exists with ID: $AIBOT_CHECK"
-            AIBOT_ID="$AIBOT_CHECK"
-          fi
-
-          echo ""
-          echo "=== verify ==="
-          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username, user_type, group_id FROM phpbb_users WHERE username='AiBot [Bot]';" 2>/dev/null
+          echo "=== ALL NOT NULL columns with no default ==="
+          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_DEFAULT, EXTRA FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='phpbb_users' AND IS_NULLABLE='NO' AND COLUMN_DEFAULT IS NULL AND EXTRA NOT LIKE '%auto_increment%';" 2>/dev/null
           REMOTE
