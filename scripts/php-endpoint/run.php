@@ -159,6 +159,7 @@ foreach (array_slice($candidates, 0, $max) as $row) {
 
         // Actualizar contadores
         $db->query("UPDATE phpbb_topics SET topic_posts_approved = topic_posts_approved + 1,
+                    topic_visibility = 0,
                     topic_last_post_id = $post_id,
                     topic_last_poster_id = $bot_user_id,
                     topic_last_poster_name = '" . $db->real_escape_string($bot_username) . "',
