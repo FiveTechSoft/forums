@@ -1,0 +1,46 @@
+name: AI forum replies - fivetechsupport
+
+on:
+  schedule:
+    - cron: "0 0,4,8,12,16,20 * * *"
+  workflow_dispatch:
+    inputs:
+      max:
+        description: "Max respuestas en esta ejecucion"
+        default: "3"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ai-forum-replies-fs
+  cancel-in-progress: false
+
+jobs:
+  reply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy and run on fivetechsupport
+        env:
+          SSH_HOST: ${{ secrets.SERVER2_HOST }}
+          SSH_USER: ${{ secrets.SERVER2_USER }}
+          SSH_PASS: ${{ secrets.SERVER2_PASS }}
+          MAX_REPLIES: ${{ github.event.inputs.max || '3' }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          export SSHPASS="$SSH_PASS"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
+
+          FORUM="/home1/fivetec1/public_html/forums"
+
+          echo "=== upload run_fts.php ==="
+          sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "mkdir -p $FORUM/_ai" 2>&1
+          sshpass -e scp $SSH_OPTS scripts/php-endpoint/run_fts.php "$SSH_USER@$SSH_HOST:$FORUM/_ai/run.php" 2>&1
+
+          echo ""
+          echo "=== execute ==="
+          sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "cd $FORUM && php _ai/run.php $MAX_REPLIES" 2>&1
