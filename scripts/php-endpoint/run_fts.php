@@ -147,6 +147,15 @@ foreach (array_slice($candidates, 0, $max) as $row) {
                     forum_last_post_time = " . time() . "
                     WHERE forum_id = $fid");
 
+        // Marcar como leido para el bot
+        $post_time = time();
+        $db->query("INSERT INTO phpbb_topics_track (user_id, topic_id, forum_id, mark_time)
+                    VALUES ($bot_user_id, $tid, $fid, $post_time)
+                    ON DUPLICATE KEY UPDATE mark_time = $post_time");
+        $db->query("INSERT INTO phpbb_forums_track (user_id, forum_id, mark_time)
+                    VALUES ($bot_user_id, $fid, $post_time)
+                    ON DUPLICATE KEY UPDATE mark_time = $post_time");
+
         $state[$tid] = ['title' => $title, 'model' => $model, 'date' => date('c'), 'post_id' => $post_id];
         $published[] = ['topic' => $tid, 'title' => $title, 'model' => $model, 'post_id' => $post_id];
         echo "t=$tid: publicado post_id=$post_id con $model\n";

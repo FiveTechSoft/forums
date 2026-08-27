@@ -172,6 +172,15 @@ foreach (array_slice($candidates, 0, $max) as $row) {
                     forum_last_post_time = " . time() . "
                     WHERE forum_id = $fid");
 
+        // Marcar como leido para el bot
+        $post_time = time();
+        $db->query("INSERT INTO phpbb_topics_track (user_id, topic_id, forum_id, mark_time)
+                    VALUES ($bot_user_id, $tid, $fid, $post_time)
+                    ON DUPLICATE KEY UPDATE mark_time = $post_time");
+        $db->query("INSERT INTO phpbb_forums_track (user_id, forum_id, mark_time)
+                    VALUES ($bot_user_id, $fid, $post_time)
+                    ON DUPLICATE KEY UPDATE mark_time = $post_time");
+
         // Buscar ultimo topic_id del foro
         $res = $db->query("SELECT MAX(topic_last_post_id) as max_id FROM phpbb_topics WHERE forum_id = $fid");
         $max_id = $res->fetch_assoc()['max_id'];
