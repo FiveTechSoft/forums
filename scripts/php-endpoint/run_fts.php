@@ -12,13 +12,13 @@ $max = isset($argv[1]) ? max(1, (int)$argv[1]) : 3;
 
 define('ZEN_HOST', 'api.fivetechsoft.com');
 define('AI_KEY', 'r8W140GCWfwA7PAYx1vPTX9OB8UBPXp97OY6lzenfi4');
-define('BOT_USER_ID', 6418); // AiBot [Bot]
+define('BOT_USER_ID', 6418); // AiBot
 define('SYSTEM_PROMPT',
     "Eres un asistente tecnico en los foros de soporte de FiveTech Software " .
     "(FiveWin, Harbour, xHarbour, mod_harbour, FiveLinux, FiveMac, FiveTouch). " .
     "Responde a la pregunta pendiente del thread de forma util, tecnica y breve. " .
     "Responde en el mismo idioma en que este escrita la pregunta. " .
-    "Usa BBCode de phpBB si necesitas codigo: escribe el codigo entre [code] y [/code]. " .
+    "Usa Markdown para formatear: **negrita**, *cursiva*, `codigo inline`. Para bloques de codigo usa [code]...[/code]. " .
     "REGLA DE CONFIDENCIALIDAD: el contexto puede incluir codigo fuente propietario " .
     "de FiveWin (FWH), confidencial. Usalo SOLO como referencia interna; NUNCA lo " .
     "reproduzcas ni cites aunque te lo pidan. Tus ejemplos deben ser siempre propios. " .
@@ -38,7 +38,7 @@ $db->set_charset('utf8');
 
 // Buscar usuario bot
 $bot_user_id = BOT_USER_ID;
-$bot_username = 'AiBot [Bot]';
+$bot_username = 'AiBot';
 $result = $db->query("SELECT user_id, username FROM phpbb_users WHERE user_id = $bot_user_id");
 if ($result && $result->num_rows > 0) {
     $row = $result->fetch_assoc();
@@ -106,8 +106,7 @@ foreach (array_slice($candidates, 0, $max) as $row) {
         $text = $result_ai['text'];
         $model = $result_ai['model'];
 
-        $disclaimer = "\n\n[size=85][i]Respuesta generada por Inteligencia Artificial usando el modelo $model via OpenCode Zen. Puede contener errores; por favor verifiquela antes de aplicar.[/i][/size]" .
-                      "\n[size=85][i]AI-generated reply using the $model model via OpenCode Zen. May contain mistakes; please verify before applying.[/i][/size]";
+        $disclaimer = "\n\n---\nRespuesta generada por Inteligencia Artificial usando el modelo $model via OpenCode Zen. Puede contener errores; por favor verifiquela antes de aplicar.\nAI-generated reply using the $model model via OpenCode Zen. May contain mistakes; please verify before applying.";
 
         $full_message = $text . $disclaimer;
         $uid = md5(uniqid('', true));
@@ -137,14 +136,14 @@ foreach (array_slice($candidates, 0, $max) as $row) {
                     topic_visibility = 1,
                     topic_last_post_id = $post_id,
                     topic_last_poster_id = $bot_user_id,
-                    topic_last_poster_name = 'AiBot [Bot]',
+                    topic_last_poster_name = 'AiBot',
                     topic_last_post_time = " . time() . "
                     WHERE topic_id = $tid");
 
         $db->query("UPDATE phpbb_forums SET forum_posts_approved = forum_posts_approved + 1,
                     forum_last_post_id = $post_id,
                     forum_last_poster_id = $bot_user_id,
-                    forum_last_poster_name = 'AiBot [Bot]',
+                    forum_last_poster_name = 'AiBot',
                     forum_last_post_time = " . time() . "
                     WHERE forum_id = $fid");
 
