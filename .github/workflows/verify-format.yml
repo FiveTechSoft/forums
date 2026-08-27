@@ -1,0 +1,32 @@
+name: Verify post format
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check last post format
+        env:
+          SSH_HOST: ${{ secrets.SERVER2_HOST }}
+          SSH_USER: ${{ secrets.SERVER2_USER }}
+          SSH_PASS: ${{ secrets.SERVER2_PASS }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          export SSHPASS="$SSH_PASS"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o KexAlgorithms=+diffie-hellman-group-exchange-sha256"
+
+          sshpass -e ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" bash -s <<'EOF'
+          FORUM="/home1/fivetec1/public_html/forums"
+          DBNAME=$(sed -n "s/.*\$dbname\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
+          DBUSER=$(sed -n "s/.*\$dbuser\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
+          DBPASS=$(sed -n "s/.*\$dbpasswd\s*=\s*'\([^']*\)'.*/\1/p" "$FORUM/config.php" | head -1)
+          echo "=== Last post by AiBot ==="
+          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT post_id, post_subject, LEFT(post_text, 600) as preview FROM phpbb_posts WHERE poster_id = 6418 ORDER BY post_time DESC LIMIT 1;" 2>/dev/null
+          echo ""
+          echo "=== Bot username ==="
+          mysql -u "$DBUSER" -p"$DBPASS" "$DBNAME" -e "SELECT user_id, username FROM phpbb_users WHERE user_id = 6418;" 2>/dev/null
+          EOF
