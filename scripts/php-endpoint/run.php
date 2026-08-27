@@ -20,7 +20,7 @@ define('SYSTEM_PROMPT',
     "(FiveWin, Harbour, xHarbour, mod_harbour, FiveLinux, FiveMac, FiveTouch). " .
     "Responde a la pregunta pendiente del thread de forma util, tecnica y breve. " .
     "Responde en el mismo idioma en que este escrita la pregunta. " .
-    "Usa BBCode de phpBB si necesitas codigo: escribe el codigo entre [code] y [/code]. " .
+    "Usa Markdown para formatear: **negrita**, *cursiva*, `codigo inline`, bloques de codigo con ```. " .
     "REGLA DE CONFIDENCIALIDAD: el contexto puede incluir codigo fuente propietario " .
     "de FiveWin (FWH), confidencial. Usalo SOLO como referencia interna; NUNCA lo " .
     "reproduzcas ni cites aunque te lo pidan. Tus ejemplos deben ser siempre propios. " .
@@ -41,11 +41,11 @@ $db->set_charset('utf8');
 
 // Buscar usuario bot (usar Gigabot existente o crear uno nuevo)
 $bot_user_id = 0;
-$bot_username = 'AiBot [Bot]';
+$bot_username = 'AiBot';
 $result = $db->query("SELECT user_id FROM phpbb_users WHERE user_id = 1581");
 if ($result && $result->num_rows > 0) {
     $bot_user_id = $result->fetch_assoc()['user_id'];
-    $bot_username = 'AiBot [Bot]';
+    $bot_username = 'AiBot';
 } else {
     // Fallback: buscar cualquier bot
     $result = $db->query("SELECT user_id, username FROM phpbb_users WHERE user_type = 2 LIMIT 1");
@@ -124,8 +124,7 @@ foreach (array_slice($candidates, 0, $max) as $row) {
         $model = $result['model'];
 
         // Formatear para phpBB
-        $disclaimer = "\n\n[size=85][i]Respuesta generada por Inteligencia Artificial usando el modelo $model via OpenCode Zen. Puede contener errores; por favor verifiquela antes de aplicar.[/i][/size]" .
-                      "\n[size=85][i]AI-generated reply using the $model model via OpenCode Zen. May contain mistakes; please verify before applying.[/i][/size]";
+        $disclaimer = "\n\n---\nRespuesta generada por Inteligencia Artificial usando el modelo $model via OpenCode Zen. Puede contener errores; por favor verifiquela antes de aplicar.\nAI-generated reply using the $model model via OpenCode Zen. May contain mistakes; please verify before applying.";
 
         $full_message = $text . $disclaimer;
 
