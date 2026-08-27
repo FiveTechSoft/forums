@@ -12,7 +12,7 @@
 <body>
 <div class="wrap">
   <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
-  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Mon Aug 24, 2026 11:33 AM UTC</span></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Thu Aug 27, 2026 08:59 PM UTC</span></div>
   <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> HIX Server connect to Mariadb or Mysql</div>
   <div class="post">
     <div class="poster">
@@ -47,6 +47,157 @@ ADS V.9 / MySql / MariaDB<br>
 R&amp;R 12 Infinity / Crystal Report XI R2<br>
 <br>
 (Thailand)</div>
+    </div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-6418.html" style="color:#9E8DA7">AiBot</a></div>
+      <div class="rank">Posts: 0</div>
+      <div class="avatar"></div>
+      <div class="joined">Joined: Wed Aug 26, 2026 09:41 AM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p286056" class="subject">Re: HIX Server connect to Mariadb or Mysql</h3>
+        Posted: Wed Aug 26, 2026 05:30 PM
+      </div>
+      <div class="content">To connect to MariaDB or MySQL from **HIX Server**, you typically use the **hbhmysql** (or **hbmysql**) RDD / SQL layer via **ADOSYS** (ADO-like layer for Harbour) or direct **SQLMIX** / **HBHMYSQL** function calls.<br>
+<br>
+The standard modern approach in FiveTech environments is using **`TMySQLConnection`** (via `hbhmysql` library) or **ADOSYS** with a DSN-less connection string.<br>
+<br>
+### 1. Prerequisites<br>
+*   Ensure `hbhmysql.lib` (or `hbmysql.lib`) is linked in your HIX project (`.hbp` file).<br>
+*   Copy `libmysql.dll` (or `libmariadb.dll`) into the same folder as your `hixserver.exe` (or system PATH).<br>
+*   Add `REQUEST HBHMYSQL` (or `REQUEST HBMYSQL`) in your `main.prg` or `rddsys.prg`.<br>
+<br>
+### 2. Connection Example (Direct SQL Layer / hbhmysql)<br>
+<br>
+```harbour<br>
+#include "hbclass.ch"<br>
+#include "sqlmix.ch"<br>
+<br>
+FUNCTION ConnectMySQL()<br>
+   LOCAL oConn<br>
+   LOCAL cConnString := "hbhmysql://user:pass@localhost:3306/dbname?charset=utf8mb4"<br>
+<br>
+   // Option A: Using SQLMIX (TMySQLConnection)<br>
+   oConn := TMySQLConnection():New( cConnString )<br>
+   <br>
+   IF oConn:IsConnected()<br>
+      ? "Connected OK"<br>
+      // Execute queries<br>
+      oConn:Execute( "SELECT VERSION()" )<br>
+      // ...<br>
+      oConn:Close()<br>
+   ELSE<br>
+      ? "Error:", oConn:GetLastError()<br>
+   ENDIF<br>
+<br>
+   RETURN oConn<br>
+```<br>
+<br>
+### 3. Connection Example (ADOSYS - Recommended for portable code)<br>
+<br>
+```harbour<br>
+#include "ado.ch"<br>
+<br>
+FUNCTION ConnectADO()<br>
+   LOCAL oConn := ADONew( "ADODB.Connection" )<br>
+   LOCAL cConnStr := "DRIVER={MariaDB ODBC 3.1 Driver};SERVER=localhost;PORT=3306;DATABASE=dbname;USER=user;PASSWORD=pass;OPTION=3;CHARSET=utf8mb4;"<br>
+<br>
+   // Or DSN-less for MySQL native driver (if installed):<br>
+   // cConnStr := "DRIVER={MySQL ODBC 8.0 Unicode Driver};SERVER=localhost;..."<br>
+<br>
+   TRY<br>
+      oConn:Open( cConnStr )<br>
+      ? "ADO Connected OK"<br>
+      <br>
+      // Example Query<br>
+      LOCAL oRS := ADONew( "ADODB.Recordset" )<br>
+      oRS:Open( "SELECT * FROM customers LIMIT 10", oConn )<br>
+      <br>
+      WHILE !oRS:EOF<br>
+         ? oRS:Fields("name"):Value<br>
+         oRS:MoveNext()<br>
+      ENDDO<br>
+      oRS:Close()<br>
+      <br>
+   CATCH oErr<br>
+      ? "ADO Error:", oErr:Description<br>
+   END<br>
+   <br>
+   oConn:Close()<br>
+   RETURN NIL<br>
+```<br>
+<br>
+### 4. HIX Server Context (Thread Safety)<br>
+Since HIX Server is **multi-threaded** (one thread per request):<br>
+1.  **Do not share a single connection object** across threads.<br>
+2.  **Create the connection inside the request handler** (or use a connection pool pattern if load is high).<br>
+3.  Always `oConn:Close()` (or `oConn:Destroy()`) before returning the response.<br>
+<br>
+**Typical HIX Handler Structure:**<br>
+<br>
+```harbour<br>
+FUNCTION MyApiHandler( oRequest, oResponse )<br>
+   LOCAL oConn := ConnectMySQL() // Creates new connection per request<br>
+   <br>
+   IF oConn != NIL .AND. oConn:IsConnected()<br>
+      LOCAL aData := oConn:GetAll( "SELECT id, name FROM users" )<br>
+      oResponse:SetJson( aData )<br>
+   ELSE<br>
+      oResponse:SetStatus( 500 )<br>
+      oResponse:SetJson( { "error" : "DB Connection Failed" } )<br>
+   ENDIF<br>
+   <br>
+   IF oConn != NIL<br>
+      oConn:Close()<br>
+   ENDIF<br>
+   <br>
+   RETURN .T.<br>
+```<br>
+<br>
+### Summary Checklist<br>
+1.  **Link library:** `hbhmysql` (native) or configure **ODBC** (ADOSYS).<br>
+2.  **DLLs:** `libmariadb.dll` / `libmysql.dll` in exe folder.<br>
+3.  **Charset:** Always specify `charset=utf8mb4` in connection string.<br>
+4.  **Scope:** One connection per HIX request thread.<br>
+<br>
+Which approach are you currently trying (Native `hbhmysql` or `ADOSYS`/ODBC)? I can detail the specific setup for that path.<br>
+<br>
+<span style="font-size:85%"><em>Respuesta generada por Inteligencia Artificial usando el modelo nemotron-3-ultra-free via OpenCode Zen. Puede contener errores; por favor verifiquela antes de aplicar.</em></span><br>
+<span style="font-size:85%"><em>AI-generated reply using the nemotron-3-ultra-free model via OpenCode Zen. May contain mistakes; please verify before applying.</em></span></div>
+      <div class="signature"></div>
+    </div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-449.html" style="color:#105289">Carles</a></div>
+      <div class="rank">Posts: 1293</div>
+      <img class="avatar avatar-img" src="avatars/449.gif" alt="" loading="lazy">
+      <div class="joined">Joined: Fri Feb 10, 2006 02:34 PM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p286067" class="subject">Re: HIX Server connect to Mariadb or Mysql</h3>
+        Posted: Thu Aug 27, 2026 07:04 AM
+      </div>
+      <div class="content"><p>Dutch,</p>
+
+<p>How are you currently connecting from Harbour?</p>
+
+<p>Can you give a simple example?</p>
+
+<p>C.</p></div>
+      <div class="signature">Salutacions, saludos, regards<br>
+<br>
+"...programar es fácil, hacer programas es difícil..."<br>
+<br>
+UT Page -&gt; <a href="https://carles9000.github.io/" rel="noopener">https://carles9000.github.io/</a><br>
+Forum UT -&gt; <a href="https://discord.gg/bq8a9yGMWh" rel="noopener">https://discord.gg/bq8a9yGMWh</a> <br>
+HIX -&gt; <a href="https://github.com/carles9000/hix" rel="noopener">https://github.com/carles9000/hix</a></div>
     </div>
   </div>
   <div class="giscus-wrap">
