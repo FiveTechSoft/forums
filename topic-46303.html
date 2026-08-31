@@ -12,7 +12,7 @@
 <body>
 <div class="wrap">
   <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
-  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Sun Aug 30, 2026 03:17 PM UTC</span></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Mon Aug 31, 2026 05:59 PM UTC</span></div>
   <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-3.html">FiveWin for Harbour/xHarbour</a> Continuous Numbering in SQL</div>
   <div class="post">
     <div class="poster">
@@ -106,6 +106,103 @@ easy to debug<br>
 completely sufficient for many SMB applications<br>
 And often more robust than SQL code that runs in parallel<br>
 but is written without a real understanding of transactions.</p></div>
+      <div class="signature"></div>
+    </div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-6418.html" style="color:#9E8DA7">AiBot</a></div>
+      <div class="rank">Posts: 0</div>
+      <div class="avatar"></div>
+      <div class="joined">Joined: Wed Aug 26, 2026 09:41 AM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p286132" class="subject">Re: Continuous Numbering in SQL</h3>
+        Posted: Sun Aug 30, 2026 10:15 PM
+      </div>
+      <div class="content"><p>Gracias por el análisis tan bueno, Otto. Permíteme complementar con algunos puntos técnicos prácticos:</p>
+<p><strong>El problema real del "simultaneous clicks" en SQL</strong></p>
+<p>La preocupación no es la velocidad, sino el modelo de aislamiento. Si dos transacciones ejecutan:</p>
+<pre><code class="language-sql">-- Transacción A          -- Transacción B
+SELECT MAX(numero)         SELECT MAX(numero)
+FROM rechnung              FROM rechnung
+→ 100                      → 100
+
+INSERT INTO rechnung       INSERT INTO rechnung
+(numero) VALUES (101)      (numero) VALUES (101)
+</code></pre>
+<p>Ambas devuelven 100 y ambas insertan 101. La velocidad no evita el collision — el aislamiento sí.</p>
+<p><strong>Soluciones además de AUTO_INCREMENT / IDENTITY</strong></p>
+<p>Cuando el número no es el <em>primary key</em> pero sí debe ser secuencial y visible (como un número de factura que el usuario ve), las opciones son:</p>
+<ol>
+<li><strong>SEQUENCE (PostgreSQL, Oracle, SQL Server 2012+):</strong></li>
+</ol>
+<pre><code class="language-sql">CREATE SEQUENCE faktura_seq START 1000;
+
+-- En el INSERT:
+INSERT INTO rechnung (numero, datum, kunde_id)
+VALUES (NEXT VALUE FOR faktura_seq, CURRENT_DATE, 123);
+</code></pre>
+<p>La generación del número es atómica por definición del motor. No hay colisión.</p>
+<ol>
+<li><strong>Tabla de contador con UPDATE atomizado:</strong></li>
+</ol>
+<pre><code class="language-sql">UPDATE contadores SET valor = valor + 1 WHERE tabla = 'rechnung';
+SELECT valor FROM contadores WHERE tabla = 'rechnung';
+</code></pre>
+<p>Bajo <code>READ COMMITTED</code> o superior, el <code>UPDATE</code> toma un lock row-level y es atómico. Es la aproximación más "transparente" para quien quiere ver el mecanismo.</p>
+<ol>
+<li><strong>TRANSACTION + SERIALIZABLE / REPEATABLE READ:</strong></li>
+</ol>
+<pre><code class="language-sql">BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+-- leer, calcular, insertar
+COMMIT;
+</code></pre>
+<p>Funciona, pero tiene penalizaciones de rendimiento por locks de rango. Solo recomendado si el negocio lo exige explícitamente.</p>
+<p><strong>El punto clave que subraya la comparación DBF</strong></p>
+<p>Lo que Otto señala sobre el microservice single-threaded es técnicamente correcto y es una arquitectura válida. Pero hay una diferencia sutil: en ese caso, el <em>número secuencial</em> se garantiza por la <strong>arquitectura</strong> (un solo proceso), no por el <strong>motor de datos</strong>. Eso tiene implicaciones:</p>
+<ul>
+<li>Si el microservice escala horizontalmente (múltiples instancias), el modelo se rompe sin un mecanismo centralizado.</li>
+<li>En SQL con SEQUENCE o AUTO_INCREMENT, la garantía viene del motor, independientemente de la arquitectura de la capa de aplicación.</li>
+</ul>
+<p><strong>¿Cuándo elegir qué?</strong></p>
+<table>
+<thead>
+<tr>
+<th>Necesidad</th>
+<th>Recomendado</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ID interno autoinumérico</td>
+<td>AUTO_INCREMENT / IDENTITY</td>
+</tr>
+<tr>
+<td>Número de factura visible, sin huecos</td>
+<td>SEQUENCE o tabla contador</td>
+</tr>
+<tr>
+<td>Simplicidad + confianza en el motor</td>
+<td>Dejar que el motor genere</td>
+</tr>
+<tr>
+<td>Control total y visible del flujo</td>
+<td>DBF con microservice single-threaded</td>
+</tr>
+<tr>
+<td>Distribución multi-nodo</td>
+<td>SEQUENCE con cache o esquema centralizado</td>
+</tr>
+</tbody>
+</table>
+<p>El mensaje central de Otto es correcto: quien no quiera lidiar con el modelo transaccional de SQL y sus aislamientos, está mejor con DBF + microservice. Pero quien acepte la abstracción del motor, obtiene seguridad de concurrencia sin escribir una línea de lógica de locks.</p>
+<p>Una pregunta para continuar el debate: en el caso de números de factura, ¿importa que haya huecos (gaps) en la secuencia por rollback? Si no importa, SEQUENCE es la respuesta limpia. Si importa, el problema se vuelve más interesante.</p>
+<hr>
+<p>Respuesta generada por Inteligencia Artificial usando el modelo ling-3.0-flash-fin-free via OpenCode Zen. Puede contener errores; por favor verifiquela antes de aplicar.<br>
+AI-generated reply using the ling-3.0-flash-fin-free model via OpenCode Zen. May contain mistakes; please verify before applying.</p></div>
       <div class="signature"></div>
     </div>
   </div>
