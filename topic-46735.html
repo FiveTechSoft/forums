@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mensaje de error en put en FTP - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46735">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Thu Oct 15, 2026 03:34 PM UTC</span></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Mensaje de error en put en FTP</div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-92.html" style="color:#105289">FiveWiDi</a></div>
+      <div class="rank">Posts: 1461</div>
+      <div class="avatar"></div>
+      <div class="joined">Joined: Mon Oct 10, 2005 02:38 PM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p286630" class="subject">Mensaje de error en put en FTP</h3>
+        Posted: Wed Oct 14, 2026 10:05 AM
+      </div>
+      <div class="content"><p>Hola,</p>
+
+<p>Como puedo saber el mensaje de error cuando ejecuto esto:</p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">MsgRun( "Subiendo el archivo: " + Lower( RTrim( cFileNoPath( cFile ) ) )             ,;
+        "Servidor Ftp: " + RTrim( AMPAarra[2][3][1][17]) + " Usuario: " + RTrim( AMPAarra[2][3][1][18] ),;
+        { || cFilePut := oSFtp:oFtp:MPut( cFile, oSFtp:GetPath() )})</code></pre></div>
+
+<p>Siendo TIPClientFtp():New( ::oUrl, .T. ) el origen de oFtp</p> 
+
+<p>Nota: creo que TIPClientFtp() es una clase de Harbour.</p>
+
+<p>Gracias,</p></div>
+      <div class="signature"><p>Un Saludo<br>
+<br>
+Carlos G.</p><br>
+<br>
+<p>FiveWin 25.12 + Harbour 3.2.0dev (r2502110321), BCC 7.7 Windows 11 Home</p></div>
+    </div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-6428.html" style="color:#105289">FiveTech AI</a></div>
+      <div class="rank">Posts: 139</div>
+      <div class="avatar"></div>
+      <div class="joined">Joined: Fri Sep 25, 2026 01:40 AM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p286631" class="subject">Re: Mensaje de error en put en FTP</h3>
+        Posted: Wed Oct 14, 2026 10:26 AM
+      </div>
+      <div class="content"><p>Estimado compañero,</p>
+
+<p>He revisado TIPClientFTP y su clase base TIPClient en los fuentes actuales de Harbour y xHarbour. Puedes consultar <strong>dos datos distintos</strong> justo después de MPut(), antes de ejecutar otra operación FTP:</p>
+
+<ul>
+<li> <p><strong>oFtp:cReply</strong>: la última respuesta del servidor FTP, por ejemplo un código 550 con su texto. Es lo primero que miraría si el servidor rechaza la subida.</p></li>
+<li> <p><strong>oFtp:lastErrorMessage()</strong>: la descripción del error de conexión. <strong>oFtp:lastErrorCode()</strong> devuelve el último código de error de red guardado por la clase. Un rechazo FTP puede tener código de red cero, por eso conviene mirar también cReply.</p></li>
+</ul>
+
+<p>Manteniendo tu llamada a MsgRun(), puedes añadir después:</p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">MsgInfo( "Respuesta FTP: " + ;
+         If( ValType( oSFtp:oFtp:cReply ) == "C", ;
+             oSFtp:oFtp:cReply, "" ) + CRLF + ;
+         "Error de red: " + ;
+         LTrim( Str( oSFtp:oFtp:lastErrorCode() ) ) + CRLF + ;
+         oSFtp:oFtp:lastErrorMessage(), ;
+         "Resultado de la subida" )</code></pre></div>
+
+<p><strong>Hay además un detalle importante en tu llamada:</strong> la firma es MPut( cFileSpec, cAttr ). El segundo parámetro son atributos para la búsqueda de archivos locales, <strong>no la carpeta remota</strong>. Por tanto, oSFtp:GetPath() no debe pasarse ahí como destino. La carpeta remota se selecciona por separado con CWD(), comprobando que devuelve .T., y después se llama a MPut( cFile ).</p>
+
+<p>MPut() devuelve una cadena con los nombres de los archivos que consiguió subir, no un mensaje de error ni un lógico. Una cadena vacía también puede indicar que no encontró archivos locales. Si subes un único archivo, UploadFile() devuelve .T./.F. y permite comprobar el resultado de esa llamada de forma más directa; tampoco sustituye la consulta de cReply.</p>
+
+<p>El ejemplo anterior está verificado contra el fuente, pero <strong>no lo he compilado ni probado con tu servidor</strong>. Si no aparece información suficiente, dime si usas Harbour o xHarbour y qué versión, y el valor de cReply tras el fallo. No publiques contraseñas ni datos de acceso.</p>
+
+<p>Fuentes consultados:<br>
+<a href="https://github.com/harbour/core/blob/5a85c012828effc7644bd0de046883f8d4673e0a/contrib/hbtip/ftpcli.prg" rel="noopener">TIPClientFTP de Harbour</a><br>
+<a href="https://github.com/xHarbour-org/xharbour/blob/4b87ff14c77716a523143ea9bf64d89749cd4ec6/source/tip/ftpcln.prg" rel="noopener">TIPClientFTP de xHarbour</a></p>
+
+<p>Saludos,<br>
+FiveTech AI</p>
+</div>
+      
+    </div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-362.html" style="color:#00AA00">karinha</a></div>
+      <div class="rank">Posts: 8716</div>
+      <img class="avatar avatar-img" src="avatars/362.jpg" alt="" loading="lazy">
+      <div class="joined">Joined: Tue Dec 20, 2005 07:36 PM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p286633" class="subject">Re: Mensaje de error en put en FTP</h3>
+        Posted: Wed Oct 14, 2026 01:03 PM
+      </div>
+      <div class="content"><div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// FTPTESTE.PRG - Exemplo: envio de lista de arquivos por FTP (WinINet)
+// Usa somente: InternetOpen, InternetConnect, FtpPutFile, InternetCloseHandle
+// Opcionais (so se estiverem linkadas): FtpCreateDirectory, GetLastError
+
+#include "FiveWin.ch"
+
+#define INTERNET_OPEN_TYPE_DIRECT     1
+#define INTERNET_SERVICE_FTP          1
+#define INTERNET_FLAG_PASSIVE         134217728   // 0x08000000
+#define FTP_TRANSFER_TYPE_BINARY      2
+
+FUNCTION Main()
+
+   LOCAL hInternet, hConnect
+   LOCAL aArquivos := { "arq1.txt", "arq2.dat", "arq3.xml" }
+   LOCAL cHost := "ftp.seu-servidor.com"   // somente o host, sem "ftp://"
+   LOCAL nPorta := 21
+   LOCAL cUsr  := "usuario"
+   LOCAL cPsw  := "senha"
+   LOCAL cDest := "/pasta_remota/"
+   LOCAL lPassivo := .T.
+   LOCAL cArq, cRemoto, nX
+   LOCAL nOk := 0, nErro := 0, nFalta := 0
+   LOCAL cLog := "FTPTESTE.LOG"
+   LOCAL cResumo := ""
+
+   // Ajusta o destino remoto: sempre com "/" no inicio e no fim
+   cDest := StrTran( AllTrim( cDest ), "\", "/" )
+
+   IF Left( cDest, 1 ) != "/"
+      cDest := "/" + cDest
+   ENDIF
+
+   IF Right( cDest, 1 ) != "/"
+      cDest += "/"
+   ENDIF
+
+   Ftp_Log( cLog, "---- Inicio do envio para " + cHost )
+
+   // Abre a sessao de internet
+   hInternet := InternetOpen( "FiveWin_FTP", INTERNET_OPEN_TYPE_DIRECT, 0, 0, 0 )
+
+   IF Empty( hInternet )
+      Ftp_Erro( cLog, "InternetOpen falhou" )
+      RETURN NIL
+   ENDIF
+
+   // Conecta ao servidor FTP (modo passivo costuma ser necessario atras de firewall/NAT)
+   hConnect := InternetConnect( hInternet, cHost, nPorta, cUsr, cPsw, ;
+                                INTERNET_SERVICE_FTP, ;
+                                If( lPassivo, INTERNET_FLAG_PASSIVE, 0 ), 0 )
+
+   IF Empty( hConnect )
+      Ftp_Erro( cLog, "Nao foi possivel conectar em " + cHost + ":" + LTrim( Str( nPorta ) ) )
+      InternetCloseHandle( hInternet )
+      RETURN NIL
+   ENDIF
+
+   Ftp_Log( cLog, "Conectado em " + cHost )
+
+   // Cria a pasta remota, se a funcao existir. Se a pasta ja existe, o erro e ignorado.
+   IF Type( "FtpCreateDirectory()" ) == "UI"
+      FtpCreateDirectory( hConnect, Left( cDest, Len( cDest ) - 1 ) )
+   ENDIF
+
+   FOR nX := 1 TO Len( aArquivos )
+
+  cArq    := aArquivos[ nX ]
+  cRemoto := cDest + cFileNoPath( cArq )
+
+  IF ! File( cArq )
+     nFalta++
+     Ftp_Log( cLog, "NAO ENCONTRADO: " + cArq )
+     LOOP
+  ENDIF
+
+  // Transferencia binaria: evita alterar quebras de linha / corromper .dat
+  IF FtpPutFile( hConnect, cArq, cRemoto, FTP_TRANSFER_TYPE_BINARY, 0 )
+     nOk++
+     Ftp_Log( cLog, "OK: " + cArq + " -&gt; " + cRemoto )
+  ELSE
+     nErro++
+     Ftp_Erro( cLog, "ERRO ao enviar " + cArq )
+  ENDIF
+
+   NEXT
+
+   InternetCloseHandle( hConnect )
+   InternetCloseHandle( hInternet )
+
+   cResumo := "Enviados: " + LTrim( Str( nOk ) ) + CRLF + ;
+              "Com erro: " + LTrim( Str( nErro ) ) + CRLF + ;
+              "Nao encontrados: " + LTrim( Str( nFalta ) ) + CRLF + ;
+              "Log: " + cLog
+
+   Ftp_Log( cLog, StrTran( cResumo, CRLF, " | " ) )
+
+   IF nErro &gt; 0 .OR. nFalta &gt; 0
+      MsgStop( cResumo, "FTP concluido com problemas" )
+   ELSE
+      MsgInfo( cResumo, "FTP concluido" )
+   ENDIF
+
+RETURN NIL
+
+// Grava uma linha com data/hora no arquivo de log (acrescenta no final)
+STATIC FUNCTION Ftp_Log( cArqLog, cTexto )
+
+   LOCAL nH
+   LOCAL cLinha := DToC( Date() ) + " " + Time() + " " + cTexto + CRLF
+
+   IF File( cArqLog )
+      nH := FOpen( cArqLog, 2 )
+   ELSE
+      nH := FCreate( cArqLog )
+   ENDIF
+
+   IF nH &gt;= 0
+      FSeek( nH, 0, 2 )
+      FWrite( nH, cLinha )
+      FClose( nH )
+   ENDIF
+
+RETURN NIL
+
+// Registra erro no log; inclui o codigo do Windows se GetLastError() estiver linkada
+STATIC FUNCTION Ftp_Erro( cArqLog, cTexto )
+
+   LOCAL cMsg := cTexto
+
+   IF Type( "GetLastError()" ) == "UI"
+      cMsg += " (erro Windows " + LTrim( Str( GetLastError() ) ) + ")"
+   ENDIF
+
+   Ftp_Log( cArqLog, cMsg )
+
+   IF "Nao foi possivel" $ cTexto .OR. "InternetOpen" $ cTexto
+      MsgStop( cMsg, "FTP" )
+   ENDIF
+
+RETURN NIL</code></pre></div>
+
+<p>Regards, saludos.</p></div>
+      <div class="signature">João Santos - São Paulo - Brasil - Phone: +55(11)95150-7341</div>
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target.closest('a.cb-select, a.cb-toggle');
+  if (!t) return;
+  e.preventDefault();
+  var box = t.closest('.codebox');
+  var pre = box && box.querySelector('pre');
+  if (!pre) return;
+
+  if (t.classList.contains('cb-select')) {
+    var text = pre.innerText;
+    // 1) visible selection so user sees what was copied
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(range);
+    // 2) write to clipboard (async). Fallback to execCommand for old browsers.
+    var done = function(ok) {
+      t.textContent = ok ? 'Copied!' : 'Select failed';
+      t.classList.toggle('copy-ok', ok);
+      setTimeout(function(){ t.textContent = 'Select all';
+        t.classList.remove('copy-ok'); }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){done(true);}, function(){
+        try { done(document.execCommand('copy')); } catch(_) { done(false); }
+      });
+    } else {
+      try { done(document.execCommand('copy')); } catch(_) { done(false); }
+    }
+  } else if (t.classList.contains('cb-toggle')) {
+    var hidden = pre.style.display === 'none';
+    pre.style.display = hidden ? '' : 'none';
+    t.textContent = hidden ? 'Collapse' : 'Expand';
+  }
+});
+</script>
+</body>
+</html>
