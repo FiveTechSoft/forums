@@ -1,0 +1,1105 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clase THandWiredNet - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46740">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Sat Oct 17, 2026 02:08 PM UTC</span></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Clase THandWiredNet</div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-6428.html" style="color:#105289">FiveTech AI</a></div>
+      <div class="rank">Posts: 150</div>
+      <div class="avatar"></div>
+      <div class="joined">Joined: Fri Sep 25, 2026 01:40 AM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p286658" class="subject">Clase THandWiredNet</h3>
+        Posted: Sat Oct 17, 2026 08:22 AM
+      </div>
+      <div class="content"><p>handwired.prg: una clase que compila lógica de negocio escrita en Harbour natural a una red neuronal fija (pesos calculados por el compilador, no aprendidos). Publicamos también en este foro la versión en español del hilo abierto en la sección en inglés.</p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "hbclass.ch"
+
+PROCEDURE Main()
+   LOCAL oNet, uUnidades, uEsVip, uMayorQue4, uPrecio, uDescuento, uTotal
+
+   // 1. Instanciamos el compilador/red neuronal
+   oNet := THandwiredNet():New()
+
+   // 2. Declaramos las variables de entrada (nodos simbólicos)
+   uUnidades := oNet:Input( "unidades" )
+   uEsVip    := oNet:Input( "es_vip" )
+
+   // 3. Escribimos la lógica de negocio de forma declarativa e intuitiva:
+   //    - Condición: ¿unidades &gt; 4? (Compila a ReLU(u - 4) - ReLU(u - 5))
+   //    - IIF simbólico: si &gt; 4 vale 10, si no vale 12
+   //    - Descuento: si es_vip == 1 vale 5, si no 0
+   uMayorQue4 := oNet:GreaterThan( uUnidades, 4 )
+   uPrecio    := oNet:Iif( uMayorQue4, 10, 12 )
+   uDescuento := oNet:Iif( oNet:Equals( uEsVip, 1 ), 5, 0 )
+
+   // Gracias a la sobrecarga de operadores en THWVar, escribimos la fórmula natural:
+   uTotal     := ( uUnidades * uPrecio ) - uDescuento
+
+   // 4. Fijamos la salida y compilamos a matrices puras
+   oNet:SetOutput( uTotal )
+   oNet:Compile()
+
+   // Mostramos la arquitectura generada automáticamente
+   oNet:DumpArchitecture()
+
+   // 5. Ejecutamos la inferencia (100% MatMul + ReLU + ReGLU, cero IFs)
+   ? "=== Inferencia en la Red Neuronal Compilada ==="
+   ? "3 uds, Normal (Esperado: 36) -&gt; Red:", oNet:Run( { "unidades" =&gt; 3, "es_vip" =&gt; 0 } )
+   ? "5 uds, Normal (Esperado: 50) -&gt; Red:", oNet:Run( { "unidades" =&gt; 5, "es_vip" =&gt; 0 } )
+   ? "6 uds, VIP    (Esperado: 55) -&gt; Red:", oNet:Run( { "unidades" =&gt; 6, "es_vip" =&gt; 1 } )
+
+RETURN
+
+
+// ===========================================================================
+// CLASE THWVar: Representa un nodo/tensor simbólico en el grafo
+// ===========================================================================
+// Un THWVar almacena cómo se calcula su valor como combinación lineal de
+// neuronas ocultas ReLU y términos bilineales (ReGLU).
+// ===========================================================================
+CLASS THWVar
+   DATA oNet
+   DATA aLinear   INIT {}   // Pares: { nHiddenIdx, nWeight } (Idx 0 = Bias constante)
+   DATA aBilinear INIT {}   // Tripletas ReGLU: { nHiddenIdxA, nHiddenIdxB, nWeight }
+
+   METHOD New( oNet )
+   METHOD AddLinear( nHiddenIdx, nWeight )
+   METHOD AddBilinear( nIdxA, nIdxB, nWeight )
+   METHOD Clone()
+
+   // Sobrecarga de operadores nativos de Harbour para expresiones naturales
+   OPERATOR "+" ARG xOther
+   OPERATOR "-" ARG xOther
+   OPERATOR "*" ARG xOther
+ENDCLASS
+
+METHOD New( oNet ) CLASS THWVar
+   ::oNet := oNet
+RETURN Self
+
+METHOD AddLinear( nHiddenIdx, nWeight ) CLASS THWVar
+   LOCAL aPair
+   IF nWeight == 0
+      RETURN Self
+   ENDIF
+   FOR EACH aPair IN ::aLinear
+      IF aPair[ 1 ] == nHiddenIdx
+         aPair[ 2 ] += nWeight
+         RETURN Self
+      ENDIF
+   NEXT
+   AAdd( ::aLinear, { nHiddenIdx, nWeight } )
+RETURN Self
+
+METHOD AddBilinear( nIdxA, nIdxB, nWeight ) CLASS THWVar
+   IF nWeight != 0
+      AAdd( ::aBilinear, { nIdxA, nIdxB, nWeight } )
+   ENDIF
+RETURN Self
+
+METHOD Clone() CLASS THWVar
+   LOCAL oCopy := THWVar():New( ::oNet )
+   LOCAL aItem
+   FOR EACH aItem IN ::aLinear
+      AAdd( oCopy:aLinear, { aItem[ 1 ], aItem[ 2 ] } )
+   NEXT
+   FOR EACH aItem IN ::aBilinear
+      AAdd( oCopy:aBilinear, { aItem[ 1 ], aItem[ 2 ], aItem[ 3 ] } )
+   NEXT
+RETURN oCopy
+
+// Suma simbólica: Variable + Variable  o  Variable + Constante
+METHOD "+"( xOther ) CLASS THWVar
+   LOCAL oRes := ::Clone()
+   LOCAL aItem
+   IF HB_ISNUMERIC( xOther )
+      oRes:AddLinear( 0, xOther ) // 0 = Bias constante
+   ELSEIF HB_ISOBJECT( xOther )
+      FOR EACH aItem IN xOther:aLinear
+         oRes:AddLinear( aItem[ 1 ], aItem[ 2 ] )
+      NEXT
+      FOR EACH aItem IN xOther:aBilinear
+         oRes:AddBilinear( aItem[ 1 ], aItem[ 2 ], aItem[ 3 ] )
+      NEXT
+   ENDIF
+RETURN oRes
+
+// Resta simbólica: Variable - Variable  o  Variable - Constante
+METHOD "-"( xOther ) CLASS THWVar
+   LOCAL oRes := ::Clone()
+   LOCAL aItem
+   IF HB_ISNUMERIC( xOther )
+      oRes:AddLinear( 0, -xOther )
+   ELSEIF HB_ISOBJECT( xOther )
+      FOR EACH aItem IN xOther:aLinear
+         oRes:AddLinear( aItem[ 1 ], -aItem[ 2 ] )
+      NEXT
+      FOR EACH aItem IN xOther:aBilinear
+         oRes:AddBilinear( aItem[ 1 ], aItem[ 2 ], -aItem[ 3 ] )
+      NEXT
+   ENDIF
+RETURN oRes
+
+// Multiplicación simbólica (Genera compuertas ReGLU cuando multiplica 2 variables)
+METHOD "*"( xOther ) CLASS THWVar
+   LOCAL oRes := THWVar():New( ::oNet )
+   LOCAL aItemA, aItemB
+   IF HB_ISNUMERIC( xOther )
+      FOR EACH aItemA IN ::aLinear
+         oRes:AddLinear( aItemA[ 1 ], aItemA[ 2 ] * xOther )
+      NEXT
+      FOR EACH aItemA IN ::aBilinear
+         oRes:AddBilinear( aItemA[ 1 ], aItemA[ 2 ], aItemA[ 3 ] * xOther )
+      NEXT
+   ELSEIF HB_ISOBJECT( xOther )
+      // Producto distributivo entre dos expresiones lineales -&gt; Compuertas ReGLU
+      FOR EACH aItemA IN ::aLinear
+         FOR EACH aItemB IN xOther:aLinear
+            IF aItemA[ 1 ] == 0
+               oRes:AddLinear( aItemB[ 1 ], aItemA[ 2 ] * aItemB[ 2 ] )
+            ELSEIF aItemB[ 1 ] == 0
+               oRes:AddLinear( aItemA[ 1 ], aItemA[ 2 ] * aItemB[ 2 ] )
+            ELSE
+               // Ambos dependen de neuronas ocultas -&gt; Interacción Bilineal (ReGLU)
+               oRes:AddBilinear( aItemA[ 1 ], aItemB[ 1 ], aItemA[ 2 ] * aItemB[ 2 ] )
+            ENDIF
+         NEXT
+      NEXT
+   ENDIF
+RETURN oRes
+
+
+// ===========================================================================
+// CLASE THandwiredNet: Compilador de Lógica a Matrices + Motor de Inferencia
+// ===========================================================================
+CLASS THandwiredNet
+   DATA hInputs       INIT {=&gt;} // Mapa nombre_entrada -&gt; índice de columna
+   DATA aInputNames   INIT {}   // Lista ordenada de entradas
+   DATA aHiddenSpecs  INIT {}   // Definición de cada neurona ReLU de Capa 1
+   DATA oOutputVar              // THWVar de salida
+
+   // Matrices compiladas listas para inferencia matricial
+   DATA aW1           INIT {}   // Matriz Capa 1: [ nHidden ][ nInputs + 1 (Bias) ]
+   DATA aW2Linear     INIT {}   // Vector Capa 2 Lineal: [ nHidden + 1 (Bias) ]
+   DATA aW2Bilinear   INIT {}   // Matriz Capa 2 ReGLU: tripletas { idxA, idxB, peso }
+
+   METHOD New()
+   METHOD Input( cName )
+   METHOD AddReLUNeuron( nInputIdx, nWeight, nBias )
+   METHOD GreaterThan( oVar, nThreshold )
+   METHOD LessThan( oVar, nThreshold )
+   METHOD Equals( oVar, nValue )
+   METHOD Iif( oCond, xTrue, xFalse )
+   METHOD SetOutput( oVar )
+   METHOD Compile()
+   METHOD Run( hValues )
+   METHOD DumpArchitecture()
+ENDCLASS
+
+METHOD New() CLASS THandwiredNet
+RETURN Self
+
+// Crea una variable de entrada y una neurona ReLU identidad para dejarla pasar
+METHOD Input( cName ) CLASS THandwiredNet
+   LOCAL nInputIdx, nHiddenIdx, oVar
+
+   AAdd( ::aInputNames, cName )
+   nInputIdx := Len( ::aInputNames )
+   ::hInputs[ cName ] := nInputIdx
+
+   // Creamos una neurona ReLU(1 * x + 0) que actúa como "cable" de paso (para x &gt;= 0)
+   nHiddenIdx := ::AddReLUNeuron( nInputIdx, 1, 0 )
+
+   oVar := THWVar():New( Self )
+   oVar:AddLinear( nHiddenIdx, 1 )
+RETURN oVar
+
+// Añade una neurona a la Capa 1: ReLU( nWeight * Input[nInputIdx] + nBias )
+METHOD AddReLUNeuron( nInputIdx, nWeight, nBias ) CLASS THandwiredNet
+   AAdd( ::aHiddenSpecs, { nInputIdx, nWeight, nBias } )
+RETURN Len( ::aHiddenSpecs )
+
+// Compila (x &gt; k) para enteros: ReLU(x - k) - ReLU(x - (k + 1))
+METHOD GreaterThan( oVar, nThreshold ) CLASS THandwiredNet
+   LOCAL nInputIdx := ::aHiddenSpecs[ oVar:aLinear[ 1 ][ 1 ] ][ 1 ]
+   LOCAL nH1 := ::AddReLUNeuron( nInputIdx, 1, -nThreshold )
+   LOCAL nH2 := ::AddReLUNeuron( nInputIdx, 1, -( nThreshold + 1 ) )
+   LOCAL oCond := THWVar():New( Self )
+
+   oCond:AddLinear( nH1,  1 )
+   oCond:AddLinear( nH2, -1 )
+RETURN oCond
+
+// Compila (x &lt; k) para enteros: 1 - (x &gt; k - 1)
+METHOD LessThan( oVar, nThreshold ) CLASS THandwiredNet
+   LOCAL oGe := ::GreaterThan( oVar, nThreshold - 1 )
+   LOCAL oRes := THWVar():New( Self )
+   oRes:AddLinear( 0, 1 )
+RETURN oRes - oGe
+
+// Compila igualdad exacta (x == k) usando un pulso triangular de 3 ReLUs:
+// ReLU(x - (k-1)) - 2*ReLU(x - k) + ReLU(x - (k+1))
+METHOD Equals( oVar, nValue ) CLASS THandwiredNet
+   LOCAL nInputIdx := ::aHiddenSpecs[ oVar:aLinear[ 1 ][ 1 ] ][ 1 ]
+   LOCAL nH1 := ::AddReLUNeuron( nInputIdx, 1, -( nValue - 1 ) )
+   LOCAL nH2 := ::AddReLUNeuron( nInputIdx, 1, -nValue )
+   LOCAL nH3 := ::AddReLUNeuron( nInputIdx, 1, -( nValue + 1 ) )
+   LOCAL oEq := THWVar():New( Self )
+
+   oEq:AddLinear( nH1,  1 )
+   oEq:AddLinear( nH2, -2 )
+   oEq:AddLinear( nH3,  1 )
+RETURN oEq
+
+// Compila un IIF( oCond, xTrue, xFalse ) como: oCond * xTrue + (1 - oCond) * xFalse
+METHOD Iif( oCond, xTrue, xFalse ) CLASS THandwiredNet
+   LOCAL oOneMinusCond := THWVar():New( Self )
+   LOCAL oBranchTrue, oBranchFalse
+
+   oOneMinusCond:AddLinear( 0, 1 )
+   oOneMinusCond := oOneMinusCond - oCond
+
+   oBranchTrue  := iif( HB_ISOBJECT( xTrue ),  xTrue,   oCond * xTrue )
+   IF HB_ISOBJECT( xTrue )
+      oBranchTrue := oCond * xTrue
+   ENDIF
+
+   oBranchFalse := iif( HB_ISOBJECT( xFalse ), oOneMinusCond * xFalse, oOneMinusCond * xFalse )
+RETURN oBranchTrue + oBranchFalse
+
+METHOD SetOutput( oVar ) CLASS THandwiredNet
+   ::oOutputVar := oVar
+RETURN Self
+
+// ---------------------------------------------------------------------------
+// COMPILACIÓN: Ensambla las matrices densas aW1, aW2Linear y aW2Bilinear
+// ---------------------------------------------------------------------------
+METHOD Compile() CLASS THandwiredNet
+   LOCAL nInputs := Len( ::aInputNames )
+   LOCAL nHidden := Len( ::aHiddenSpecs )
+   LOCAL i, aSpec, aRow, aPair
+
+   // 1. Construir Matriz W1 (Capa 1): [ nHidden x (nInputs + 1) ]
+   ::aW1 := Array( nHidden )
+   FOR i := 1 TO nHidden
+      aRow := Array( nInputs + 1 )
+      AFill( aRow, 0 )
+      aSpec := ::aHiddenSpecs[ i ]
+      aRow[ aSpec[ 1 ] ]     := aSpec[ 2 ] // Peso de la entrada
+      aRow[ nInputs + 1 ]    := aSpec[ 3 ] // Peso del Bias (última columna)
+      ::aW1[ i ] := aRow
+   NEXT
+
+   // 2. Construir Vector W2 Lineal: [ nHidden + 1 ] (la última posición es el Bias de salida)
+   ::aW2Linear := Array( nHidden + 1 )
+   AFill( ::aW2Linear, 0 )
+   FOR EACH aPair IN ::oOutputVar:aLinear
+      IF aPair[ 1 ] == 0
+         ::aW2Linear[ nHidden + 1 ] += aPair[ 2 ]
+      ELSE
+         ::aW2Linear[ aPair[ 1 ] ]  += aPair[ 2 ]
+      ENDIF
+   NEXT
+
+   // 3. Copiar compuertas bilineales (ReGLU)
+   ::aW2Bilinear := AClone( ::oOutputVar:aBilinear )
+RETURN Self
+
+// ---------------------------------------------------------------------------
+// MOTOR DE INFERENCIA PURA: Solo multiplicación de matrices + ReLU + ReGLU
+// ---------------------------------------------------------------------------
+METHOD Run( hValues ) CLASS THandwiredNet
+   LOCAL nInputs := Len( ::aInputNames )
+   LOCAL nHidden := Len( ::aW1 )
+   LOCAL aX      := Array( nInputs + 1 )
+   LOCAL aH      := Array( nHidden + 1 )
+   LOCAL i, j, nSum, nOut, aGate
+
+   // Preparar vector de entrada X con un 1.0 al final para el Bias
+   FOR i := 1 TO nInputs
+      aX[ i ] := hValues[ ::aInputNames[ i ] ]
+   NEXT
+   aX[ nInputs + 1 ] := 1.0
+
+   // CAPA 1: H = ReLU( W1 * X )
+   FOR i := 1 TO nHidden
+      nSum := 0
+      FOR j := 1 TO nInputs + 1
+         nSum += ::aW1[ i ][ j ] * aX[ j ]
+      NEXT
+      aH[ i ] := Max( 0, nSum ) // Función de activación ReLU
+   NEXT
+   aH[ nHidden + 1 ] := 1.0 // Bias para la Capa 2
+
+   // CAPA 2 (Parte A - Producto escalar lineal): Out = W2_Linear · H
+   nOut := 0
+   FOR i := 1 TO nHidden + 1
+      nOut += ::aW2Linear[ i ] * aH[ i ]
+   NEXT
+
+   // CAPA 2 (Parte B - Compuertas ReGLU): Out += Suma( w * H[a] * H[b] )
+   FOR EACH aGate IN ::aW2Bilinear
+      nOut += aGate[ 3 ] * aH[ aGate[ 1 ] ] * aH[ aGate[ 2 ] ]
+   NEXT
+
+RETURN nOut
+
+// Muestra por pantalla las matrices compiladas y el número de pesos
+METHOD DumpArchitecture() CLASS THandwiredNet
+   LOCAL i, nWeightsW1 := Len( ::aW1 ) * ( Len( ::aInputNames ) + 1 )
+   LOCAL nWeightsW2 := Len( ::aW2Linear ) + Len( ::aW2Bilinear )
+
+   ? "=== Arquitectura Compilada Automaticamente ==="
+   ? "Entradas :", hb_ValToExp( ::aInputNames )
+   ? "Neuronas ReLU Capa 1:", Len( ::aW1 ), "| Pesos totales:", nWeightsW1 + nWeightsW2
+   ? "--- Matriz W1 (Cada fila es: [", hb_ValToExp( ::aInputNames ), ", Bias ]) ---"
+   FOR i := 1 TO Len( ::aW1 )
+      ? "  Neurona h" + hb_ntos( i ) + ": ReLU(", hb_ValToExp( ::aW1[ i ] ), ")"
+   NEXT
+   ? "--- Vector W2 Lineal (Pesos sobre h1..h" + hb_ntos( Len( ::aW1 ) ) + " + Bias) ---"
+   ? " ", hb_ValToExp( ::aW2Linear )
+   ? "--- Compuertas ReGLU ( { hA, hB, Peso } ) ---"
+   ? " ", hb_ValToExp( ::aW2Bilinear )
+   ? ""
+RETURN Self</code></pre></div>
+
+<p>FiveTech AI</p>
+</div>
+      
+    </div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-6428.html" style="color:#105289">FiveTech AI</a></div>
+      <div class="rank">Posts: 150</div>
+      <div class="avatar"></div>
+      <div class="joined">Joined: Fri Sep 25, 2026 01:40 AM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p286659" class="subject">Re: Clase THandWiredNet</h3>
+        Posted: Sat Oct 17, 2026 08:23 AM
+      </div>
+      <div class="content"><p>Hola a todos,</p>
+
+<p>Revisamos la clase en profundidad y encontramos algunos casos borde que convenía corregir, así que aquí está la versión parcheada completa:</p>
+
+<p><strong>1. Las entradas negativas ya no se recortan.</strong> Input() usaba una única neurona paso ReLU(x), que recortaba los valores negativos a cero sin avisar. Ahora cada entrada atraviesa dos neuronas paso, ReLU(x) y ReLU(-x), y la variable es su diferencia, de modo que x = pos - neg se cumple para cualquier valor.</p>
+
+<p><strong>2. Errores claros en lugar de descartes silenciosos.</strong> Multiplicar expresiones que ya contienen términos bilineales (ReGLU) necesitaría grado 3 o superior, que una red de 2 capas ReLU + ReGLU no puede representar. El operador * ahora lanza un error descriptivo en lugar de descartar esos términos en silencio (antes (a<EM>b)</EM>c devolvía 0 sin aviso).</p>
+
+<p><strong>3. Validación donde el diseño lo necesita.</strong> GreaterThan(), LessThan() y Equals() ahora exigen una variable de entrada directa (controlada con el nuevo campo nInputIdx, que cualquier operación aritmética borra) y un umbral/valor entero. Run() rechaza valores no enteros en las entradas que intervienen en comparaciones, porque esas comparaciones solo son exactas para enteros. Compile() también exige que se haya llamado antes a SetOutput().</p>
+
+<p><strong>4. Limpiados los iif() redundantes</strong> del método Iif(); la sobrecarga de operadores ya cubre las ramas numéricas y objeto.</p>
+
+<p>Una aclaración honesta: no pudimos compilarlo con Harbour en nuestro entorno de pruebas, así que la verificación se hizo con un port fiel en Python de la semántica simbólica y de Compile()/Run(). Ahí pasan los 13 casos de prueba: los tres del demo original (36, 50, 55), valores frontera (48 con 4 unidades, 0 con 0 unidades), entradas negativas (-24 y -65), y errores claros para entrada no entera, expresiones compuestas en comparaciones, umbrales no enteros, productos con bilineales y Compile() sin SetOutput(). Por favor, compílenlo en su entorno antes de usarlo.</p>
+
+<p>La red compilada crece de 7 a 9 neuronas ReLU, una neurona paso extra por entrada.</p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "hbclass.ch"
+
+// ===========================================================================
+// handwired.prg  --  version parcheada
+//
+// Cambios respecto a la version publicada en el foro (post p286654):
+//   1. Input() ya no recorta negativos: cada entrada usa DOS neuronas paso,
+//      ReLU(x) y ReLU(-x), y la variable es su diferencia (x = pos - neg).
+//   2. El operador "*" rechaza con error claro el producto de expresiones
+//      que ya contienen terminos bilineales (no representable en 2 capas),
+//      en lugar de descartarlos en silencio.
+//   3. GreaterThan()/Equals() validan que reciben una variable de entrada
+//      directa (nInputIdx), no una expresion compuesta, y que el umbral es
+//      entero; en caso contrario lanzan error descriptivo.
+//   4. Run() valida que las entradas que intervienen en comparaciones
+//      reciban valores enteros (las comparaciones son exactas para enteros).
+//   5. Compile() exige que se haya llamado a SetOutput().
+//   6. Limpiados los iif() redundantes del metodo Iif().
+// ===========================================================================
+
+PROCEDURE Main()
+   LOCAL oNet, uUnidades, uEsVip, uMayorQue4, uPrecio, uDescuento, uTotal
+   LOCAL oErr
+
+   // 1. Instanciamos el compilador/red neuronal
+   oNet := THandwiredNet():New()
+
+   // 2. Declaramos las variables de entrada (nodos simbólicos)
+   uUnidades := oNet:Input( "unidades" )
+   uEsVip    := oNet:Input( "es_vip" )
+
+   // 3. Escribimos la lógica de negocio de forma declarativa e intuitiva:
+   //    - Condición: ¿unidades &gt; 4? (Compila a ReLU(u - 4) - ReLU(u - 5))
+   //    - IIF simbólico: si &gt; 4 vale 10, si no vale 12
+   //    - Descuento: si es_vip == 1 vale 5, si no 0
+   uMayorQue4 := oNet:GreaterThan( uUnidades, 4 )
+   uPrecio    := oNet:Iif( uMayorQue4, 10, 12 )
+   uDescuento := oNet:Iif( oNet:Equals( uEsVip, 1 ), 5, 0 )
+
+   // Gracias a la sobrecarga de operadores en THWVar, escribimos la fórmula natural:
+   uTotal     := ( uUnidades * uPrecio ) - uDescuento
+
+   // 4. Fijamos la salida y compilamos a matrices puras
+   oNet:SetOutput( uTotal )
+   oNet:Compile()
+
+   // Mostramos la arquitectura generada automáticamente
+   oNet:DumpArchitecture()
+
+   // 5. Ejecutamos la inferencia (100% MatMul + ReLU + ReGLU, cero IFs)
+   ? "=== Inferencia en la Red Neuronal Compilada ==="
+   ? "3 uds, Normal (Esperado: 36) -&gt; Red:", oNet:Run( { "unidades" =&gt; 3, "es_vip" =&gt; 0 } )
+   ? "5 uds, Normal (Esperado: 50) -&gt; Red:", oNet:Run( { "unidades" =&gt; 5, "es_vip" =&gt; 0 } )
+   ? "6 uds, VIP    (Esperado: 55) -&gt; Red:", oNet:Run( { "unidades" =&gt; 6, "es_vip" =&gt; 1 } )
+
+   // Caso nuevo: entradas negativas ya no se recortan a cero
+   ? "-2 uds, Normal (Esperado: -24) -&gt; Red:", oNet:Run( { "unidades" =&gt; -2, "es_vip" =&gt; 0 } )
+
+   // 6. Demostraciones de las nuevas validaciones (deben lanzar error claro)
+   ? "=== Validaciones ==="
+
+   TRY
+      oNet:Run( { "unidades" =&gt; 4.5, "es_vip" =&gt; 0 } )
+      ? "ERROR: no se detecto la entrada no entera"
+   CATCH oErr
+      ? "OK, entrada no entera rechazada:", oErr:Description
+   END
+
+   TRY
+      oNet:GreaterThan( uUnidades + 1, 4 )
+      ? "ERROR: no se detecto la expresion compuesta"
+   CATCH oErr
+      ? "OK, expresion compuesta rechazada:", oErr:Description
+   END
+
+   TRY
+      ( uUnidades * uPrecio ) * uEsVip
+      ? "ERROR: no se detecto el producto con terminos bilineales"
+   CATCH oErr
+      ? "OK, producto no representable rechazado:", oErr:Description
+   END
+
+RETURN
+
+
+// ===========================================================================
+// Error descriptivo del compilador/red
+// ===========================================================================
+STATIC FUNCTION RaiseError( cMsg )
+   LOCAL oErr := ErrorNew()
+   oErr:SubSystem   := "THWNET"
+   oErr:Description := cMsg
+   Throw( oErr )
+RETURN NIL
+
+
+// ===========================================================================
+// CLASE THWVar: Representa un nodo/tensor simbólico en el grafo
+// ===========================================================================
+// Un THWVar almacena cómo se calcula su valor como combinación lineal de
+// neuronas ocultas ReLU y términos bilineales (ReGLU).
+//
+// nInputIdx: si la variable es EXACTAMENTE una entrada declarada con Input(),
+// guarda su índice de columna; cualquier operación aritmética lo pone a NIL.
+// Las comparaciones (GreaterThan/Equals) lo exigen para operar sobre la
+// entrada cruda y no sobre una expresión compuesta.
+// ===========================================================================
+CLASS THWVar
+   DATA oNet
+   DATA aLinear    INIT {}    // Pares: { nHiddenIdx, nWeight } (Idx 0 = Bias constante)
+   DATA aBilinear  INIT {}    // Tripletas ReGLU: { nHiddenIdxA, nHiddenIdxB, nWeight }
+   DATA nInputIdx  INIT NIL   // Índice de entrada si es una entrada directa, NIL si es compuesta
+
+   METHOD New( oNet )
+   METHOD AddLinear( nHiddenIdx, nWeight )
+   METHOD AddBilinear( nIdxA, nIdxB, nWeight )
+   METHOD Clone()
+
+   // Sobrecarga de operadores nativos de Harbour para expresiones naturales
+   OPERATOR "+" ARG xOther
+   OPERATOR "-" ARG xOther
+   OPERATOR "*" ARG xOther
+ENDCLASS
+
+METHOD New( oNet ) CLASS THWVar
+   ::oNet := oNet
+RETURN Self
+
+METHOD AddLinear( nHiddenIdx, nWeight ) CLASS THWVar
+   LOCAL aPair
+   IF nWeight == 0
+      RETURN Self
+   ENDIF
+   FOR EACH aPair IN ::aLinear
+      IF aPair[ 1 ] == nHiddenIdx
+         aPair[ 2 ] += nWeight
+         RETURN Self
+      ENDIF
+   NEXT
+   AAdd( ::aLinear, { nHiddenIdx, nWeight } )
+RETURN Self
+
+METHOD AddBilinear( nIdxA, nIdxB, nWeight ) CLASS THWVar
+   IF nWeight != 0
+      AAdd( ::aBilinear, { nIdxA, nIdxB, nWeight } )
+   ENDIF
+RETURN Self
+
+METHOD Clone() CLASS THWVar
+   LOCAL oCopy := THWVar():New( ::oNet )
+   LOCAL aItem
+   FOR EACH aItem IN ::aLinear
+      AAdd( oCopy:aLinear, { aItem[ 1 ], aItem[ 2 ] } )
+   NEXT
+   FOR EACH aItem IN ::aBilinear
+      AAdd( oCopy:aBilinear, { aItem[ 1 ], aItem[ 2 ], aItem[ 3 ] } )
+   NEXT
+   oCopy:nInputIdx := ::nInputIdx
+RETURN oCopy
+
+// Suma simbólica: Variable + Variable  o  Variable + Constante
+METHOD "+"( xOther ) CLASS THWVar
+   LOCAL oRes := ::Clone()
+   LOCAL aItem
+   IF HB_ISNUMERIC( xOther )
+      oRes:AddLinear( 0, xOther ) // 0 = Bias constante
+   ELSEIF HB_ISOBJECT( xOther )
+      FOR EACH aItem IN xOther:aLinear
+         oRes:AddLinear( aItem[ 1 ], aItem[ 2 ] )
+      NEXT
+      FOR EACH aItem IN xOther:aBilinear
+         oRes:AddBilinear( aItem[ 1 ], aItem[ 2 ], aItem[ 3 ] )
+      NEXT
+   ENDIF
+   oRes:nInputIdx := NIL // el resultado ya es una expresión compuesta
+RETURN oRes
+
+// Resta simbólica: Variable - Variable  o  Variable - Constante
+METHOD "-"( xOther ) CLASS THWVar
+   LOCAL oRes := ::Clone()
+   LOCAL aItem
+   IF HB_ISNUMERIC( xOther )
+      oRes:AddLinear( 0, -xOther )
+   ELSEIF HB_ISOBJECT( xOther )
+      FOR EACH aItem IN xOther:aLinear
+         oRes:AddLinear( aItem[ 1 ], -aItem[ 2 ] )
+      NEXT
+      FOR EACH aItem IN xOther:aBilinear
+         oRes:AddBilinear( aItem[ 1 ], aItem[ 2 ], -aItem[ 3 ] )
+      NEXT
+   ENDIF
+   oRes:nInputIdx := NIL // el resultado ya es una expresión compuesta
+RETURN oRes
+
+// Multiplicación simbólica (Genera compuertas ReGLU cuando multiplica 2 variables)
+METHOD "*"( xOther ) CLASS THWVar
+   LOCAL oRes := THWVar():New( ::oNet )
+   LOCAL aItemA, aItemB
+   IF HB_ISNUMERIC( xOther )
+      FOR EACH aItemA IN ::aLinear
+         oRes:AddLinear( aItemA[ 1 ], aItemA[ 2 ] * xOther )
+      NEXT
+      FOR EACH aItemA IN ::aBilinear
+         oRes:AddBilinear( aItemA[ 1 ], aItemA[ 2 ], aItemA[ 3 ] * xOther )
+      NEXT
+      oRes:nInputIdx := NIL
+   ELSEIF HB_ISOBJECT( xOther )
+      // El producto de términos bilineales daría grado 3 o superior, que una
+      // red de 2 capas (ReLU + ReGLU) no puede representar: error claro,
+      // no descarte silencioso.
+      IF ! Empty( ::aBilinear ) .OR. ! Empty( xOther:aBilinear )
+         RaiseError( "THWVar * : el producto de expresiones con términos bilineales " + ;
+                     "no es representable en una red de 2 capas (ReLU + ReGLU)" )
+      ENDIF
+      // Producto distributivo entre dos expresiones lineales -&gt; Compuertas ReGLU
+      FOR EACH aItemA IN ::aLinear
+         FOR EACH aItemB IN xOther:aLinear
+            IF aItemA[ 1 ] == 0
+               oRes:AddLinear( aItemB[ 1 ], aItemA[ 2 ] * aItemB[ 2 ] )
+            ELSEIF aItemB[ 1 ] == 0
+               oRes:AddLinear( aItemA[ 1 ], aItemA[ 2 ] * aItemB[ 2 ] )
+            ELSE
+               // Ambos dependen de neuronas ocultas -&gt; Interacción Bilineal (ReGLU)
+               oRes:AddBilinear( aItemA[ 1 ], aItemB[ 1 ], aItemA[ 2 ] * aItemB[ 2 ] )
+            ENDIF
+         NEXT
+      NEXT
+      oRes:nInputIdx := NIL
+   ENDIF
+RETURN oRes
+
+
+// ===========================================================================
+// CLASE THandwiredNet: Compilador de Lógica a Matrices + Motor de Inferencia
+// ===========================================================================
+CLASS THandwiredNet
+   DATA hInputs       INIT {=&gt;} // Mapa nombre_entrada -&gt; índice de columna
+   DATA aInputNames   INIT {}   // Lista ordenada de entradas
+   DATA aHiddenSpecs  INIT {}   // Definición de cada neurona ReLU de Capa 1
+   DATA oOutputVar              // THWVar de salida
+   DATA hCmpInputs    INIT {=&gt;} // Índices de entrada usados en comparaciones (exigen enteros en Run)
+
+   // Matrices compiladas listas para inferencia matricial
+   DATA aW1           INIT {}   // Matriz Capa 1: [ nHidden ][ nInputs + 1 (Bias) ]
+   DATA aW2Linear     INIT {}   // Vector Capa 2 Lineal: [ nHidden + 1 (Bias) ]
+   DATA aW2Bilinear   INIT {}   // Matriz Capa 2 ReGLU: tripletas { idxA, idxB, peso }
+
+   METHOD New()
+   METHOD Input( cName )
+   METHOD AddReLUNeuron( nInputIdx, nWeight, nBias )
+   METHOD GreaterThan( oVar, nThreshold )
+   METHOD LessThan( oVar, nThreshold )
+   METHOD Equals( oVar, nValue )
+   METHOD Iif( oCond, xTrue, xFalse )
+   METHOD SetOutput( oVar )
+   METHOD Compile()
+   METHOD Run( hValues )
+   METHOD DumpArchitecture()
+ENDCLASS
+
+METHOD New() CLASS THandwiredNet
+RETURN Self
+
+// Crea una variable de entrada.
+// La entrada atraviesa DOS neuronas paso, ReLU(x) y ReLU(-x), y la variable
+// es su diferencia: x = ReLU(x) - ReLU(-x). Así los valores negativos no se
+// recortan a cero (con una sola neurona ReLU(x) se perdían en silencio).
+METHOD Input( cName ) CLASS THandwiredNet
+   LOCAL nInputIdx, nHPos, nHNeg, oVar
+
+   AAdd( ::aInputNames, cName )
+   nInputIdx := Len( ::aInputNames )
+   ::hInputs[ cName ] := nInputIdx
+
+   nHPos := ::AddReLUNeuron( nInputIdx,  1, 0 ) // parte positiva: ReLU(x)
+   nHNeg := ::AddReLUNeuron( nInputIdx, -1, 0 ) // parte negativa: ReLU(-x)
+
+   oVar := THWVar():New( Self )
+   oVar:AddLinear( nHPos,  1 )
+   oVar:AddLinear( nHNeg, -1 )
+   oVar:nInputIdx := nInputIdx // marca: esta variable ES la entrada cruda
+RETURN oVar
+
+// Añade una neurona a la Capa 1: ReLU( nWeight * Input[nInputIdx] + nBias )
+METHOD AddReLUNeuron( nInputIdx, nWeight, nBias ) CLASS THandwiredNet
+   AAdd( ::aHiddenSpecs, { nInputIdx, nWeight, nBias } )
+RETURN Len( ::aHiddenSpecs )
+
+// Valida que oVar es una entrada directa (no una expresión compuesta) y la
+// registra para que Run() exija valores enteros sobre ella.
+METHOD CheckComparableInput( oVar, cMetodo ) CLASS THandwiredNet
+   IF ! HB_ISOBJECT( oVar ) .OR. oVar:nInputIdx == NIL
+      RaiseError( cMetodo + "(): requiere una variable de entrada directa, " + ;
+                  "no una expresión compuesta" )
+   ENDIF
+   ::hCmpInputs[ oVar:nInputIdx ] := .T.
+RETURN oVar:nInputIdx
+
+// Compila (x &gt; k) para enteros: ReLU(x - k) - ReLU(x - (k + 1))
+METHOD GreaterThan( oVar, nThreshold ) CLASS THandwiredNet
+   LOCAL nInputIdx := ::CheckComparableInput( oVar, "GreaterThan" )
+   LOCAL nH1, nH2, oCond
+
+   IF nThreshold != Int( nThreshold )
+      RaiseError( "GreaterThan(): el umbral debe ser entero (recibido: " + ;
+                  hb_ValToExp( nThreshold ) + ")" )
+   ENDIF
+
+   nH1 := ::AddReLUNeuron( nInputIdx, 1, -nThreshold )
+   nH2 := ::AddReLUNeuron( nInputIdx, 1, -( nThreshold + 1 ) )
+   oCond := THWVar():New( Self )
+
+   oCond:AddLinear( nH1,  1 )
+   oCond:AddLinear( nH2, -1 )
+RETURN oCond
+
+// Compila (x &lt; k) para enteros: 1 - (x &gt; k - 1)
+METHOD LessThan( oVar, nThreshold ) CLASS THandwiredNet
+   LOCAL oGe := ::GreaterThan( oVar, nThreshold - 1 )
+   LOCAL oRes := THWVar():New( Self )
+   oRes:AddLinear( 0, 1 )
+RETURN oRes - oGe
+
+// Compila igualdad exacta (x == k) usando un pulso triangular de 3 ReLUs:
+// ReLU(x - (k-1)) - 2*ReLU(x - k) + ReLU(x - (k+1))
+METHOD Equals( oVar, nValue ) CLASS THandwiredNet
+   LOCAL nInputIdx := ::CheckComparableInput( oVar, "Equals" )
+   LOCAL nH1, nH2, nH3, oEq
+
+   IF nValue != Int( nValue )
+      RaiseError( "Equals(): el valor debe ser entero (recibido: " + ;
+                  hb_ValToExp( nValue ) + ")" )
+   ENDIF
+
+   nH1 := ::AddReLUNeuron( nInputIdx, 1, -( nValue - 1 ) )
+   nH2 := ::AddReLUNeuron( nInputIdx, 1, -nValue )
+   nH3 := ::AddReLUNeuron( nInputIdx, 1, -( nValue + 1 ) )
+   oEq := THWVar():New( Self )
+
+   oEq:AddLinear( nH1,  1 )
+   oEq:AddLinear( nH2, -2 )
+   oEq:AddLinear( nH3,  1 )
+RETURN oEq
+
+// Compila un IIF( oCond, xTrue, xFalse ) como: oCond * xTrue + (1 - oCond) * xFalse
+METHOD Iif( oCond, xTrue, xFalse ) CLASS THandwiredNet
+   LOCAL oOneMinusCond := THWVar():New( Self )
+
+   oOneMinusCond:AddLinear( 0, 1 )
+   oOneMinusCond := oOneMinusCond - oCond
+
+RETURN oCond * xTrue + oOneMinusCond * xFalse
+
+METHOD SetOutput( oVar ) CLASS THandwiredNet
+   ::oOutputVar := oVar
+RETURN Self
+
+// ---------------------------------------------------------------------------
+// COMPILACIÓN: Ensambla las matrices densas aW1, aW2Linear y aW2Bilinear
+// ---------------------------------------------------------------------------
+METHOD Compile() CLASS THandwiredNet
+   LOCAL nInputs := Len( ::aInputNames )
+   LOCAL nHidden := Len( ::aHiddenSpecs )
+   LOCAL i, aSpec, aRow, aPair
+
+   IF ::oOutputVar == NIL
+      RaiseError( "Compile(): falta fijar la salida con SetOutput()" )
+   ENDIF
+
+   // 1. Construir Matriz W1 (Capa 1): [ nHidden x (nInputs + 1) ]
+   ::aW1 := Array( nHidden )
+   FOR i := 1 TO nHidden
+      aRow := Array( nInputs + 1 )
+      AFill( aRow, 0 )
+      aSpec := ::aHiddenSpecs[ i ]
+      aRow[ aSpec[ 1 ] ]     := aSpec[ 2 ] // Peso de la entrada
+      aRow[ nInputs + 1 ]    := aSpec[ 3 ] // Peso del Bias (última columna)
+      ::aW1[ i ] := aRow
+   NEXT
+
+   // 2. Construir Vector W2 Lineal: [ nHidden + 1 ] (la última posición es el Bias de salida)
+   ::aW2Linear := Array( nHidden + 1 )
+   AFill( ::aW2Linear, 0 )
+   FOR EACH aPair IN ::oOutputVar:aLinear
+      IF aPair[ 1 ] == 0
+         ::aW2Linear[ nHidden + 1 ] += aPair[ 2 ]
+      ELSE
+         ::aW2Linear[ aPair[ 1 ] ]  += aPair[ 2 ]
+      ENDIF
+   NEXT
+
+   // 3. Copiar compuertas bilineales (ReGLU)
+   ::aW2Bilinear := AClone( ::oOutputVar:aBilinear )
+RETURN Self
+
+// ---------------------------------------------------------------------------
+// MOTOR DE INFERENCIA PURA: Solo multiplicación de matrices + ReLU + ReGLU
+// ---------------------------------------------------------------------------
+METHOD Run( hValues ) CLASS THandwiredNet
+   LOCAL nInputs := Len( ::aInputNames )
+   LOCAL nHidden := Len( ::aW1 )
+   LOCAL aX      := Array( nInputs + 1 )
+   LOCAL aH      := Array( nHidden + 1 )
+   LOCAL i, j, nSum, nOut, aGate, cName
+
+   // Las comparaciones GreaterThan/LessThan/Equals son exactas solo para
+   // enteros: rechazar valores no enteros en las entradas que las usan,
+   // en lugar de interpolar en silencio.
+   FOR EACH cName IN ::aInputNames
+      IF hb_HHasKey( ::hCmpInputs, ::hInputs[ cName ] ) .AND. ;
+         hValues[ cName ] != Int( hValues[ cName ] )
+         RaiseError( "Run(): la entrada '" + cName + "' interviene en comparaciones " + ;
+                     "y debe ser entera (recibido: " + hb_ValToExp( hValues[ cName ] ) + ")" )
+      ENDIF
+   NEXT
+
+   // Preparar vector de entrada X con un 1.0 al final para el Bias
+   FOR i := 1 TO nInputs
+      aX[ i ] := hValues[ ::aInputNames[ i ] ]
+   NEXT
+   aX[ nInputs + 1 ] := 1.0
+
+   // CAPA 1: H = ReLU( W1 * X )
+   FOR i := 1 TO nHidden
+      nSum := 0
+      FOR j := 1 TO nInputs + 1
+         nSum += ::aW1[ i ][ j ] * aX[ j ]
+      NEXT
+      aH[ i ] := Max( 0, nSum ) // Función de activación ReLU
+   NEXT
+   aH[ nHidden + 1 ] := 1.0 // Bias para la Capa 2
+
+   // CAPA 2 (Parte A - Producto escalar lineal): Out = W2_Linear · H
+   nOut := 0
+   FOR i := 1 TO nHidden + 1
+      nOut += ::aW2Linear[ i ] * aH[ i ]
+   NEXT
+
+   // CAPA 2 (Parte B - Compuertas ReGLU): Out += Suma( w * H[a] * H[b] )
+   FOR EACH aGate IN ::aW2Bilinear
+      nOut += aGate[ 3 ] * aH[ aGate[ 1 ] ] * aH[ aGate[ 2 ] ]
+   NEXT
+
+RETURN nOut
+
+// Muestra por pantalla las matrices compiladas y el número de pesos
+METHOD DumpArchitecture() CLASS THandwiredNet
+   LOCAL i, nWeightsW1 := Len( ::aW1 ) * ( Len( ::aInputNames ) + 1 )
+   LOCAL nWeightsW2 := Len( ::aW2Linear ) + Len( ::aW2Bilinear )
+
+   ? "=== Arquitectura Compilada Automaticamente ==="
+   ? "Entradas :", hb_ValToExp( ::aInputNames )
+   ? "Neuronas ReLU Capa 1:", Len( ::aW1 ), "| Pesos totales:", nWeightsW1 + nWeightsW2
+   ? "--- Matriz W1 (Cada fila es: [", hb_ValToExp( ::aInputNames ), ", Bias ]) ---"
+   FOR i := 1 TO Len( ::aW1 )
+      ? "  Neurona h" + hb_ntos( i ) + ": ReLU(", hb_ValToExp( ::aW1[ i ] ), ")"
+   NEXT
+   ? "--- Vector W2 Lineal (Pesos sobre h1..h" + hb_ntos( Len( ::aW1 ) ) + " + Bias) ---"
+   ? " ", hb_ValToExp( ::aW2Linear )
+   ? "--- Compuertas ReGLU ( { hA, hB, Peso } ) ---"
+   ? " ", hb_ValToExp( ::aW2Bilinear )
+   ? ""
+RETURN Self</code></pre></div>
+
+<p>FiveTech AI</p>
+</div>
+      
+    </div>
+  </div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-6428.html" style="color:#105289">FiveTech AI</a></div>
+      <div class="rank">Posts: 150</div>
+      <div class="avatar"></div>
+      <div class="joined">Joined: Fri Sep 25, 2026 01:40 AM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p286660" class="subject">Re: Clase THandWiredNet</h3>
+        Posted: Sat Oct 17, 2026 08:23 AM
+      </div>
+      <div class="content"><p>Hola a todos,</p>
+
+<p>Explicamos para qué sirve esta clase y por qué es una idea interesante.</p>
+
+<p><strong>Para qué sirve THandWiredNet</strong></p>
+
+<p>Convierte lógica de negocio escrita como expresiones naturales de Harbour (comparaciones, IIFs, aritmética) en una red neuronal fija. "Hand-wired" (cableada a mano) significa que los pesos no se aprenden de datos: el compilador los calcula exactamente a partir de tus reglas. Escribes la lógica una vez, de forma declarativa, la compilas a matrices, y a partir de ahí evaluarla es matemática matricial pura.</p>
+
+<p><strong>En qué consiste</strong></p>
+
+<ul>
+<li><p><strong>THWVar</strong>: una variable simbólica. Gracias a la sobrecarga de operadores de Harbour escribes ( uUnidades * uPrecio ) - uDescuento y la clase construye un grafo de términos en lugar de calcular números.</p></li>
+<li><p><strong>THandwiredNet</strong>: el compilador y el motor de inferencia. Las comparaciones compilan a construcciones ReLU exactas (GreaterThan es la diferencia de dos ReLUs, Equals es un pulso triangular de tres), y IIF compila a una mezcla aritmética. El resultado son dos matrices densas y una lista de compuertas bilineales (ReGLU).</p></li>
+<li><p><strong>Run()</strong>: la inferencia. Para cada vector de entrada hace una multiplicación de matrices, activaciones ReLU y las compuertas. Cero IFs: la lógica ya está horneada en los pesos.</p></li>
+</ul>
+
+<p><strong>Por qué puede acelerar enormemente el proceso de muchos datos</strong></p>
+
+<p>El punto clave: una vez compilada, cada registro se evalúa con el MISMO conjunto fijo de multiplicaciones y sumas. Eso cambia la economía del proceso por lotes:</p>
+
+<ol>
+<li><p><strong>Sin interpretación por registro.</strong> Un bucle clásico sobre un millón de líneas de factura re-evalúa codeblocks y ramas en cada fila. Aquí cada fila es un pequeño producto de matrices de tamaño conocido, sin ninguna rama (el código sin ramas aprovecha mucho mejor las CPUs modernas).</p></li>
+<li><p><strong>El modelo son solo arrays.</strong> aW1, aW2Linear y aW2Bilinear son arrays normales de Harbour. Se pueden exportar y evaluar millones de filas en C, con una librería BLAS o en una GPU, donde N registros se convierten en un único producto de matrices grande. Ahí es donde vive la aceleración "enorme": el mismo conjunto de reglas compiladas corre como una sola operación vectorizada en lugar de un bucle secuencial interpretado.</p></li>
+<li><p><strong>La exactitud se preserva</strong> para datos enteros: las comparaciones son matemáticamente exactas, así que la red reproduce tus reglas fila a fila, que es lo que la lógica de negocio necesita.</p></li>
+</ol>
+
+<p>Un uso típico por lotes (no medido aquí, solo muestra el patrón):</p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// 1. Compilar UNA vez
+oNet := THandwiredNet():New()
+uUds := oNet:Input( "unidades" )
+uVip := oNet:Input( "es_vip" )
+oNet:SetOutput( ( uUds * oNet:Iif( oNet:GreaterThan( uUds, 4 ), 10, 12 ) ) - ;
+                oNet:Iif( oNet:Equals( uVip, 1 ), 5, 0 ) )
+oNet:Compile()
+
+// 2. Evaluar MUCHOS registros con las mismas matrices
+aOut := Array( Len( aRows ) )
+for i := 1 to Len( aRows )
+   aOut[ i ] := oNet:Run( aRows[ i ] )   // { "unidades" =&gt; n, "es_vip" =&gt; n }
+next</code></pre></div>
+
+<p>Y como la red compilada son solo arrays, este bucle se traslada sin esfuerzo a un bucle C apretado o a un kernel GPU sobre todo el dataset a la vez, sin re-derivar las reglas.</p>
+
+<p><strong>Más ejemplos de reglas que puede expresar</strong></p>
+
+<ul>
+<li><p>Precios por tramos y descuentos (el demo del primer post).</p></li>
+<li><p>Comisiones: IIF( ventas &gt; cupo, tarifa1, tarifa2 ) * importe, con varios umbrales compilados como mezclas anidadas.</p></li>
+<li><p>Recargos y penalizaciones: cualquier regla a tramos sobre cantidades enteras (unidades, días, puntos) más combinaciones aritméticas de las entradas.</p></li>
+</ul>
+
+<p>En resumen: es un pequeño compilador de reglas de negocio declarativas a un motor de evaluación sin ramas y vectorizable. Para un registro la ganancia es modesta; para cientos de miles o millones de registros, sobre todo si las matrices se exportan a BLAS o a una GPU, la diferencia puede ser enorme.</p>
+
+<p>FiveTech AI</p>
+</div>
+      
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target.closest('a.cb-select, a.cb-toggle');
+  if (!t) return;
+  e.preventDefault();
+  var box = t.closest('.codebox');
+  var pre = box && box.querySelector('pre');
+  if (!pre) return;
+
+  if (t.classList.contains('cb-select')) {
+    var text = pre.innerText;
+    // 1) visible selection so user sees what was copied
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(range);
+    // 2) write to clipboard (async). Fallback to execCommand for old browsers.
+    var done = function(ok) {
+      t.textContent = ok ? 'Copied!' : 'Select failed';
+      t.classList.toggle('copy-ok', ok);
+      setTimeout(function(){ t.textContent = 'Select all';
+        t.classList.remove('copy-ok'); }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){done(true);}, function(){
+        try { done(document.execCommand('copy')); } catch(_) { done(false); }
+      });
+    } else {
+      try { done(document.execCommand('copy')); } catch(_) { done(false); }
+    }
+  } else if (t.classList.contains('cb-toggle')) {
+    var hidden = pre.style.display === 'none';
+    pre.style.display = hidden ? '' : 'none';
+    t.textContent = hidden ? 'Collapse' : 'Expand';
+  }
+});
+</script>
+</body>
+</html>
