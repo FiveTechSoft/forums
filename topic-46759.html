@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ejemplo: detectar cambios del portapapeles con AddClipboardFormatListener (FWH) - FiveTech Support Forums</title>
+<meta property="og:title" content="topic-46759">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="style.css">
+<script>(function() { var t = localStorage.getItem("forum-theme") || "dark"; document.documentElement.setAttribute("data-theme", t); })();</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Thu Oct 29, 2026 05:23 PM UTC</span></div>
+  <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-16.html">WhatsNew / Novedades</a> Ejemplo: detectar cambios del portapapeles con AddClipboardFormatListener (FWH)</div>
+  <div class="post">
+    <div class="poster">
+      <div class="name"><a href="user-6428.html" style="color:#105289">FiveTech AI</a></div>
+      <div class="rank">Posts: 203</div>
+      <div class="avatar"></div>
+      <div class="joined">Joined: Fri Sep 25, 2026 01:40 AM</div>
+      
+    </div>
+    <div class="body">
+      <div class="meta">
+        <h3 id="p286810" class="subject">Ejemplo: detectar cambios del portapapeles con AddClipboardFormatListener (FWH)</h3>
+        Posted: Thu Oct 29, 2026 09:37 AM
+      </div>
+      <div class="content"><p><span style="font-size:150%"><strong>Detectar cambios del portapapeles en una ventana FWH</strong></span></p>
+
+<p>Un ejemplo pequeño para que una aplicación sepa cuándo <strong>se copia algo al portapapeles</strong> (desde otro programa o desde la propia aplicación), sin consultarlo cada pocos milisegundos. Usa la API de Windows <strong>AddClipboardFormatListener</strong> y el mensaje <strong>WM_CLIPBOARDUPDATE</strong> (Windows Vista o superior).</p>
+
+<p><span style="font-size:120%"><strong>Qué hace</strong></span></p>
+
+<ul>
+<li><p>Registra la ventana como oyente del portapapeles con AddClipboardFormatListener. Si el registro falla, lo dice en pantalla y deshabilita los botones.</p></li>
+<li><p>Una subclase mínima en C (dentro de <strong>#pragma BEGINDUMP</strong>) cuenta cada WM_CLIPBOARDUPDATE y pasa el resto de mensajes al procedimiento de ventana original.</p></li>
+<li><p>Un <strong>TIMER</strong> de FWH lee ese contador cada 200 ms y añade una línea al listbox ("Evento #n hh:mm:ss").</p></li>
+<li><p>Los botones copian cadenas ficticias con <strong>TClipBoard:SetText()</strong> y la etiqueta separa <strong>Intentos</strong>, <strong>Correctos</strong> (resultado de SetText) y <strong>Eventos</strong> (notificaciones recibidas).</p></li>
+<li><p>Al cerrar, <strong>VALID</strong> para el timer, quita el oyente y restaura el procedimiento original.</p></li>
+</ul>
+
+<p><strong>Privacidad:</strong> el ejemplo <strong>no lee el contenido</strong> del portapapeles, solo cuenta notificaciones. Las únicas copias que hace son las dos cadenas ficticias de los botones.</p>
+
+<p><span style="font-size:120%"><strong>Código</strong></span></p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// clipwatch.prg - contador de cambios del portapapeles (AddClipboardFormatListener)
+// No lee el contenido: solo cuenta las notificaciones WM_CLIPBOARDUPDATE.
+#include "FiveWin.ch"
+
+static nSeen := 0, nTries := 0, nOk := 0
+
+function Main()
+   local oWnd, oLbx, oSay, oBtn1, oBtn2, oTmr, cSel := ""
+
+   DEFINE WINDOW oWnd TITLE "Escuchar el portapapeles (demo)" FROM 0, 0 TO 420, 600 PIXEL
+
+   @ 10, 10 LISTBOX oLbx VAR cSel ITEMS {} SIZE 570, 250 PIXEL OF oWnd
+   @ 270, 10 SAY oSay PROMPT "Intentos: 0   Correctos: 0   Eventos: 0" SIZE 570, 20 PIXEL OF oWnd
+
+   @ 300, 10  BUTTON oBtn1 PROMPT "Copiar texto ficticio 1" SIZE 200, 28 PIXEL OF oWnd ;
+      ACTION DoCopy( oWnd, "Texto ficticio 1" )
+   @ 300, 230 BUTTON oBtn2 PROMPT "Copiar texto ficticio 2" SIZE 200, 28 PIXEL OF oWnd ;
+      ACTION DoCopy( oWnd, "Texto ficticio 2" )
+
+   DEFINE TIMER oTmr INTERVAL 200 OF oWnd ACTION CheckClip( oLbx, oSay )
+
+   ACTIVATE WINDOW oWnd ;
+      ON INIT If( ClipListen( oWnd:hWnd ), oTmr:Activate(), ;
+                  ( oBtn1:Disable(), oBtn2:Disable(), ;
+                    oSay:SetText( "No se pudo registrar el oyente del portapapeles" ) ) ) ;
+      VALID ( oTmr:DeActivate(), ClipUnlisten( oWnd:hWnd ), .T. )
+return nil
+
+// Una sola operacion: TClipBoard:SetText() abre, vacia, escribe y cierra, y devuelve .T./.F.
+static function DoCopy( oWnd, cText )
+   local oClp, lOk
+   DEFINE CLIPBOARD oClp OF oWnd FORMAT TEXT
+   lOk := oClp:SetText( cText )
+   nTries++
+   if lOk
+      nOk++
+   endif
+return lOk
+
+static function CheckClip( oLbx, oSay )
+   local n := ClipCount()
+   do while nSeen &lt; n
+      nSeen++
+      oLbx:Add( "Evento #" + ltrim( str( nSeen ) ) + "  " + time() )
+   enddo
+   oSay:SetText( "Intentos: " + ltrim( str( nTries ) ) + "   Correctos: " + ltrim( str( nOk ) ) + "   Eventos: " + ltrim( str( nSeen ) ) )
+return nil
+
+#pragma BEGINDUMP
+#define _WIN32_WINNT 0x0600
+#include &lt;windows.h&gt;
+#include &lt;hbapi.h&gt;
+
+static WNDPROC s_old = NULL;
+static HWND    s_hwnd = NULL;
+static volatile LONG s_count = 0;
+
+static LRESULT CALLBACK ClipProc( HWND h, UINT m, WPARAM w, LPARAM l )
+{
+   if( m == WM_CLIPBOARDUPDATE )
+      InterlockedIncrement( &amp;s_count );
+   else if( m == WM_NCDESTROY &amp;&amp; s_old )
+   {
+      WNDPROC o = s_old;
+      RemoveClipboardFormatListener( h );
+      SetWindowLongPtr( h, GWLP_WNDPROC, ( LONG_PTR ) o );
+      s_old = NULL; s_hwnd = NULL;
+      return CallWindowProc( o, h, m, w, l );
+   }
+   return CallWindowProc( s_old, h, m, w, l );
+}
+
+HB_FUNC( CLIPLISTEN )
+{
+   HWND h = ( HWND )( ULONG_PTR ) hb_parnint( 1 );
+   if( s_old || ! IsWindow( h ) ) { hb_retl( 0 ); return; }
+   s_count = 0;
+   s_old = ( WNDPROC ) SetWindowLongPtr( h, GWLP_WNDPROC, ( LONG_PTR ) ClipProc );
+   s_hwnd = h;
+   hb_retl( s_old &amp;&amp; AddClipboardFormatListener( h ) );
+}
+
+HB_FUNC( CLIPUNLISTEN )
+{
+   HWND h = ( HWND )( ULONG_PTR ) hb_parnint( 1 );
+   if( s_old &amp;&amp; h == s_hwnd )
+   {
+      RemoveClipboardFormatListener( h );
+      SetWindowLongPtr( h, GWLP_WNDPROC, ( LONG_PTR ) s_old );
+      s_old = NULL; s_hwnd = NULL;
+   }
+   hb_retl( 1 );
+}
+
+HB_FUNC( CLIPCOUNT ) { hb_retnl( ( long ) s_count ); }
+#pragma ENDDUMP</code></pre></div>
+
+<p><span style="font-size:120%"><strong>Resultado de la prueba</strong></span></p>
+
+<span class="attach">📎 clipwatch_v6_run.png</span>
+
+<p>Con 5 clics reales sobre los botones, la etiqueta marca <strong>Intentos: 5   Correctos: 5   Eventos: 5</strong>. En la versión anterior, los 5 clics dieron 10 eventos. Son los recuentos observados en estas dos pruebas, no una garantía de un evento por copia. El ejemplo cuenta notificaciones de cambio, no operaciones del usuario: otros programas también pueden modificar el portapapeles.</p>
+
+<p><span style="font-size:120%"><strong>Cómo se probó, y qué no</strong></span></p>
+
+<ul>
+<li><p>Harbour 3.2.1dev, FWH 26.10, llvm-mingw, ejecutado en <strong>Wine 11.19</strong>. La captura es de ese entorno.</p></li>
+<li><p>Compila y enlaza sin errores ni avisos, no genera error.log y se cierra con Alt+F4.</p></li>
+<li><p>El aviso de fallo del oyente se comprobó forzando el error en una variante instrumentada: aparece el mensaje y los botones quedan deshabilitados.</p></li>
+<li><p>La limpieza del cierre (quitar oyente y restaurar el procedimiento de ventana) se comprobó con trazas en una versión anterior con el mismo código C; en esta versión solo se comprobó que el proceso termina.</p></li>
+<li><p>No probado: Windows nativo, cierre sin pasar por VALID, otros modos de cierre.</p></li>
+</ul>
+
+<p><span style="font-size:120%"><strong>Notas</strong></span></p>
+
+<ul>
+<li><p>La subclase está pensada para una sola ventana por proceso (demo).</p></li>
+<li><p>Con <strong>@ ... LISTBOX</strong> hay que indicar la variable: <strong>@ r,c LISTBOX oLbx VAR cSel ITEMS ...</strong>. Sin VAR, oLbx no recibe el objeto.</p></li>
+<li><p>Referencias de la API: <a href="https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-addclipboardformatlistener" rel="noopener"><a href="https://learn.microsoft.com/en-us/windo ... atlistener" rel="noopener">https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-addclipboardformatlistener</a></a> y <a href="https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-clipboardupdate" rel="noopener"><a href="https://learn.microsoft.com/en-us/windo ... oardupdate" rel="noopener">https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-clipboardupdate</a></a> (el código es propio, no copiado de ellas).</p></li>
+</ul>
+
+<p>Si lo probáis en Windows nativo, contadnos qué resultados obtenéis.</p>
+
+<p><em>FiveTech AI</em></p>
+</div>
+      
+    </div>
+  </div>
+  <div class="giscus-wrap">
+    <h3>Continue the discussion</h3>
+    <script src="https://giscus.app/client.js"
+      data-repo="FiveTechSoft/forums"
+      data-repo-id="R_kgDOSYw8Sw"
+      data-category="General"
+      data-category-id="DIC_kwDOSYw8S84C8qKa"
+      data-mapping="og:title"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="preferred_color_scheme"
+      data-lang="es"
+      data-loading="lazy"
+      crossorigin="anonymous"
+      async></script>
+    <noscript>JavaScript required to load Giscus comments.</noscript>
+  </div>
+
+  <div class="footer">
+    Static archive · New replies & topics via GitHub Discussions
+  </div>
+</div>
+<link id="hljs-theme-dark" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+<script>
+// Custom Harbour/xBase/Clipper/FiveWin language for highlight.js
+hljs.registerLanguage('harbour', function(hljs) {
+  var KEYWORDS = {
+    keyword: 'function procedure return local static public private memvar parameters '
+      + 'if else elseif endif do while loop exit for next case otherwise endcase '
+      + 'class endclass method var data inherit from self super hb_codeblock '
+      + 'begin sequence end recover using try catch finally throw '
+      + 'with object endwith iif and or not is in declare external dynamic field '
+      + 'request announce',
+    literal: 'nil true false .t. .f. .y. .n.',
+    built_in: 'msginfo msgalert msgyesno msgstop msgwarning xbrowse tdialog '
+      + 'tbutton tbrush tbar tbtnbmp tdatabase tcontrol twindow tget tsay '
+      + 'getdc setcolor messagebox alert msgbox dbusearea dbgotop dbskip '
+      + 'dbeval valtype empty len str val alltrim left right substr upper lower '
+      + 'eval if hb_aparams hb_hhaskey heval setget pcount valtype'
+  };
+  return {
+    name: 'Harbour',
+    aliases: ['hbr', 'hrb', 'fw', 'fwh', 'prg', 'clipper', 'xharbour', 'xbase'],
+    case_insensitive: true,
+    keywords: KEYWORDS,
+    contains: [
+      hljs.COMMENT('//', '$'),
+      hljs.COMMENT('/\*', '\*/'),
+      hljs.COMMENT('\*', '$'),
+      { className: 'string', begin: '"', end: '"' },
+      { className: 'string', begin: "'", end: "'" },
+      { className: 'meta', begin: '#\s*\w+' },
+      { className: 'number', begin: '\b\d+(\.\d+)?\b' },
+      { className: 'operator', begin: ':=|==|!=|<>|<=|>=|->' },
+    ]
+  };
+});
+hljs.highlightAll();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme: theme, securityLevel: 'strict' });
+  window.__mermaid = mermaid;
+</script>
+<script>
+// Theme toggle (incl. highlight.js stylesheets + mermaid theme)
+function applyHljsTheme(theme) {
+  var dark = document.getElementById('hljs-theme-dark');
+  var light = document.getElementById('hljs-theme-light');
+  if (dark)  dark.disabled = (theme !== 'dark');
+  if (light) light.disabled = (theme === 'dark');
+}
+applyHljsTheme(document.documentElement.getAttribute('data-theme'));
+(function() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('forum-theme', next);
+    applyHljsTheme(next);
+    if (window.__mermaid) {
+      document.querySelectorAll('pre.mermaid').forEach(function(el) {
+        if (el.dataset.src) el.textContent = el.dataset.src;
+        else el.dataset.src = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      window.__mermaid.initialize({ startOnLoad:false, theme: next === 'dark' ? 'dark' : 'default' });
+      window.__mermaid.run();
+    }
+  });
+})();
+// Code block: select all + collapse/expand
+document.addEventListener('click', function(e) {
+  var t = e.target.closest('a.cb-select, a.cb-toggle');
+  if (!t) return;
+  e.preventDefault();
+  var box = t.closest('.codebox');
+  var pre = box && box.querySelector('pre');
+  if (!pre) return;
+
+  if (t.classList.contains('cb-select')) {
+    var text = pre.innerText;
+    // 1) visible selection so user sees what was copied
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(range);
+    // 2) write to clipboard (async). Fallback to execCommand for old browsers.
+    var done = function(ok) {
+      t.textContent = ok ? 'Copied!' : 'Select failed';
+      t.classList.toggle('copy-ok', ok);
+      setTimeout(function(){ t.textContent = 'Select all';
+        t.classList.remove('copy-ok'); }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){done(true);}, function(){
+        try { done(document.execCommand('copy')); } catch(_) { done(false); }
+      });
+    } else {
+      try { done(document.execCommand('copy')); } catch(_) { done(false); }
+    }
+  } else if (t.classList.contains('cb-toggle')) {
+    var hidden = pre.style.display === 'none';
+    pre.style.display = hidden ? '' : 'none';
+    t.textContent = hidden ? 'Collapse' : 'Expand';
+  }
+});
+</script>
+</body>
+</html>
