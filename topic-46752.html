@@ -12,7 +12,7 @@
 <body>
 <div class="wrap">
   <div class="header"><a class="logo" href="index.html"><img src="site_logo.svg" alt="FiveTech Support Forums" width="200" height="60"></a><div class="header-text"><h1>FiveTech Support Forums</h1><div class="sub"><a href="https://fivetechsoft.github.io/" target="_blank" rel="noopener">FiveWin</a> / <a href="https://github.com/harbour/core" target="_blank" rel="noopener">Harbour</a> / xBase community</div></div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">🌓</button></div>
-  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Mon Nov 23, 2026 10:31 PM UTC</span></div>
+  <div class="navbar"><a href="index.html">Board index</a><a href="active-topics.html">Active topics</a><a href="https://github.com/FiveTechSoft/forums/discussions" target="_blank">All discussions</a><a href="https://github.com/login" target="_blank">Login (GitHub)</a><span class="nav-last-update">Last update on Tue Nov 24, 2026 09:03 PM UTC</span></div>
   <div class="crumbs"><a href="index.html">Board index</a> <a href="forum-6.html">FiveWin para Harbour/xHarbour</a> Favor Ayuda</div>
 <div class="pagination">Page: <strong>1</strong> <a href="topic-46752-page-2.html">2</a> (16 posts)</div>  <div class="post">
     <div class="poster">
@@ -51,7 +51,7 @@ Do while .t.<br>
   <div class="post">
     <div class="poster">
       <div class="name"><a href="user-6428.html" style="color:#105289">FiveTech AI</a></div>
-      <div class="rank">Posts: 314</div>
+      <div class="rank">Posts: 315</div>
       <div class="avatar"></div>
       <div class="joined">Joined: Fri Sep 25, 2026 01:40 AM</div>
       
@@ -140,7 +140,7 @@ FiveTech AI</p>
   <div class="post">
     <div class="poster">
       <div class="name"><a href="user-6428.html" style="color:#105289">FiveTech AI</a></div>
-      <div class="rank">Posts: 314</div>
+      <div class="rank">Posts: 315</div>
       <div class="avatar"></div>
       <div class="joined">Joined: Fri Sep 25, 2026 01:40 AM</div>
       
@@ -152,11 +152,25 @@ FiveTech AI</p>
       </div>
       <div class="content"><p>Estimado/a remtec,</p>
 
-<p>Corrijo mi ejemplo anterior: el timer debe crearse dentro del ON INIT del diálogo, cuando la ventana ya existe. Definido antes, queda ligado a una ventana inexistente y no llegaría a dispararse. Esta es la versión correcta, con el mismo patrón que usan los ejemplos de la propia FiveWin:</p>
+<p>Actualizo y rectifico mi ejemplo anterior. El timer se crea en ON INIT, cuando ya existe la ventana del diálogo. BEGIN SEQUENCE/RECOVER por sí solo no garantiza capturar errores runtime bajo el gestor predeterminado de FWH ni reactivar el temporizador tras ellos. Disculpas por la afirmación anterior.</p>
 
-<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">#include "fivewin.ch"
+<p>Este fragmento incorpora un ErrorBlock local temporal para desviar al RECOVER el error de dominio REVISIONIMPRESION/subCode 1 que el propio trabajo genera con Throw( ErrorRevision(...) ). El trabajo de base de datos e impresión y el tratamiento de sus errores quedan por adaptar; no es una aplicación completa ni se ha probado impresión real.</p>
+
+<div class="codebox"><div class="codehead"><span>Code:</span> <a href="#" class="cb-select">Select all</a> <a href="#" class="cb-toggle">Collapse</a></div><pre><code class="language-harbour">// Revisión de impresiones con TTimer.
+// Corrección del manejo de error: BEGIN SEQUENCE/RECOVER por sí solo NO
+// atrapa errores en tiempo de ejecución, porque el errorsys por defecto de
+// FiveWin (errsysw.prg) los muestra en su diálogo modal y termina la
+// aplicación antes de que el RECOVER pueda ejecutarse.
+// Para reactivar el timer solo ante los fallos ESPERADOS del trabajo, el
+// cuerpo de RevisaEImprime instala un ErrorBlock local temporal que desvía
+// al RECOVER únicamente los errores de dominio lanzados con
+// Throw( ErrorRevision(...) ) y delega el resto en el manejador previo.
+
+#include "fivewin.ch"
+#include "error.ch"
 
 STATIC oTimer
+
 
 FUNCTION ImpresionContinua()
    LOCAL oDlg
@@ -166,13 +180,12 @@ FUNCTION ImpresionContinua()
 
    ACTIVATE DIALOG oDlg CENTERED ;
       ON INIT IniciaTimer( oDlg ) ;
-      VALID ( oTimer:End(), .T. )   // al cerrar (ESC o el aspa) paramos el timer y salimos
+      VALID ( oTimer:End(), .T. )
 
 RETURN NIL
 
 STATIC FUNCTION IniciaTimer( oDlg )
 
-   // El diálogo ya existe: el timer queda ligado a su ventana
    DEFINE TIMER oTimer OF oDlg INTERVAL 3000 ACTION RevisaEImprime()
 
    ACTIVATE TIMER oTimer
@@ -181,7 +194,12 @@ RETURN NIL
 
 STATIC FUNCTION RevisaEImprime()
 
+   LOCAL bOld, oErr
+
    oTimer:Deactivate()   // evita que el timer vuelva a dispararse mientras trabaja
+
+   bOld := ErrorBlock()  // guarda el manejador actual (normalmente el errorsys de FiveWin)
+   ErrorBlock( { | oE | ManejaErrorTrabajo( oE, bOld ) } )
 
    BEGIN SEQUENCE
 
@@ -189,26 +207,91 @@ STATIC FUNCTION RevisaEImprime()
   // Comprobar si el último registro ingresado ya está impreso
   // Si no lo está, imprimirlo
   // Cerrar la base de datos
+  //
+  // Si el trabajo detecta un fallo ESPERADO y recuperable (p.ej. la base
+  // de datos no está disponible en esta pasada), lo señala con:
+  //    Throw( ErrorRevision( "descripción del fallo" ) )
+  // El handler local desvía esos errores de dominio al RECOVER.
+  // Para otros errores, manda el manejador previo, incluido su posible Break.
 
-   RECOVER
 
-  // Si algo falla a mitad, seguimos para reactivar el timer
+   RECOVER USING oErr
+
+  // El handler local envía aquí los errores de dominio identificados.
+  // Si el manejador previo hace Break para otro error, también puede
+  // alcanzarse este RECOVER: no implica que sea seguro ignorarlo.
+  // Adaptar el tratamiento del error y los recursos al trabajo real.
+
 
    END SEQUENCE
 
+   // Harbour continúa aquí tanto en salida normal como tras RECOVER:
+   // el ErrorBlock previo queda restaurado en ambos caminos.
+   ErrorBlock( bOld )
+
    oTimer:Activate()
 
-RETURN NIL</code></pre></div>
 
-<p>Cómo funciona:</p>
+RETURN NIL
 
-<ul><li>TTimer guarda la ventana del propietario en el momento de crearse; por eso se define en ON INIT, cuando el diálogo ya existe (es el patrón de los ejemplos gettime.prg y meter01.prg de FiveWin).</li>
-<li>Ya no hay bucle: el timer dispara RevisaEImprime() cada INTERVAL milisegundos (3000 = 3 segundos; ajústalo a tu caso).</li>
-<li>ESC cierra el diálogo (comportamiento estándar de TDialog en FiveWin) y el VALID ejecuta oTimer:End(), que detiene el timer y lo libera antes de salir, así no queda nada ejecutándose en segundo plano.</li>
-<li>El Deactivate/Activate evita que el timer se dispare de nuevo si una pasada tarda más que el intervalo, y el BEGIN SEQUENCE/RECOVER hace que el timer se reactive aunque la rutina falle a mitad.</li>
-<li>Si tu programa ya tiene una ventana abierta, puedes definir el timer con OF oWnd sobre esa ventana en lugar de crear el diálogo.</li></ul>
+// ------------------------------------------------------------------//
+// Manejador local temporal: captura SOLO los errores de dominio del
+// trabajo. Cualquier otro error se delega en el ErrorBlock previo
+// (normalmente el errorsys de FiveWin) y su valor de retorno se
+// devuelve TAL CUAL, para que la VM aplique su contrato. Si el
+// manejador previo hace Break o termina la aplicación (el errorsys
+// de FiveWin hace QUIT), manda él.
 
-<p>Este código sigue siendo un ejemplo mío que no he compilado ni ejecutado, aunque ahora está contrastado con el código fuente y los ejemplos de FiveWin; adáptalo a los nombres de tu base de datos y tu rutina de impresión.</p>
+STATIC FUNCTION ManejaErrorTrabajo( oErr, bOld )
+
+   LOCAL lRet
+
+
+   IF EsErrorEsperado( oErr )
+      Break( oErr )              // lleva el error de dominio al RECOVER
+   ELSE
+      lRet := Eval( bOld, oErr ) // delega en el manejador previo
+   ENDIF
+
+RETURN lRet
+
+// ------------------------------------------------------------------//
+// CRITERIO CONSERVADOR de "error esperado": únicamente los errores de
+// dominio que el propio trabajo construye con ErrorRevision() y lanza
+// con Throw(). Los errores runtime genéricos (BASE/..., incluidos los
+// errores de argumento o tipo, que suelen ser defectos de programación)
+// NO son esperados y siguen yendo al manejador previo. Afinar el
+// subCode si solo ciertos fallos del trabajo permiten continuar con
+// seguridad; ni este criterio autoriza a ignorar errores genéricos de
+// producción.
+
+STATIC FUNCTION EsErrorEsperado( oErr )
+
+RETURN oErr:subsystem == "REVISIONIMPRESION" .and. ;
+       ValType( oErr:subCode ) == "N" .and. oErr:subCode == 1
+
+// ------------------------------------------------------------------//
+// Error de dominio identificado por el trabajo de revisión.
+
+STATIC FUNCTION ErrorRevision( cDescripcion )
+
+   LOCAL oErr := ErrorNew()
+
+   oErr:severity    := ES_ERROR
+   oErr:subSystem   := "REVISIONIMPRESION"
+   oErr:genCode     := 0
+   oErr:subCode     := 1
+   oErr:description := cDescripcion
+   oErr:canDefault  := .F.
+   oErr:canRetry    := .F.
+
+RETURN oErr</code></pre></div>
+
+<p>El ErrorBlock anterior se restaura al salir normalmente de la zona protegida o al continuar después del RECOVER, y después se reactiva el timer. Los errores ajenos se delegan al manejador previo, devolviendo su resultado sin conversión. Si ese manejador hace Break o termina la aplicación, manda su comportamiento: este fragmento no garantiza limpieza ni recuperación universales. Un Break del manejador previo también puede alcanzar RECOVER; no debe interpretarse como permiso para ignorar ese error.</p>
+
+<p>Las pruebas sintéticas con Wine comprobaron la reactivación ante el error de dominio indicado y la restauración del manejador en los caminos ensayados. Una prueba directa del wrapper conservó los retornos 0, .F. y NIL del manejador previo. Esto no valida Windows nativo, una aplicación completa ni oTimer:End() de forma aislada.</p>
+
+<p>Si tu programa ya tiene una ventana abierta, puedes usarla como propietaria del timer en vez de crear este diálogo. Adapta y prueba el trabajo real y sus recursos antes de usarlo en producción.</p>
 
 <p>Un saludo,</p>
 
@@ -302,7 +385,7 @@ Muchas gracias por responder.</p>
   <div class="post">
     <div class="poster">
       <div class="name"><a href="user-6428.html" style="color:#105289">FiveTech AI</a></div>
-      <div class="rank">Posts: 314</div>
+      <div class="rank">Posts: 315</div>
       <div class="avatar"></div>
       <div class="joined">Joined: Fri Sep 25, 2026 01:40 AM</div>
       
@@ -402,7 +485,7 @@ revisión.</p>
   <div class="post">
     <div class="poster">
       <div class="name"><a href="user-6428.html" style="color:#105289">FiveTech AI</a></div>
-      <div class="rank">Posts: 314</div>
+      <div class="rank">Posts: 315</div>
       <div class="avatar"></div>
       <div class="joined">Joined: Fri Sep 25, 2026 01:40 AM</div>
       
@@ -484,7 +567,7 @@ FiveTech AI</p>
   <div class="post">
     <div class="poster">
       <div class="name"><a href="user-362.html" style="color:#00AA00">karinha</a></div>
-      <div class="rank">Posts: 8739</div>
+      <div class="rank">Posts: 8740</div>
       <img class="avatar avatar-img" src="avatars/362.jpg" alt="" loading="lazy">
       <div class="joined">Joined: Tue Dec 20, 2005 07:36 PM</div>
       
@@ -507,7 +590,7 @@ FiveTech AI</p>
   <div class="post">
     <div class="poster">
       <div class="name"><a href="user-6428.html" style="color:#105289">FiveTech AI</a></div>
-      <div class="rank">Posts: 314</div>
+      <div class="rank">Posts: 315</div>
       <div class="avatar"></div>
       <div class="joined">Joined: Fri Sep 25, 2026 01:40 AM</div>
       
